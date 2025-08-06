@@ -81,13 +81,11 @@ impl Operation for MatMulOperation {
         constraints.add_constraint(
             0,
             crate::mir::workgroup_shape::Constraint::Equals(
-                WORK_GROUP_BLOCK_M_SIZE / THREAD_BLOCK_M_SIZE,
+                (WORK_GROUP_BLOCK_M_SIZE / THREAD_BLOCK_M_SIZE)
+                    * (WORK_GROUP_BLOCK_N_SIZE / THREAD_BLOCK_N_SIZE),
             ),
         );
-        constraints.add_constraint(
-            1,
-            crate::mir::workgroup_shape::Constraint::Equals(WORK_GROUP_BLOCK_N_SIZE),
-        );
+        constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));
         constraints.add_constraint(2, crate::mir::workgroup_shape::Constraint::Equals(1));
         constraints
     }
@@ -142,11 +140,11 @@ impl Operation for MatMulOperation {
     fn build_kernel(
         &self,
         _: &crate::compute_graph::ComputeGraphInner,
-        _: &crate::mir::workgroup_shape::WorkgroupShape,
+        workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
         inputs: &[crate::mir::inputs::MirValue],
         generic_kernel: &mut GenericKernel,
     ) {
-        // based on https://siboehm.com/articles/22/CUDA-MMM
+        // Based on CUDA 2D block tiling SGEMM
         let [input_a, input_b, _] = inputs else {
             panic!("MatMulOperation requires 3 inputs");
         };
@@ -168,6 +166,7 @@ impl Operation for MatMulOperation {
             self.post_element_wise.out_datatype(),
         );
 
+        // Shared memory arrays
         let cache_a = generic_kernel.add_global_array(
             KernelGlobalSpace::Workgroup,
             self.datatype,
@@ -179,26 +178,25 @@ impl Operation for MatMulOperation {
             (WORK_GROUP_BLOCK_N_SIZE * WORK_GROUP_BLOCK_K_SIZE).to_string(),
         );
 
+        const TOTAL_RESULTS_BLOCK_TILE: u32 = WORK_GROUP_BLOCK_M_SIZE * WORK_GROUP_BLOCK_N_SIZE;
+        const THREADS_PER_WORKGROUP: u32 =
+            TOTAL_RESULTS_BLOCK_TILE / (THREAD_BLOCK_M_SIZE * THREAD_BLOCK_N_SIZE);
+        assert_eq!(workgroup_shape.x(), THREADS_PER_WORKGROUP);
+
         let datatype = self.datatype;
         let workgroup_index = generic_kernel.workgroup_index();
         let workgroup_local_index = generic_kernel.workgroup_local_index();
 
+        // Get dimension bindings
         let k_size = input_a.shape_binding(self.rank() - 1);
-        let a_k_stride = input_a.stride_binding(self.rank() - 1);
-        let b_k_stride = input_b.stride_binding(self.rank() - 2);
-
         let m_size = input_a.shape_binding(self.rank() - 2);
-        let a_m_stride = input_a.stride_binding(self.rank() - 2);
-        let c_m_stride = output.stride_binding(self.rank() - 2);
-
         let n_size = input_b.shape_binding(self.rank() - 1);
-        let b_n_stride = input_b.stride_binding(self.rank() - 1);
-        let c_n_stride = output.stride_binding(self.rank() - 1);
 
-        writeln!(&mut kernel, "let block_col = {workgroup_index}.x;").unwrap();
-        writeln!(&mut kernel, "let block_row = {workgroup_index}.y;").unwrap();
+        // Map CUDA block indices to WGSL workgroup indices
+        writeln!(&mut kernel, "let cRow = {workgroup_index}.y;").unwrap();
+        writeln!(&mut kernel, "let cCol = {workgroup_index}.x;").unwrap();
         writeln!(&mut kernel, "var block_batch = {workgroup_index}.z;").unwrap();
-
+        
         for dim in (0..self.rank()).rev().skip(2) {
             let shape = input_a.shape_binding(dim);
             writeln!(
@@ -209,8 +207,19 @@ impl Operation for MatMulOperation {
             writeln!(&mut kernel, "block_batch /= {shape};").unwrap();
         }
 
+        writeln!(
+            &mut kernel,
+            "let totalResultsBlocktile = {WORK_GROUP_BLOCK_M_SIZE}u * {WORK_GROUP_BLOCK_N_SIZE}u;"
+        )
+        .unwrap();
+        writeln!(&mut kernel, "let numThreadsBlocktile = totalResultsBlocktile / ({THREAD_BLOCK_M_SIZE}u * {THREAD_BLOCK_N_SIZE}u);").unwrap();
+
+        // Thread indices within the workgroup
+        writeln!(&mut kernel, "let threadCol = {workgroup_local_index} % ({WORK_GROUP_BLOCK_N_SIZE}u / {THREAD_BLOCK_N_SIZE}u);").unwrap();
+        writeln!(&mut kernel, "let threadRow = {workgroup_local_index} / ({WORK_GROUP_BLOCK_N_SIZE}u / {THREAD_BLOCK_N_SIZE}u);").unwrap();
+
         // Find the batch offset for a, b and output
-        for (name, tensor) in [("a", &input_a), ("b", &input_b), ("output", &output)] {
+        for (name, tensor) in [("a", &input_a), ("b", &input_b), ("c", &output)] {
             writeln!(&mut kernel, "let {name}_start_index = ").unwrap();
             let offset = tensor.offset_binding();
             write!(&mut kernel, "{offset}").unwrap();
@@ -221,193 +230,235 @@ impl Operation for MatMulOperation {
             writeln!(&mut kernel, ";").unwrap();
         }
 
+        // Calculate starting positions for this block's tile
         writeln!(
             &mut kernel,
-            "let thread_col = {workgroup_local_index} % {WORK_GROUP_BLOCK_N_SIZE};"
+            "var A_offset = a_start_index + cRow * {WORK_GROUP_BLOCK_M_SIZE}u * {k_size};"
         )
         .unwrap();
         writeln!(
             &mut kernel,
-            "let thread_row = {workgroup_local_index} / {WORK_GROUP_BLOCK_N_SIZE};"
+            "var B_offset = b_start_index + cCol * {WORK_GROUP_BLOCK_N_SIZE}u;"
         )
         .unwrap();
-        writeln!(
-            &mut kernel,
-            "let a_thread_col = {workgroup_local_index} % {WORK_GROUP_BLOCK_K_SIZE};"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "let a_thread_row = {workgroup_local_index} / {WORK_GROUP_BLOCK_K_SIZE};"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "let b_thread_col = {workgroup_local_index} % {WORK_GROUP_BLOCK_N_SIZE};"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "let b_thread_row = {workgroup_local_index} / {WORK_GROUP_BLOCK_N_SIZE};"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "var results: array<{datatype}, {THREAD_BLOCK_M_SIZE}>;"
-        )
-        .unwrap();
-        // Each thread in the workgroup is offset by an amount in the a matrix in the x direction. It will shift
-        // by blocks inside the loop in the K direction.
-        writeln!(&mut kernel, "var a_col = {a_k_stride} * a_thread_col;").unwrap();
-        // Each thread in the workgroup is offset by an amount in the a matrix in the y direction.
-        writeln!(
-            &mut kernel,
-            "let a_row = {a_m_stride} * (a_thread_row + block_row * {WORK_GROUP_BLOCK_M_SIZE});"
-        )
-        .unwrap();
-        // The max x index on the a matrix is k size
-        writeln!(&mut kernel, "let a_col_max = {k_size} * {a_k_stride};").unwrap();
-        // The max y index on the a matrix is m*k size
-        writeln!(&mut kernel, "let a_row_max = {m_size} * {a_m_stride};").unwrap();
-        // The b matrix x index it determined by the thread and block index. It doesn't change with k
-        writeln!(
-            &mut kernel,
-            "let b_col = {b_n_stride} * (b_thread_col + block_col * {WORK_GROUP_BLOCK_N_SIZE});"
-        )
-        .unwrap();
-        // The b matrix y index has an offset based on the thread index. It will shift by blocks of k in the loop
-        writeln!(&mut kernel, "var b_row = {b_k_stride} * b_thread_row;").unwrap();
-        // The max x index on the b matrix is n size
-        writeln!(&mut kernel, "let b_col_max = {n_size} * {b_n_stride};").unwrap();
-        // The max y index on the b matrix is k*n size
-        writeln!(&mut kernel, "let b_row_max = {k_size} * {b_k_stride};").unwrap();
+        writeln!(&mut kernel, "let C_start = c_start_index + cRow * {WORK_GROUP_BLOCK_M_SIZE}u * {n_size} + cCol * {WORK_GROUP_BLOCK_N_SIZE}u;").unwrap();
 
-        // Loop over the K dimension in blocks of WORK_GROUP_BLOCK_K_SIZE
-        writeln!(&mut kernel, "for (var block_index = 0u; block_index < {k_size}; block_index += {WORK_GROUP_BLOCK_K_SIZE}) {{").unwrap();
+        // Thread indices for loading into shared memory
+        writeln!(
+            &mut kernel,
+            "let innerRowA = {workgroup_local_index} / {WORK_GROUP_BLOCK_K_SIZE}u;"
+        )
+        .unwrap();
+        writeln!(
+            &mut kernel,
+            "let innerColA = {workgroup_local_index} % {WORK_GROUP_BLOCK_K_SIZE}u;"
+        )
+        .unwrap();
+        writeln!(
+            &mut kernel,
+            "let strideA = numThreadsBlocktile / {WORK_GROUP_BLOCK_K_SIZE}u;"
+        )
+        .unwrap();
+        writeln!(
+            &mut kernel,
+            "let innerRowB = {workgroup_local_index} / {WORK_GROUP_BLOCK_N_SIZE}u;"
+        )
+        .unwrap();
+        writeln!(
+            &mut kernel,
+            "let innerColB = {workgroup_local_index} % {WORK_GROUP_BLOCK_N_SIZE}u;"
+        )
+        .unwrap();
+        writeln!(
+            &mut kernel,
+            "let strideB = numThreadsBlocktile / {WORK_GROUP_BLOCK_N_SIZE}u;"
+        )
+        .unwrap();
+
+        // Allocate thread-local cache for results
+        writeln!(
+            &mut kernel,
+            "var threadResults: array<{datatype}, {}>;",
+            THREAD_BLOCK_M_SIZE * THREAD_BLOCK_N_SIZE
+        )
+        .unwrap();
+        writeln!(
+            &mut kernel,
+            "for (var i = 0u; i < {}u; i++) {{",
+            THREAD_BLOCK_M_SIZE * THREAD_BLOCK_N_SIZE
+        )
+        .unwrap();
+        writeln!(&mut kernel, "    threadResults[i] = 0.0;").unwrap();
+        writeln!(&mut kernel, "}}").unwrap();
+
+        // Register caches
+        writeln!(
+            &mut kernel,
+            "var regM: array<{datatype}, {THREAD_BLOCK_M_SIZE}u>;"
+        )
+        .unwrap();
+        writeln!(
+            &mut kernel,
+            "var regN: array<{datatype}, {THREAD_BLOCK_N_SIZE}u>;"
+        )
+        .unwrap();
+
+        // Main loop over K dimension in blocks
+        writeln!(
+            &mut kernel,
+            "for (var bkIdx = 0u; bkIdx < {k_size}; bkIdx += {WORK_GROUP_BLOCK_K_SIZE}u) {{"
+        )
+        .unwrap();
+
+        // Load A tile into shared memory
+        writeln!(&mut kernel, "    for (var loadOffset = 0u; loadOffset < {WORK_GROUP_BLOCK_M_SIZE}u; loadOffset += strideA) {{").unwrap();
+        writeln!(&mut kernel, "        let row = innerRowA + loadOffset;").unwrap();
+        writeln!(&mut kernel, "        let col = innerColA;").unwrap();
+        writeln!(
+            &mut kernel,
+            "        if (row < {m_size} && (bkIdx + col) < {k_size}) {{"
+        )
+        .unwrap();
 
         let pre_element_wise_functions = pre_element_wise_functions.get_or_init(|| {
             std::array::from_fn(|i| self.pre_element_wise[i].add_functions(generic_kernel))
         });
 
-        // Make sure everything is in bounds of the a matrix
-        writeln!(&mut kernel, "if a_col < a_col_max && a_row < a_row_max {{").unwrap();
-        writeln!(&mut kernel, "let a_index = a_row + a_col;").unwrap();
-        // If everything is in range, load the value into the workgroup cache
         write!(
             &mut kernel,
-            "{cache_a}[a_thread_row * {WORK_GROUP_BLOCK_K_SIZE} + a_thread_col] = "
+            "            {cache_a}[row * {WORK_GROUP_BLOCK_K_SIZE}u + col] = "
         )
         .unwrap();
-        let first_value = pre_element_wise_functions[0]
-            .iter()
-            .fold(format!("{input_a}[a_start_index + a_index]"), |acc, f| {
-                f.call(vec![acc])
-            });
+        let first_value = pre_element_wise_functions[0].iter().fold(
+            format!("{input_a}[A_offset + row * {k_size} + col]"),
+            |acc, f| f.call(vec![acc]),
+        );
         writeln!(&mut kernel, "{first_value};").unwrap();
-        writeln!(&mut kernel, "}}").unwrap();
-        writeln!(&mut kernel, "else {{").unwrap();
+        writeln!(&mut kernel, "        }} else {{").unwrap();
         writeln!(
             &mut kernel,
-            "{cache_a}[a_thread_row * {WORK_GROUP_BLOCK_K_SIZE} + a_thread_col] = 0.0;"
+            "            {cache_a}[row * {WORK_GROUP_BLOCK_K_SIZE}u + col] = 0.0;"
         )
         .unwrap();
-        writeln!(&mut kernel, "}}").unwrap();
-        // Make sure everything is in bounds of the b matrix
-        writeln!(&mut kernel, "if b_col < b_col_max && b_row < b_row_max {{").unwrap();
-        writeln!(&mut kernel, "let b_index = b_row + b_col;").unwrap();
-        // If everything is in range, load the value into the workgroup cache
+        writeln!(&mut kernel, "        }}").unwrap();
+        writeln!(&mut kernel, "    }}").unwrap();
+
+        // Load B tile into shared memory
+        writeln!(&mut kernel, "    for (var loadOffset = 0u; loadOffset < {WORK_GROUP_BLOCK_K_SIZE}u; loadOffset += strideB) {{").unwrap();
+        writeln!(&mut kernel, "        let row = innerRowB + loadOffset;").unwrap();
+        writeln!(&mut kernel, "        let col = innerColB;").unwrap();
+        writeln!(
+            &mut kernel,
+            "        if ((bkIdx + row) < {k_size} && col < {n_size}) {{"
+        )
+        .unwrap();
+
         write!(
             &mut kernel,
-            "{cache_b}[b_thread_row * {WORK_GROUP_BLOCK_N_SIZE} + b_thread_col] = "
+            "            {cache_b}[row * {WORK_GROUP_BLOCK_N_SIZE}u + col] = "
         )
         .unwrap();
-        let first_value = pre_element_wise_functions[1]
-            .iter()
-            .fold(format!("{input_b}[b_start_index + b_index]"), |acc, f| {
-                f.call(vec![acc])
-            });
-        writeln!(&mut kernel, "{first_value};").unwrap();
+        let second_value = pre_element_wise_functions[1].iter().fold(
+            format!("{input_b}[B_offset + row * {n_size} + col]"),
+            |acc, f| f.call(vec![acc]),
+        );
+        writeln!(&mut kernel, "{second_value};").unwrap();
+        writeln!(&mut kernel, "        }} else {{").unwrap();
+        writeln!(
+            &mut kernel,
+            "            {cache_b}[row * {WORK_GROUP_BLOCK_N_SIZE}u + col] = 0.0;"
+        )
+        .unwrap();
+        writeln!(&mut kernel, "        }}").unwrap();
+        writeln!(&mut kernel, "    }}").unwrap();
+
+        writeln!(&mut kernel, "    workgroupBarrier();").unwrap();
+
+        // Advance blocktile pointers
+        writeln!(&mut kernel, "    A_offset += {WORK_GROUP_BLOCK_K_SIZE}u;").unwrap();
+        writeln!(
+            &mut kernel,
+            "    B_offset += {WORK_GROUP_BLOCK_K_SIZE}u * {n_size};"
+        )
+        .unwrap();
+
+        // Calculate per-thread results
+        writeln!(
+            &mut kernel,
+            "    for (var dotIdx = 0u; dotIdx < {WORK_GROUP_BLOCK_K_SIZE}u; dotIdx++) {{"
+        )
+        .unwrap();
+
+        // Load values into registers
+        writeln!(
+            &mut kernel,
+            "        for (var i = 0u; i < {THREAD_BLOCK_M_SIZE}u; i++) {{"
+        )
+        .unwrap();
+        writeln!(&mut kernel, "            regM[i] = {cache_a}[(threadRow * {THREAD_BLOCK_M_SIZE}u + i) * {WORK_GROUP_BLOCK_K_SIZE}u + dotIdx];").unwrap();
+        writeln!(&mut kernel, "        }}").unwrap();
+        writeln!(
+            &mut kernel,
+            "        for (var i = 0u; i < {THREAD_BLOCK_N_SIZE}u; i++) {{"
+        )
+        .unwrap();
+        writeln!(&mut kernel, "            regN[i] = {cache_b}[dotIdx * {WORK_GROUP_BLOCK_N_SIZE}u + threadCol * {THREAD_BLOCK_N_SIZE}u + i];").unwrap();
+        writeln!(&mut kernel, "        }}").unwrap();
+
+        // Perform outer product
+        writeln!(
+            &mut kernel,
+            "        for (var resIdxM = 0u; resIdxM < {THREAD_BLOCK_M_SIZE}u; resIdxM++) {{"
+        )
+        .unwrap();
+        writeln!(
+            &mut kernel,
+            "            for (var resIdxN = 0u; resIdxN < {THREAD_BLOCK_N_SIZE}u; resIdxN++) {{"
+        )
+        .unwrap();
+        writeln!(&mut kernel, "                threadResults[resIdxM * {THREAD_BLOCK_N_SIZE}u + resIdxN] += regM[resIdxM] * regN[resIdxN];").unwrap();
+        writeln!(&mut kernel, "            }}").unwrap();
+        writeln!(&mut kernel, "        }}").unwrap();
+        writeln!(&mut kernel, "    }}").unwrap();
+
+        writeln!(&mut kernel, "    workgroupBarrier();").unwrap();
         writeln!(&mut kernel, "}}").unwrap();
-        writeln!(&mut kernel, "else {{").unwrap();
-        writeln!(
-            &mut kernel,
-            "{cache_b}[b_thread_row * {WORK_GROUP_BLOCK_N_SIZE} + b_thread_col] = 0.0;"
-        )
-        .unwrap();
-        writeln!(&mut kernel, "}}").unwrap();
 
-        writeln!(&mut kernel, "workgroupBarrier();").unwrap();
+        // Write out the results
+        writeln!(
+            &mut kernel,
+            "for (var resIdxM = 0u; resIdxM < {THREAD_BLOCK_M_SIZE}u; resIdxM++) {{"
+        )
+        .unwrap();
+        writeln!(
+            &mut kernel,
+            "    for (var resIdxN = 0u; resIdxN < {THREAD_BLOCK_N_SIZE}u; resIdxN++) {{"
+        )
+        .unwrap();
+        writeln!(&mut kernel, "        let outRow = threadRow * {THREAD_BLOCK_M_SIZE}u + resIdxM + cRow * {WORK_GROUP_BLOCK_M_SIZE}u;").unwrap();
+        writeln!(&mut kernel, "        let outCol = threadCol * {THREAD_BLOCK_N_SIZE}u + resIdxN + cCol * {WORK_GROUP_BLOCK_N_SIZE}u;").unwrap();
+        writeln!(
+            &mut kernel,
+            "        if (outRow < {m_size} && outCol < {n_size}) {{"
+        )
+        .unwrap();
+        writeln!(
+            &mut kernel,
+            "            let outIdx = C_start + outRow * {n_size} + outCol;"
+        )
+        .unwrap();
 
-        // Move a forward by WORK_GROUP_BLOCK_K_SIZE
-        writeln!(
-            &mut kernel,
-            "a_col += {WORK_GROUP_BLOCK_K_SIZE} * {a_k_stride};"
-        )
-        .unwrap();
-        // Move b forward by WORK_GROUP_BLOCK_K_SIZE in the y direction
-        writeln!(
-            &mut kernel,
-            "b_row += {WORK_GROUP_BLOCK_K_SIZE} * {b_k_stride};"
-        )
-        .unwrap();
-
-        // Go through every row/column pair in the K dim
-        writeln!(
-            &mut kernel,
-            "for (var dot_index = 0u; dot_index < {WORK_GROUP_BLOCK_K_SIZE}; dot_index += 1u) {{"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "let tmp = {cache_b}[dot_index * {WORK_GROUP_BLOCK_N_SIZE} + thread_col];"
-        )
-        .unwrap();
-        writeln!(&mut kernel, "for (var result_index = 0u; result_index < {THREAD_BLOCK_M_SIZE}; result_index += 1u) {{").unwrap();
-        writeln!(&mut kernel, "results[result_index] = fma({cache_a}[(thread_row * {THREAD_BLOCK_M_SIZE} + result_index) * {WORK_GROUP_BLOCK_K_SIZE} + dot_index], tmp, results[result_index]);").unwrap();
-        writeln!(&mut kernel, "}}").unwrap();
-        writeln!(&mut kernel, "}}").unwrap();
-
-        writeln!(&mut kernel, "workgroupBarrier();").unwrap();
-
-        writeln!(&mut kernel, "}}").unwrap();
-
-        writeln!(
-            &mut kernel,
-            "let start_output_col = thread_col + block_col * {WORK_GROUP_BLOCK_N_SIZE};"
-        )
-        .unwrap();
-        writeln!(&mut kernel, "let start_output_row = thread_row * {THREAD_BLOCK_M_SIZE} + block_row * {WORK_GROUP_BLOCK_M_SIZE};").unwrap();
-        writeln!(&mut kernel, "for (var result_index = 0u; result_index < {THREAD_BLOCK_M_SIZE}; result_index += 1u) {{").unwrap();
-        writeln!(&mut kernel, "let output_col = start_output_col;").unwrap();
-        writeln!(
-            &mut kernel,
-            "let output_row = start_output_row + result_index;"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "if output_col < {n_size} && output_row < {m_size} {{"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "let output_index = output_row * {c_m_stride} + output_col * {c_n_stride};"
-        )
-        .unwrap();
-        write!(
-            &mut kernel,
-            "{output}[output_start_index + output_index] = "
-        )
-        .unwrap();
         let post_element_wise_functions = post_element_wise_functions
             .get_or_init(|| self.post_element_wise.add_functions(generic_kernel));
-        let result = post_element_wise_functions
-            .iter()
-            .fold("results[result_index]".to_string(), |acc, f| {
-                f.call(vec![acc])
-            });
+
+        write!(&mut kernel, "            {output}[outIdx] = ").unwrap();
+        let result = post_element_wise_functions.iter().fold(
+            format!("threadResults[resIdxM * {THREAD_BLOCK_N_SIZE}u + resIdxN]"),
+            |acc, f| f.call(vec![acc]),
+        );
         writeln!(&mut kernel, "{result};").unwrap();
-        writeln!(&mut kernel, "}}").unwrap();
+        writeln!(&mut kernel, "        }}").unwrap();
+        writeln!(&mut kernel, "    }}").unwrap();
         writeln!(&mut kernel, "}}").unwrap();
 
         generic_kernel.push_body(&kernel);
@@ -441,17 +492,17 @@ impl Operation for MatMulOperation {
 }
 
 impl<const R: usize, T: DataType> Tensor<R, T> {
-    // (..., M, K) @ (..., K, N) -> (..., M, N)
     pub fn mat_mul(&self, other: &Self) -> Self {
         self.add_mat_mul(other)
     }
 }
 
 const WORK_GROUP_BLOCK_M_SIZE: u32 = THREAD_BLOCK_M_SIZE * 4;
-const WORK_GROUP_BLOCK_N_SIZE: u32 = 16;
+const WORK_GROUP_BLOCK_N_SIZE: u32 = THREAD_BLOCK_N_SIZE * 4;
 const WORK_GROUP_BLOCK_K_SIZE: u32 = 4;
 
 const THREAD_BLOCK_M_SIZE: u32 = 4;
+const THREAD_BLOCK_N_SIZE: u32 = 4;
 
 #[cfg(test)]
 #[tokio::test]
