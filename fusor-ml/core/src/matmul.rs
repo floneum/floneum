@@ -444,7 +444,7 @@ impl Operation for MatMulOperation {
         .unwrap();
         writeln!(
             &mut kernel,
-            "            let outIdx = C_start + outRow * {n_size} + outCol;"
+            "            let outIdx = c_start_index + outRow * {n_size} + outCol;"
         )
         .unwrap();
 
