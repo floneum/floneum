@@ -196,7 +196,7 @@ impl Operation for MatMulOperation {
         writeln!(&mut kernel, "let cRow = {workgroup_index}.y;").unwrap();
         writeln!(&mut kernel, "let cCol = {workgroup_index}.x;").unwrap();
         writeln!(&mut kernel, "var block_batch = {workgroup_index}.z;").unwrap();
-        
+
         for dim in (0..self.rank()).rev().skip(2) {
             let shape = input_a.shape_binding(dim);
             writeln!(
@@ -282,24 +282,16 @@ impl Operation for MatMulOperation {
             THREAD_BLOCK_M_SIZE * THREAD_BLOCK_N_SIZE
         )
         .unwrap();
-        writeln!(
-            &mut kernel,
-            "for (var i = 0u; i < {}u; i++) {{",
-            THREAD_BLOCK_M_SIZE * THREAD_BLOCK_N_SIZE
-        )
-        .unwrap();
-        writeln!(&mut kernel, "    threadResults[i] = 0.0;").unwrap();
-        writeln!(&mut kernel, "}}").unwrap();
 
         // Register caches
         writeln!(
             &mut kernel,
-            "var regM: array<{datatype}, {THREAD_BLOCK_M_SIZE}u>;"
+            "var regM: vec{THREAD_BLOCK_M_SIZE}<{datatype}>;"
         )
         .unwrap();
         writeln!(
             &mut kernel,
-            "var regN: array<{datatype}, {THREAD_BLOCK_N_SIZE}u>;"
+            "var regN: vec{THREAD_BLOCK_N_SIZE}<{datatype}>;"
         )
         .unwrap();
 
@@ -390,35 +382,56 @@ impl Operation for MatMulOperation {
         .unwrap();
 
         // Load values into registers
+        writeln!(&mut kernel, "        let reg_m_offset = threadRow * {THREAD_BLOCK_M_SIZE}u * {WORK_GROUP_BLOCK_K_SIZE}u + dotIdx;").unwrap();
+        write!(&mut kernel, "            regM = vec{THREAD_BLOCK_M_SIZE}(").unwrap();
+        for i in 0..THREAD_BLOCK_M_SIZE {
+            if i > 0 {
+                write!(&mut kernel, ", ").unwrap();
+            }
+            write!(
+                &mut kernel,
+                "{cache_a}[reg_m_offset + {}]",
+                i * WORK_GROUP_BLOCK_K_SIZE
+            )
+            .unwrap();
+        }
+        writeln!(&mut kernel, ");").unwrap();
         writeln!(
             &mut kernel,
-            "        for (var i = 0u; i < {THREAD_BLOCK_M_SIZE}u; i++) {{"
+            "        let reg_n_offset = dotIdx * {WORK_GROUP_BLOCK_N_SIZE}u + threadCol * {THREAD_BLOCK_N_SIZE}u;"
         )
         .unwrap();
-        writeln!(&mut kernel, "            regM[i] = {cache_a}[(threadRow * {THREAD_BLOCK_M_SIZE}u + i) * {WORK_GROUP_BLOCK_K_SIZE}u + dotIdx];").unwrap();
-        writeln!(&mut kernel, "        }}").unwrap();
-        writeln!(
-            &mut kernel,
-            "        for (var i = 0u; i < {THREAD_BLOCK_N_SIZE}u; i++) {{"
-        )
-        .unwrap();
-        writeln!(&mut kernel, "            regN[i] = {cache_b}[dotIdx * {WORK_GROUP_BLOCK_N_SIZE}u + threadCol * {THREAD_BLOCK_N_SIZE}u + i];").unwrap();
-        writeln!(&mut kernel, "        }}").unwrap();
+        write!(&mut kernel, "            regN = vec{THREAD_BLOCK_N_SIZE}(").unwrap();
+        for i in 0..THREAD_BLOCK_N_SIZE {
+            if i > 0 {
+                write!(&mut kernel, ", ").unwrap();
+            }
+            write!(
+                &mut kernel,
+                "{cache_b}[reg_n_offset + {}]",
+                i
+            )
+            .unwrap();
+        }
+        writeln!(&mut kernel, ");").unwrap();
 
         // Perform outer product
-        writeln!(
-            &mut kernel,
-            "        for (var resIdxM = 0u; resIdxM < {THREAD_BLOCK_M_SIZE}u; resIdxM++) {{"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "            for (var resIdxN = 0u; resIdxN < {THREAD_BLOCK_N_SIZE}u; resIdxN++) {{"
-        )
-        .unwrap();
-        writeln!(&mut kernel, "                threadResults[resIdxM * {THREAD_BLOCK_N_SIZE}u + resIdxN] += regM[resIdxM] * regN[resIdxN];").unwrap();
-        writeln!(&mut kernel, "            }}").unwrap();
-        writeln!(&mut kernel, "        }}").unwrap();
+        for res_idx_m in 0..THREAD_BLOCK_M_SIZE {
+            writeln!(
+                &mut kernel,
+                "        let result_{res_idx_m} = regM[{}] * regN;",
+                res_idx_m
+            ).unwrap();
+            for res_idx_n in 0..THREAD_BLOCK_N_SIZE {
+                writeln!(
+                    &mut kernel,
+                    "        threadResults[{} * {THREAD_BLOCK_N_SIZE}u + {}] += result_{res_idx_m}[{}];",
+                    res_idx_m, res_idx_n, res_idx_n
+                )
+                .unwrap();
+            }
+        }
+
         writeln!(&mut kernel, "    }}").unwrap();
 
         writeln!(&mut kernel, "    workgroupBarrier();").unwrap();
