@@ -406,12 +406,7 @@ impl Operation for MatMulOperation {
             if i > 0 {
                 write!(&mut kernel, ", ").unwrap();
             }
-            write!(
-                &mut kernel,
-                "{cache_b}[reg_n_offset + {}]",
-                i
-            )
-            .unwrap();
+            write!(&mut kernel, "{cache_b}[reg_n_offset + {}]", i).unwrap();
         }
         writeln!(&mut kernel, ");").unwrap();
 
@@ -421,7 +416,8 @@ impl Operation for MatMulOperation {
                 &mut kernel,
                 "        let result_{res_idx_m} = regM[{}] * regN;",
                 res_idx_m
-            ).unwrap();
+            )
+            .unwrap();
             for res_idx_n in 0..THREAD_BLOCK_N_SIZE {
                 writeln!(
                     &mut kernel,
@@ -438,40 +434,29 @@ impl Operation for MatMulOperation {
         writeln!(&mut kernel, "}}").unwrap();
 
         // Write out the results
-        writeln!(
-            &mut kernel,
-            "for (var resIdxM = 0u; resIdxM < {THREAD_BLOCK_M_SIZE}u; resIdxM++) {{"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "    for (var resIdxN = 0u; resIdxN < {THREAD_BLOCK_N_SIZE}u; resIdxN++) {{"
-        )
-        .unwrap();
-        writeln!(&mut kernel, "        let outRow = threadRow * {THREAD_BLOCK_M_SIZE}u + resIdxM + cRow * {WORK_GROUP_BLOCK_M_SIZE}u;").unwrap();
-        writeln!(&mut kernel, "        let outCol = threadCol * {THREAD_BLOCK_N_SIZE}u + resIdxN + cCol * {WORK_GROUP_BLOCK_N_SIZE}u;").unwrap();
-        writeln!(
-            &mut kernel,
-            "        if (outRow < {m_size} && outCol < {n_size}) {{"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "            let outIdx = c_start_index + outRow * {n_size} + outCol;"
-        )
-        .unwrap();
+        writeln!(&mut kernel, "let outRowOffset = threadRow * {THREAD_BLOCK_M_SIZE}u + cRow * {WORK_GROUP_BLOCK_M_SIZE}u;").unwrap();
+        writeln!(&mut kernel, "let outColOffset = threadCol * {THREAD_BLOCK_N_SIZE}u + cCol * {WORK_GROUP_BLOCK_N_SIZE}u;").unwrap();
+        writeln!(&mut kernel, "if (outRowOffset < {m_size} && outColOffset < {n_size}) {{").unwrap();
 
-        let post_element_wise_functions = post_element_wise_functions
-            .get_or_init(|| self.post_element_wise.add_functions(generic_kernel));
+        for res_idx_m in 0..THREAD_BLOCK_M_SIZE {
+            writeln!(&mut kernel, "let outRow{res_idx_m} = min(outRowOffset + {res_idx_m}, {m_size} - 1);").unwrap();
+        }
+        for res_idx_n in 0..THREAD_BLOCK_N_SIZE {
+            writeln!(&mut kernel, "let outCol{res_idx_n} = min(outColOffset + {res_idx_n}, {n_size} - 1);").unwrap();
+        }
+        for res_idx_m in 0..THREAD_BLOCK_M_SIZE {
+            for res_idx_n in 0..THREAD_BLOCK_N_SIZE {
+                let post_element_wise_functions = post_element_wise_functions
+                    .get_or_init(|| self.post_element_wise.add_functions(generic_kernel));
 
-        write!(&mut kernel, "            {output}[outIdx] = ").unwrap();
-        let result = post_element_wise_functions.iter().fold(
-            format!("threadResults[resIdxM * {THREAD_BLOCK_N_SIZE}u + resIdxN]"),
-            |acc, f| f.call(vec![acc]),
-        );
-        writeln!(&mut kernel, "{result};").unwrap();
-        writeln!(&mut kernel, "        }}").unwrap();
-        writeln!(&mut kernel, "    }}").unwrap();
+                write!(&mut kernel, "{output}[c_start_index + outRow{res_idx_m} * {n_size} + outCol{res_idx_n}] = ").unwrap();
+                let result = post_element_wise_functions.iter().fold(
+                    format!("threadResults[(outRow{res_idx_m} - outRowOffset) * {THREAD_BLOCK_N_SIZE}u + (outCol{res_idx_n} - outColOffset)]"),
+                    |acc, f| f.call(vec![acc]),
+                );
+                writeln!(&mut kernel, "{result};").unwrap();
+            }
+        }
         writeln!(&mut kernel, "}}").unwrap();
 
         generic_kernel.push_body(&kernel);
