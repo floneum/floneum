@@ -1,7 +1,8 @@
 // usage:
 // cargo run --features metal -- --model qwen0.5b --grammar src/firstname.sl --task src/prompt
 
-use cfg::{parse::Grammar, slab_grammar::SlabGrammar, tokenizer::Tokenizer, *};
+use bumpalo::collections::vec;
+use cfg::{parse::{Grammar, Rule, Symbol}, slab_grammar::SlabGrammar, tokenizer::Tokenizer, *};
 use kalosm::language::*;
 use kalosm_llama::{Cache, EvaluationTrie, LlamaModel};
 use kalosm_sample::{
@@ -358,6 +359,57 @@ impl SynthFun {
 
         map.parser_for_term("Start", recursion_depth).unwrap()
     }
+
+    fn grammar(&self) -> Grammar<String> {
+        let mut grammar = Grammar {
+            start: "Start".to_string(),
+            rules: Vec::new(),
+        };
+
+        fn atom_to_symbol(atom: &Atom, grammar: &Vec<(String, String, Vec<SExpr>)>) -> Symbol {
+            match atom {
+                Atom::Ident(name) => {
+                    if grammar.iter().any(|(lhs, _, _)| lhs == name) {
+                        Symbol::NonTerminal(name.clone())
+                    } else {
+                        Symbol::Terminal(name.clone())
+                    }
+                },
+                Atom::String(s) => Symbol::Terminal(s.clone()),
+                Atom::Int(i) => Symbol::Terminal(i.to_string()),
+                Atom::Bool(b) => Symbol::Terminal(b.to_string()),
+            }
+        }
+
+        fn s_expr_to_symbols(sexpr: &SExpr, grammar: &Vec<(String, String, Vec<SExpr>)>) -> Vec<Symbol> {
+            match sexpr {
+                SExpr::Atom(atom) => {
+                    vec![atom_to_symbol(atom, grammar)]
+                },
+                SExpr::List(list) => {
+                    let mut symbols = Vec::new();
+                    symbols.push(Symbol::Terminal("(".to_string()));
+                    for (i, item) in list.iter().enumerate() {
+                        if i > 0 {
+                            symbols.push(Symbol::Terminal(" ".to_string()));
+                        }
+                        symbols.extend(s_expr_to_symbols(item, grammar));
+                    }
+                    symbols.push(Symbol::Terminal(")".to_string()));
+                    symbols
+                }
+            }
+        }
+
+        for (lhs, _, rhs) in &self.grammar {
+            let rhs = rhs.iter().map(|r| s_expr_to_symbols(r, &self.grammar).into()).collect();
+            grammar.rules.push(Rule {
+                lhs: lhs.clone(),
+                rhs,
+            });
+        }
+        grammar
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -647,8 +699,12 @@ async fn run() {
         })
         .map_output(|(a, _)| a)
         .boxed();
+
+    let prefix = format!(
+        "(define-fun f ({args_str}) String ",
+    );
     let parser =
-        LiteralParser::new("(define-fun f ((name String)) String ").ignore_output_then(parser);
+        LiteralParser::new(prefix.clone()).ignore_output_then(parser);
 
     let sampler = if multipass {
         SamplerChainBuilder::from([
@@ -703,7 +759,7 @@ async fn run() {
     let tokenizer = source.tokenizer.clone().unwrap();
     let cache = Cache::default();
     let tokenizer_path = cache.get(&tokenizer, |_| {}).await.unwrap();
-    let grammar = create_grammar(&tokenizer_path);
+    let grammar = create_grammar(synth_fun,&prefix,  &tokenizer_path);
     let mut llm = LlamaModel::from_builder(
         Llama::builder().with_source(source),
         ModelLoadingProgress::multi_bar_loading_indicator(),
@@ -875,44 +931,6 @@ async fn run() {
     })
     .await
     .unwrap();
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct MaxLengthParser<P: SendCreateParserState> {
-    parser: P,
-    max_length: usize,
-}
-
-impl<P: SendCreateParserState> MaxLengthParser<P> {
-    fn new(parser: P, max_length: usize) -> Self {
-        Self { parser, max_length }
-    }
-}
-
-impl<P: SendCreateParserState> Parser for MaxLengthParser<P> {
-    type Output = P::Output;
-    type PartialState = (P::PartialState, usize);
-
-    fn parse<'a>(
-        &self,
-        state: &Self::PartialState,
-        input: &'a [u8],
-    ) -> ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
-        let (partial_state, length) = state;
-        let new_length = length + input.len();
-        if new_length >= self.max_length {
-            return Err(ParserError::msg("Max length exceeded"));
-        }
-        let new_state = self.parser.parse(partial_state, input)?;
-        let new_state = new_state.map_state(|s| (s, new_length));
-        Ok(new_state)
-    }
-}
-
-impl<P: SendCreateParserState> CreateParserState for MaxLengthParser<P> {
-    fn create_parser_state(&self) -> Self::PartialState {
-        (self.parser.create_parser_state(), 0)
-    }
 }
 
 #[derive(Clone)]
@@ -1193,18 +1211,18 @@ impl<T: Clone> CreateParserState for SuccessParser<T> {
     fn create_parser_state(&self) -> Self::PartialState {}
 }
 
-fn create_grammar(path: &Path) -> Grammar<u32> {
+fn create_grammar(synth_fun: SynthFun, prefix: &str, path: &Path) -> Grammar<u32> {
     println!("path: {}", path.display());
     let tokenizer = Tokenizer::load_tokenizer(path);
 
-    let grammar = parse::Grammar::parse(
-        r#"Start -> starty
-starty -> '(define-fun f ((name String)) String ' ntString
-ntString -> 'name' | '" "' | '(' 'str.++' ' ' ntString ' ' ntString ')' | '(' 'str.replace' ' ' ntString ' ' ntString ' ' ntString ')' | '(' 'str.at' ' ' ntString ' ' ntInt ')' | '(' 'int.to.str' ' ' ntInt ')' | '(' 'str.substr' ' ' ntString ' ' ntInt ' ' ntInt ')'
-ntInt -> '0' | '1' | '2' | '(' '+' ' ' ntInt ' ' ntInt ')' | '(' '-' ' ' ntInt ' ' ntInt ')' | '(' 'str.len' ' ' ntString ')' | '(' 'str.to.int' ' ' ntString ')' | '(' 'str.indexof' ' ' ntString ' ' ntString ' ' ntInt ')'
-ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | '(' 'str.suffixof' ' ' ntString ' ' ntString ')' | '(' 'str.contains' ' ' ntString ' ' ntString ')'"#,
-    )
-    .unwrap();
+let mut grammar = synth_fun.grammar();
+let new_start = "NewStart".to_string();
+grammar.rules.push(Rule {
+        lhs: new_start.clone(),
+        rhs: vec![vec![Symbol::Terminal(prefix.to_string()),
+                     Symbol::NonTerminal("Start".to_string())].into()],
+    });
+    grammar.start = new_start;
 
     let mut grammar = grammar.split_terminals();
     println!("Converting grammar to CNF...");
