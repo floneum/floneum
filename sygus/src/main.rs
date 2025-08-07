@@ -779,16 +779,6 @@ async fn run() {
         let mut session = llm.new_session();
         let bump = bumpalo::Bump::new();
         let grammar = grammar.reallocate(&bump);
-        let should_recognize: &[&str] = &[
-            "(define-fun f ((name String)) String name",
-            "(define-fun f ((name String)) String (str.++ name name)",
-        ];
-        for pattern in should_recognize {
-            let tokens = llm.tokenizer.encode_fast(*pattern, false).unwrap();
-            println!("Checking pattern: {pattern}");
-            println!("Tokens: {:?}", tokens);
-            assert!(grammar.recognizes_tokens(tokens.get_ids().iter().copied()));
-        }
         let prompt = if model.qwen_normal() || model.smol_lm() {
             format!("<|im_start|>system\n{prompt}<|im_end|>\n<|im_start|>user\nQuestion:\n{task}<|im_end|>\n")
         } else if model.llama() {

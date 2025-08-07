@@ -59,9 +59,9 @@ GRAMMARS=(
 TASK="./src/prompt"
 ITERATIONS=50
 
-for grammar in "${GRAMMARS[@]}"; do
+for model in "${models[@]}"; do
+  for grammar in "${GRAMMARS[@]}"; do
   echo "Using grammar: ${grammar}"
-  for model in "${models[@]}"; do
     for fast in "${fast_cases[@]}"; do
       combo_tag="fast-${fast}"
       echo "=== Running model: ${model} (${combo_tag}) ==="
