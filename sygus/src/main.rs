@@ -763,7 +763,7 @@ async fn run() {
     let tokenizer = source.tokenizer.clone().unwrap();
     let cache = Cache::default();
     let tokenizer_path = cache.get(&tokenizer, |_| {}).await.unwrap();
-    let grammar = create_grammar(synth_fun, &prefix, &tokenizer_path);
+    let grammar = create_grammar(synth_fun, &prefix, &tokenizer_path, !args.fast_case);
     let mut llm = LlamaModel::from_builder(
         Llama::builder().with_source(source),
         ModelLoadingProgress::multi_bar_loading_indicator(),
@@ -874,7 +874,7 @@ async fn run() {
                 &mut session,
                 &new_text,
                 sampler.clone(),
-                args.fast_case.then_some(&grammar),
+                Some(&grammar),
                 &parser,
                 {
                     let all_tokens = all_tokens.clone();
@@ -1213,7 +1213,7 @@ impl<T: Clone> CreateParserState for SuccessParser<T> {
     fn create_parser_state(&self) -> Self::PartialState {}
 }
 
-fn create_grammar(synth_fun: SynthFun, prefix: &str, path: &Path) -> Grammar<u32> {
+fn create_grammar(synth_fun: SynthFun, prefix: &str, path: &Path, force_correct_tokenization: bool) -> Grammar<u32> {
     println!("path: {}", path.display());
     let tokenizer = Tokenizer::load_tokenizer(path);
 
@@ -1247,7 +1247,7 @@ fn create_grammar(synth_fun: SynthFun, prefix: &str, path: &Path) -> Grammar<u32
             String::from_utf8_lossy(&tokenizer.inverse_vocab[&merge.pair[1]]),
             String::from_utf8_lossy(&tokenizer.inverse_vocab[&merge.new_token])
         );
-        let changed = grammar.shortcut_merge(merge);
+        let changed = grammar.shortcut_merge(merge, force_correct_tokenization);
         if changed {
             grammar.garbage_collect_non_terminals();
             grammar.deduplicate_non_terminals();

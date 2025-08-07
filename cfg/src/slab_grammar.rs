@@ -34,7 +34,13 @@ impl State {
         matches!(self, State::Start)
     }
 
-    fn reachable_states(&self, merge: &Merge, token: u32, mut f: impl FnMut(State, Option<u32>)) {
+    fn reachable_states(
+        &self,
+        merge: &Merge,
+        token: u32,
+        mut f: impl FnMut(State, Option<u32>),
+        allow_incorrect: bool,
+    ) {
         match self {
             State::Start => {
                 if token == merge.pair[0] {
@@ -45,7 +51,7 @@ impl State {
                 }
             }
             State::AfterFirstToken => {
-                if token != merge.pair[1] {
+                if token != merge.pair[1] || allow_incorrect {
                     if token == merge.pair[0] {
                         f(State::AfterFirstToken, Some(token));
                         f(State::AfterMergedToken, Some(merge.new_token));
@@ -137,7 +143,7 @@ impl SlabGrammar {
     // a -> b
     // b -> b1 | c | 2
     // c -> b
-    pub fn shortcut_merge(&mut self, merge: &Merge) -> bool {
+    pub fn shortcut_merge(&mut self, merge: &Merge, allow_incorrect: bool) -> bool {
         // If neither of the pair tokens are present in the grammar, we can skip the merge
         if !self.terminals_present.contains(&merge.pair[0])
             || !self.terminals_present.contains(&merge.pair[1])
@@ -229,6 +235,7 @@ impl SlabGrammar {
                                             |next_state, _| {
                                                 new_states |= next_state.to_bitset();
                                             },
+                                            allow_incorrect,
                                         );
                                     }
                                     current_states = new_states;
@@ -368,14 +375,19 @@ impl SlabGrammar {
                             }
                             Symbol::Terminal(token) => {
                                 if possible_rules.is_empty() {
-                                    start.reachable_states(merge, *token, |next_state, token| {
-                                        let new_symbols = if let Some(token) = token {
-                                            vec![Symbol::Terminal(token)]
-                                        } else {
-                                            vec![Symbol::Epsilon]
-                                        };
-                                        possible_rules.push((next_state, new_symbols));
-                                    });
+                                    start.reachable_states(
+                                        merge,
+                                        *token,
+                                        |next_state, token| {
+                                            let new_symbols = if let Some(token) = token {
+                                                vec![Symbol::Terminal(token)]
+                                            } else {
+                                                vec![Symbol::Epsilon]
+                                            };
+                                            possible_rules.push((next_state, new_symbols));
+                                        },
+                                        allow_incorrect,
+                                    );
                                 } else {
                                     possible_rules = possible_rules
                                         .into_iter()
@@ -393,6 +405,7 @@ impl SlabGrammar {
                                                     }
                                                     new.push((next_state, new_symbols));
                                                 },
+                                                allow_incorrect,
                                             );
                                             new
                                         })
@@ -551,7 +564,12 @@ impl SlabGrammar {
                 let &[(parent, index)] = uses.as_slice() else {
                     continue;
                 };
-                if self.rules[*nt as usize].rhs.len() != 1 {
+                let rhs = &self.rules[*nt as usize].rhs;
+                let [rhs] = rhs.as_slice() else {
+                    continue;
+                };
+                if rhs.contains(&Symbol::NonTerminal(*nt)) {
+                    // If the non-terminal contains itself, we cannot inline it
                     continue;
                 }
                 let rule = self.rules.remove(*nt as usize);
@@ -663,14 +681,17 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     let grammar = grammar.replace_tokenizer_terminals(&tokenizer);
     println!("start rule count: {}", grammar.rules.len());
     let mut grammar = SlabGrammar::new(&grammar);
-    grammar.shortcut_merge(&Merge {
-        rank: 0,
-        pair: [
-            tokenizer.bytes[b't' as usize],
-            tokenizer.bytes[b'o' as usize],
-        ],
-        new_token: 10_000,
-    });
+    grammar.shortcut_merge(
+        &Merge {
+            rank: 0,
+            pair: [
+                tokenizer.bytes[b't' as usize],
+                tokenizer.bytes[b'o' as usize],
+            ],
+            new_token: 10_000,
+        },
+        false,
+    );
     grammar.garbage_collect_non_terminals();
     let grammar = grammar.to_grammar();
     println!("CNF grammar:\n{}", grammar);

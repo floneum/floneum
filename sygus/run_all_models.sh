@@ -22,7 +22,7 @@ models=(
 )
 
 # Flag combinations
-fast_cases=(true false)
+fast_cases=(false true)
 
 # Common args
 FEATURES="metal"

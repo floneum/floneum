@@ -13,12 +13,15 @@ fn main() {
     let test = std::env::var("TEST").is_ok();
     let force_test = std::env::var("FORCE_TEST").is_ok();
     let without_cnf = std::env::var("WITHOUT_CNF").is_ok();
+    let allow_incorrect = std::env::var("ALLOW_INCORRECT").is_ok();
 
     let tokenizer = Tokenizer::load_tokenizer("tokenizer.json");
 
     let grammar = parse::Grammar::parse(
         r#"Start -> ntString
-ntString -> 'name' | '" "' | '(' 'str.++' ' ' ntString ' ' ntString ')'"#,
+ntString -> 'name' | '" "' | '(' 'str.++' ' ' ntString ' ' ntString ')' | '(' 'str.replace' ' ' ntString ' ' ntString ' ' ntString ')' | '(' 'str.at' ' ' ntString ' ' ntInt ')' | '(' 'int.to.str' ' ' ntInt ')' | '(' 'str.substr' ' ' ntString ' ' ntInt ' ' ntInt ')'
+ntInt -> '0' | '1' | '2' | '(' '+' ' ' ntInt ' ' ntInt ')' | '(' '-' ' ' ntInt ' ' ntInt ')' | '(' 'str.len' ' ' ntString ')' | '(' 'str.to.int' ' ' ntString ')' | '(' 'str.indexof' ' ' ntString ' ' ntString ' ' ntInt ')'
+ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | '(' 'str.suffixof' ' ' ntString ' ' ntString ')' | '(' 'str.contains' ' ' ntString ' ' ntString ')'"#,
     )
     .unwrap();
 
@@ -55,7 +58,7 @@ ntString -> 'name' | '" "' | '(' 'str.++' ' ' ntString ' ' ntString ')'"#,
             }
         }
         let start = std::time::Instant::now();
-        let changed = grammar.shortcut_merge(merge);
+        let changed = grammar.shortcut_merge(merge, allow_incorrect);
         processed_merges.push(merge.clone());
         if changed {
             println!("Time to merge: {:?}", start.elapsed());
@@ -106,11 +109,17 @@ ntString -> 'name' | '" "' | '(' 'str.++' ' ' ntString ' ' ntString ')'"#,
                     )
                 );
             }
-            run_test(grammar, &tokenizer, &processed_merges, &bump);
+            run_test(
+                grammar,
+                &tokenizer,
+                &processed_merges,
+                &bump,
+                allow_incorrect,
+            );
         }
     }
 
-    grammar.inline_optimize();
+    // grammar.inline_optimize();
     let grammar = grammar.to_grammar();
     println!(
         "grammar:\n{}",
@@ -120,7 +129,13 @@ ntString -> 'name' | '" "' | '(' 'str.++' ' ' ntString ' ' ntString ')'"#,
         )
     );
     println!("🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉");
-    run_test(grammar, &tokenizer, &processed_merges, &bump);
+    run_test(
+        grammar,
+        &tokenizer,
+        &processed_merges,
+        &bump,
+        allow_incorrect,
+    );
 }
 
 fn run_test(
@@ -128,6 +143,7 @@ fn run_test(
     tokenizer: &Tokenizer,
     processed_merges: &[Merge],
     bump: &bumpalo::Bump,
+    allow_incorrect: bool,
 ) {
     let test_time = std::time::Instant::now();
     let dense_grammar = grammar.reallocate(&bump);
@@ -138,7 +154,7 @@ fn run_test(
         br#"name"#,
         br#"" ""#,
         br#"(str.++ name " ")"#,
-        br#"(str.++ (str.++ name " ") name)"#
+        br#"(str.++ (str.++ name " ") name)"#,
     ];
     for input in should_recognize {
         let mut passing = true;
@@ -162,10 +178,14 @@ fn run_test(
             if new != tokenized {
                 // If the new tokenized version is different, we have a merge
                 // Make sure the incorrectly tokenized version is not recognized
-                let pass = !dense_grammar.recognizes_tokens(tokenized.iter().copied());
-                if !pass{
-                eprintln!("recognized incorrectly tokenized version {:?}", String::from_utf8_lossy(input));
-                passing = false;}
+                let recognizes = dense_grammar.recognizes_tokens(tokenized.iter().copied());
+                if recognizes != allow_incorrect {
+                    eprintln!(
+                        "recognized incorrectly tokenized version {:?}",
+                        String::from_utf8_lossy(input)
+                    );
+                    passing = false;
+                }
             }
             tokenized = new;
         }
