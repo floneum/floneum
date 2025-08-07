@@ -763,7 +763,7 @@ async fn run() {
     let tokenizer = source.tokenizer.clone().unwrap();
     let cache = Cache::default();
     let tokenizer_path = cache.get(&tokenizer, |_| {}).await.unwrap();
-    let grammar = create_grammar(synth_fun, &prefix, &tokenizer_path, !args.fast_case);
+    let grammar = create_grammar(synth_fun, &prefix, &tokenizer_path, args.fast_case);
     let mut llm = LlamaModel::from_builder(
         Llama::builder().with_source(source),
         ModelLoadingProgress::multi_bar_loading_indicator(),
@@ -878,13 +878,16 @@ async fn run() {
                     }
                 },
                 &mut trie,
-            ) ;
+            );
             let all_tokens = all_tokens.read().unwrap().clone();
 
             println!("generation {generation}:\n{all_tokens}");
             let all_token_ids = all_token_ids.read().unwrap();
             let retokenized = llm.tokenizer.encode_fast(all_tokens.as_str(), false).unwrap();
             if retokenized.get_ids() != all_token_ids.as_slice() {
+                let mismatch_index = retokenized.get_ids().iter().zip(all_token_ids.as_slice()).position(|(a, b)| a == b).unwrap();
+                println!("mismatch at index {mismatch_index}");
+                println!("tokens after incorrect tokenization {}", all_token_ids.len() - mismatch_index);
                 let retokenized_ids_as_str = retokenized.get_ids().iter().map(|id| llm.tokenizer.decode(&[*id], false)).collect::<Vec<_>>();
                 let all_token_ids_as_str = all_token_ids.iter().map(|id| llm.tokenizer.decode(&[*id], false)).collect::<Vec<_>>();
                 println!("Retokenization mismatch: {:?} != {:?}", retokenized.get_ids(), all_token_ids);
@@ -1206,6 +1209,14 @@ impl<T: Clone> CreateParserState for SuccessParser<T> {
 fn create_grammar(synth_fun: SynthFun, prefix: &str, path: &Path, force_correct_tokenization: bool) -> Grammar<u32> {
     println!("path: {}", path.display());
     let tokenizer = Tokenizer::load_tokenizer(path);
+    let huggingface_tokenizer = tokenizers::Tokenizer::from_file(path).unwrap();
+
+    let prefix_tokenized = huggingface_tokenizer.encode_fast(prefix, false).unwrap();
+    let prefix_tokenized = prefix_tokenized.get_ids();
+    let [start @ .., last] = prefix_tokenized else {
+        panic!("Prefix must have at least one token");
+    };
+    let last_as_string = huggingface_tokenizer.decode(&[*last], false).unwrap();
 
     let mut grammar = synth_fun.grammar();
     let new_start = "NewStart".to_string();
@@ -1213,7 +1224,7 @@ fn create_grammar(synth_fun: SynthFun, prefix: &str, path: &Path, force_correct_
         lhs: new_start.clone(),
         rhs: vec![
             vec![
-                Symbol::Terminal(prefix.to_string()),
+                Symbol::Terminal(last_as_string.to_string()),
                 Symbol::NonTerminal("Start".to_string()),
             ]
             .into(),
@@ -1226,6 +1237,20 @@ fn create_grammar(synth_fun: SynthFun, prefix: &str, path: &Path, force_correct_
     grammar = grammar.to_cnf().unwrap();
     let grammar = grammar.replace_tokenizer_terminals(&tokenizer);
     let mut grammar = SlabGrammar::new(&grammar);
+    let entry=  grammar.rules.vacant_entry();
+    let new_start = entry.key() as u32;
+    let old_start = grammar.start;
+    entry.insert(Rule {
+        lhs: new_start,
+        rhs: vec![
+            start.iter()
+                .map(|id| Symbol::Terminal(*id))
+                .chain(std::iter::once(Symbol::NonTerminal(old_start)))
+                .collect::<Vec<_>>()
+                .into(),
+        ],
+    });
+    grammar.start = new_start;
     grammar.garbage_collect_non_terminals();
     println!("start rule count: {}", grammar.rules.len());
     let merges = &tokenizer.merges;
@@ -1237,7 +1262,7 @@ fn create_grammar(synth_fun: SynthFun, prefix: &str, path: &Path, force_correct_
             String::from_utf8_lossy(&tokenizer.inverse_vocab[&merge.pair[1]]),
             String::from_utf8_lossy(&tokenizer.inverse_vocab[&merge.new_token])
         );
-        let changed = grammar.shortcut_merge(merge, force_correct_tokenization);
+        let changed = grammar.shortcut_merge(merge, !force_correct_tokenization);
         if changed {
             grammar.garbage_collect_non_terminals();
             grammar.deduplicate_non_terminals();

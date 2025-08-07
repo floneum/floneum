@@ -9,33 +9,33 @@ max_retries=1
 
 # List of model names to run
 models=(
-  # qwen0.5b
   qwen1.5b
-  # qwen3b
+  smol-lm
+  qwen3b
   qwen7b
-  # smol-lm
-  # llama1b
-  # llama3b
-  # llama8b
-  # qwen1.5b-think
-  # qwen7b-think
+  qwen0.5b
+  llama1b
+  llama3b
+  llama8b
+  qwen1.5b-think
+  qwen7b-think
 )
 
 # Flag combinations
-fast_cases=(false true)
+fast_cases=(true false)
 
 # Common args
 FEATURES="metal"
 GRAMMARS=(
+  name-combine
+  name-combine-2
+  name-combine-3
+  name-combine-4
   bikes
   dr-name
   firstname
   initials
   lastname
-  name-combine-2
-  name-combine-3
-  name-combine-4
-  name-combine
   phone-1
   phone-2
   phone-3
@@ -74,7 +74,7 @@ for model in "${models[@]}"; do
               --task "${TASK}" \
               --iterations "${ITERATIONS}" \
               --fast-case "${fast}" \
-              --recursion-depth 4 \
+              --recursion-depth 8 \
               > "results/${grammar}_${model}_${combo_tag}.txt" 2>&1
         then
           echo "[${model} | ${combo_tag}] succeeded on attempt #${attempt}"

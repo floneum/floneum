@@ -7919,6 +7919,7 @@ dependencies = [
  "llm-samplers",
  "lru 0.16.0",
  "nom 8.0.0",
+ "tokenizers",
  "tokio",
  "tracing-subscriber 0.3.19",
 ]
