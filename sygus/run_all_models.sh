@@ -5,7 +5,7 @@ set -euo pipefail
 mkdir -p results
 
 # Maximum number of attempts per run
-max_retries=5
+max_retries=1
 
 # List of model names to run
 models=(

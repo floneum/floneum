@@ -380,7 +380,7 @@ impl SynthFun {
                         Symbol::Terminal(name.clone())
                     }
                 }
-                Atom::String(s) => Symbol::Terminal(s.clone()),
+                Atom::String(s) => Symbol::Terminal(format!("\"{}\"", s)),
                 Atom::Int(i) => Symbol::Terminal(i.to_string()),
                 Atom::Bool(b) => Symbol::Terminal(b.to_string()),
             }

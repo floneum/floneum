@@ -39,6 +39,7 @@ serde_json = "1.0.139"
 rustc-hash = "2.1.1"
 cfg = { version = "0.1.0", path = "../../cfg" }
 bumpalo = "3.19.0"
+ahash = "0.8.12"
 
 [dev-dependencies]
 tracing-subscriber = "0.3.18"
