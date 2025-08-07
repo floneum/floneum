@@ -84,6 +84,10 @@ where
         .unwrap_or_default();
 
     let mut parser_state = cfg.map(Recognizer::new);
+    let mut possible_next = parser_state.as_mut().map(|result| {
+        result.prep_states();
+        result.possible_next_terminals()
+    });
     let mut extra_parser_state = parser.create_parser_state();
     let mut strip_required_next = true;
 
@@ -188,10 +192,9 @@ where
             let Some(text) = token_cache.get(token_id as usize) else {
                 continue;
             };
-            let state_after_push = parser_state.as_mut().map(|parser_state| parser_state.push(token_id));
-            let could_become_valid = state_after_push.as_ref().map_or(true, |state_after_push| {
-                state_after_push.could_become_valid()
-            });
+            let could_become_valid = possible_next
+                .as_ref()
+                .map_or(true, |possible_next| possible_next.contains(&token_id));
 
             if could_become_valid {
                 let result = parser.parse(&extra_parser_state, text.as_bytes());
@@ -208,8 +211,7 @@ where
                         ParseStatus::Incomplete { .. } => text.len(),
                     };
                     let result = result.without_remaining();
-                    state_map[token_id as usize] =
-                        Some((state_after_push, parser_state.clone(), result, parsed_bytes));
+                    state_map[token_id as usize] = Some((result, parsed_bytes));
                     valid_tokens = true;
                     logits.push(Logit {
                         token_id,
@@ -223,17 +225,6 @@ where
                         }
                     }
                 }
-            } else {
-                // trie.push(
-                //     token_id,
-                //     prob as f64,
-                //     current_token,
-                //     false,
-                //     false,
-                // );
-            }
-            if let Some(parser_state) = &mut parser_state {
-                parser_state.pop();
             }
         }
 
@@ -330,7 +321,7 @@ where
         }
 
         unprocessed_token_count = 1;
-        let (_, mut result, mut extra_state, _) = state_map
+        let (mut extra_state, _) = state_map
             .get_mut(token_id as usize)
             .unwrap()
             .take()
@@ -348,8 +339,11 @@ where
         }
         on_token(token, token_id)?;
 
-        if let Some(result) = result.as_mut() {
-            let mut possible_next = result.possible_next_terminals();
+        if let (Some(parser_state), Some(possible_next)) =
+            (parser_state.as_mut(), possible_next.as_mut())
+        {
+            parser_state.push(token_id);
+            *possible_next = parser_state.possible_next_terminals();
             while possible_next.len() == 1 {
                 let token_id = *possible_next.iter().next().unwrap();
                 let mut token = token_stream
@@ -366,8 +360,8 @@ where
                 }
                 // println!("skipping forward with token: {}", token);
                 on_token(token, token_id)?;
-                result.push(token_id);
-                possible_next = result.possible_next_terminals();
+                parser_state.push(token_id);
+                *possible_next = parser_state.possible_next_terminals();
                 let as_str = tokenizer
                     .decode(&[token_id], false)
                     .map_err(LlamaModelError::Tokenizer)?;
@@ -390,7 +384,6 @@ where
             }
         }
 
-        parser_state = result.clone();
         match extra_state {
             ParseStatus::Finished { result, .. } => {
                 return Ok(result);
