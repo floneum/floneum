@@ -2,7 +2,12 @@
 // cargo run --features metal -- --model qwen0.5b --grammar src/firstname.sl --task src/prompt
 
 use bumpalo::collections::vec;
-use cfg::{parse::{Grammar, Rule, Symbol}, slab_grammar::SlabGrammar, tokenizer::Tokenizer, *};
+use cfg::{
+    parse::{Grammar, Rule, Symbol},
+    slab_grammar::SlabGrammar,
+    tokenizer::Tokenizer,
+    *,
+};
 use kalosm::language::*;
 use kalosm_llama::{Cache, EvaluationTrie, LlamaModel};
 use kalosm_sample::{
@@ -374,18 +379,21 @@ impl SynthFun {
                     } else {
                         Symbol::Terminal(name.clone())
                     }
-                },
+                }
                 Atom::String(s) => Symbol::Terminal(s.clone()),
                 Atom::Int(i) => Symbol::Terminal(i.to_string()),
                 Atom::Bool(b) => Symbol::Terminal(b.to_string()),
             }
         }
 
-        fn s_expr_to_symbols(sexpr: &SExpr, grammar: &Vec<(String, String, Vec<SExpr>)>) -> Vec<Symbol> {
+        fn s_expr_to_symbols(
+            sexpr: &SExpr,
+            grammar: &Vec<(String, String, Vec<SExpr>)>,
+        ) -> Vec<Symbol> {
             match sexpr {
                 SExpr::Atom(atom) => {
                     vec![atom_to_symbol(atom, grammar)]
-                },
+                }
                 SExpr::List(list) => {
                     let mut symbols = Vec::new();
                     symbols.push(Symbol::Terminal("(".to_string()));
@@ -402,7 +410,10 @@ impl SynthFun {
         }
 
         for (lhs, _, rhs) in &self.grammar {
-            let rhs = rhs.iter().map(|r| s_expr_to_symbols(r, &self.grammar).into()).collect();
+            let rhs = rhs
+                .iter()
+                .map(|r| s_expr_to_symbols(r, &self.grammar).into())
+                .collect();
             grammar.rules.push(Rule {
                 lhs: lhs.clone(),
                 rhs,
@@ -700,35 +711,28 @@ async fn run() {
         .map_output(|(a, _)| a)
         .boxed();
 
-    let prefix = format!(
-        "(define-fun f ({args_str}) String ",
-    );
-    let parser =
-        LiteralParser::new(prefix.clone()).ignore_output_then(parser);
+    let prefix = format!("(define-fun f ({args_str}) String ",);
+    let parser = LiteralParser::new(prefix.clone()).ignore_output_then(parser);
 
-    let sampler = if multipass {
-        SamplerChainBuilder::from([
-            (
-                "repetition",
-                SamplerSlot::new_static(move || Box::new(SampleRepetition::default())),
-            ),
-            (
-                "freqpresence",
-                SamplerSlot::new_static(move || Box::new(SampleFreqPresence::default().last_n(64))),
-            ),
-            (
-                "seqrepetition",
-                SamplerSlot::new_static(move || Box::<SampleSeqRepetition>::default()),
-            ),
-            (
-                "greedy",
-                SamplerSlot::new_static(move || Box::new(SampleGreedy::default())),
-            ),
-        ])
-        .into_chain()
-    } else {
-        GenerationParameters::new().sampler()
-    };
+    let sampler = SamplerChainBuilder::from([
+        (
+            "repetition",
+            SamplerSlot::new_static(move || Box::new(SampleRepetition::default())),
+        ),
+        (
+            "freqpresence",
+            SamplerSlot::new_static(move || Box::new(SampleFreqPresence::default().last_n(64))),
+        ),
+        (
+            "seqrepetition",
+            SamplerSlot::new_static(move || Box::<SampleSeqRepetition>::default()),
+        ),
+        (
+            "greedy",
+            SamplerSlot::new_static(move || Box::new(SampleGreedy::default())),
+        ),
+    ])
+    .into_chain();
     let sampler = Arc::new(Mutex::new(sampler)) as Arc<Mutex<dyn Sampler>>;
 
     let source = match model {
@@ -759,7 +763,7 @@ async fn run() {
     let tokenizer = source.tokenizer.clone().unwrap();
     let cache = Cache::default();
     let tokenizer_path = cache.get(&tokenizer, |_| {}).await.unwrap();
-    let grammar = create_grammar(synth_fun,&prefix,  &tokenizer_path);
+    let grammar = create_grammar(synth_fun, &prefix, &tokenizer_path);
     let mut llm = LlamaModel::from_builder(
         Llama::builder().with_source(source),
         ModelLoadingProgress::multi_bar_loading_indicator(),
@@ -797,7 +801,7 @@ async fn run() {
         } else if model.llama() {
             format!("<|start_header_id|>assistant<|end_header_id|>")
         } else {
-            format!("")
+            format!("\n")
         };
 
         let (tx, _rx) = tokio::sync::oneshot::channel();
@@ -907,8 +911,6 @@ async fn run() {
                 }
             };
             println!("\n\n");
-
-            
 
             let interpreter = Interpreter::new();
             let mut valid = true;
@@ -1215,12 +1217,17 @@ fn create_grammar(synth_fun: SynthFun, prefix: &str, path: &Path) -> Grammar<u32
     println!("path: {}", path.display());
     let tokenizer = Tokenizer::load_tokenizer(path);
 
-let mut grammar = synth_fun.grammar();
-let new_start = "NewStart".to_string();
-grammar.rules.push(Rule {
+    let mut grammar = synth_fun.grammar();
+    let new_start = "NewStart".to_string();
+    grammar.rules.push(Rule {
         lhs: new_start.clone(),
-        rhs: vec![vec![Symbol::Terminal(prefix.to_string()),
-                     Symbol::NonTerminal("Start".to_string())].into()],
+        rhs: vec![
+            vec![
+                Symbol::Terminal(prefix.to_string()),
+                Symbol::NonTerminal("Start".to_string()),
+            ]
+            .into(),
+        ],
     });
     grammar.start = new_start;
 

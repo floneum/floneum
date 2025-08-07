@@ -9,16 +9,16 @@ max_retries=5
 
 # List of model names to run
 models=(
-  qwen0.5b
+  # qwen0.5b
   qwen1.5b
-  qwen3b
+  # qwen3b
   qwen7b
-  smol-lm
-  llama1b
-  llama3b
-  llama8b
-  qwen1.5b-think
-  qwen7b-think
+  # smol-lm
+  # llama1b
+  # llama3b
+  # llama8b
+  # qwen1.5b-think
+  # qwen7b-think
 )
 
 # Flag combinations
