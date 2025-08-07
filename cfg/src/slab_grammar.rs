@@ -618,11 +618,14 @@ impl SlabGrammar {
                 for symbol in rhs.iter() {
                     if let Symbol::NonTerminal(n) = symbol {
                         if let Some(symbol) = nt_to_token.get(n) {
-                            let symbol = if let Symbol::NonTerminal(nt) = symbol {
-                                nt_to_token.get(nt).cloned().unwrap_or(symbol.clone())
-                            } else {
-                                symbol.clone()
-                            };
+                            let mut symbol = symbol.clone();
+                            while let Symbol::NonTerminal(nt) = symbol {
+                                if let Some(next) = nt_to_token.get(&nt) {
+                                    symbol = next.clone();
+                                } else {
+                                    break;
+                                }
+                            }
                             if symbol != Symbol::Epsilon {
                                 new_rhs.push(symbol.clone());
                             }
@@ -659,6 +662,28 @@ impl SlabGrammar {
         Grammar {
             start: self.start,
             rules,
+        }
+    }
+
+    fn verify_integrity(&self, msg: &str) {
+        // Verify that all non-terminals exist in the rules
+        for (lhs, rules) in &self.rules {
+            assert_eq!(
+                lhs,
+                rules.lhs as usize,
+                "LHS of rule does not match its key {msg}",
+            );
+            for rhs in &rules.rhs {
+                for symbol in &**rhs {
+                    if let Symbol::NonTerminal(nt) = symbol {
+                        assert!(
+                            self.rules.contains(*nt as usize),
+                            "Non-terminal {} does not exist in the rules {msg}",
+                            nt
+                        );
+                    }
+                }
+            }
         }
     }
 }
