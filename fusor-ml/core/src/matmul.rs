@@ -302,65 +302,70 @@ impl Operation for MatMulOperation {
         )
         .unwrap();
 
-        // Load A tile into shared memory
-        writeln!(&mut kernel, "    for (var loadOffset = 0u; loadOffset < {WORK_GROUP_BLOCK_M_SIZE}u; loadOffset += strideA) {{").unwrap();
-        writeln!(&mut kernel, "        let row = innerRowA + loadOffset;").unwrap();
-        writeln!(&mut kernel, "        let col = innerColA;").unwrap();
-        writeln!(
-            &mut kernel,
-            "        if (row < {m_size} && (bkIdx + col) < {k_size}) {{"
-        )
-        .unwrap();
-
-        let pre_element_wise_functions = pre_element_wise_functions.get_or_init(|| {
+        // Unrolled shared-memory tile loads for A and B
+        let pef = pre_element_wise_functions.get_or_init(|| {
             std::array::from_fn(|i| self.pre_element_wise[i].add_functions(generic_kernel))
         });
 
-        write!(
-            &mut kernel,
-            "            {cache_a}[row * {WORK_GROUP_BLOCK_K_SIZE}u + col] = "
-        )
-        .unwrap();
-        let first_value = pre_element_wise_functions[0].iter().fold(
+        // A tile load (2 iterations unrolled)
+        writeln!(&mut kernel, "    {{ // A loadOffset = 0").unwrap();
+        writeln!(&mut kernel, "        let row = innerRowA + 0u;").unwrap();
+        writeln!(&mut kernel, "        let col = innerColA;").unwrap();
+        writeln!(&mut kernel, "        if (row < {m_size} && (bkIdx + col) < {k_size}) {{").unwrap();
+        write!(&mut kernel, "            {cache_a}[row * {WORK_GROUP_BLOCK_K_SIZE}u + col] = ").unwrap();
+        let first_value0 = pef[0].iter().fold(
             format!("{input_a}[A_offset + row * {k_size} + col]"),
             |acc, f| f.call(vec![acc]),
         );
-        writeln!(&mut kernel, "{first_value};").unwrap();
+        writeln!(&mut kernel, "{first_value0};").unwrap();
         writeln!(&mut kernel, "        }} else {{").unwrap();
-        writeln!(
-            &mut kernel,
-            "            {cache_a}[row * {WORK_GROUP_BLOCK_K_SIZE}u + col] = 0.0;"
-        )
-        .unwrap();
+        writeln!(&mut kernel, "            {cache_a}[row * {WORK_GROUP_BLOCK_K_SIZE}u + col] = 0.0;").unwrap();
         writeln!(&mut kernel, "        }}").unwrap();
         writeln!(&mut kernel, "    }}").unwrap();
 
-        // Load B tile into shared memory
-        writeln!(&mut kernel, "    for (var loadOffset = 0u; loadOffset < {WORK_GROUP_BLOCK_K_SIZE}u; loadOffset += strideB) {{").unwrap();
-        writeln!(&mut kernel, "        let row = innerRowB + loadOffset;").unwrap();
-        writeln!(&mut kernel, "        let col = innerColB;").unwrap();
-        writeln!(
-            &mut kernel,
-            "        if ((bkIdx + row) < {k_size} && col < {n_size}) {{"
-        )
-        .unwrap();
+        writeln!(&mut kernel, "    {{ // A loadOffset = strideA (compile-time: {WORK_GROUP_BLOCK_M_SIZE}u / (numThreadsBlocktile / {WORK_GROUP_BLOCK_K_SIZE}u))").unwrap();
+        writeln!(&mut kernel, "        let row = innerRowA + (numThreadsBlocktile / {WORK_GROUP_BLOCK_K_SIZE}u);").unwrap();
+        writeln!(&mut kernel, "        let col = innerColA;").unwrap();
+        writeln!(&mut kernel, "        if (row < {m_size} && (bkIdx + col) < {k_size}) {{").unwrap();
+        write!(&mut kernel, "            {cache_a}[row * {WORK_GROUP_BLOCK_K_SIZE}u + col] = ").unwrap();
+        let first_value1 = pef[0].iter().fold(
+            format!("{input_a}[A_offset + row * {k_size} + col]"),
+            |acc, f| f.call(vec![acc]),
+        );
+        writeln!(&mut kernel, "{first_value1};").unwrap();
+        writeln!(&mut kernel, "        }} else {{").unwrap();
+        writeln!(&mut kernel, "            {cache_a}[row * {WORK_GROUP_BLOCK_K_SIZE}u + col] = 0.0;").unwrap();
+        writeln!(&mut kernel, "        }}").unwrap();
+        writeln!(&mut kernel, "    }}").unwrap();
 
-        write!(
-            &mut kernel,
-            "            {cache_b}[row * {WORK_GROUP_BLOCK_N_SIZE}u + col] = "
-        )
-        .unwrap();
-        let second_value = pre_element_wise_functions[1].iter().fold(
+        // B tile load (2 iterations unrolled)
+        writeln!(&mut kernel, "    {{ // B loadOffset = 0").unwrap();
+        writeln!(&mut kernel, "        let row = innerRowB + 0u;").unwrap();
+        writeln!(&mut kernel, "        let col = innerColB;").unwrap();
+        writeln!(&mut kernel, "        if ((bkIdx + row) < {k_size} && col < {n_size}) {{").unwrap();
+        write!(&mut kernel, "            {cache_b}[row * {WORK_GROUP_BLOCK_N_SIZE}u + col] = ").unwrap();
+        let second_value0 = pef[1].iter().fold(
             format!("{input_b}[B_offset + row * {n_size} + col]"),
             |acc, f| f.call(vec![acc]),
         );
-        writeln!(&mut kernel, "{second_value};").unwrap();
+        writeln!(&mut kernel, "{second_value0};").unwrap();
         writeln!(&mut kernel, "        }} else {{").unwrap();
-        writeln!(
-            &mut kernel,
-            "            {cache_b}[row * {WORK_GROUP_BLOCK_N_SIZE}u + col] = 0.0;"
-        )
-        .unwrap();
+        writeln!(&mut kernel, "            {cache_b}[row * {WORK_GROUP_BLOCK_N_SIZE}u + col] = 0.0;").unwrap();
+        writeln!(&mut kernel, "        }}").unwrap();
+        writeln!(&mut kernel, "    }}").unwrap();
+
+        writeln!(&mut kernel, "    {{ // B loadOffset = strideB (compile-time: numThreadsBlocktile / {WORK_GROUP_BLOCK_N_SIZE}u)").unwrap();
+        writeln!(&mut kernel, "        let row = innerRowB + (numThreadsBlocktile / {WORK_GROUP_BLOCK_N_SIZE}u);").unwrap();
+        writeln!(&mut kernel, "        let col = innerColB;").unwrap();
+        writeln!(&mut kernel, "        if ((bkIdx + row) < {k_size} && col < {n_size}) {{").unwrap();
+        write!(&mut kernel, "            {cache_b}[row * {WORK_GROUP_BLOCK_N_SIZE}u + col] = ").unwrap();
+        let second_value1 = pef[1].iter().fold(
+            format!("{input_b}[B_offset + row * {n_size} + col]"),
+            |acc, f| f.call(vec![acc]),
+        );
+        writeln!(&mut kernel, "{second_value1};").unwrap();
+        writeln!(&mut kernel, "        }} else {{").unwrap();
+        writeln!(&mut kernel, "            {cache_b}[row * {WORK_GROUP_BLOCK_N_SIZE}u + col] = 0.0;").unwrap();
         writeln!(&mut kernel, "        }}").unwrap();
         writeln!(&mut kernel, "    }}").unwrap();
 
