@@ -40,6 +40,7 @@ candle-core = { workspace = true }
 candle-nn = { workspace = true }
 kalosm-common.workspace = true
 kalosm-model-types.workspace = true
+naga = { version = "22.1.0", features = ["wgsl-in", "msl-out"] }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 candle-core = { workspace = true, features = ["metal"] }
