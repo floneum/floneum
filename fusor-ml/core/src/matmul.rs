@@ -526,7 +526,7 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
     }
 }
 
-const WORK_GROUP_BLOCK_M_SIZE: u32 = THREAD_BLOCK_M_SIZE * 8;
+const WORK_GROUP_BLOCK_M_SIZE: u32 = THREAD_BLOCK_M_SIZE * 16;
 const WORK_GROUP_BLOCK_N_SIZE: u32 = THREAD_BLOCK_N_SIZE * 8;
 const WORK_GROUP_BLOCK_K_SIZE: u32 = 8;
 
