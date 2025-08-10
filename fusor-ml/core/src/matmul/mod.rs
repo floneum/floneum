@@ -174,14 +174,11 @@ impl Operation for MatMulOperation {
             self.post_element_wise.out_datatype(),
         );
 
-        // Shared memory arrays (double-buffered with padding to avoid bank conflicts)
-        // Use prime number strides to reduce bank conflicts
-        const PADDING_A: u32 = 1; // Add padding for bank conflict avoidance
-        const PADDING_B: u32 = 1;
+        const PADDING: u32 = 1; // Add padding for bank conflict avoidance
         let cache_a_size = if DOUBLE_BUFFER {
-            2 * WORK_GROUP_BLOCK_M_SIZE * (WORK_GROUP_BLOCK_K_SIZE + PADDING_A)
+            2 * WORK_GROUP_BLOCK_M_SIZE * (WORK_GROUP_BLOCK_K_SIZE + PADDING)
         } else {
-            WORK_GROUP_BLOCK_M_SIZE * (WORK_GROUP_BLOCK_K_SIZE + PADDING_A)
+            WORK_GROUP_BLOCK_M_SIZE * (WORK_GROUP_BLOCK_K_SIZE + PADDING)
         };
         let cache_a = generic_kernel.add_global_array(
             KernelGlobalSpace::Workgroup,
@@ -189,9 +186,9 @@ impl Operation for MatMulOperation {
             cache_a_size.to_string(),
         );
         let cache_b_size = if DOUBLE_BUFFER {
-            2 * WORK_GROUP_BLOCK_N_SIZE * (WORK_GROUP_BLOCK_K_SIZE + PADDING_B)
+            2 * WORK_GROUP_BLOCK_N_SIZE * (WORK_GROUP_BLOCK_K_SIZE + PADDING)
         } else {
-            WORK_GROUP_BLOCK_N_SIZE * (WORK_GROUP_BLOCK_K_SIZE + PADDING_B)
+            WORK_GROUP_BLOCK_N_SIZE * (WORK_GROUP_BLOCK_K_SIZE + PADDING)
         };
         let cache_b = generic_kernel.add_global_array(
             KernelGlobalSpace::Workgroup,
@@ -307,13 +304,13 @@ impl Operation for MatMulOperation {
             writeln!(
                 &mut kernel,
                 "let aTileSize = {WORK_GROUP_BLOCK_M_SIZE}u * {}u;",
-                WORK_GROUP_BLOCK_K_SIZE + PADDING_A
+                WORK_GROUP_BLOCK_K_SIZE + PADDING
             )
             .unwrap();
             writeln!(
                 &mut kernel,
                 "let bTileSize = {WORK_GROUP_BLOCK_N_SIZE}u * {}u;",
-                WORK_GROUP_BLOCK_K_SIZE + PADDING_B
+                WORK_GROUP_BLOCK_K_SIZE + PADDING
             )
             .unwrap();
         }
@@ -342,36 +339,45 @@ impl Operation for MatMulOperation {
         )
         .unwrap();
         // A tile load (unrolled for optimal performance)
-        writeln!(&mut kernel, "    if (fullA) {{").unwrap();
         let pef = pre_element_wise_functions.get_or_init(|| {
             std::array::from_fn(|i| self.pre_element_wise[i].add_functions(generic_kernel))
         });
         let a_offset = if DOUBLE_BUFFER { "aBase + " } else { "" };
         let b_offset = if DOUBLE_BUFFER { "bBase + " } else { "" };
+        let write_row_column = |kernel: &mut String, i, tensor: &str| {
+            let tensor = tensor.to_uppercase();
+            writeln!(kernel, "            let row_raw = innerRow{tensor} + {i}u * (numThreadsBlocktile / {WORK_GROUP_BLOCK_K_SIZE}u);").unwrap();
+            writeln!(kernel, "            let col_raw = innerCol{tensor};").unwrap();
+        };
+        let write_back_a = |kernel: &mut String| {
+            writeln!(kernel, "            {cache_a}[{a_offset}row_raw * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING}) + col_raw] = a_val;").unwrap();
+        };
+        let write_read_a = |kernel: &mut String| {
+            writeln!(kernel, "            var a_val = ").unwrap();
+            let first_value = pef[0].iter().fold(
+                format!("{input_a}[a_start_index + a_row * {k_size} + a_col]"),
+                |acc, f| f.call(vec![acc]),
+            );
+            writeln!(kernel, "{first_value};").unwrap();
+        };
+        writeln!(&mut kernel, "    if (fullA) {{").unwrap();
         for i in 0..UNROLL_COUNT_A {
             writeln!(&mut kernel, "        {{").unwrap();
-            writeln!(&mut kernel, "            let row_raw = innerRowA + {}u * (numThreadsBlocktile / {WORK_GROUP_BLOCK_K_SIZE}u);", i).unwrap();
-            writeln!(&mut kernel, "            let col_raw = innerColA;").unwrap();
+            write_row_column(&mut kernel, i, "A");
             writeln!(
                 &mut kernel,
                 "            let a_row = cRow * {WORK_GROUP_BLOCK_M_SIZE}u + row_raw;"
             )
             .unwrap();
             writeln!(&mut kernel, "            let a_col = bkIdx + col_raw;").unwrap();
-            writeln!(&mut kernel, "            var a_val = ").unwrap();
-            let first_value_fast = pef[0].iter().fold(
-                format!("{input_a}[a_start_index + a_row * {k_size} + a_col]"),
-                |acc, f| f.call(vec![acc]),
-            );
-            writeln!(&mut kernel, "{first_value_fast};").unwrap();
-            writeln!(&mut kernel, "            {cache_a}[{a_offset}row_raw * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING_A}) + col_raw] = a_val;").unwrap();
+            write_read_a(&mut kernel);
+            write_back_a(&mut kernel);
             writeln!(&mut kernel, "        }}").unwrap();
         }
         writeln!(&mut kernel, "    }} else {{").unwrap();
         for i in 0..UNROLL_COUNT_A {
             writeln!(&mut kernel, "        {{").unwrap();
-            writeln!(&mut kernel, "            let row_raw = innerRowA + {}u * (numThreadsBlocktile / {WORK_GROUP_BLOCK_K_SIZE}u);", i).unwrap();
-            writeln!(&mut kernel, "            let col_raw = innerColA;").unwrap();
+            write_row_column(&mut kernel, i, "A");
             writeln!(
                 &mut kernel,
                 "            let a_row_global = cRow * {WORK_GROUP_BLOCK_M_SIZE}u + row_raw;"
@@ -392,30 +398,37 @@ impl Operation for MatMulOperation {
                 "            let a_col = min(a_col_global, {k_size} - 1u);"
             )
             .unwrap();
-            writeln!(&mut kernel, "            var a_val = ").unwrap();
-            let first_value = pef[0].iter().fold(
-                format!("{input_a}[a_start_index + a_row * {k_size} + a_col]"),
-                |acc, f| f.call(vec![acc]),
-            );
-            writeln!(&mut kernel, "{first_value};").unwrap();
+            write_read_a(&mut kernel);
             writeln!(&mut kernel, "            a_val = select({zero_literal}, a_val, (a_row_global < {m_size} && a_col_global < {k_size}));").unwrap();
-            writeln!(&mut kernel, "            {cache_a}[{a_offset}row_raw * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING_A}) + col_raw] = a_val;").unwrap();
+            write_back_a(&mut kernel);
             writeln!(&mut kernel, "        }}").unwrap();
         }
         writeln!(&mut kernel, "    }}").unwrap();
         // B tile load (unrolled for optimal performance)
-        writeln!(&mut kernel, "    if (fullB) {{").unwrap();
-        for i in 0..UNROLL_COUNT_B {
-            writeln!(&mut kernel, "        {{").unwrap();
-            writeln!(&mut kernel, "            let row_raw = innerRowB + {i}u * (numThreadsBlocktile / {WORK_GROUP_BLOCK_N_SIZE}u);").unwrap();
-            writeln!(&mut kernel, "            let col_raw = innerColB; let b_row = bkIdx + row_raw; let b_col = cCol * {WORK_GROUP_BLOCK_N_SIZE}u + col_raw;").unwrap();
-            writeln!(&mut kernel, "            var b_val = ").unwrap();
+        let write_back_b = |kernel: &mut String| {
+            writeln!(kernel, "            {cache_b}[{b_offset}col_raw * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING}) + row_raw] = b_val;").unwrap();
+        };
+        let write_read_b = |kernel: &mut String| {
+            writeln!(kernel, "            var b_val = ").unwrap();
             let second_value_fast = pef[1].iter().fold(
                 format!("{input_b}[b_start_index + b_row * {n_size} + b_col]"),
                 |acc, f| f.call(vec![acc]),
             );
-            writeln!(&mut kernel, "{second_value_fast};").unwrap();
-            writeln!(&mut kernel, "        {cache_b}[{b_offset}col_raw * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING_B}) + row_raw] = b_val;").unwrap();
+            writeln!(kernel, "{second_value_fast};").unwrap();
+        };
+        writeln!(&mut kernel, "    if (fullB) {{").unwrap();
+        for i in 0..UNROLL_COUNT_B {
+            writeln!(&mut kernel, "        {{").unwrap();
+            writeln!(&mut kernel, "            let row_raw = innerRowB + {i}u * (numThreadsBlocktile / {WORK_GROUP_BLOCK_N_SIZE}u);").unwrap();
+            writeln!(&mut kernel, "            let col_raw = innerColB;").unwrap();
+            writeln!(&mut kernel, "            let b_row = bkIdx + row_raw;").unwrap();
+            writeln!(
+                &mut kernel,
+                "            let b_col = cCol * {WORK_GROUP_BLOCK_N_SIZE}u + col_raw;"
+            )
+            .unwrap();
+            write_read_b(&mut kernel);
+            write_back_b(&mut kernel);
             writeln!(&mut kernel, "        }}").unwrap();
         }
         writeln!(&mut kernel, "    }} else {{").unwrap();
@@ -442,14 +455,9 @@ impl Operation for MatMulOperation {
                 "            let b_col = min(b_col_global, {n_size} - 1u);"
             )
             .unwrap();
-            writeln!(&mut kernel, "            var b_val = ").unwrap();
-            let second_value = pef[1].iter().fold(
-                format!("{input_b}[b_start_index + b_row * {n_size} + b_col]"),
-                |acc, f| f.call(vec![acc]),
-            );
-            writeln!(&mut kernel, "{second_value};").unwrap();
+            write_read_b(&mut kernel);
             writeln!(&mut kernel, "            b_val = select({zero_literal}, b_val, (b_row_global < {k_size} && b_col_global < {n_size}));").unwrap();
-            writeln!(&mut kernel, "            {cache_b}[{b_offset}col_raw * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING_B}) + row_raw] = b_val;").unwrap();
+            write_back_b(&mut kernel);
             writeln!(&mut kernel, "        }}").unwrap();
         }
         writeln!(&mut kernel, "    }}").unwrap();
@@ -472,10 +480,10 @@ impl Operation for MatMulOperation {
             "    for (var dotIdx = 0u; dotIdx < {WORK_GROUP_BLOCK_K_SIZE}u; dotIdx++) {{"
         )
         .unwrap();
-        writeln!(&mut kernel, "        let reg_m_offset = {a_offset}threadRow * {THREAD_BLOCK_M_SIZE}u * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING_A}) + dotIdx;").unwrap();
+        writeln!(&mut kernel, "        let reg_m_offset = {a_offset}threadRow * {THREAD_BLOCK_M_SIZE}u * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING}) + dotIdx;").unwrap();
 
         // Vectorized loads with padding for bank conflict avoidance
-        let stride_a = WORK_GROUP_BLOCK_K_SIZE + PADDING_A;
+        let stride_a = WORK_GROUP_BLOCK_K_SIZE + PADDING;
         write!(&mut kernel, "            regM = vec{THREAD_BLOCK_M_SIZE}(").unwrap();
         for i in 0..THREAD_BLOCK_M_SIZE {
             if i > 0 {
@@ -487,12 +495,12 @@ impl Operation for MatMulOperation {
 
         writeln!(
             &mut kernel,
-            "        let reg_n_offset = {b_offset}threadCol * {THREAD_BLOCK_N_SIZE}u * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING_B}) + dotIdx;"
+            "        let reg_n_offset = {b_offset}threadCol * {THREAD_BLOCK_N_SIZE}u * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING}) + dotIdx;"
         )
         .unwrap();
 
         // Vectorized load for N register with padding
-        let stride_b = WORK_GROUP_BLOCK_K_SIZE + PADDING_B;
+        let stride_b = WORK_GROUP_BLOCK_K_SIZE + PADDING;
         write!(&mut kernel, "            regN = vec{THREAD_BLOCK_N_SIZE}(").unwrap();
         for i in 0..THREAD_BLOCK_N_SIZE {
             if i > 0 {
@@ -514,12 +522,6 @@ impl Operation for MatMulOperation {
 
         // Interleaved accumulation with early prefetch trigger
         for res_idx_n in 0..THREAD_BLOCK_N_SIZE {
-            writeln!(
-                &mut kernel,
-                "        // Column {} accumulation with ILP",
-                res_idx_n
-            )
-            .unwrap();
             for res_idx_m in 0..THREAD_BLOCK_M_SIZE {
                 writeln!(
                     &mut kernel,
@@ -573,8 +575,7 @@ impl Operation for MatMulOperation {
         });
         for i in 0..UNROLL_COUNT_A {
             writeln!(&mut kernel, "            {{").unwrap();
-            writeln!(&mut kernel, "                let row_raw = innerRowA + {i}u * (numThreadsBlocktile / {WORK_GROUP_BLOCK_K_SIZE}u);").unwrap();
-            writeln!(&mut kernel, "                let col_raw = innerColA;").unwrap();
+            write_row_column(&mut kernel, i, "A");
             writeln!(
                 &mut kernel,
                 "                let a_row = cRow * {WORK_GROUP_BLOCK_M_SIZE}u + row_raw;"
@@ -587,14 +588,13 @@ impl Operation for MatMulOperation {
                 |acc, f| f.call(vec![acc]),
             );
             writeln!(&mut kernel, "{first_value_fast};").unwrap();
-            writeln!(&mut kernel, "                {cache_a}[{add_a_base_n}row_raw * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING_A}) + col_raw] = a_val;").unwrap();
+            writeln!(&mut kernel, "                {cache_a}[{add_a_base_n}row_raw * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING}) + col_raw] = a_val;").unwrap();
             writeln!(&mut kernel, "            }}").unwrap();
         }
         writeln!(&mut kernel, "        }} else {{").unwrap();
         for i in 0..UNROLL_COUNT_A {
             writeln!(&mut kernel, "            {{").unwrap();
-            writeln!(&mut kernel, "                let row_raw = innerRowA + {i}u * (numThreadsBlocktile / {WORK_GROUP_BLOCK_K_SIZE}u);").unwrap();
-            writeln!(&mut kernel, "                let col_raw = innerColA;").unwrap();
+            write_row_column(&mut kernel, i, "A");
             writeln!(
                 &mut kernel,
                 "                let a_row_global = cRow * {WORK_GROUP_BLOCK_M_SIZE}u + row_raw;"
@@ -622,7 +622,7 @@ impl Operation for MatMulOperation {
             );
             writeln!(&mut kernel, "{first_value};").unwrap();
             writeln!(&mut kernel, "                a_val = select({zero_literal}, a_val, (a_row_global < {m_size} && a_col_global < {k_size}));").unwrap();
-            writeln!(&mut kernel, "                {cache_a}[{add_a_base_n}row_raw * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING_A}) + col_raw] = a_val;").unwrap();
+            writeln!(&mut kernel, "                {cache_a}[{add_a_base_n}row_raw * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING}) + col_raw] = a_val;").unwrap();
             writeln!(&mut kernel, "            }}").unwrap();
         }
         writeln!(&mut kernel, "        }}").unwrap();
@@ -645,7 +645,7 @@ impl Operation for MatMulOperation {
                 |acc, f| f.call(vec![acc]),
             );
             writeln!(&mut kernel, "{second_value_fast};").unwrap();
-            writeln!(&mut kernel, "                {cache_b}[{add_b_base_n}col_raw * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING_B}) + row_raw] = b_val;").unwrap();
+            writeln!(&mut kernel, "                {cache_b}[{add_b_base_n}col_raw * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING}) + row_raw] = b_val;").unwrap();
             writeln!(&mut kernel, "            }}").unwrap();
         }
         writeln!(&mut kernel, "        }} else {{").unwrap();
@@ -680,7 +680,7 @@ impl Operation for MatMulOperation {
             );
             writeln!(&mut kernel, "{second_value};").unwrap();
             writeln!(&mut kernel, "                b_val = select({zero_literal}, b_val, (b_row_global < {k_size} && b_col_global < {n_size}));").unwrap();
-            writeln!(&mut kernel, "                {cache_b}[{add_b_base_n}col_raw * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING_B}) + row_raw] = b_val;").unwrap();
+            writeln!(&mut kernel, "                {cache_b}[{add_b_base_n}col_raw * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING}) + row_raw] = b_val;").unwrap();
             writeln!(&mut kernel, "            }}").unwrap();
         }
         writeln!(&mut kernel, "        }}").unwrap();
