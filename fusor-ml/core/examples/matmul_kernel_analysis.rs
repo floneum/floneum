@@ -1,6 +1,6 @@
 use fusor_core::*;
-use naga::front::wgsl;
 use naga::back::msl;
+use naga::front::wgsl;
 use naga::valid::ValidationFlags;
 
 #[tokio::main]
@@ -10,47 +10,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let device = Device::new().await?;
 
     // Create sample matrices for matmul
-    let data_a = [[1.0, 2.0, 3.0, 4.0],
-                  [5.0, 6.0, 7.0, 8.0],
-                  [9.0, 10.0, 11.0, 12.0],
-                  [13.0, 14.0, 15.0, 16.0]];
-    
-    let data_b = [[1.0, 0.0, 0.0, 1.0],
-                  [0.0, 1.0, 1.0, 0.0], 
-                  [1.0, 1.0, 0.0, 0.0],
-                  [0.0, 0.0, 1.0, 1.0]];
-    
+    let data_a = [
+        [1.0, 2.0, 3.0, 4.0],
+        [5.0, 6.0, 7.0, 8.0],
+        [9.0, 10.0, 11.0, 12.0],
+        [13.0, 14.0, 15.0, 16.0],
+    ];
+
+    let data_b = [
+        [1.0, 0.0, 0.0, 1.0],
+        [0.0, 1.0, 1.0, 0.0],
+        [1.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 1.0],
+    ];
+
     let tensor_a = Tensor::new(&device, &data_a);
     let tensor_b = Tensor::new(&device, &data_b);
-    
+
     println!("Performing matrix multiplication to trigger kernel generation...");
     println!("Matrix A: 4x4");
     println!("Matrix B: 4x4");
     println!("Result: 4x4");
     println!();
-    
+
     // Perform matmul which will internally generate and compile the kernel
     let result = tensor_a.mat_mul(&tensor_b);
     let _result_data = result.as_slice().await?;
-    
+
     println!("MatMul operation completed successfully!");
     println!("The kernel has been generated and executed.");
     println!();
-    
+
     // Since we can't directly access the kernel source from the public API,
     // let's manually show what the kernel would look like based on the implementation
     let kernel_source = generate_sample_kernel();
-    
+
     println!("Sample WGSL MatMul Kernel (based on the implementation):");
     println!("=======================================================");
     println!("{}", kernel_source);
-    
+
     // Now let's use wgpu's naga to translate to Metal
     println!("\nTranslating to Metal Shading Language...");
     println!("========================================");
-    
+
     translate_to_metal(&kernel_source)?;
-    
+
     Ok(())
 }
 
@@ -283,12 +287,10 @@ fn translate_to_metal(wgsl_code: &str) -> Result<(), Box<dyn std::error::Error>>
             return Ok(());
         }
     };
-    
+
     // Validate the module
-    let mut validator = naga::valid::Validator::new(
-        ValidationFlags::all(),
-        naga::valid::Capabilities::all()
-    );
+    let mut validator =
+        naga::valid::Validator::new(ValidationFlags::all(), naga::valid::Capabilities::all());
     let module_info = match validator.validate(&module) {
         Ok(info) => info,
         Err(e) => {
@@ -296,7 +298,7 @@ fn translate_to_metal(wgsl_code: &str) -> Result<(), Box<dyn std::error::Error>>
             return Ok(());
         }
     };
-    
+
     // Translate to Metal
     let options = msl::Options {
         lang_version: (3, 0),
@@ -304,7 +306,7 @@ fn translate_to_metal(wgsl_code: &str) -> Result<(), Box<dyn std::error::Error>>
         ..Default::default()
     };
     let pipeline_options = msl::PipelineOptions::default();
-    
+
     let mut output = String::new();
     let mut writer = msl::Writer::new(&mut output);
     match writer.write(&module, &module_info, &options, &pipeline_options) {
@@ -312,7 +314,7 @@ fn translate_to_metal(wgsl_code: &str) -> Result<(), Box<dyn std::error::Error>>
             println!("Metal Shading Language Translation:");
             println!("==================================");
             println!("{}", output);
-            
+
             // Analyze the Metal version for optimization insights
             println!("\nOptimization Analysis:");
             println!("=====================");
@@ -322,71 +324,89 @@ fn translate_to_metal(wgsl_code: &str) -> Result<(), Box<dyn std::error::Error>>
             eprintln!("Failed to translate to Metal: {:?}", e);
         }
     }
-    
+
     Ok(())
 }
 
 fn analyze_metal_code(metal_code: &str) {
     let lines: Vec<&str> = metal_code.lines().collect();
-    
+
     println!("Key Metal-specific optimizations observed:");
-    
+
     // Look for threadgroup memory usage
-    let threadgroup_count = lines.iter().filter(|line| line.contains("threadgroup")).count();
+    let threadgroup_count = lines
+        .iter()
+        .filter(|line| line.contains("threadgroup"))
+        .count();
     if threadgroup_count > 0 {
-        println!("- {} uses of threadgroup memory detected", threadgroup_count);
+        println!(
+            "- {} uses of threadgroup memory detected",
+            threadgroup_count
+        );
     }
-    
+
     // Look for SIMD operations
     let simd_count = lines.iter().filter(|line| line.contains("simd")).count();
     if simd_count > 0 {
         println!("- {} SIMD operations detected", simd_count);
     }
-    
+
     // Look for thread positions
-    let thread_pos_count = lines.iter().filter(|line| 
-        line.contains("thread_position_in_threadgroup") || 
-        line.contains("threadgroup_position_in_grid") ||
-        line.contains("thread_position_in_grid")
-    ).count();
+    let thread_pos_count = lines
+        .iter()
+        .filter(|line| {
+            line.contains("thread_position_in_threadgroup")
+                || line.contains("threadgroup_position_in_grid")
+                || line.contains("thread_position_in_grid")
+        })
+        .count();
     if thread_pos_count > 0 {
         println!("- {} thread position queries detected", thread_pos_count);
     }
-    
+
     // Look for barrier synchronization
-    let barrier_count = lines.iter().filter(|line| line.contains("threadgroup_barrier")).count();
+    let barrier_count = lines
+        .iter()
+        .filter(|line| line.contains("threadgroup_barrier"))
+        .count();
     if barrier_count > 0 {
         println!("- {} threadgroup barriers detected", barrier_count);
     }
-    
+
     // Look for matrix-multiply-accumulate operations
-    let fma_count = lines.iter().filter(|line| line.contains("fma") || line.contains("mad")).count();
+    let fma_count = lines
+        .iter()
+        .filter(|line| line.contains("fma") || line.contains("mad"))
+        .count();
     if fma_count > 0 {
         println!("- {} fused multiply-add operations detected", fma_count);
     }
-    
+
     // Look for vector operations
-    let vec_count = lines.iter().filter(|line| line.contains("float4") || line.contains("vec4")).count();
+    let vec_count = lines
+        .iter()
+        .filter(|line| line.contains("float4") || line.contains("vec4"))
+        .count();
     if vec_count > 0 {
         println!("- {} vector operations detected", vec_count);
     }
-    
+
     println!("\nSuggestions for WGPU optimization based on Metal translation:");
     println!("1. Memory Access Patterns:");
     println!("   - Use vectorized loads (vec4<f32>) for better memory bandwidth");
     println!("   - Ensure coalesced memory access patterns");
     println!("   - Consider memory layout transformations (row/column major)");
-    
+
     println!("2. Compute Optimizations:");
     println!("   - Leverage FMA (fused multiply-add) operations where available");
     println!("   - Use subgroup operations for cross-lane communication");
     println!("   - Optimize register usage and minimize spilling");
-    
+
     println!("3. Workgroup Optimizations:");
     println!("   - Maximize occupancy by balancing shared memory and register usage");
     println!("   - Use threadgroup barriers strategically");
     println!("   - Consider dynamic workgroup sizing based on matrix dimensions");
-    
+
     println!("4. Algorithmic Improvements:");
     println!("   - Implement register blocking for better cache reuse");
     println!("   - Use double buffering to hide memory latency");
