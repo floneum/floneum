@@ -510,7 +510,6 @@ impl Operation for MatMulOperation {
         }
         writeln!(&mut kernel, ");").unwrap();
 
-        // Pre-compute all products for better instruction scheduling
         for res_idx_m in 0..THREAD_BLOCK_M_SIZE {
             writeln!(
                 &mut kernel,
@@ -518,11 +517,7 @@ impl Operation for MatMulOperation {
                 res_idx_m
             )
             .unwrap();
-        }
-
-        // Interleaved accumulation with early prefetch trigger
-        for res_idx_n in 0..THREAD_BLOCK_N_SIZE {
-            for res_idx_m in 0..THREAD_BLOCK_M_SIZE {
+            for res_idx_n in 0..THREAD_BLOCK_N_SIZE {
                 writeln!(
                     &mut kernel,
                     "        threadResults[{} * {THREAD_BLOCK_N_SIZE}u + {}] += result_{res_idx_m}[{}];",
