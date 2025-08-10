@@ -668,8 +668,6 @@ impl GenericKernel {
         writeln!(f, "{}", self.body)?;
         writeln!(f, "}}")?;
 
-        println!("Kernel:\n{f}");
-
         Ok(())
     }
 }

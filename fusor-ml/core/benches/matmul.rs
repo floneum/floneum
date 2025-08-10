@@ -12,7 +12,7 @@ use criterion::{criterion_group, criterion_main};
 
 use criterion::async_executor::FuturesExecutor;
 
-const SIZES: [usize; 2] = [100, 1000];
+const SIZES: [usize; 4] = [128, 1024, 2048, 4096];
 
 fn matmul(c: &mut Criterion) {
     {
