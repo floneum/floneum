@@ -10,4 +10,5 @@ jobs:
       - uses: boa-dev/criterion-compare-action@v3
         with:
           cwd: "fusor-ml/core"
+          benchName: "qmatmul"
           branchName: ${{ github.base_ref }}
