@@ -1,5 +1,5 @@
 on: [pull_request]
-name: benchmark fusor
+name: benchmark fusor pull requests
 jobs:
   runBenchmark:
     if: github.event.pull_request.draft == false
@@ -10,3 +10,4 @@ jobs:
       - uses: boa-dev/criterion-compare-action@v3
         with:
           cwd: "fusor-ml"
+          branchName: ${{ github.base_ref }}
