@@ -14,13 +14,13 @@ use criterion::async_executor::FuturesExecutor;
 
 const SIZES: [[usize; 2]; 8] = [
     [128, 128],
-    [1, 128],
+    [128, 1],
     [1024, 1024],
-    [1, 1024],
+    [1024, 1],
     [2048, 2048],
-    [1, 2048],
+    [2048, 1],
     [4096, 4096],
-    [1, 4096],
+    [4096, 1],
 ];
 
 fn matmul(c: &mut Criterion) {
