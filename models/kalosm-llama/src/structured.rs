@@ -631,7 +631,6 @@ impl Default for EvaluationTrie {
 
 impl EvaluationTrie {
     pub fn new() -> Self {
-        println!("Creating new EvaluationTrie");
         Self {
             roots: Default::default(),
             nodes: Vec::new(),
@@ -639,7 +638,6 @@ impl EvaluationTrie {
     }
 
     pub fn clear(&mut self) {
-        println!("Clearing EvaluationTrie");
         self.roots.clear();
         self.nodes.clear();
     }

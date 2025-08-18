@@ -815,8 +815,7 @@ async fn run() {
                     &mut session,
                     0,
                     None,
-                    Box::new(|token| {
-                        std::io::stdout().flush().unwrap();
+                    Box::new(|_| {
                         Ok(())
                     }),
                     &tx
