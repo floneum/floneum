@@ -1,3 +1,4 @@
+use cfg::parse;
 use cfg::{DenseGrammar, Recognizer};
 use kalosm_sample::CreateParserState;
 use kalosm_sample::ParseStatus;
@@ -6,7 +7,10 @@ use llm_samplers::types::{HasSamplerResources, Sampler, SamplerError};
 use rand::SeedableRng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rustc_hash::FxHashMap;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::time::Duration;
+use std::time::Instant;
 use std::{
     fmt::{Debug, Display, Formatter},
     sync::{Arc, Mutex},
@@ -29,10 +33,37 @@ pub(crate) fn generate_structured<P>(
     top_k: Option<usize>,
     seed: Option<u64>,
     trie: &mut EvaluationTrie,
-) -> Result<P::Output, LlamaModelError>
+) -> (
+    Result<P::Output, LlamaModelError>,
+    StructuredInferenceTimingInfo,
+)
 where
     P: CreateParserState + 'static,
 {
+    let mut sampler_time = Duration::ZERO;
+    let mut constraint_time = Duration::ZERO;
+    let mut parser_time = Duration::ZERO;
+    let mut transformer_time = Duration::ZERO;
+    let mut trie_time = Duration::ZERO;
+    let start_time = Instant::now();
+
+    let metadata = |sampler_time,
+                    constraint_time,
+                    parser_time,
+                    transformer_time,
+                    trie_time,
+                    start_time: Instant| {
+        let total_time = start_time.elapsed();
+        StructuredInferenceTimingInfo {
+            sampler_time,
+            constraint_time,
+            parser_time,
+            transformer_time,
+            trie_time,
+            total_time,
+        }
+    };
+
     let eos_token = llm.model.config.stop_token_string.clone();
     let mut on_token = move |tok: String, token_id: u32| {
         if tok == eos_token {
@@ -40,16 +71,41 @@ where
         }
         on_token(tok, token_id)
     };
-    let mut session = session
-        .cache
-        .write()
-        .map_err(|err| LlamaModelError::Session(err.to_string()))?;
+    let mut session = match session.cache.write() {
+        Ok(session) => session,
+        Err(err) => {
+            return (
+                Err(LlamaModelError::Session(err.to_string())),
+                metadata(
+                    sampler_time,
+                    constraint_time,
+                    parser_time,
+                    transformer_time,
+                    trie_time,
+                    start_time,
+                ),
+            );
+        }
+    };
     let tokenizer = &llm.tokenizer;
 
     let prompt_text = prompt.to_string();
-    let prompt_tokens = tokenizer
-        .encode_fast(prompt_text, false)
-        .map_err(LlamaModelError::Tokenizer)?;
+    let prompt_tokens = match tokenizer.encode_fast(prompt_text, false) {
+        Ok(prompt_tokens) => prompt_tokens,
+        Err(err) => {
+            return (
+                Err(LlamaModelError::Tokenizer(err)),
+                metadata(
+                    sampler_time,
+                    constraint_time,
+                    parser_time,
+                    transformer_time,
+                    trie_time,
+                    start_time,
+                ),
+            );
+        }
+    };
     let mut prompt_tokens = prompt_tokens.get_ids();
 
     // Prompt healing
@@ -68,9 +124,19 @@ where
     let mut unprocessed_token_count = prompt_tokens.len();
     let mut token_stream = TokenOutputStream::new(tokenizer.clone());
     for token in prompt_tokens {
-        token_stream
-            .next_token(*token)
-            .map_err(LlamaModelError::TokenOutputStreamError)?;
+        if let Err(err) = token_stream.next_token(*token) {
+            return (
+                Err(LlamaModelError::TokenOutputStreamError(err)),
+                metadata(
+                    sampler_time,
+                    constraint_time,
+                    parser_time,
+                    transformer_time,
+                    trie_time,
+                    start_time,
+                ),
+            );
+        }
     }
 
     let remaining_prompt_text = last_token
@@ -79,16 +145,33 @@ where
                 .peek_token(token)
                 .map_err(LlamaModelError::TokenOutputStreamError)
         })
-        .transpose()?
-        .flatten()
-        .unwrap_or_default();
+        .transpose();
+    let remaining_prompt_text = match remaining_prompt_text {
+        Ok(remaining_prompt_text) => remaining_prompt_text,
+        Err(err) => {
+            return (
+                Err(err),
+                metadata(
+                    sampler_time,
+                    constraint_time,
+                    parser_time,
+                    transformer_time,
+                    trie_time,
+                    start_time,
+                ),
+            )
+        }
+    };
+    let remaining_prompt_text = remaining_prompt_text.flatten().unwrap_or_default();
 
     let mut parser_state = cfg.map(Recognizer::new);
+    let constraint_start = Instant::now();
     let mut possible_next = parser_state.as_mut().map(|result| {
         result.prep_states();
         result.possible_next_terminals()
     });
     let mut extra_parser_state = parser.create_parser_state();
+    constraint_time += constraint_start.elapsed();
     let mut strip_required_next = true;
 
     let mut rng = if let Some(seed) = seed {
@@ -106,14 +189,28 @@ where
 
     loop {
         let tokens = token_stream.tokens();
-        LlamaModel::forward(
+        let transformer_start = Instant::now();
+        if let Err(err) = LlamaModel::forward(
             &llm.model,
             &llm.device,
             &tokens[tokens.len() - unprocessed_token_count..],
             Some(&mut *session),
             &mut logit_probs,
             &llm.tokenizer,
-        )?;
+        ) {
+            return (
+                Err(err.into()),
+                metadata(
+                    sampler_time,
+                    constraint_time,
+                    parser_time,
+                    transformer_time,
+                    trie_time,
+                    start_time,
+                ),
+            );
+        };
+        transformer_time += transformer_start.elapsed();
         let resources = &mut SamplerResources {
             previous_tokens: tokens,
             rng: &mut rng,
@@ -197,15 +294,13 @@ where
                 .map_or(true, |possible_next| possible_next.contains(&token_id));
 
             if could_become_valid {
+                let parser_start = Instant::now();
                 let result = parser.parse(&extra_parser_state, text.as_bytes());
+                parser_time += parser_start.elapsed();
+                let trie_start = Instant::now();
                 trie.push(token_id, prob as f64, current_token, result.is_ok(), false);
+                trie_time += trie_start.elapsed();
                 if let Ok(result) = result {
-                    // println!(
-                    //     "Token {:?} with probability {} could become valid",
-                    //     tokenizer.id_to_token(token_id),
-                    //     prob
-                    // );
-
                     let parsed_bytes = match &result {
                         ParseStatus::Finished { remaining, .. } => text.len() - remaining.len(),
                         ParseStatus::Incomplete { .. } => text.len(),
@@ -230,14 +325,27 @@ where
 
         // If there are no valid tokens, return an error
         if !valid_tokens {
-            return Err(LlamaModelError::NoValidTokens);
+            return (
+                Err(LlamaModelError::NoValidTokens),
+                metadata(
+                    sampler_time,
+                    constraint_time,
+                    parser_time,
+                    transformer_time,
+                    trie_time,
+                    start_time,
+                ),
+            );
         }
         let token_id = {
             // softmax logits
+            let sampler_start = Instant::now();
             logits.set_softmax(false);
             logits.set_sorted(false);
             logits.ensure_softmax().unwrap();
             logits.ensure_sorted().unwrap();
+            sampler_time += sampler_start.elapsed();
+            let trie_start = Instant::now();
             for logit in &mut *logits {
                 let estimate = match current_token {
                     Some(current) => trie.nodes[current]
@@ -256,31 +364,45 @@ where
                     logit.logit = logit.prob.exp();
                 }
             }
-            // println!(
-            //     "Sum of logits: {}",
-            //     logits.iter().map(|logit| logit.logit).sum::<f32>()
-            // );
-            // println!(
-            //     "Sum of probabilities: {}",
-            //     logits.iter().map(|logit| logit.prob).sum::<f32>()
-            // );
+            trie_time += trie_start.elapsed();
+            let sampler_start = Instant::now();
             logits.retain(|logit| logit.prob > 0.0);
             logits.set_softmax(false);
             logits.ensure_softmax().unwrap();
 
             let mut sampled_logits = logits.clone();
-            let token_id = sampler
+            let token_id = match sampler
                 .sample_token(resources, &mut sampled_logits)
-                .map_err(|err| LlamaModelError::SamplerError(err.into()))?
-                .ok_or_else(|| {
-                    LlamaModelError::SamplerError(Box::new(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!(
-                            "Sampler returned None. Failed to sample token from logits: {:?}",
-                            sampled_logits
+                .map_err(|err| LlamaModelError::SamplerError(err.into()))
+                .map(|o| {
+                    o.ok_or_else(|| {
+                        LlamaModelError::SamplerError(Box::new(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            format!(
+                                "Sampler returned None. Failed to sample token from logits: {:?}",
+                                sampled_logits
+                            ),
+                        )))
+                    })
+                })
+                .flatten()
+            {
+                Ok(token_id) => token_id,
+                Err(err) => {
+                    return (
+                        Err(err),
+                        metadata(
+                            sampler_time,
+                            constraint_time,
+                            parser_time,
+                            transformer_time,
+                            trie_time,
+                            start_time,
                         ),
-                    )))
-                })?;
+                    );
+                }
+            };
+            sampler_time += sampler_start.elapsed();
 
             token_id
         };
@@ -292,19 +414,6 @@ where
                 .unwrap(),
             None => *trie.roots.get(&token_id).unwrap(),
         });
-        // println!(
-        //     "\nsampled current_token raw: {:?} with prob {}",
-        //     current_token,
-        //     logits
-        //         .iter()
-        //         .find(|logit| logit.token_id == token_id)
-        //         .unwrap()
-        //         .prob
-        // );
-        // println!(
-        //     "current_token: {:?}\n",
-        //     current_token.map(|id| tokenizer.decode(&[trie.nodes[id].token], false))
-        // );
 
         // If this and the last token would result in a valid merge, then the probability in the training data should be close
         // to zero
@@ -326,10 +435,22 @@ where
             .unwrap()
             .take()
             .unwrap_or_else(|| panic!("Token {} not found in state map", token_id));
-        let mut token = token_stream
-            .next_token(token_id)
-            .map_err(LlamaModelError::TokenOutputStreamError)?
-            .unwrap();
+        let mut token = match token_stream.next_token(token_id) {
+            Ok(token) => token.unwrap(),
+            Err(err) => {
+                return (
+                    Err(LlamaModelError::TokenOutputStreamError(err)),
+                    metadata(
+                        sampler_time,
+                        constraint_time,
+                        parser_time,
+                        transformer_time,
+                        trie_time,
+                        start_time,
+                    ),
+                );
+            }
+        };
         // If we are still loading the initial prompt, don't send that part of the text
         if strip_required_next {
             if let Some(stripped) = token.strip_prefix(&remaining_prompt_text) {
@@ -337,19 +458,45 @@ where
             }
             strip_required_next = false;
         }
-        on_token(token, token_id)?;
+        if let Err(err) = on_token(token, token_id) {
+            return (
+                Err(err),
+                metadata(
+                    sampler_time,
+                    constraint_time,
+                    parser_time,
+                    transformer_time,
+                    trie_time,
+                    start_time,
+                ),
+            );
+        }
 
         if let (Some(parser_state), Some(possible_next)) =
             (parser_state.as_mut(), possible_next.as_mut())
         {
+            let constraint_start = Instant::now();
             parser_state.push(token_id);
             *possible_next = parser_state.possible_next_terminals();
+            constraint_time += constraint_start.elapsed();
             while possible_next.len() == 1 {
                 let token_id = *possible_next.iter().next().unwrap();
-                let mut token = token_stream
-                    .next_token(token_id)
-                    .map_err(LlamaModelError::TokenOutputStreamError)?
-                    .unwrap();
+                let mut token = match token_stream.next_token(token_id) {
+                    Ok(token) => token.unwrap(),
+                    Err(err) => {
+                        return (
+                            Err(LlamaModelError::TokenOutputStreamError(err)),
+                            metadata(
+                                sampler_time,
+                                constraint_time,
+                                parser_time,
+                                transformer_time,
+                                trie_time,
+                                start_time,
+                            ),
+                        );
+                    }
+                };
                 unprocessed_token_count += 1;
                 // If we are still loading the initial prompt, don't send that part of the text
                 if strip_required_next {
@@ -358,27 +505,67 @@ where
                     }
                     strip_required_next = false;
                 }
-                // println!("skipping forward with token: {}", token);
-                on_token(token, token_id)?;
+                if let Err(err) = on_token(token, token_id) {
+                    return (
+                        Err(err),
+                        metadata(
+                            sampler_time,
+                            constraint_time,
+                            parser_time,
+                            transformer_time,
+                            trie_time,
+                            start_time,
+                        ),
+                    );
+                }
+                let constraint_start = Instant::now();
                 parser_state.push(token_id);
                 *possible_next = parser_state.possible_next_terminals();
-                let as_str = tokenizer
-                    .decode(&[token_id], false)
-                    .map_err(LlamaModelError::Tokenizer)?;
+                constraint_time += constraint_start.elapsed();
+                let as_str = match tokenizer.decode(&[token_id], false) {
+                    Ok(decoded) => decoded,
+                    Err(err) => {
+                        return (
+                            Err(LlamaModelError::Tokenizer(err)),
+                            metadata(
+                                sampler_time,
+                                constraint_time,
+                                parser_time,
+                                transformer_time,
+                                trie_time,
+                                start_time,
+                            ),
+                        );
+                    }
+                };
                 let (new_state, _) = extra_state.unwrap_incomplete();
+                let parser_start = Instant::now();
                 let result = parser.parse(&new_state, as_str.as_bytes());
+                parser_time += parser_start.elapsed();
                 // add the token to the trie
+                let trie_start = Instant::now();
                 current_token =
                     Some(trie.push(token_id as u32, 1.0, current_token, result.is_ok(), true));
+                trie_time += trie_start.elapsed();
                 match result {
                     Ok(new_state) => extra_state = new_state.without_remaining(),
                     Err(_) => {
-                        return Err(LlamaModelError::SamplerError(Box::new(
-                            std::io::Error::new(
-                                std::io::ErrorKind::Other,
-                                format!("No valid next token for {:?}", as_str,),
+                        return (
+                            Err(LlamaModelError::SamplerError(Box::new(
+                                std::io::Error::new(
+                                    std::io::ErrorKind::Other,
+                                    format!("No valid next token for {:?}", as_str,),
+                                ),
+                            ))),
+                            metadata(
+                                sampler_time,
+                                constraint_time,
+                                parser_time,
+                                transformer_time,
+                                trie_time,
+                                start_time,
                             ),
-                        )))
+                        );
                     }
                 }
             }
@@ -386,12 +573,47 @@ where
 
         match extra_state {
             ParseStatus::Finished { result, .. } => {
-                return Ok(result);
+                return (
+                    Ok(result),
+                    metadata(
+                        sampler_time,
+                        constraint_time,
+                        parser_time,
+                        transformer_time,
+                        trie_time,
+                        start_time,
+                    ),
+                )
             }
             ParseStatus::Incomplete { new_state, .. } => {
                 extra_parser_state = new_state.clone();
             }
         }
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct StructuredInferenceTimingInfo {
+    sampler_time: std::time::Duration,
+    constraint_time: std::time::Duration,
+    parser_time: std::time::Duration,
+    transformer_time: std::time::Duration,
+    trie_time: std::time::Duration,
+    total_time: std::time::Duration,
+}
+
+impl Display for StructuredInferenceTimingInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "sampler: {:?}, constraint: {:?}, parser: {:?}, transformer: {:?}, trie: {:?}, total: {:?}",
+            self.sampler_time,
+            self.constraint_time,
+            self.parser_time,
+            self.transformer_time,
+            self.trie_time,
+            self.total_time
+        )
     }
 }
 

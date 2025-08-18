@@ -12,7 +12,7 @@ use std::future::Future;
 use std::sync::{Arc, RwLock};
 
 use crate::model::LlamaModelError;
-use crate::structured::{generate_structured, EvaluationTrie};
+use crate::structured::{generate_structured, EvaluationTrie, StructuredInferenceTimingInfo};
 pub use crate::Llama;
 use crate::{
     InferenceSettings, LlamaSession, LlamaSourceError, StructuredGenerationTask, Task,
@@ -127,7 +127,10 @@ impl LlamaModel {
         extra_parser: &P,
         on_token: impl FnMut(String, u32) -> Result<(), LlamaModelError> + Send + Sync + 'static,
         trie: &mut EvaluationTrie,
-    ) -> Result<P::Output, LlamaModelError>
+    ) -> (
+        Result<P::Output, LlamaModelError>,
+        StructuredInferenceTimingInfo,
+    )
     where
         S: Sampler + 'static,
         P: CreateParserState + 'static,

@@ -440,24 +440,6 @@ impl LlamaModel {
                 &mut logit_probs,
                 &self.tokenizer,
             )?;
-            // If this and the last token would result in a valid merge, then the probability in the training data should be close
-            // to zero
-            if let Some(&last) = text_stream.tokens().last() {
-                let pair = [last, new_token];
-                let decoded = self.tokenizer.decode(&pair, false).unwrap();
-                let encoded = self
-                    .tokenizer
-                    .encode_fast(&*decoded, false)
-                    .map_err(LlamaModelError::Tokenizer)?;
-                if encoded.get_ids().len() == 1 {
-                    println!(
-                        "\nToken {:?} and {:?} should have already merged into {}\n",
-                        self.tokenizer.id_to_token(last),
-                        self.tokenizer.id_to_token(new_token),
-                        decoded
-                    );
-                }
-            }
             if new_token == stop_token {
                 tracing::trace!("Stopping on stop token");
                 break;

@@ -57,7 +57,10 @@ GRAMMARS=(
 )
 
 TASK="./src/prompt"
-ITERATIONS=50
+ITERATIONS=250
+
+
+cargo build --features "${FEATURES}" --release 
 
 for model in "${models[@]}"; do
   for grammar in "${GRAMMARS[@]}"; do
@@ -68,14 +71,14 @@ for model in "${models[@]}"; do
       attempt=1
 
       while [ $attempt -le $max_retries ]; do
-        if cargo run --features "${FEATURES}" --release -- \
+        if "../target/release/sygus" \
               --model "${model}" \
               --grammar "sygus-strings/${grammar}.sl" \
               --task "${TASK}" \
               --iterations "${ITERATIONS}" \
               --fast-case "${fast}" \
-              --recursion-depth 8 \
-              > "results/${grammar}_${model}_${combo_tag}.txt" 2>&1
+              --recursion-depth 6 \
+              > "results/${grammar}_${model}_${combo_tag}.jsonl" 2>&1
         then
           echo "[${model} | ${combo_tag}] succeeded on attempt #${attempt}"
           break

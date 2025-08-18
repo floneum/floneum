@@ -58,7 +58,7 @@ pub use source::*;
 use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::sync::Arc;
-pub use structured::EvaluationTrie;
+pub use structured::{EvaluationTrie, StructuredInferenceTimingInfo};
 use tokenizers::Tokenizer;
 
 /// A prelude of commonly used items in kalosm-llama.

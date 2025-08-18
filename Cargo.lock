@@ -7919,6 +7919,8 @@ dependencies = [
  "llm-samplers",
  "lru 0.16.0",
  "nom 8.0.0",
+ "serde",
+ "serde_json",
  "tokenizers",
  "tokio",
  "tracing-subscriber 0.3.19",

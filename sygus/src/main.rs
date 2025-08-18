@@ -1,15 +1,13 @@
 // usage:
 // cargo run --features metal -- --model qwen0.5b --grammar src/firstname.sl --task src/prompt
 
-use bumpalo::collections::vec;
 use cfg::{
     parse::{Grammar, Rule, Symbol},
     slab_grammar::SlabGrammar,
     tokenizer::Tokenizer,
-    *,
 };
 use kalosm::language::*;
-use kalosm_llama::{Cache, EvaluationTrie, LlamaModel};
+use kalosm_llama::{Cache, EvaluationTrie, LlamaModel, StructuredInferenceTimingInfo};
 use kalosm_sample::{
     ArcParser, LazyParser, LiteralParser, Parser, ParserExt, SendCreateParserState,
 };
@@ -19,6 +17,7 @@ use llm_samplers::{
     types::Sampler,
 };
 use lru::LruCache;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fmt::{Debug, Display},
@@ -632,7 +631,6 @@ async fn main() {
 
 async fn run() {
     let args = Args::parse();
-    println!("args: {:#?}", args);
     let model = args.model;
     let recursion_depth = args.recursion_depth;
     let iterations = args.iterations;
@@ -641,7 +639,6 @@ async fn run() {
     let grammar_text = std::fs::read_to_string(args.grammar).unwrap();
     let prompt = std::fs::read_to_string(args.task).unwrap();
     let parsed = parse_sygus(&grammar_text).unwrap();
-    println!("parsed: {:#?}", parsed);
     let synth_fun = parsed
         .iter()
         .find_map(|command| {
@@ -691,10 +688,8 @@ async fn run() {
                     *cached
                 } else {
                     let mut valid = true;
-                    println!("Checking constraints for expression: {result:?}");
                     for constraint in &constraints {
                         let result = interpreter.check(constraint, vars.clone(), &result);
-                        println!("  {constraint:?} => {result}");
                         valid &= result;
                     }
                     cache.put(result.clone(), valid);
@@ -796,9 +791,7 @@ async fn run() {
 
         let (tx, _rx) = tokio::sync::oneshot::channel();
         {
-            print!("{prompt}");
             if model.qwen_think() {
-                let think_start_time = std::time::Instant::now();
                 while llm._infer_inner(
                     prompt.clone(),
                     Some("</think>".to_string()),
@@ -806,19 +799,14 @@ async fn run() {
                     &mut session,
                     2048,
                     None,
-                    Box::new(|token| {
-                        print!("{}", token);
-                        std::io::stdout().flush().unwrap();
+                    Box::new(|_| {
                         Ok(())
                     }),
                     &tx
                 )
                 .is_err() {
-                    println!("Initial prompt too long, retrying");
                     session = llm.new_session();
                 }
-                let think_duration = think_start_time.elapsed();
-                println!("\nThinking took: {think_duration:?}");
             } else {
                 llm._infer_inner(
                     prompt.clone(),
@@ -828,7 +816,6 @@ async fn run() {
                     0,
                     None,
                     Box::new(|token| {
-                        print!("{}", token);
                         std::io::stdout().flush().unwrap();
                         Ok(())
                     }),
@@ -840,15 +827,7 @@ async fn run() {
         for generation in 0..iterations {
             let shannon_entropy = trie.shannon_entropy();
             let entropy_diff = last_entropy - shannon_entropy;
-            println!("entropy diff: {entropy_diff}");
-            println!("shannon entropy: {shannon_entropy}");
             last_entropy = shannon_entropy;
-            if entropy_diff.abs() < 0.0000001 {
-                println!("looks like entropy is converging?");
-                // break;
-            }
-            println!("Iteration {generation}");
-            let generation_start_time = std::time::Instant::now();
             // If we aren't doing multipass generation, reset the trie
             if !multipass {
                 trie.clear();
@@ -860,7 +839,7 @@ async fn run() {
             let all_tokens = Arc::new(RwLock::new(String::new()));
             let all_token_ids = Arc::new(RwLock::new(Vec::new()));
             let new_text =end.clone();
-            let result =  llm.generate_structured_with_trie(
+            let (result, timing) =  llm.generate_structured_with_trie(
                 &mut session,
                 &new_text,
                 sampler.clone(),
@@ -870,7 +849,6 @@ async fn run() {
                     let all_tokens = all_tokens.clone();
                     let all_token_ids = all_token_ids.clone();
                     move |token, id| {
-                        print!("{}", token);
                         all_tokens.write().unwrap().push_str(&token.to_string());
                         all_token_ids.write().unwrap().push(id);
                         std::io::stdout().flush().unwrap();
@@ -881,48 +859,37 @@ async fn run() {
             );
             let all_tokens = all_tokens.read().unwrap().clone();
 
-            println!("generation {generation}:\n{all_tokens}");
             let all_token_ids = all_token_ids.read().unwrap();
             let retokenized = llm.tokenizer.encode_fast(all_tokens.as_str(), false).unwrap();
-            if retokenized.get_ids() != all_token_ids.as_slice() {
-                let mismatch_index = retokenized.get_ids().iter().zip(all_token_ids.as_slice()).position(|(a, b)| a == b).unwrap();
-                println!("mismatch at index {mismatch_index}");
-                println!("tokens after incorrect tokenization {}", all_token_ids.len() - mismatch_index);
-                let retokenized_ids_as_str = retokenized.get_ids().iter().map(|id| llm.tokenizer.decode(&[*id], false)).collect::<Vec<_>>();
-                let all_token_ids_as_str = all_token_ids.iter().map(|id| llm.tokenizer.decode(&[*id], false)).collect::<Vec<_>>();
-                println!("Retokenization mismatch: {:?} != {:?}", retokenized.get_ids(), all_token_ids);
-                println!("Retokenization mismatch: {:?} != {:?}", retokenized_ids_as_str, all_token_ids_as_str);
-            }
-            let result =match result{
-                Ok(output) => output,
-                Err(e) => {
-                    println!("\n\n");
-                    println!("Error: {e}");
-                    let elapsed = generation_start_time.elapsed();
-                    println!("Generation took: {elapsed:?}");
-                    continue;
-                }
-            };
-            println!("\n\n");
+            let tokenization_error = retokenized.get_ids() != all_token_ids.as_slice();
 
+            let valid = if let Ok(output) = result {
             let interpreter = Interpreter::new();
             let mut valid = true;
-            println!("Checking constraints for expression: {result:?}");
             for constraint in &constraints {
-                let result = interpreter.check(constraint, vars.clone(), &result);
-                println!("  {constraint:?} => {result}");
+                let result = interpreter.check(constraint, vars.clone(), &output);
                 valid = valid && result;
             }
+            valid
+        } else {false};
+        let run = Run { generation: generation as u32,
+            metadata: timing,
+            pass: valid,
+            entropy: shannon_entropy,
+            entropy_diff: entropy_diff,
+            tokenization_error,
+            result: all_tokens,
+            tokens: all_token_ids.clone()
+        };
+
+        println!("{}", serde_json::to_string(&run).unwrap());
+
             if valid {
-                println!("Valid solution found!");
                 break;
             }
-
-            let elapsed = generation_start_time.elapsed();
-            println!("Generation took: {elapsed:?}");
         }
         let total_duration = overall_start_time.elapsed();
-        println!("Total generation took: {total_duration:?}");
+        eprintln!("Total generation took: {total_duration:?}");
     })
     .await
     .unwrap();
@@ -1206,8 +1173,12 @@ impl<T: Clone> CreateParserState for SuccessParser<T> {
     fn create_parser_state(&self) -> Self::PartialState {}
 }
 
-fn create_grammar(synth_fun: SynthFun, prefix: &str, path: &Path, force_correct_tokenization: bool) -> Grammar<u32> {
-    println!("path: {}", path.display());
+fn create_grammar(
+    synth_fun: SynthFun,
+    prefix: &str,
+    path: &Path,
+    force_correct_tokenization: bool,
+) -> Grammar<u32> {
     let tokenizer = Tokenizer::load_tokenizer(path);
     let huggingface_tokenizer = tokenizers::Tokenizer::from_file(path).unwrap();
 
@@ -1233,17 +1204,17 @@ fn create_grammar(synth_fun: SynthFun, prefix: &str, path: &Path, force_correct_
     grammar.start = new_start;
 
     let mut grammar = grammar.split_terminals();
-    println!("Converting grammar to CNF...");
     grammar = grammar.to_cnf().unwrap();
     let grammar = grammar.replace_tokenizer_terminals(&tokenizer);
     let mut grammar = SlabGrammar::new(&grammar);
-    let entry=  grammar.rules.vacant_entry();
+    let entry = grammar.rules.vacant_entry();
     let new_start = entry.key() as u32;
     let old_start = grammar.start;
     entry.insert(Rule {
         lhs: new_start,
         rhs: vec![
-            start.iter()
+            start
+                .iter()
                 .map(|id| Symbol::Terminal(*id))
                 .chain(std::iter::once(Symbol::NonTerminal(old_start)))
                 .collect::<Vec<_>>()
@@ -1252,16 +1223,9 @@ fn create_grammar(synth_fun: SynthFun, prefix: &str, path: &Path, force_correct_
     });
     grammar.start = new_start;
     grammar.garbage_collect_non_terminals();
-    println!("start rule count: {}", grammar.rules.len());
     let merges = &tokenizer.merges;
     let mut processed_merges = Vec::new();
-    for (i, merge) in merges.iter().enumerate() {
-        println!(
-            "Applying merge {i}: {:?} + {:?} = {:?}",
-            String::from_utf8_lossy(&tokenizer.inverse_vocab[&merge.pair[0]]),
-            String::from_utf8_lossy(&tokenizer.inverse_vocab[&merge.pair[1]]),
-            String::from_utf8_lossy(&tokenizer.inverse_vocab[&merge.new_token])
-        );
+    for merge in merges {
         let changed = grammar.shortcut_merge(merge, !force_correct_tokenization);
         if changed {
             grammar.garbage_collect_non_terminals();
@@ -1272,15 +1236,17 @@ fn create_grammar(synth_fun: SynthFun, prefix: &str, path: &Path, force_correct_
 
     grammar.inline_optimize();
 
-    let grammar = grammar.to_grammar();
-    println!(
-        "grammar:\n{}",
-        grammar.clone().map(
-            |r| String::from_utf8_lossy(&tokenizer.inverse_vocab[&r]).to_string(),
-            |r| r.to_string()
-        )
-    );
-    println!("🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉");
+    grammar.to_grammar()
+}
 
-    grammar
+#[derive(Serialize, Deserialize)]
+struct Run {
+    generation: u32,
+    metadata: StructuredInferenceTimingInfo,
+    pass: bool,
+    entropy: f64,
+    entropy_diff: f64,
+    tokenization_error: bool,
+    result: String,
+    tokens: Vec<u32>,
 }

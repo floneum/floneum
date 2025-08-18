@@ -148,11 +148,9 @@ impl SlabGrammar {
         if !self.terminals_present.contains(&merge.pair[0])
             || !self.terminals_present.contains(&merge.pair[1])
         {
-            println!("No tokens to merge, skipping merge");
             return false;
         }
 
-        let start_time = std::time::Instant::now();
         let mut queued = VecDeque::new();
         queued.push_back((self.start, 0));
         let mut depth = FxHashMap::default();
@@ -267,12 +265,7 @@ impl SlabGrammar {
             prev_start_states = new_start_states;
         }
 
-        println!(
-            "Time to compute reachable states: {:?}",
-            start_time.elapsed()
-        );
 
-        let start_time = std::time::Instant::now();
 
         // First transpose the map into nt -> Vec<(State, u8)>
         let non_terminal_to_states: FxHashMap<u32, SmallVec<[(State, u8); 3]>> =
@@ -447,8 +440,6 @@ impl SlabGrammar {
                 self.rules[self.start as usize].rhs = rhs;
             }
         }
-
-        println!("Time to compute transitions: {:?}", start_time.elapsed());
 
         true
     }
