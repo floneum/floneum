@@ -55,7 +55,7 @@ jobs:
     steps:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Run tests
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
