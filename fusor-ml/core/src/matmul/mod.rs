@@ -1,4 +1,6 @@
 use crate::mir::operation::Operation;
+use crate::sgemm::SgemmParams;
+use crate::sgemv::SgemvParams;
 use crate::{
     Device, ElementWiseFunctions, Tensor,
     compute_graph::AnyComputeKey,
@@ -6,8 +8,29 @@ use crate::{
     tensor::{DataType, DataTypeEnum, TensorData},
 };
 
-mod sgemm;
-mod sgemv;
+pub mod sgemm;
+pub mod sgemv;
+
+pub fn get_optimal_params(m: usize, n: usize, k: usize) -> MatMulParams {
+    match (m, n, k) {
+        (256, 256, 256) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 4, 2, 2)),
+        (512, 1, 512) => MatMulParams::Vector(SgemvParams::new(8, 4)),
+        (1024, 1, 1024) => MatMulParams::Vector(SgemvParams::new(1, 4)),
+        (512, 512, 512) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 4, 2, 2)),
+        (1024, 1024, 1024) => MatMulParams::MatMul(SgemmParams::new(true, 16, 64, 16, 2, 4)),
+        (128, 512, 256) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 4, 2, 2)),
+        (128, 128, 128) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 4, 2, 2)),
+        (256, 1024, 512) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 4, 2, 2)),
+        (64, 64, 64) => MatMulParams::MatMul(SgemmParams::new(true, 32, 32, 4, 2, 2)),
+        (256, 1, 256) => MatMulParams::Vector(SgemvParams::new(8, 1)),
+        (512, 256, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 4, 2, 2)),
+        (64, 1, 64) => MatMulParams::Vector(SgemvParams::new(4, 4)),
+        (128, 1, 128) => MatMulParams::Vector(SgemvParams::new(4, 2)),
+        // Default fallback
+        (_, 1, _) => MatMulParams::Vector(SgemvParams::default()),
+        (_, _, _) => MatMulParams::MatMul(SgemmParams::default()),
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum MatMulParams {
@@ -39,11 +62,10 @@ impl MatMulOperation {
     ) -> Self {
         // Check if this is a matrix-vector multiplication (second matrix has 1 column and first matrix has multiple rows)
         let parameters = parameters.unwrap_or_else(|| {
-            if second_shape[second_shape.len() - 1] == 1 && first_shape[first_shape.len() - 2] > 1 {
-                MatMulParams::Vector(sgemv::SgemvParams::default())
-            } else {
-                MatMulParams::MatMul(sgemm::SgemmParams::default())
-            }
+            let n = second_shape[second_shape.len() - 1];
+            let m = first_shape[first_shape.len() - 2];
+            let k = first_shape[first_shape.len() - 1];
+            get_optimal_params(m, n, k)
         });
         Self::new_with_parameters(
             datatype,

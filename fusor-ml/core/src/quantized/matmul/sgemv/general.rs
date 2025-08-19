@@ -8,10 +8,11 @@ use crate::{
     },
     quantized::matmul::{
         QMatMulOperation,
-        sgemv::{
-            SGEMV_CHUNK_SIZE, SGEMV_VECTOR_SIZE, maybe_vec_storage_index,
-            maybe_vec_storage_subgroup_add, maybe_vec_storage_type, maybe_vec_storage_type_enum,
-        },
+        sgemv::{SGEMV_CHUNK_SIZE, SGEMV_VECTOR_SIZE},
+    },
+    util::{
+        maybe_vec_storage_index, maybe_vec_storage_subgroup_add, maybe_vec_storage_type,
+        maybe_vec_storage_type_enum,
     },
 };
 use std::fmt::Write;

@@ -2,6 +2,7 @@ use std::{fmt::Write, sync::OnceLock};
 
 use crate::MatMulOperation;
 use crate::mir::globals::KernelGlobalSpace;
+use crate::util::{maybe_vec_storage_index, maybe_vec_storage_type};
 use crate::{
     Device,
     mir::{function::Function, kernel::GenericKernel},
@@ -17,8 +18,8 @@ pub(super) fn workgroup_shape_constraints(
     constraints.add_constraint(
         0,
         crate::mir::workgroup_shape::Constraint::Equals(
-            (parameters.block_m_size / parameters.thread_m_size)
-                * (parameters.block_n_size / parameters.thread_n_size),
+            (parameters.block_m_size * parameters.block_n_size)
+                / (parameters.thread_m_size * parameters.thread_n_size),
         ),
     );
     constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));
@@ -99,7 +100,11 @@ pub(super) fn build_kernel(
         cache_b_size.to_string(),
     );
 
-    assert_eq!(workgroup_shape.x(), threads_per_workgroup);
+    assert_eq!(
+        workgroup_shape.x(),
+        threads_per_workgroup,
+        "parameters {parameters:?} invalid"
+    );
 
     let datatype = matmul.datatype;
     let workgroup_index = generic_kernel.workgroup_index();
@@ -196,8 +201,10 @@ pub(super) fn build_kernel(
     };
 
     // Register caches
-    writeln!(&mut kernel, "var regM: vec{thread_m_size}<{datatype}>;").unwrap();
-    writeln!(&mut kernel, "var regN: vec{thread_n_size}<{datatype}>;").unwrap();
+    let thread_m_dtype = maybe_vec_storage_type(thread_m_size, datatype);
+    writeln!(&mut kernel, "var regM: {thread_m_dtype};").unwrap();
+    let thread_n_dtype = maybe_vec_storage_type(thread_n_size, datatype);
+    writeln!(&mut kernel, "var regN: {thread_n_dtype};").unwrap();
 
     writeln!(
         &mut kernel,
@@ -399,7 +406,7 @@ pub(super) fn build_kernel(
 
     // Vectorized loads with padding for bank conflict avoidance
     let stride_a = block_k_size + PADDING;
-    write!(&mut kernel, "            regM = vec{thread_m_size}(").unwrap();
+    write!(&mut kernel, "            regM = {thread_m_dtype}(").unwrap();
     for i in 0..thread_m_size {
         if i > 0 {
             write!(&mut kernel, ", ").unwrap();
@@ -409,14 +416,14 @@ pub(super) fn build_kernel(
     writeln!(&mut kernel, ");").unwrap();
 
     writeln!(
-            &mut kernel,
-            "        let reg_n_offset = {b_offset}threadCol * {thread_n_size}u * ({block_k_size}u + {PADDING}) + dotIdx;"
-        )
-        .unwrap();
+        &mut kernel,
+        "        let reg_n_offset = {b_offset}threadCol * {thread_n_size}u * ({block_k_size}u + {PADDING}) + dotIdx;"
+    )
+    .unwrap();
 
     // Vectorized load for N register with padding
     let stride_b = block_k_size + PADDING;
-    write!(&mut kernel, "            regN = vec{thread_n_size}(").unwrap();
+    write!(&mut kernel, "            regN = {thread_n_dtype}(").unwrap();
     for i in 0..thread_n_size {
         if i > 0 {
             write!(&mut kernel, ", ").unwrap();
@@ -426,17 +433,18 @@ pub(super) fn build_kernel(
     writeln!(&mut kernel, ");").unwrap();
 
     for res_idx_m in 0..thread_m_size {
+        let indexed_reg_m = maybe_vec_storage_index(thread_m_size, "regM", res_idx_m);
         writeln!(
             &mut kernel,
-            "        let result_{res_idx_m} = regM[{}] * regN;",
-            res_idx_m
+            "        let result_{res_idx_m} = {indexed_reg_m} * regN;"
         )
         .unwrap();
         for res_idx_n in 0..thread_n_size {
+            let indexed_result = maybe_vec_storage_index(thread_m_size, format_args!("result_{res_idx_m}"), res_idx_n);
             writeln!(
                 &mut kernel,
-                "        threadResults[{} * {thread_n_size}u + {}] += result_{res_idx_m}[{}];",
-                res_idx_m, res_idx_n, res_idx_n
+                "        threadResults[{} * {thread_n_size}u + {}] += {indexed_result};",
+                res_idx_m, res_idx_n
             )
             .unwrap();
         }
@@ -682,6 +690,25 @@ impl SgemmParams {
             thread_m_size,
             thread_n_size,
         }
+    }
+
+    pub fn double_buffer(&self) -> bool {
+        self.double_buffer
+    }
+    pub fn block_m_size(&self) -> u32 {
+        self.block_m_size
+    }
+    pub fn block_n_size(&self) -> u32 {
+        self.block_n_size
+    }
+    pub fn block_k_size(&self) -> u32 {
+        self.block_k_size
+    }
+    pub fn thread_m_size(&self) -> u32 {
+        self.thread_m_size
+    }
+    pub fn thread_n_size(&self) -> u32 {
+        self.thread_n_size
     }
 }
 

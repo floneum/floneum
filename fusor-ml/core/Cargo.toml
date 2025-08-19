@@ -23,9 +23,11 @@ thiserror.workspace = true
 parking_lot = "0.12.3"
 tracing = "0.1.41"
 lru = "0.14.0"
+tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros"], optional = true }
 
 [features]
 extra_assertions = []
+tuning = ["tokio"]
 
 [dev-dependencies]
 ndarray = "0.16.1"
@@ -72,3 +74,7 @@ harness = false
 [[bench]]
 name = "softmax"
 harness = false
+
+[[bin]]
+name = "tune_matmul_params"
+required-features = ["tuning"]

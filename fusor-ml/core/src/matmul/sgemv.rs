@@ -1,55 +1,13 @@
 use std::fmt::Write;
 
 use crate::{
-    DataTypeEnum, MatMulOperation,
     mir::{
-        globals::{ArrayType, KernelGlobalSpace, KernelGlobalType, VectorType},
-        inputs::TensorInput,
-        kernel::GenericKernel,
+        globals::KernelGlobalSpace, inputs::TensorInput, kernel::GenericKernel,
         workgroup_shape::WorkgroupShape,
-    },
+    }, util::{
+        maybe_vec_dot, maybe_vec_storage_index, maybe_vec_storage_subgroup_add, maybe_vec_storage_type, maybe_vec_storage_type_enum
+    }, MatMulOperation
 };
-
-fn maybe_vec_storage_type(size: u32, dtype: DataTypeEnum) -> String {
-    match size {
-        1 => format!("{dtype}"),
-        2..=4 => format!("vec{size}<{dtype}>"),
-        _ => format!("array<{dtype}, {size}u>"),
-    }
-}
-
-fn maybe_vec_storage_type_enum(size: u32, dtype: DataTypeEnum) -> KernelGlobalType {
-    match size {
-        1 => KernelGlobalType::Value(dtype),
-        2..=4 => KernelGlobalType::Vector(VectorType::new(size.to_string(), dtype)),
-        _ => KernelGlobalType::Array(ArrayType::new(size.to_string(), dtype)),
-    }
-}
-
-fn maybe_vec_storage_subgroup_add(size: u32, value: impl std::fmt::Display) -> String {
-    match size {
-        1..=4 => format!("subgroupAdd({value})"),
-        _ => format!(
-            "array({})",
-            (0..size)
-                .map(|i| { format!("subgroupAdd({value}[{i}])") })
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-    }
-}
-
-fn maybe_vec_storage_index(
-    size: u32,
-    value: impl std::fmt::Display,
-    index: impl std::fmt::Display,
-) -> String {
-    match size {
-        0 => unreachable!(),
-        1 => format!("{value}"),
-        2.. => format!("{value}[{index}]"),
-    }
-}
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn sgemv(
@@ -63,7 +21,7 @@ pub(crate) fn sgemv(
     // m size is always 1 for sgemv
     _m_size: &str,
     k_size: &str,
-    params: &SgemvParams
+    params: &SgemvParams,
 ) {
     let blocksize = workgroup_size.x();
     let dtype = op.datatype;
@@ -143,9 +101,10 @@ pub(crate) fn sgemv(
     .unwrap();
     writeln!(&mut kernel, "var index = base_axis_index;").unwrap();
 
+    let vec_storage = maybe_vec_storage_type(vector_size, dtype);
     writeln!(
         &mut kernel,
-        "var a_cache = array<vec{vector_size}<{dtype}>, 1>();"
+        "var a_cache = array<{vec_storage}, 1>();"
     )
     .unwrap();
 
@@ -168,7 +127,7 @@ pub(crate) fn sgemv(
         // Load vector elements into cache (from input_b)
         writeln!(
             &mut kernel,
-            "var b_cache = array<vec{vector_size}<{dtype}>, 1>();"
+            "var b_cache = array<{vec_storage}, 1>();"
         )
         .unwrap();
         writeln!(&mut kernel, "{{").unwrap();
@@ -182,7 +141,7 @@ pub(crate) fn sgemv(
                 let b_row_stride = input_b.stride_binding(op.rank() - 2);
                 writeln!(&mut kernel, "let input_b_{i} = select({dtype}(0.0), {input_b}[b_start_index + input_b_{i}_index * {b_row_stride} + 0], input_b_{i}_index < {k_size});").unwrap();
             }
-            write!(&mut kernel, "b_cache[0] = vec{vector_size}(").unwrap();
+            write!(&mut kernel, "b_cache[0] = {vec_storage}(").unwrap();
             for i in 0..vector_size {
                 if i > 0 {
                     write!(&mut kernel, ", ").unwrap();
@@ -207,7 +166,7 @@ pub(crate) fn sgemv(
                 writeln!(&mut kernel, "let input_a_{i} = select({dtype}(0.0), {input_a}[a_start_index + {row_index} * {a_row_stride} + input_a_{i}_index], input_a_{i}_index < {k_size});").unwrap();
             }
             // Then pack them into a vector and write to the cache
-            write!(&mut kernel, "a_cache[0] = vec{vector_size}(").unwrap();
+            write!(&mut kernel, "a_cache[0] = {vec_storage}(").unwrap();
             for i in 0..vector_size {
                 if i > 0 {
                     write!(&mut kernel, ", ").unwrap();
@@ -219,7 +178,8 @@ pub(crate) fn sgemv(
         writeln!(&mut kernel, "}}").unwrap();
 
         let acc_indexed = maybe_vec_storage_index(chunk_size, "acc", "offset");
-        writeln!(&mut kernel, "{acc_indexed} += dot(a_cache[0], b_cache[0]);").unwrap();
+        let dot = maybe_vec_dot(vector_size, "a_cache[0]", "b_cache[0]");
+        writeln!(&mut kernel, "{acc_indexed} += {dot};").unwrap();
 
         if chunk_size > 1 {
             writeln!(&mut kernel, "}}").unwrap();
@@ -326,7 +286,7 @@ pub(crate) fn dispatch_size(n: u32, _m: u32, batch_size: u32, params: &SgemvPara
 pub(crate) fn workgroup_shape_constraints(
     _: &MatMulOperation,
     device: &crate::Device,
-    _: &SgemvParams
+    _: &SgemvParams,
 ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
     let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
     let limits = device.wgpu_device().limits();
@@ -355,6 +315,13 @@ impl SgemvParams {
             chunk_size,
             vector_size,
         }
+    }
+
+    pub fn chunk_size(&self) -> u32 {
+        self.chunk_size
+    }
+    pub fn vector_size(&self) -> u32 {
+        self.vector_size
     }
 }
 

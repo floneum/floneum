@@ -1,9 +1,8 @@
 use fusor_gguf::GgmlType;
 
 use crate::{
-    DataTypeEnum, Device,
+    Device,
     mir::{
-        globals::{ArrayType, KernelGlobalType, VectorType},
         inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
         workgroup_shape::WorkgroupShape,
@@ -23,7 +22,6 @@ use crate::{
         q6k::Q6K_SGEMV_CHUNK_SIZE,
     },
 };
-use std::fmt::Display;
 
 mod general;
 pub mod q4k;
@@ -33,43 +31,6 @@ pub mod q_n;
 
 pub(crate) const SGEMV_CHUNK_SIZE: u32 = 2; // This is the size of the chunk each thread will process at a time
 pub(crate) const SGEMV_VECTOR_SIZE: u32 = 4; // This is the size of the chunk we will dot at a time
-
-fn maybe_vec_storage_type(size: u32, dtype: DataTypeEnum) -> String {
-    match size {
-        1 => format!("{dtype}"),
-        2..=4 => format!("vec{size}<{dtype}>"),
-        _ => format!("array<{dtype}, {size}u>"),
-    }
-}
-
-fn maybe_vec_storage_type_enum(size: u32, dtype: DataTypeEnum) -> KernelGlobalType {
-    match size {
-        1 => KernelGlobalType::Value(dtype),
-        2..=4 => KernelGlobalType::Vector(VectorType::new(size.to_string(), dtype)),
-        _ => KernelGlobalType::Array(ArrayType::new(size.to_string(), dtype)),
-    }
-}
-
-fn maybe_vec_storage_subgroup_add(size: u32, value: impl Display) -> String {
-    match size {
-        1..=4 => format!("subgroupAdd({value})"),
-        _ => format!(
-            "array({})",
-            (0..size)
-                .map(|i| { format!("subgroupAdd({value}[{i}])") })
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-    }
-}
-
-fn maybe_vec_storage_index(size: u32, value: impl Display, index: impl Display) -> String {
-    match size {
-        0 => unreachable!(),
-        1 => format!("{value}"),
-        2.. => format!("{value}[{index}]"),
-    }
-}
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn sgemv(

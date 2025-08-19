@@ -6,8 +6,9 @@ use crate::{
     },
     quantized::matmul::{
         QMatMulOperation,
-        sgemv::{maybe_vec_storage_index, maybe_vec_storage_subgroup_add, maybe_vec_storage_type},
+        
     },
+    util::{maybe_vec_storage_index, maybe_vec_storage_subgroup_add, maybe_vec_storage_type},
 };
 use std::fmt::Write;
 
