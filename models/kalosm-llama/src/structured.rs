@@ -9,6 +9,8 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::iter::Sum;
+use std::ops::{Add, Div};
 use std::time::Duration;
 use std::time::Instant;
 use std::{
@@ -415,20 +417,6 @@ where
             None => *trie.roots.get(&token_id).unwrap(),
         });
 
-        // If this and the last token would result in a valid merge, then the probability in the training data should be close
-        // to zero
-        if let Some(&last) = token_stream.tokens().last() {
-            let pair = [last, token_id];
-            if llm.merges.contains(&pair) {
-                eprintln!(
-                    "ERROR: Tokens {:?} and {:?} should have already merged into {:?}",
-                    tokenizer.id_to_token(last),
-                    tokenizer.id_to_token(token_id),
-                    tokenizer.decode(&pair, false)
-                );
-            }
-        }
-
         unprocessed_token_count = 1;
         let (mut extra_state, _) = state_map
             .get_mut(token_id as usize)
@@ -592,7 +580,7 @@ where
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone, Default)]
 pub struct StructuredInferenceTimingInfo {
     sampler_time: std::time::Duration,
     constraint_time: std::time::Duration,
@@ -614,6 +602,45 @@ impl Display for StructuredInferenceTimingInfo {
             self.trie_time,
             self.total_time
         )
+    }
+}
+
+impl Add for StructuredInferenceTimingInfo {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            sampler_time: self.sampler_time + other.sampler_time,
+            constraint_time: self.constraint_time + other.constraint_time,
+            parser_time: self.parser_time + other.parser_time,
+            transformer_time: self.transformer_time + other.transformer_time,
+            trie_time: self.trie_time + other.trie_time,
+            total_time: self.total_time + other.total_time,
+        }
+    }
+}
+
+impl Sum for StructuredInferenceTimingInfo {
+    fn sum<I>(iter: I) -> Self
+    where
+        I: Iterator<Item = Self>,
+    {
+        iter.fold(Self::default(), |acc, x| acc + x)
+    }
+}
+
+impl Div<f64> for StructuredInferenceTimingInfo {
+    type Output = Self;
+
+    fn div(self, rhs: f64) -> Self {
+        Self {
+            sampler_time: self.sampler_time.div_f64(rhs),
+            constraint_time: self.constraint_time.div_f64(rhs),
+            parser_time: self.parser_time.div_f64(rhs),
+            transformer_time: self.transformer_time.div_f64(rhs),
+            trie_time: self.trie_time.div_f64(rhs),
+            total_time: self.total_time.div_f64(rhs),
+        }
     }
 }
 

@@ -9,8 +9,8 @@ max_retries=1
 
 # List of model names to run
 models=(
-  qwen1.5b
   smol-lm
+  qwen1.5b
   qwen3b
   qwen7b
   qwen0.5b
@@ -57,7 +57,7 @@ GRAMMARS=(
 )
 
 TASK="./src/prompt"
-ITERATIONS=250
+TIME=$((60*5))
 
 
 cargo build --features "${FEATURES}" --release 
@@ -75,7 +75,7 @@ for model in "${models[@]}"; do
               --model "${model}" \
               --grammar "sygus-strings/${grammar}.sl" \
               --task "${TASK}" \
-              --iterations "${ITERATIONS}" \
+              --time-seconds "${TIME}" \
               --fast-case "${fast}" \
               --recursion-depth 6 \
               > "results/${grammar}_${model}_${combo_tag}.jsonl" 2>&1

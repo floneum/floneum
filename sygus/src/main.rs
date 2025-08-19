@@ -23,6 +23,7 @@ use std::{
     fmt::{Debug, Display},
     path::Path,
     sync::{Arc, Mutex, RwLock},
+    time::Duration,
 };
 use std::{io::Write, num::NonZeroUsize};
 
@@ -549,8 +550,8 @@ struct Args {
     #[arg(long, default_value_t = 10)]
     recursion_depth: usize,
 
-    #[arg(long, default_value_t = 25)]
-    iterations: usize,
+    #[arg(long)]
+    time_seconds: u32,
 
     #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
     multipass: bool,
@@ -633,7 +634,7 @@ async fn run() {
     let args = Args::parse();
     let model = args.model;
     let recursion_depth = args.recursion_depth;
-    let iterations = args.iterations;
+    let time = Duration::from_secs(args.time_seconds.into());
     let multipass = args.multipass;
 
     let grammar_text = std::fs::read_to_string(args.grammar).unwrap();
@@ -774,6 +775,7 @@ async fn run() {
         let mut session = llm.new_session();
         let bump = bumpalo::Bump::new();
         let grammar = grammar.reallocate(&bump);
+        let mut runs = Vec::new();
         let prompt = if model.qwen_normal() || model.smol_lm() {
             format!("<|im_start|>system\n{prompt}<|im_end|>\n<|im_start|>user\nQuestion:\n{task}<|im_end|>\n")
         } else if model.llama() {
@@ -823,7 +825,9 @@ async fn run() {
             }
         }
 
-        for generation in 0..iterations {
+        let start_time = std::time::Instant::now();
+        let mut generation = 0;
+        while start_time.elapsed() < time {
             let shannon_entropy = trie.shannon_entropy();
             let entropy_diff = last_entropy - shannon_entropy;
             last_entropy = shannon_entropy;
@@ -861,37 +865,70 @@ async fn run() {
             let all_token_ids = all_token_ids.read().unwrap();
             let retokenized = llm.tokenizer.encode_fast(all_tokens.as_str(), false).unwrap();
             let tokenization_error = retokenized.get_ids() != all_token_ids.as_slice();
+            let tokens_after_first_token_error = all_token_ids.len().saturating_sub(
+                retokenized
+                    .get_ids()
+                    .iter()
+                    .zip(all_token_ids.iter())
+                    .position(|(&retokenized_id, &original_id)| retokenized_id != original_id)
+                    .unwrap_or(all_token_ids.len()),
+            );
 
             let valid = if let Ok(output) = result {
-            let interpreter = Interpreter::new();
-            let mut valid = true;
-            for constraint in &constraints {
-                let result = interpreter.check(constraint, vars.clone(), &output);
-                valid = valid && result;
-            }
-            valid
-        } else {false};
-        let run = Run { generation: generation as u32,
-            metadata: timing,
-            pass: valid,
-            entropy: shannon_entropy,
-            entropy_diff: entropy_diff,
-            tokenization_error,
-            result: all_tokens,
-            tokens: all_token_ids.clone()
-        };
+                let interpreter = Interpreter::new();
+                let mut valid = true;
+                for constraint in &constraints {
+                    let result = interpreter.check(constraint, vars.clone(), &output);
+                    valid = valid && result;
+                }
+                valid
+            } else {
+                false
+            };
+            let run = Run {
+                generation: generation as u32,
+                metadata: timing,
+                pass: valid,
+                entropy: shannon_entropy,
+                entropy_diff: entropy_diff,
+                tokenization_error,
+                result: all_tokens,
+                tokens: all_token_ids.clone(),
+                tokens_after_tokenization_error: tokens_after_first_token_error as u32
+            };
 
-        println!("{}", serde_json::to_string(&run).unwrap());
+            println!("{}", serde_json::to_string(&run).unwrap());
+            runs.push(run);
 
             if valid {
                 break;
             }
+            generation += 1;
         }
         let total_duration = overall_start_time.elapsed();
-        eprintln!("Total generation took: {total_duration:?}");
+        let average_metadata = runs.iter().map(|run| run.metadata.clone()).sum::<StructuredInferenceTimingInfo>() / runs.len() as f64;
+        let summary = Summary {
+            average_metadata,
+            average_entropy: runs.iter().map(|run| run.entropy.abs()).sum::<f64>() / runs.len() as f64,
+            average_entropy_diff: runs.iter().map(|run| run.entropy_diff.abs()).sum::<f64>() / runs.len() as f64,
+            average_tokenization_error: runs.iter().filter(|run| run.tokenization_error).count() as f64 / runs.len() as f64,
+            average_tokens_after_first_token_error: runs.iter().map(|run| run.tokens_after_tokenization_error as f64).sum::<f64>() / runs.len() as f64,
+            total_duration,
+        };
+        println!("{}", serde_json::to_string(&summary).unwrap());
     })
     .await
     .unwrap();
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct Summary {
+    average_metadata: StructuredInferenceTimingInfo,
+    average_entropy: f64,
+    average_entropy_diff: f64,
+    average_tokenization_error: f64,
+    average_tokens_after_first_token_error: f64,
+    total_duration: Duration,
 }
 
 #[derive(Clone)]
@@ -1246,6 +1283,7 @@ struct Run {
     entropy: f64,
     entropy_diff: f64,
     tokenization_error: bool,
+    tokens_after_tokenization_error: u32,
     result: String,
     tokens: Vec<u32>,
 }

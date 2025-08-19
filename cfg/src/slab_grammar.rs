@@ -265,8 +265,6 @@ impl SlabGrammar {
             prev_start_states = new_start_states;
         }
 
-
-
         // First transpose the map into nt -> Vec<(State, u8)>
         let non_terminal_to_states: FxHashMap<u32, SmallVec<[(State, u8); 3]>> =
             reachable_states.iter().fold(
@@ -660,8 +658,7 @@ impl SlabGrammar {
         // Verify that all non-terminals exist in the rules
         for (lhs, rules) in &self.rules {
             assert_eq!(
-                lhs,
-                rules.lhs as usize,
+                lhs, rules.lhs as usize,
                 "LHS of rule does not match its key {msg}",
             );
             for rhs in &rules.rhs {

@@ -1,18 +1,9 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Display,
-    hash::Hash,
-    ops::ControlFlow,
-};
+use std::{collections::HashMap, fmt::Display, hash::Hash, ops::ControlFlow};
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashSet;
 use slab::Slab;
 
-use crate::{
-    parse::Grammar,
-    slab_grammar::SlabGrammar,
-    tokenizer::{Merge, Tokenizer},
-};
+use crate::{parse::Grammar, tokenizer::Tokenizer};
 
 pub mod cnf;
 pub mod parse;
