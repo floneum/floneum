@@ -6,7 +6,7 @@ use crate::{
     tensor::{DataType, DataTypeEnum, TensorData},
 };
 
-mod gemm;
+mod sgemm;
 mod sgemv;
 
 #[derive(Debug, Clone)]
@@ -81,7 +81,7 @@ impl Operation for MatMulOperation {
         if self.second_shape[self.second_shape.len() - 1] == 1 && self.first_shape[self.first_shape.len() - 2] > 1 {
             sgemv::workgroup_shape_constraints(self, device)
         } else {
-            gemm::workgroup_shape_constraints(self, device)
+            sgemm::workgroup_shape_constraints(self, device)
         }
     }
 
@@ -109,7 +109,7 @@ impl Operation for MatMulOperation {
             dispatch[2] = batch_size as u32;
             dispatch
         } else {
-            gemm::dispatch_size(
+            sgemm::dispatch_size(
                 last_dim_size,
                 second_to_last_dim_size,
                 batch_size,
@@ -182,7 +182,7 @@ impl Operation for MatMulOperation {
                 &k_size,
             );
         } else {
-            gemm::build_kernel(self, graph, workgroup_shape, inputs, generic_kernel);
+            sgemm::build_kernel(self, graph, workgroup_shape, inputs, generic_kernel);
         }
     }
 
