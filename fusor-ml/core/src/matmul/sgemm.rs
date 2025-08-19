@@ -5,19 +5,20 @@ use crate::mir::globals::KernelGlobalSpace;
 use crate::{
     Device,
     mir::{function::Function, kernel::GenericKernel},
-    tensor::{DataTypeEnum},
+    tensor::DataTypeEnum,
 };
 
 pub(super) fn workgroup_shape_constraints(
     _: &MatMulOperation,
     _: &Device,
+    parameters: &SgemmParams,
 ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
     let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
     constraints.add_constraint(
         0,
         crate::mir::workgroup_shape::Constraint::Equals(
-            (WORK_GROUP_BLOCK_M_SIZE / THREAD_BLOCK_M_SIZE)
-                * (WORK_GROUP_BLOCK_N_SIZE / THREAD_BLOCK_N_SIZE),
+            (parameters.block_m_size / parameters.thread_m_size)
+                * (parameters.block_n_size / parameters.thread_n_size),
         ),
     );
     constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));
@@ -30,10 +31,11 @@ pub(super) fn dispatch_size(
     second_to_last_dim_size: usize,
     batch_size: usize,
     workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
+    parameters: &SgemmParams,
 ) -> [u32; 3] {
     [
-        (last_dim_size as u32).div_ceil(WORK_GROUP_BLOCK_N_SIZE),
-        (second_to_last_dim_size as u32).div_ceil(WORK_GROUP_BLOCK_M_SIZE),
+        (last_dim_size as u32).div_ceil(parameters.block_n_size),
+        (second_to_last_dim_size as u32).div_ceil(parameters.block_m_size),
         (batch_size as u32).div_ceil(workgroup_shape.z()),
     ]
 }
@@ -45,6 +47,7 @@ pub(super) fn build_kernel(
     workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
     inputs: &[crate::mir::inputs::MirValue],
     generic_kernel: &mut GenericKernel,
+    parameters: &SgemmParams,
 ) {
     // Based on CUDA 2D block tiling SGEMM
     let [input_a, input_b, _] = inputs else {
@@ -55,13 +58,19 @@ pub(super) fn build_kernel(
     let input_b = input_b.as_tensor().unwrap();
     let input_b_datatype = input_b.datatype();
 
-    // Calculate unroll counts for optimal performance
-    const THREADS_PER_WORKGROUP: u32 = (WORK_GROUP_BLOCK_M_SIZE * WORK_GROUP_BLOCK_N_SIZE)
-        / (THREAD_BLOCK_M_SIZE * THREAD_BLOCK_N_SIZE);
-    const THREADS_PER_K_A: u32 = THREADS_PER_WORKGROUP / WORK_GROUP_BLOCK_K_SIZE;
-    const UNROLL_COUNT_A: u32 = WORK_GROUP_BLOCK_M_SIZE / THREADS_PER_K_A;
-    const THREADS_PER_N_B: u32 = THREADS_PER_WORKGROUP / WORK_GROUP_BLOCK_N_SIZE;
-    const UNROLL_COUNT_B: u32 = WORK_GROUP_BLOCK_K_SIZE / THREADS_PER_N_B;
+    // Calculate parameters we use throughout the kernel
+    let block_m_size = parameters.block_m_size;
+    let block_n_size = parameters.block_n_size;
+    let block_k_size = parameters.block_k_size;
+    let thread_m_size = parameters.thread_m_size;
+    let thread_n_size = parameters.thread_n_size;
+    let double_buffer = parameters.double_buffer;
+    let threads_per_workgroup: u32 =
+        (block_m_size * block_n_size) / (thread_m_size * thread_n_size);
+    let threads_per_k_a: u32 = threads_per_workgroup / block_k_size;
+    let unroll_count_a: u32 = block_m_size / threads_per_k_a;
+    let threads_per_n_b: u32 = threads_per_workgroup / block_n_size;
+    let unroll_count_b: u32 = block_k_size / threads_per_n_b;
 
     let mut kernel = String::new();
 
@@ -77,28 +86,20 @@ pub(super) fn build_kernel(
     );
 
     const PADDING: u32 = 1; // Add padding for bank conflict avoidance
-    let cache_a_size = if DOUBLE_BUFFER {
-        2 * WORK_GROUP_BLOCK_M_SIZE * (WORK_GROUP_BLOCK_K_SIZE + PADDING)
-    } else {
-        WORK_GROUP_BLOCK_M_SIZE * (WORK_GROUP_BLOCK_K_SIZE + PADDING)
-    };
+    let cache_a_size = if double_buffer { 2 } else { 1 } * block_m_size * (block_k_size + PADDING);
     let cache_a = generic_kernel.add_global_array(
         KernelGlobalSpace::Workgroup,
         matmul.datatype,
         cache_a_size.to_string(),
     );
-    let cache_b_size = if DOUBLE_BUFFER {
-        2 * WORK_GROUP_BLOCK_N_SIZE * (WORK_GROUP_BLOCK_K_SIZE + PADDING)
-    } else {
-        WORK_GROUP_BLOCK_N_SIZE * (WORK_GROUP_BLOCK_K_SIZE + PADDING)
-    };
+    let cache_b_size = if double_buffer { 2 } else { 1 } * block_n_size * (block_k_size + PADDING);
     let cache_b = generic_kernel.add_global_array(
         KernelGlobalSpace::Workgroup,
         matmul.datatype,
         cache_b_size.to_string(),
     );
 
-    assert_eq!(workgroup_shape.x(), THREADS_PER_WORKGROUP);
+    assert_eq!(workgroup_shape.x(), threads_per_workgroup);
 
     let datatype = matmul.datatype;
     let workgroup_index = generic_kernel.workgroup_index();
@@ -126,14 +127,14 @@ pub(super) fn build_kernel(
 
     writeln!(
         &mut kernel,
-        "let totalResultsBlocktile = {WORK_GROUP_BLOCK_M_SIZE}u * {WORK_GROUP_BLOCK_N_SIZE}u;"
+        "let totalResultsBlocktile = {block_m_size}u * {block_n_size}u;"
     )
     .unwrap();
-    writeln!(&mut kernel, "let numThreadsBlocktile = totalResultsBlocktile / ({THREAD_BLOCK_M_SIZE}u * {THREAD_BLOCK_N_SIZE}u);").unwrap();
+    writeln!(&mut kernel, "let numThreadsBlocktile = totalResultsBlocktile / ({thread_m_size}u * {thread_n_size}u);").unwrap();
 
     // Thread indices within the workgroup
-    writeln!(&mut kernel, "let threadCol = {workgroup_local_index} % ({WORK_GROUP_BLOCK_N_SIZE}u / {THREAD_BLOCK_N_SIZE}u);").unwrap();
-    writeln!(&mut kernel, "let threadRow = {workgroup_local_index} / ({WORK_GROUP_BLOCK_N_SIZE}u / {THREAD_BLOCK_N_SIZE}u);").unwrap();
+    writeln!(&mut kernel, "let threadCol = {workgroup_local_index} % ({block_n_size}u / {thread_n_size}u);").unwrap();
+    writeln!(&mut kernel, "let threadRow = {workgroup_local_index} / ({block_n_size}u / {thread_n_size}u);").unwrap();
 
     // Find the batch offset for a, b and output
     for (name, tensor) in [("a", &input_a), ("b", &input_b), ("c", &output)] {
@@ -150,22 +151,22 @@ pub(super) fn build_kernel(
     // Thread indices for loading into shared memory
     writeln!(
         &mut kernel,
-        "let innerRowA = {workgroup_local_index} / {WORK_GROUP_BLOCK_K_SIZE}u;"
+        "let innerRowA = {workgroup_local_index} / {block_k_size}u;"
     )
     .unwrap();
     writeln!(
         &mut kernel,
-        "let innerColA = {workgroup_local_index} % {WORK_GROUP_BLOCK_K_SIZE}u;"
+        "let innerColA = {workgroup_local_index} % {block_k_size}u;"
     )
     .unwrap();
     writeln!(
         &mut kernel,
-        "let innerRowB = {workgroup_local_index} / {WORK_GROUP_BLOCK_N_SIZE}u;"
+        "let innerRowB = {workgroup_local_index} / {block_n_size}u;"
     )
     .unwrap();
     writeln!(
         &mut kernel,
-        "let innerColB = {workgroup_local_index} % {WORK_GROUP_BLOCK_N_SIZE}u;"
+        "let innerColB = {workgroup_local_index} % {block_n_size}u;"
     )
     .unwrap();
 
@@ -173,7 +174,7 @@ pub(super) fn build_kernel(
     writeln!(
         &mut kernel,
         "var threadResults: array<{datatype}, {}>;",
-        THREAD_BLOCK_M_SIZE * THREAD_BLOCK_N_SIZE
+        thread_m_size * thread_n_size
     )
     .unwrap();
 
@@ -185,34 +186,34 @@ pub(super) fn build_kernel(
     // Register caches
     writeln!(
         &mut kernel,
-        "var regM: vec{THREAD_BLOCK_M_SIZE}<{datatype}>;"
+        "var regM: vec{thread_m_size}<{datatype}>;"
     )
     .unwrap();
     writeln!(
         &mut kernel,
-        "var regN: vec{THREAD_BLOCK_N_SIZE}<{datatype}>;"
+        "var regN: vec{thread_n_size}<{datatype}>;"
     )
     .unwrap();
 
     writeln!(
         &mut kernel,
-        "let tiles = ({k_size} + {WORK_GROUP_BLOCK_K_SIZE}u - 1u) / {WORK_GROUP_BLOCK_K_SIZE}u;"
+        "let tiles = ({k_size} + {block_k_size}u - 1u) / {block_k_size}u;"
     )
     .unwrap();
-    if DOUBLE_BUFFER {
+    if double_buffer {
         writeln!(&mut kernel, "var buf: u32 = 0u;").unwrap();
         // Helper bases for double-buffered shared arrays
         // Use swizzled tile sizes to avoid bank conflicts
         writeln!(
             &mut kernel,
-            "let aTileSize = {WORK_GROUP_BLOCK_M_SIZE}u * {}u;",
-            WORK_GROUP_BLOCK_K_SIZE + PADDING
+            "let aTileSize = {block_m_size}u * {}u;",
+            block_k_size + PADDING
         )
         .unwrap();
         writeln!(
             &mut kernel,
-            "let bTileSize = {WORK_GROUP_BLOCK_N_SIZE}u * {}u;",
-            WORK_GROUP_BLOCK_K_SIZE + PADDING
+            "let bTileSize = {block_n_size}u * {}u;",
+            block_k_size + PADDING
         )
         .unwrap();
     }
@@ -220,39 +221,39 @@ pub(super) fn build_kernel(
     // Preload tile 0 into buffer 0
     writeln!(&mut kernel, "if (tiles > 0u) {{").unwrap();
     writeln!(&mut kernel, "    let bkIdx = 0u;").unwrap();
-    if DOUBLE_BUFFER {
+    if double_buffer {
         writeln!(&mut kernel, "    let aBase = buf * aTileSize;").unwrap();
         writeln!(&mut kernel, "    let bBase = buf * bTileSize;").unwrap();
     }
     // Fast-path predicates for tile 0
     writeln!(
         &mut kernel,
-        "    let fullK = (bkIdx + {WORK_GROUP_BLOCK_K_SIZE}u) <= {k_size};"
+        "    let fullK = (bkIdx + {block_k_size}u) <= {k_size};"
     )
     .unwrap();
     writeln!(
         &mut kernel,
-        "    let fullA = (((cRow + 1u) * {WORK_GROUP_BLOCK_M_SIZE}u) <= {m_size}) && fullK;"
+        "    let fullA = (((cRow + 1u) * {block_m_size}u) <= {m_size}) && fullK;"
     )
     .unwrap();
     writeln!(
         &mut kernel,
-        "    let fullB = (((cCol + 1u) * {WORK_GROUP_BLOCK_N_SIZE}u) <= {n_size}) && fullK;"
+        "    let fullB = (((cCol + 1u) * {block_n_size}u) <= {n_size}) && fullK;"
     )
     .unwrap();
     // A tile load (unrolled for optimal performance)
     let pef = pre_element_wise_functions.get_or_init(|| {
         std::array::from_fn(|i| matmul.pre_element_wise[i].add_functions(generic_kernel))
     });
-    let a_offset = if DOUBLE_BUFFER { "aBase + " } else { "" };
-    let b_offset = if DOUBLE_BUFFER { "bBase + " } else { "" };
+    let a_offset = if double_buffer { "aBase + " } else { "" };
+    let b_offset = if double_buffer { "bBase + " } else { "" };
     let write_row_column = |kernel: &mut String, i, tensor: &str| {
         let tensor = tensor.to_uppercase();
-        writeln!(kernel, "            let row_raw = innerRow{tensor} + {i}u * (numThreadsBlocktile / {WORK_GROUP_BLOCK_K_SIZE}u);").unwrap();
+        writeln!(kernel, "            let row_raw = innerRow{tensor} + {i}u * (numThreadsBlocktile / {block_k_size}u);").unwrap();
         writeln!(kernel, "            let col_raw = innerCol{tensor};").unwrap();
     };
     let write_back_a = |kernel: &mut String| {
-        writeln!(kernel, "            {cache_a}[{a_offset}row_raw * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING}) + col_raw] = a_val;").unwrap();
+        writeln!(kernel, "            {cache_a}[{a_offset}row_raw * ({block_k_size}u + {PADDING}) + col_raw] = a_val;").unwrap();
     };
     let write_read_a = |kernel: &mut String| {
         writeln!(kernel, "            var a_val = ").unwrap();
@@ -263,12 +264,12 @@ pub(super) fn build_kernel(
         writeln!(kernel, "{first_value};").unwrap();
     };
     writeln!(&mut kernel, "    if (fullA) {{").unwrap();
-    for i in 0..UNROLL_COUNT_A {
+    for i in 0..unroll_count_a {
         writeln!(&mut kernel, "        {{").unwrap();
         write_row_column(&mut kernel, i, "A");
         writeln!(
             &mut kernel,
-            "            let a_row = cRow * {WORK_GROUP_BLOCK_M_SIZE}u + row_raw;"
+            "            let a_row = cRow * {block_m_size}u + row_raw;"
         )
         .unwrap();
         writeln!(&mut kernel, "            let a_col = bkIdx + col_raw;").unwrap();
@@ -277,12 +278,12 @@ pub(super) fn build_kernel(
         writeln!(&mut kernel, "        }}").unwrap();
     }
     writeln!(&mut kernel, "    }} else {{").unwrap();
-    for i in 0..UNROLL_COUNT_A {
+    for i in 0..unroll_count_a {
         writeln!(&mut kernel, "        {{").unwrap();
         write_row_column(&mut kernel, i, "A");
         writeln!(
             &mut kernel,
-            "            let a_row_global = cRow * {WORK_GROUP_BLOCK_M_SIZE}u + row_raw;"
+            "            let a_row_global = cRow * {block_m_size}u + row_raw;"
         )
         .unwrap();
         writeln!(
@@ -308,7 +309,7 @@ pub(super) fn build_kernel(
     writeln!(&mut kernel, "    }}").unwrap();
     // B tile load (unrolled for optimal performance)
     let write_back_b = |kernel: &mut String| {
-        writeln!(kernel, "            {cache_b}[{b_offset}col_raw * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING}) + row_raw] = b_val;").unwrap();
+        writeln!(kernel, "            {cache_b}[{b_offset}col_raw * ({block_k_size}u + {PADDING}) + row_raw] = b_val;").unwrap();
     };
     let write_read_b = |kernel: &mut String| {
         writeln!(kernel, "            var b_val = ").unwrap();
@@ -319,14 +320,14 @@ pub(super) fn build_kernel(
         writeln!(kernel, "{second_value_fast};").unwrap();
     };
     writeln!(&mut kernel, "    if (fullB) {{").unwrap();
-    for i in 0..UNROLL_COUNT_B {
+    for i in 0..unroll_count_b {
         writeln!(&mut kernel, "        {{").unwrap();
-        writeln!(&mut kernel, "            let row_raw = innerRowB + {i}u * (numThreadsBlocktile / {WORK_GROUP_BLOCK_N_SIZE}u);").unwrap();
+        writeln!(&mut kernel, "            let row_raw = innerRowB + {i}u * (numThreadsBlocktile / {block_n_size}u);").unwrap();
         writeln!(&mut kernel, "            let col_raw = innerColB;").unwrap();
         writeln!(&mut kernel, "            let b_row = bkIdx + row_raw;").unwrap();
         writeln!(
             &mut kernel,
-            "            let b_col = cCol * {WORK_GROUP_BLOCK_N_SIZE}u + col_raw;"
+            "            let b_col = cCol * {block_n_size}u + col_raw;"
         )
         .unwrap();
         write_read_b(&mut kernel);
@@ -334,9 +335,9 @@ pub(super) fn build_kernel(
         writeln!(&mut kernel, "        }}").unwrap();
     }
     writeln!(&mut kernel, "    }} else {{").unwrap();
-    for i in 0..UNROLL_COUNT_B {
+    for i in 0..unroll_count_b {
         writeln!(&mut kernel, "        {{").unwrap();
-        writeln!(&mut kernel, "            let row_raw = innerRowB + {i}u * (numThreadsBlocktile / {WORK_GROUP_BLOCK_N_SIZE}u);").unwrap();
+        writeln!(&mut kernel, "            let row_raw = innerRowB + {i}u * (numThreadsBlocktile / {block_n_size}u);").unwrap();
         writeln!(
             &mut kernel,
             "            let col_raw = innerColB; let b_row_global = bkIdx + row_raw;"
@@ -344,7 +345,7 @@ pub(super) fn build_kernel(
         .unwrap();
         writeln!(
             &mut kernel,
-            "            let b_col_global = cCol * {WORK_GROUP_BLOCK_N_SIZE}u + col_raw;"
+            "            let b_col_global = cCol * {block_n_size}u + col_raw;"
         )
         .unwrap();
         writeln!(
@@ -370,7 +371,7 @@ pub(super) fn build_kernel(
 
     // Tiled compute with prefetch of next tile in
     writeln!(&mut kernel, "for (var t = 0u; t < tiles; t++) {{").unwrap();
-    if DOUBLE_BUFFER {
+    if double_buffer {
         // Bases for current buffers
         writeln!(&mut kernel, "    let aBase = buf * aTileSize;").unwrap();
         writeln!(&mut kernel, "    let bBase = buf * bTileSize;").unwrap();
@@ -379,15 +380,15 @@ pub(super) fn build_kernel(
     // Calculate per-thread results for current tile with overlapped prefetch
     writeln!(
         &mut kernel,
-        "    for (var dotIdx = 0u; dotIdx < {WORK_GROUP_BLOCK_K_SIZE}u; dotIdx++) {{"
+        "    for (var dotIdx = 0u; dotIdx < {block_k_size}u; dotIdx++) {{"
     )
     .unwrap();
-    writeln!(&mut kernel, "        let reg_m_offset = {a_offset}threadRow * {THREAD_BLOCK_M_SIZE}u * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING}) + dotIdx;").unwrap();
+    writeln!(&mut kernel, "        let reg_m_offset = {a_offset}threadRow * {thread_m_size}u * ({block_k_size}u + {PADDING}) + dotIdx;").unwrap();
 
     // Vectorized loads with padding for bank conflict avoidance
-    let stride_a = WORK_GROUP_BLOCK_K_SIZE + PADDING;
-    write!(&mut kernel, "            regM = vec{THREAD_BLOCK_M_SIZE}(").unwrap();
-    for i in 0..THREAD_BLOCK_M_SIZE {
+    let stride_a = block_k_size + PADDING;
+    write!(&mut kernel, "            regM = vec{thread_m_size}(").unwrap();
+    for i in 0..thread_m_size {
         if i > 0 {
             write!(&mut kernel, ", ").unwrap();
         }
@@ -397,14 +398,14 @@ pub(super) fn build_kernel(
 
     writeln!(
             &mut kernel,
-            "        let reg_n_offset = {b_offset}threadCol * {THREAD_BLOCK_N_SIZE}u * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING}) + dotIdx;"
+            "        let reg_n_offset = {b_offset}threadCol * {thread_n_size}u * ({block_k_size}u + {PADDING}) + dotIdx;"
         )
         .unwrap();
 
     // Vectorized load for N register with padding
-    let stride_b = WORK_GROUP_BLOCK_K_SIZE + PADDING;
-    write!(&mut kernel, "            regN = vec{THREAD_BLOCK_N_SIZE}(").unwrap();
-    for i in 0..THREAD_BLOCK_N_SIZE {
+    let stride_b = block_k_size + PADDING;
+    write!(&mut kernel, "            regN = vec{thread_n_size}(").unwrap();
+    for i in 0..thread_n_size {
         if i > 0 {
             write!(&mut kernel, ", ").unwrap();
         }
@@ -412,17 +413,17 @@ pub(super) fn build_kernel(
     }
     writeln!(&mut kernel, ");").unwrap();
 
-    for res_idx_m in 0..THREAD_BLOCK_M_SIZE {
+    for res_idx_m in 0..thread_m_size {
         writeln!(
             &mut kernel,
             "        let result_{res_idx_m} = regM[{}] * regN;",
             res_idx_m
         )
         .unwrap();
-        for res_idx_n in 0..THREAD_BLOCK_N_SIZE {
+        for res_idx_n in 0..thread_n_size {
             writeln!(
                     &mut kernel,
-                    "        threadResults[{} * {THREAD_BLOCK_N_SIZE}u + {}] += result_{res_idx_m}[{}];",
+                    "        threadResults[{} * {thread_n_size}u + {}] += result_{res_idx_m}[{}];",
                     res_idx_m, res_idx_n, res_idx_n
                 )
                 .unwrap();
@@ -430,7 +431,7 @@ pub(super) fn build_kernel(
     }
     writeln!(&mut kernel, "    }}").unwrap();
 
-    if !DOUBLE_BUFFER {
+    if !double_buffer {
         // Synchronize all threads before prefetching next tile into the same shared buffers
         writeln!(&mut kernel, "    workgroupBarrier();").unwrap();
     }
@@ -439,29 +440,29 @@ pub(super) fn build_kernel(
     writeln!(&mut kernel, "    if ((t + 1u) < tiles) {{").unwrap();
     writeln!(
         &mut kernel,
-        "        let bkIdx = (t + 1u) * {WORK_GROUP_BLOCK_K_SIZE}u;"
+        "        let bkIdx = (t + 1u) * {block_k_size}u;"
     )
     .unwrap();
-    if DOUBLE_BUFFER {
+    if double_buffer {
         writeln!(&mut kernel, "        let nextBuf: u32 = 1u - buf;").unwrap();
         writeln!(&mut kernel, "        let aBaseN = nextBuf * aTileSize;").unwrap();
         writeln!(&mut kernel, "        let bBaseN = nextBuf * bTileSize;").unwrap();
     }
-    let add_a_base_n = if DOUBLE_BUFFER { "aBaseN + " } else { "" };
-    let add_b_base_n = if DOUBLE_BUFFER { "bBaseN + " } else { "" };
+    let add_a_base_n = if double_buffer { "aBaseN + " } else { "" };
+    let add_b_base_n = if double_buffer { "bBaseN + " } else { "" };
     writeln!(
         &mut kernel,
-        "        let fullK = (bkIdx + {WORK_GROUP_BLOCK_K_SIZE}u) <= {k_size};"
+        "        let fullK = (bkIdx + {block_k_size}u) <= {k_size};"
     )
     .unwrap();
     writeln!(
         &mut kernel,
-        "        let fullA = (((cRow + 1u) * {WORK_GROUP_BLOCK_M_SIZE}u) <= {m_size}) && fullK;"
+        "        let fullA = (((cRow + 1u) * {block_m_size}u) <= {m_size}) && fullK;"
     )
     .unwrap();
     writeln!(
         &mut kernel,
-        "        let fullB = (((cCol + 1u) * {WORK_GROUP_BLOCK_N_SIZE}u) <= {n_size}) && fullK;"
+        "        let fullB = (((cCol + 1u) * {block_n_size}u) <= {n_size}) && fullK;"
     )
     .unwrap();
 
@@ -470,12 +471,12 @@ pub(super) fn build_kernel(
     let pef = pre_element_wise_functions.get_or_init(|| {
         std::array::from_fn(|i| matmul.pre_element_wise[i].add_functions(generic_kernel))
     });
-    for i in 0..UNROLL_COUNT_A {
+    for i in 0..unroll_count_a {
         writeln!(&mut kernel, "            {{").unwrap();
         write_row_column(&mut kernel, i, "A");
         writeln!(
             &mut kernel,
-            "                let a_row = cRow * {WORK_GROUP_BLOCK_M_SIZE}u + row_raw;"
+            "                let a_row = cRow * {block_m_size}u + row_raw;"
         )
         .unwrap();
         writeln!(&mut kernel, "                let a_col = bkIdx + col_raw;").unwrap();
@@ -485,16 +486,16 @@ pub(super) fn build_kernel(
             |acc, f| f.call(vec![acc]),
         );
         writeln!(&mut kernel, "{first_value_fast};").unwrap();
-        writeln!(&mut kernel, "                {cache_a}[{add_a_base_n}row_raw * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING}) + col_raw] = a_val;").unwrap();
+        writeln!(&mut kernel, "                {cache_a}[{add_a_base_n}row_raw * ({block_k_size}u + {PADDING}) + col_raw] = a_val;").unwrap();
         writeln!(&mut kernel, "            }}").unwrap();
     }
     writeln!(&mut kernel, "        }} else {{").unwrap();
-    for i in 0..UNROLL_COUNT_A {
+    for i in 0..unroll_count_a {
         writeln!(&mut kernel, "            {{").unwrap();
         write_row_column(&mut kernel, i, "A");
         writeln!(
             &mut kernel,
-            "                let a_row_global = cRow * {WORK_GROUP_BLOCK_M_SIZE}u + row_raw;"
+            "                let a_row_global = cRow * {block_m_size}u + row_raw;"
         )
         .unwrap();
         writeln!(
@@ -519,21 +520,21 @@ pub(super) fn build_kernel(
         );
         writeln!(&mut kernel, "{first_value};").unwrap();
         writeln!(&mut kernel, "                a_val = select({zero_literal}, a_val, (a_row_global < {m_size} && a_col_global < {k_size}));").unwrap();
-        writeln!(&mut kernel, "                {cache_a}[{add_a_base_n}row_raw * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING}) + col_raw] = a_val;").unwrap();
+        writeln!(&mut kernel, "                {cache_a}[{add_a_base_n}row_raw * ({block_k_size}u + {PADDING}) + col_raw] = a_val;").unwrap();
         writeln!(&mut kernel, "            }}").unwrap();
     }
     writeln!(&mut kernel, "        }}").unwrap();
 
     // B tile prefetch (unrolled for optimal performance) to transposed layout
     writeln!(&mut kernel, "        if (fullB) {{").unwrap();
-    for i in 0..UNROLL_COUNT_B {
+    for i in 0..unroll_count_b {
         writeln!(&mut kernel, "            {{").unwrap();
-        writeln!(&mut kernel, "                let row_raw = innerRowB + {i}u * (numThreadsBlocktile / {WORK_GROUP_BLOCK_N_SIZE}u);").unwrap();
+        writeln!(&mut kernel, "                let row_raw = innerRowB + {i}u * (numThreadsBlocktile / {block_n_size}u);").unwrap();
         writeln!(&mut kernel, "                let col_raw = innerColB;").unwrap();
         writeln!(&mut kernel, "                let b_row = bkIdx + row_raw;").unwrap();
         writeln!(
             &mut kernel,
-            "                let b_col = cCol * {WORK_GROUP_BLOCK_N_SIZE}u + col_raw;"
+            "                let b_col = cCol * {block_n_size}u + col_raw;"
         )
         .unwrap();
         writeln!(&mut kernel, "                var b_val = ").unwrap();
@@ -542,13 +543,13 @@ pub(super) fn build_kernel(
             |acc, f| f.call(vec![acc]),
         );
         writeln!(&mut kernel, "{second_value_fast};").unwrap();
-        writeln!(&mut kernel, "                {cache_b}[{add_b_base_n}col_raw * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING}) + row_raw] = b_val;").unwrap();
+        writeln!(&mut kernel, "                {cache_b}[{add_b_base_n}col_raw * ({block_k_size}u + {PADDING}) + row_raw] = b_val;").unwrap();
         writeln!(&mut kernel, "            }}").unwrap();
     }
     writeln!(&mut kernel, "        }} else {{").unwrap();
-    for i in 0..UNROLL_COUNT_B {
+    for i in 0..unroll_count_b {
         writeln!(&mut kernel, "            {{").unwrap();
-        writeln!(&mut kernel, "                let row_raw = innerRowB + {i}u * (numThreadsBlocktile / {WORK_GROUP_BLOCK_N_SIZE}u);").unwrap();
+        writeln!(&mut kernel, "                let row_raw = innerRowB + {i}u * (numThreadsBlocktile / {block_n_size}u);").unwrap();
         writeln!(&mut kernel, "                let col_raw = innerColB;").unwrap();
         writeln!(
             &mut kernel,
@@ -557,7 +558,7 @@ pub(super) fn build_kernel(
         .unwrap();
         writeln!(
             &mut kernel,
-            "                let b_col_global = cCol * {WORK_GROUP_BLOCK_N_SIZE}u + col_raw;"
+            "                let b_col_global = cCol * {block_n_size}u + col_raw;"
         )
         .unwrap();
         writeln!(
@@ -577,7 +578,7 @@ pub(super) fn build_kernel(
         );
         writeln!(&mut kernel, "{second_value};").unwrap();
         writeln!(&mut kernel, "                b_val = select({zero_literal}, b_val, (b_row_global < {k_size} && b_col_global < {n_size}));").unwrap();
-        writeln!(&mut kernel, "                {cache_b}[{add_b_base_n}col_raw * ({WORK_GROUP_BLOCK_K_SIZE}u + {PADDING}) + row_raw] = b_val;").unwrap();
+        writeln!(&mut kernel, "                {cache_b}[{add_b_base_n}col_raw * ({block_k_size}u + {PADDING}) + row_raw] = b_val;").unwrap();
         writeln!(&mut kernel, "            }}").unwrap();
     }
     writeln!(&mut kernel, "        }}").unwrap();
@@ -585,7 +586,7 @@ pub(super) fn build_kernel(
 
     // Synchronize before using the newly prefetched buffer in the next iteration
     writeln!(&mut kernel, "    workgroupBarrier();").unwrap();
-    if DOUBLE_BUFFER {
+    if double_buffer {
         // Toggle the buffer index for the next iteration
         writeln!(&mut kernel, "    buf = 1u - buf;").unwrap();
     }
@@ -594,12 +595,12 @@ pub(super) fn build_kernel(
     // Write out the results (same as previous implementation)
     writeln!(
         &mut kernel,
-        "let outRowOffset = threadRow * {THREAD_BLOCK_M_SIZE}u + cRow * {WORK_GROUP_BLOCK_M_SIZE}u;"
+        "let outRowOffset = threadRow * {thread_m_size}u + cRow * {block_m_size}u;"
     )
     .unwrap();
     writeln!(
         &mut kernel,
-        "let outColOffset = threadCol * {THREAD_BLOCK_N_SIZE}u + cCol * {WORK_GROUP_BLOCK_N_SIZE}u;"
+        "let outColOffset = threadCol * {thread_n_size}u + cCol * {block_n_size}u;"
     )
     .unwrap();
     writeln!(
@@ -607,22 +608,22 @@ pub(super) fn build_kernel(
         "if (outRowOffset < {m_size} && outColOffset < {n_size}) {{"
     )
     .unwrap();
-    for res_idx_m in 0..THREAD_BLOCK_M_SIZE {
+    for res_idx_m in 0..thread_m_size {
         writeln!(
             &mut kernel,
             "let outRow{res_idx_m} = min(outRowOffset + {res_idx_m}, {m_size} - 1);"
         )
         .unwrap();
     }
-    for res_idx_n in 0..THREAD_BLOCK_N_SIZE {
+    for res_idx_n in 0..thread_n_size {
         writeln!(
             &mut kernel,
             "let outCol{res_idx_n} = min(outColOffset + {res_idx_n}, {n_size} - 1);"
         )
         .unwrap();
     }
-    for res_idx_m in 0..THREAD_BLOCK_M_SIZE {
-        for res_idx_n in 0..THREAD_BLOCK_N_SIZE {
+    for res_idx_m in 0..thread_m_size {
+        for res_idx_n in 0..thread_n_size {
             let post_element_wise_functions = post_element_wise_functions
                 .get_or_init(|| matmul.post_element_wise.add_functions(generic_kernel));
             write!(
@@ -631,7 +632,7 @@ pub(super) fn build_kernel(
             )
             .unwrap();
             let result = post_element_wise_functions.iter().fold(
-                    format!("threadResults[(outRow{res_idx_m} - outRowOffset) * {THREAD_BLOCK_N_SIZE}u + (outCol{res_idx_n} - outColOffset)]"),
+                    format!("threadResults[(outRow{res_idx_m} - outRowOffset) * {thread_n_size}u + (outCol{res_idx_n} - outColOffset)]"),
                     |acc, f| f.call(vec![acc]),
                 );
             writeln!(&mut kernel, "{result};").unwrap();
@@ -642,11 +643,32 @@ pub(super) fn build_kernel(
     generic_kernel.push_body(&kernel);
 }
 
-const WORK_GROUP_BLOCK_M_SIZE: u32 = THREAD_BLOCK_M_SIZE * 16;
-const WORK_GROUP_BLOCK_N_SIZE: u32 = THREAD_BLOCK_N_SIZE * 8;
-const WORK_GROUP_BLOCK_K_SIZE: u32 = 8;
+#[derive(Debug, Clone)]
+pub(crate) struct SgemmParams {
+    double_buffer: bool,
+    block_m_size: u32,
+    block_n_size: u32,
+    block_k_size: u32,
+    thread_m_size: u32,
+    thread_n_size: u32,
+}
 
-const THREAD_BLOCK_M_SIZE: u32 = 4;
-const THREAD_BLOCK_N_SIZE: u32 = 4;
+impl Default for SgemmParams {
+    fn default() -> Self {
+        let thread_m_size: u32 = 4;
+        let thread_n_size: u32 = 4;
+        let block_m_size: u32 = thread_m_size * 16;
+        let block_n_size: u32 = thread_n_size * 8;
+        let block_k_size: u32 = 8;
+        let double_buffer: bool = false;
 
-const DOUBLE_BUFFER: bool = false;
+        Self {
+            double_buffer,
+            block_m_size,
+            block_n_size,
+            block_k_size,
+            thread_m_size,
+            thread_n_size,
+        }
+    }
+}

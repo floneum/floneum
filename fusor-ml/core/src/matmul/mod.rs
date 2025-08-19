@@ -10,6 +10,12 @@ mod sgemm;
 mod sgemv;
 
 #[derive(Debug, Clone)]
+pub(crate) enum MatMulParams {
+    Vector(sgemv::SgemvParams),
+    MatMul(sgemm::SgemmParams),
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct MatMulOperation {
     pub(crate) datatype: DataTypeEnum,
     pub(crate) first: AnyComputeKey,
@@ -19,6 +25,7 @@ pub(crate) struct MatMulOperation {
     pub(crate) out_shape: Box<[usize]>,
     pub(crate) pre_element_wise: [ElementWiseFunctions; 2],
     pub(crate) post_element_wise: ElementWiseFunctions,
+    pub(crate) parameters: MatMulParams,
 }
 
 impl MatMulOperation {
@@ -44,6 +51,15 @@ impl MatMulOperation {
                 .all(|(a, b)| a == b)
         );
 
+        // Check if this is a matrix-vector multiplication (second matrix has 1 column and first matrix has multiple rows)
+        let parameters = if second_shape[second_shape.len() - 1] == 1
+            && first_shape[first_shape.len() - 2] > 1
+        {
+            MatMulParams::Vector(sgemv::SgemvParams::default())
+        } else {
+            MatMulParams::MatMul(sgemm::SgemmParams::default())
+        };
+
         Self {
             first,
             second,
@@ -56,6 +72,7 @@ impl MatMulOperation {
                 ElementWiseFunctions::empty(datatype),
             ],
             post_element_wise: ElementWiseFunctions::empty(datatype),
+            parameters,
         }
     }
 
@@ -77,11 +94,13 @@ impl Operation for MatMulOperation {
         &self,
         device: &Device,
     ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
-        // Check if this is a matrix-vector multiplication (second matrix has 1 column and first matrix has multiple rows)
-        if self.second_shape[self.second_shape.len() - 1] == 1 && self.first_shape[self.first_shape.len() - 2] > 1 {
-            sgemv::workgroup_shape_constraints(self, device)
-        } else {
-            sgemm::workgroup_shape_constraints(self, device)
+        match &self.parameters {
+            MatMulParams::Vector(sgemv_params) => {
+                sgemv::workgroup_shape_constraints(self, device, sgemv_params)
+            }
+            MatMulParams::MatMul(sgemm_params) => {
+                sgemm::workgroup_shape_constraints(self, device, sgemm_params)
+            }
         }
     }
 
@@ -103,18 +122,20 @@ impl Operation for MatMulOperation {
         let second_to_last_dim_size = a_shape[second_to_last_dim];
         let batch_size = a_shape.iter().rev().skip(2).product::<usize>();
 
-        // Check if this is a matrix-vector multiplication (second matrix has 1 column and first matrix has multiple rows)  
-        if last_dim_size == 1 && second_to_last_dim_size > 1 {
-            let mut dispatch = sgemv::dispatch_size(second_to_last_dim_size as u32, 1);
-            dispatch[2] = batch_size as u32;
-            dispatch
-        } else {
-            sgemm::dispatch_size(
+        match &self.parameters {
+            MatMulParams::Vector(sgemv_params) => sgemv::dispatch_size(
+                second_to_last_dim_size as u32,
+                1,
+                batch_size as u32,
+                sgemv_params,
+            ),
+            MatMulParams::MatMul(sgemm_params) => sgemm::dispatch_size(
                 last_dim_size,
                 second_to_last_dim_size,
                 batch_size,
                 workgroup_shape,
-            )
+                sgemm_params,
+            ),
         }
     }
 
@@ -149,40 +170,50 @@ impl Operation for MatMulOperation {
         inputs: &[crate::mir::inputs::MirValue],
         generic_kernel: &mut GenericKernel,
     ) {
-        // Check if this is a matrix-vector multiplication (second matrix has 1 column and first matrix has multiple rows)
-        if self.second_shape[self.second_shape.len() - 1] == 1 && self.first_shape[self.first_shape.len() - 2] > 1 {
-            let [input_a, input_b, _] = inputs else {
-                panic!("MatMulOperation requires 3 inputs");
-            };
-            let input_a = input_a.as_tensor().unwrap();
-            let input_b = input_b.as_tensor().unwrap();
-            
-            let input_a = generic_kernel.add_tensor_input(self.rank(), false, input_a.datatype());
-            let input_b = generic_kernel.add_tensor_input(self.rank(), false, input_b.datatype());
-            let output = generic_kernel.add_tensor_input(
-                self.rank(),
-                true,
-                self.post_element_wise.out_datatype(),
-            );
-            
-            // Get dimension bindings
-            let k_size = input_a.shape_binding(self.rank() - 1);
-            let m_size = input_a.shape_binding(self.rank() - 2);
-            let n_size = input_b.shape_binding(self.rank() - 1);
-            
-            sgemv::sgemv(
+        match &self.parameters {
+            MatMulParams::Vector(sgemv_params) => {
+                let [input_a, input_b, _] = inputs else {
+                    panic!("MatMulOperation requires 3 inputs");
+                };
+                let input_a = input_a.as_tensor().unwrap();
+                let input_b = input_b.as_tensor().unwrap();
+
+                let input_a =
+                    generic_kernel.add_tensor_input(self.rank(), false, input_a.datatype());
+                let input_b =
+                    generic_kernel.add_tensor_input(self.rank(), false, input_b.datatype());
+                let output = generic_kernel.add_tensor_input(
+                    self.rank(),
+                    true,
+                    self.post_element_wise.out_datatype(),
+                );
+
+                // Get dimension bindings
+                let k_size = input_a.shape_binding(self.rank() - 1);
+                let m_size = input_a.shape_binding(self.rank() - 2);
+                let n_size = input_b.shape_binding(self.rank() - 1);
+
+                sgemv::sgemv(
+                    self,
+                    generic_kernel,
+                    workgroup_shape,
+                    &input_a,
+                    &input_b,
+                    &output,
+                    &n_size,
+                    &m_size,
+                    &k_size,
+                    sgemv_params,
+                )
+            }
+            MatMulParams::MatMul(sgemm_params) => sgemm::build_kernel(
                 self,
-                generic_kernel,
+                graph,
                 workgroup_shape,
-                &input_a,
-                &input_b,
-                &output,
-                &n_size,
-                &m_size,
-                &k_size,
-            );
-        } else {
-            sgemm::build_kernel(self, graph, workgroup_shape, inputs, generic_kernel);
+                inputs,
+                generic_kernel,
+                sgemm_params,
+            ),
         }
     }
 
@@ -245,7 +276,7 @@ async fn test_matrix_vector_mul_non_contiguous() {
     // Test with non-contiguous tensors
     let matrix = [[1., 2., 3., 10.], [4., 5., 6., 11.]];
     let vector = [[7.], [8.], [9.]];
-    
+
     // Take a slice of the matrix to make it non-contiguous
     let tensor_matrix = Tensor::new(&device, &matrix).narrow(1, 0, 3);
     let tensor_vector = Tensor::new(&device, &vector);
@@ -284,7 +315,7 @@ async fn test_batched_matrix_vector_mul() {
     // Test simpler batched case first: [1x2x3] * [1x3x1] = [1x2x1]
     let matrices = [[[1., 2., 3.], [4., 5., 6.]]];
     let vectors = [[[7.], [8.], [9.]]];
-    
+
     let tensor_matrices = Tensor::new(&device, &matrices);
     let tensor_vectors = Tensor::new(&device, &vectors);
     let result = tensor_matrices.mat_mul(&tensor_vectors);
@@ -301,9 +332,12 @@ async fn test_full_batched_matrix_vector_mul() {
     let device = Device::new().await.unwrap();
 
     // Test batched matrix-vector multiplication: [2x2x3] * [2x3x1] = [2x2x1]
-    let matrices = [[[1., 2., 3.], [4., 5., 6.]], [[7., 8., 9.], [10., 11., 12.]]];
+    let matrices = [
+        [[1., 2., 3.], [4., 5., 6.]],
+        [[7., 8., 9.], [10., 11., 12.]],
+    ];
     let vectors = [[[13.], [14.], [15.]], [[16.], [17.], [18.]]];
-    
+
     let tensor_matrices = Tensor::new(&device, &matrices);
     let tensor_vectors = Tensor::new(&device, &vectors);
     let result = tensor_matrices.mat_mul(&tensor_vectors);
@@ -312,7 +346,7 @@ async fn test_full_batched_matrix_vector_mul() {
     // First batch: [1*13 + 2*14 + 3*15, 4*13 + 5*14 + 6*15] = [86, 212]
     assert_eq!(as_slice[[0, 0, 0]], 86.);
     assert_eq!(as_slice[[0, 1, 0]], 212.);
-    
+
     // Second batch: [7*16 + 8*17 + 9*18, 10*16 + 11*17 + 12*18] = [410, 563]
     assert_eq!(as_slice[[1, 0, 0]], 410.);
     assert_eq!(as_slice[[1, 1, 0]], 563.);
