@@ -51,7 +51,7 @@ impl ParameterTuner {
         let mut params = Vec::new();
 
         // Test different chunk sizes
-        let chunk_sizes = [1, 2, 4, 8];
+        let chunk_sizes = [1, 2, 4, 8, 16, 32];
         // Test different vector sizes
         let vector_sizes = [1, 2, 4];
 
@@ -68,39 +68,41 @@ impl ParameterTuner {
         let mut params = Vec::new();
 
         // Test different thread sizes (must divide evenly into block sizes)
-        let thread_m_sizes = [2, 4];
-        let thread_n_sizes = [2, 4];
+        let thread_sizes = [1, 2, 4];
 
         // Test different block sizes
-        let block_m_multipliers = [8, 16, 32];
-        let block_n_multipliers = [4, 8, 16];
-        let block_k_sizes = [4, 8, 16];
+        let block_m_multipliers = [2, 4, 8, 16, 32];
+        let block_n_multipliers = [2, 4, 8, 16, 32];
+        let block_k_sizes = [2, 4, 8, 16, 32];
 
         // Test double buffering
         let double_buffer_options = [false, true];
 
-        for &thread_m in thread_m_sizes.iter() {
-            for &thread_n in thread_n_sizes.iter() {
-                for &block_m_mult in block_m_multipliers.iter() {
-                    for &block_n_mult in block_n_multipliers.iter() {
-                        for &block_k in block_k_sizes.iter() {
-                            for &double_buffer in double_buffer_options.iter() {
-                                let block_m = thread_m * block_m_mult;
-                                let block_n = thread_n * block_n_mult;
+        for &thread in thread_sizes.iter() {
+            for &block_m_mult in block_m_multipliers.iter() {
+                for &block_n_mult in block_n_multipliers.iter() {
+                    for &block_k in block_k_sizes.iter() {
+                        for &double_buffer in double_buffer_options.iter() {
+                            let thread_m = thread;
+                            let thread_n = thread;
+                            let block_m = thread_m * block_m_mult;
+                            let block_n = thread_n * block_n_mult;
 
-                                // Ensure valid workgroup size constraints
-                                let threads_per_workgroup =
-                                    (block_m * block_n) / (thread_m * thread_n);
-                                if threads_per_workgroup > 0 && threads_per_workgroup <= 256 {
-                                    params.push(SgemmParams::new(
-                                        double_buffer,
-                                        block_m,
-                                        block_n,
-                                        block_k,
-                                        thread_m,
-                                        thread_n,
-                                    ));
-                                }
+                            // Ensure valid workgroup size constraints
+                            let threads_per_workgroup = (block_m * block_n) / (thread_m * thread_n);
+                            if threads_per_workgroup > 0
+                                && threads_per_workgroup <= 256
+                                && threads_per_workgroup > block_k
+                                && threads_per_workgroup > block_n
+                            {
+                                params.push(SgemmParams::new(
+                                    double_buffer,
+                                    block_m,
+                                    block_n,
+                                    block_k,
+                                    thread_m,
+                                    thread_n,
+                                ));
                             }
                         }
                     }
@@ -114,11 +116,33 @@ impl ParameterTuner {
     fn get_test_sizes() -> Vec<MatrixSize> {
         vec![
             // Small vector operations
+            MatrixSize::new(32, 1, 32),
             MatrixSize::new(64, 1, 64),
             MatrixSize::new(128, 1, 128),
             MatrixSize::new(256, 1, 256),
             MatrixSize::new(512, 1, 512),
             MatrixSize::new(1024, 1, 1024),
+            // Tall vector operations
+            MatrixSize::new(32, 16, 32),
+            MatrixSize::new(64, 16, 64),
+            MatrixSize::new(128, 16, 128),
+            MatrixSize::new(256, 16, 256),
+            MatrixSize::new(512, 16, 512),
+            MatrixSize::new(1024, 16, 1024),
+            // Less Tall vector operations
+            MatrixSize::new(32, 64, 32),
+            MatrixSize::new(64, 64, 64),
+            MatrixSize::new(128, 64, 128),
+            MatrixSize::new(256, 64, 256),
+            MatrixSize::new(512, 64, 512),
+            MatrixSize::new(1024, 64, 1024),
+            // Even Less Tall vector operations
+            MatrixSize::new(32, 128, 32),
+            MatrixSize::new(64, 128, 64),
+            MatrixSize::new(128, 128, 128),
+            MatrixSize::new(256, 128, 256),
+            MatrixSize::new(512, 128, 512),
+            MatrixSize::new(1024, 128, 1024),
             // Small matrix operations
             MatrixSize::new(64, 64, 64),
             MatrixSize::new(128, 128, 128),
@@ -216,13 +240,14 @@ impl ParameterTuner {
             if size.n == 1 {
                 // Matrix-vector multiplication - test SGEMV parameters
                 let sgemv_params = self.generate_sgemv_params();
+                let total_params = sgemv_params.len();
                 println!(
                     "  Testing {} SGEMV parameter configurations",
                     sgemv_params.len()
                 );
 
                 for (i, params) in sgemv_params.into_iter().enumerate() {
-                    print!("\r  Progress: {}/{}", i + 1, 12); // 4*3 = 12 combinations
+                    print!("\r  Progress: {}/{}", i + 1, total_params);
                     use std::io::{self, Write};
                     io::stdout().flush().unwrap();
 
