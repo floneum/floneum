@@ -13,16 +13,7 @@ use wgpu::{
 };
 
 use crate::{
-    Device, ElementWiseOperation, MatMulOperation, PairWiseFunction, PairWiseOperation,
-    ReduceFunction, ReduceOperation,
-    compute_graph::{AnyComputeKey, ComputeGraph},
-    index_select::IndexSelectOperation,
-    layout::Layout,
-    map_layout::MapLayoutOperation,
-    mir::operation::Operation,
-    quantized::{QMatrix, matmul::QMatMulOperation},
-    resize::ResizeOperation,
-    slice_assign::SliceAssignOperation,
+    compute_graph::{AnyComputeKey, ComputeGraph}, index_select::IndexSelectOperation, layout::Layout, map_layout::MapLayoutOperation, mir::operation::Operation, quantized::{matmul::QMatMulOperation, QMatrix}, resize::ResizeOperation, slice_assign::SliceAssignOperation, Device, ElementWiseOperation, MatMulOperation, MatMulParams, PairWiseFunction, PairWiseOperation, ReduceFunction, ReduceOperation
 };
 
 pub trait DataType:
@@ -829,7 +820,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         Self::from_parts(self.data.pair_wise(operation))
     }
 
-    pub(crate) fn add_mat_mul(&self, other: &Self) -> Self {
+    pub(crate) fn add_mat_mul(&self, other: &Self, parameters: Option<MatMulParams>) -> Self {
         self.data.graph.merge(&other.data.graph);
         let operation = MatMulOperation::new(
             self.datatype(),
@@ -837,6 +828,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
             other.data.key,
             self.shape(),
             other.shape(),
+            parameters
         );
 
         Self::from_parts(self.data.mat_mul(operation))

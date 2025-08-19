@@ -399,6 +399,7 @@ impl<'a> Resolver<'a> {
         let mut second = operation.second;
         let second_shape = operation.second_shape.clone();
         let second_pre_element_wise = operation.pre_element_wise[1].clone();
+        let parameters = operation.parameters.clone();
 
         let first_pre_element_wise = if let AnyComputeKey::ElementWise(key) = first {
             let functions = self.collect_element_wise_ops(key);
@@ -415,12 +416,13 @@ impl<'a> Resolver<'a> {
             second_pre_element_wise
         };
 
-        let mut kernel = MatMulOperation::new(
+        let mut kernel = MatMulOperation::new_with_parameters(
             first_pre_element_wise.input_datatype(),
             first,
             second,
             &first_shape,
             &second_shape,
+            parameters
         );
         let first_pre = first_pre_element_wise;
         let second_pre = second_pre_element_wise;

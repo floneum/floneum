@@ -130,11 +130,23 @@ pub(super) fn build_kernel(
         "let totalResultsBlocktile = {block_m_size}u * {block_n_size}u;"
     )
     .unwrap();
-    writeln!(&mut kernel, "let numThreadsBlocktile = totalResultsBlocktile / ({thread_m_size}u * {thread_n_size}u);").unwrap();
+    writeln!(
+        &mut kernel,
+        "let numThreadsBlocktile = totalResultsBlocktile / ({thread_m_size}u * {thread_n_size}u);"
+    )
+    .unwrap();
 
     // Thread indices within the workgroup
-    writeln!(&mut kernel, "let threadCol = {workgroup_local_index} % ({block_n_size}u / {thread_n_size}u);").unwrap();
-    writeln!(&mut kernel, "let threadRow = {workgroup_local_index} / ({block_n_size}u / {thread_n_size}u);").unwrap();
+    writeln!(
+        &mut kernel,
+        "let threadCol = {workgroup_local_index} % ({block_n_size}u / {thread_n_size}u);"
+    )
+    .unwrap();
+    writeln!(
+        &mut kernel,
+        "let threadRow = {workgroup_local_index} / ({block_n_size}u / {thread_n_size}u);"
+    )
+    .unwrap();
 
     // Find the batch offset for a, b and output
     for (name, tensor) in [("a", &input_a), ("b", &input_b), ("c", &output)] {
@@ -184,16 +196,8 @@ pub(super) fn build_kernel(
     };
 
     // Register caches
-    writeln!(
-        &mut kernel,
-        "var regM: vec{thread_m_size}<{datatype}>;"
-    )
-    .unwrap();
-    writeln!(
-        &mut kernel,
-        "var regN: vec{thread_n_size}<{datatype}>;"
-    )
-    .unwrap();
+    writeln!(&mut kernel, "var regM: vec{thread_m_size}<{datatype}>;").unwrap();
+    writeln!(&mut kernel, "var regN: vec{thread_n_size}<{datatype}>;").unwrap();
 
     writeln!(
         &mut kernel,
@@ -322,7 +326,11 @@ pub(super) fn build_kernel(
     writeln!(&mut kernel, "    if (fullB) {{").unwrap();
     for i in 0..unroll_count_b {
         writeln!(&mut kernel, "        {{").unwrap();
-        writeln!(&mut kernel, "            let row_raw = innerRowB + {i}u * (numThreadsBlocktile / {block_n_size}u);").unwrap();
+        writeln!(
+            &mut kernel,
+            "            let row_raw = innerRowB + {i}u * (numThreadsBlocktile / {block_n_size}u);"
+        )
+        .unwrap();
         writeln!(&mut kernel, "            let col_raw = innerColB;").unwrap();
         writeln!(&mut kernel, "            let b_row = bkIdx + row_raw;").unwrap();
         writeln!(
@@ -337,7 +345,11 @@ pub(super) fn build_kernel(
     writeln!(&mut kernel, "    }} else {{").unwrap();
     for i in 0..unroll_count_b {
         writeln!(&mut kernel, "        {{").unwrap();
-        writeln!(&mut kernel, "            let row_raw = innerRowB + {i}u * (numThreadsBlocktile / {block_n_size}u);").unwrap();
+        writeln!(
+            &mut kernel,
+            "            let row_raw = innerRowB + {i}u * (numThreadsBlocktile / {block_n_size}u);"
+        )
+        .unwrap();
         writeln!(
             &mut kernel,
             "            let col_raw = innerColB; let b_row_global = bkIdx + row_raw;"
@@ -422,11 +434,11 @@ pub(super) fn build_kernel(
         .unwrap();
         for res_idx_n in 0..thread_n_size {
             writeln!(
-                    &mut kernel,
-                    "        threadResults[{} * {thread_n_size}u + {}] += result_{res_idx_m}[{}];",
-                    res_idx_m, res_idx_n, res_idx_n
-                )
-                .unwrap();
+                &mut kernel,
+                "        threadResults[{} * {thread_n_size}u + {}] += result_{res_idx_m}[{}];",
+                res_idx_m, res_idx_n, res_idx_n
+            )
+            .unwrap();
         }
     }
     writeln!(&mut kernel, "    }}").unwrap();
@@ -644,13 +656,33 @@ pub(super) fn build_kernel(
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct SgemmParams {
+pub struct SgemmParams {
     double_buffer: bool,
     block_m_size: u32,
     block_n_size: u32,
     block_k_size: u32,
     thread_m_size: u32,
     thread_n_size: u32,
+}
+
+impl SgemmParams {
+    pub fn new(
+        double_buffer: bool,
+        block_m_size: u32,
+        block_n_size: u32,
+        block_k_size: u32,
+        thread_m_size: u32,
+        thread_n_size: u32,
+    ) -> Self {
+        Self {
+            double_buffer,
+            block_m_size,
+            block_n_size,
+            block_k_size,
+            thread_m_size,
+            thread_n_size,
+        }
+    }
 }
 
 impl Default for SgemmParams {

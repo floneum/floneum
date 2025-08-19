@@ -10,7 +10,7 @@ mod sgemm;
 mod sgemv;
 
 #[derive(Debug, Clone)]
-pub(crate) enum MatMulParams {
+pub enum MatMulParams {
     Vector(sgemv::SgemvParams),
     MatMul(sgemm::SgemmParams),
 }
@@ -35,6 +35,33 @@ impl MatMulOperation {
         second: AnyComputeKey,
         first_shape: &[usize],
         second_shape: &[usize],
+        parameters: Option<MatMulParams>,
+    ) -> Self {
+        // Check if this is a matrix-vector multiplication (second matrix has 1 column and first matrix has multiple rows)
+        let parameters = parameters.unwrap_or_else(|| {
+            if second_shape[second_shape.len() - 1] == 1 && first_shape[first_shape.len() - 2] > 1 {
+                MatMulParams::Vector(sgemv::SgemvParams::default())
+            } else {
+                MatMulParams::MatMul(sgemm::SgemmParams::default())
+            }
+        });
+        Self::new_with_parameters(
+            datatype,
+            first,
+            second,
+            first_shape,
+            second_shape,
+            parameters,
+        )
+    }
+
+    pub(crate) fn new_with_parameters(
+        datatype: DataTypeEnum,
+        first: AnyComputeKey,
+        second: AnyComputeKey,
+        first_shape: &[usize],
+        second_shape: &[usize],
+        parameters: MatMulParams,
     ) -> Self {
         let last_dim = first_shape.len() - 1;
         let second_to_last_dim = first_shape.len() - 2;
@@ -50,15 +77,6 @@ impl MatMulOperation {
                 .zip(second_shape.iter().rev().skip(2))
                 .all(|(a, b)| a == b)
         );
-
-        // Check if this is a matrix-vector multiplication (second matrix has 1 column and first matrix has multiple rows)
-        let parameters = if second_shape[second_shape.len() - 1] == 1
-            && first_shape[first_shape.len() - 2] > 1
-        {
-            MatMulParams::Vector(sgemv::SgemvParams::default())
-        } else {
-            MatMulParams::MatMul(sgemm::SgemmParams::default())
-        };
 
         Self {
             first,
@@ -246,7 +264,11 @@ impl Operation for MatMulOperation {
 
 impl<const R: usize, T: DataType> Tensor<R, T> {
     pub fn mat_mul(&self, other: &Self) -> Self {
-        self.add_mat_mul(other)
+        self.add_mat_mul(other, None)
+    }
+
+    pub fn mat_mul_with_parameters(&self, other: &Self, parameters: MatMulParams) -> Self {
+        self.add_mat_mul(other, Some(parameters))
     }
 }
 

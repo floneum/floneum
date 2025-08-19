@@ -344,9 +344,18 @@ pub(crate) fn workgroup_shape_constraints(
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct SgemvParams {
+pub struct SgemvParams {
     chunk_size: u32,
     vector_size: u32,
+}
+
+impl SgemvParams {
+    pub fn new(chunk_size: u32, vector_size: u32) -> Self {
+        Self {
+            chunk_size,
+            vector_size,
+        }
+    }
 }
 
 impl Default for SgemvParams {
