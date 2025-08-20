@@ -73,6 +73,40 @@ pub(super) fn build_kernel(
     let threads_per_n_b: u32 = threads_per_workgroup / block_n_size;
     let unroll_count_b: u32 = block_k_size / threads_per_n_b;
 
+    // Make sure all the blocks are even
+    assert_eq!(
+        (block_m_size * block_n_size) % (thread_m_size * thread_n_size),
+        0
+    );
+    assert_eq!(threads_per_workgroup % block_k_size, 0);
+    assert_eq!(block_m_size % threads_per_k_a, 0);
+    assert_eq!(block_m_size % thread_m_size, 0);
+    assert_eq!(threads_per_workgroup % block_n_size, 0);
+    assert_eq!(block_k_size % threads_per_n_b, 0);
+    assert_eq!(block_n_size % thread_n_size, 0);
+
+    let (larger_block, smaller_block) = if block_k_size > block_n_size {
+        (block_k_size, block_n_size)
+    } else {
+        (block_n_size, block_k_size)
+    };
+    assert_eq!(larger_block % smaller_block, 0);
+    let (larger_block, smaller_block) = if block_k_size > block_m_size {
+        (block_k_size, block_m_size)
+    } else {
+        (block_m_size, block_k_size)
+    };
+    assert_eq!(larger_block % smaller_block, 0);
+
+    let meta_n_blocks = block_n_size / thread_n_size;
+    let meta_m_blocks = block_m_size / thread_m_size;
+    let (larger_meta_block, smaller_meta_block) = if meta_n_blocks > meta_m_blocks {
+        (meta_n_blocks, meta_m_blocks)
+    } else {
+        (meta_m_blocks, meta_n_blocks)
+    };
+    assert_eq!(larger_meta_block % smaller_meta_block, 0);
+
     let mut kernel = String::new();
 
     let pre_element_wise_functions: OnceLock<[Vec<Function>; 2]> = OnceLock::new();
@@ -130,26 +164,15 @@ pub(super) fn build_kernel(
         writeln!(&mut kernel, "block_batch /= {shape};").unwrap();
     }
 
-    writeln!(
-        &mut kernel,
-        "let totalResultsBlocktile = {block_m_size}u * {block_n_size}u;"
-    )
-    .unwrap();
-    writeln!(
-        &mut kernel,
-        "let numThreadsBlocktile = totalResultsBlocktile / ({thread_m_size}u * {thread_n_size}u);"
-    )
-    .unwrap();
-
     // Thread indices within the workgroup
     writeln!(
         &mut kernel,
-        "let threadCol = {workgroup_local_index} % ({block_n_size}u / {thread_n_size}u);"
+        "let threadCol = {workgroup_local_index} % ({meta_n_blocks}u);"
     )
     .unwrap();
     writeln!(
         &mut kernel,
-        "let threadRow = {workgroup_local_index} / ({block_n_size}u / {thread_n_size}u);"
+        "let threadRow = {workgroup_local_index} / ({meta_n_blocks}u);"
     )
     .unwrap();
 
@@ -260,7 +283,11 @@ pub(super) fn build_kernel(
     let b_offset = if double_buffer { "bBase + " } else { "" };
     let write_row_column = |kernel: &mut String, i, tensor: &str| {
         let tensor = tensor.to_uppercase();
-        writeln!(kernel, "            let row_raw = innerRow{tensor} + {i}u * (numThreadsBlocktile / {block_k_size}u);").unwrap();
+        writeln!(
+            kernel,
+            "            let row_raw = innerRow{tensor} + {i}u * {threads_per_k_a}u;"
+        )
+        .unwrap();
         writeln!(kernel, "            let col_raw = innerCol{tensor};").unwrap();
     };
     let write_back_a = |kernel: &mut String| {
@@ -335,7 +362,7 @@ pub(super) fn build_kernel(
         writeln!(&mut kernel, "        {{").unwrap();
         writeln!(
             &mut kernel,
-            "            let row_raw = innerRowB + {i}u * (numThreadsBlocktile / {block_n_size}u);"
+            "            let row_raw = innerRowB + {i}u * {threads_per_n_b}u;"
         )
         .unwrap();
         writeln!(&mut kernel, "            let col_raw = innerColB;").unwrap();
@@ -354,7 +381,7 @@ pub(super) fn build_kernel(
         writeln!(&mut kernel, "        {{").unwrap();
         writeln!(
             &mut kernel,
-            "            let row_raw = innerRowB + {i}u * (numThreadsBlocktile / {block_n_size}u);"
+            "            let row_raw = innerRowB + {i}u * {threads_per_n_b}u;"
         )
         .unwrap();
         writeln!(
@@ -440,7 +467,11 @@ pub(super) fn build_kernel(
         )
         .unwrap();
         for res_idx_n in 0..thread_n_size {
-            let indexed_result = maybe_vec_storage_index(thread_m_size, format_args!("result_{res_idx_m}"), res_idx_n);
+            let indexed_result = maybe_vec_storage_index(
+                thread_m_size,
+                format_args!("result_{res_idx_m}"),
+                res_idx_n,
+            );
             writeln!(
                 &mut kernel,
                 "        threadResults[{} * {thread_n_size}u + {}] += {indexed_result};",
@@ -549,7 +580,11 @@ pub(super) fn build_kernel(
     writeln!(&mut kernel, "        if (fullB) {{").unwrap();
     for i in 0..unroll_count_b {
         writeln!(&mut kernel, "            {{").unwrap();
-        writeln!(&mut kernel, "                let row_raw = innerRowB + {i}u * (numThreadsBlocktile / {block_n_size}u);").unwrap();
+        writeln!(
+            &mut kernel,
+            "                let row_raw = innerRowB + {i}u * {threads_per_n_b}u;"
+        )
+        .unwrap();
         writeln!(&mut kernel, "                let col_raw = innerColB;").unwrap();
         writeln!(&mut kernel, "                let b_row = bkIdx + row_raw;").unwrap();
         writeln!(
@@ -569,7 +604,11 @@ pub(super) fn build_kernel(
     writeln!(&mut kernel, "        }} else {{").unwrap();
     for i in 0..unroll_count_b {
         writeln!(&mut kernel, "            {{").unwrap();
-        writeln!(&mut kernel, "                let row_raw = innerRowB + {i}u * (numThreadsBlocktile / {block_n_size}u);").unwrap();
+        writeln!(
+            &mut kernel,
+            "                let row_raw = innerRowB + {i}u * {threads_per_n_b}u;"
+        )
+        .unwrap();
         writeln!(&mut kernel, "                let col_raw = innerColB;").unwrap();
         writeln!(
             &mut kernel,
@@ -612,7 +651,7 @@ pub(super) fn build_kernel(
     }
     writeln!(&mut kernel, "}}").unwrap();
 
-    // Write out the results (same as previous implementation)
+    // Write out the results
     writeln!(
         &mut kernel,
         "let outRowOffset = threadRow * {thread_m_size}u + cRow * {block_m_size}u;"

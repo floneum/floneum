@@ -422,7 +422,7 @@ impl<'a> Resolver<'a> {
             second,
             &first_shape,
             &second_shape,
-            parameters
+            parameters,
         );
         let first_pre = first_pre_element_wise;
         let second_pre = second_pre_element_wise;

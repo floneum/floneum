@@ -13,29 +13,14 @@ pub mod sgemv;
 
 pub fn get_optimal_params(m: usize, n: usize, k: usize) -> MatMulParams {
     match (m, n, k) {
-        (1024, 1, 1024) => MatMulParams::Vector(SgemvParams::new(8, 4)),
-        (1024, 1024, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 4, 2, 2)),
-        (1024, 16, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 4, 2, 2)),
-        (128, 1, 128) => MatMulParams::Vector(SgemvParams::new(8, 4)),
-        (128, 128, 128) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 4, 2, 2)),
-        (128, 16, 128) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 4, 2, 2)),
-        (128, 512, 256) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 4, 2, 2)),
-        (256, 1, 256) => MatMulParams::Vector(SgemvParams::new(8, 2)),
-        (256, 1024, 512) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 4, 2, 2)),
-        (256, 16, 256) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 4, 2, 2)),
-        (256, 256, 256) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 4, 2, 2)),
-        (32, 1, 32) => MatMulParams::Vector(SgemvParams::new(4, 4)),
-        (32, 16, 32) => MatMulParams::MatMul(SgemmParams::new(true, 32, 8, 4, 1, 1)),
-        (512, 1, 512) => MatMulParams::Vector(SgemvParams::new(1, 4)),
-        (512, 16, 512) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 4, 2, 2)),
-        (512, 256, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 4, 2, 2)),
-        (512, 512, 512) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 4, 2, 2)),
-        (64, 1, 64) => MatMulParams::Vector(SgemvParams::new(8, 2)),
-        (64, 16, 64) => MatMulParams::MatMul(SgemmParams::new(false, 16, 16, 8, 1, 1)),
-        (64, 64, 64) => MatMulParams::MatMul(SgemmParams::new(true, 32, 32, 2, 2, 2)),
+        (512, 512, 512) => MatMulParams::MatMul(SgemmParams::new(false, 128, 16, 8, 4, 4)),
+        (1024, 1024, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 8, 4, 4)),
+        (64, 64, 64) => MatMulParams::MatMul(SgemmParams::new(true, 32, 32, 16, 2, 2)),
+        (128, 128, 128) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 32, 2, 2)),
+        (256, 256, 256) => MatMulParams::MatMul(SgemmParams::new(false, 32, 64, 8, 4, 4)),
         // Default fallback
         (_, 1, _) => MatMulParams::Vector(SgemvParams::default()),
-        (_, _, _) => MatMulParams::MatMul(SgemmParams::default()),
+        (_, _, _) => MatMulParams::MatMul(SgemmParams::new(false, 32, 64, 8, 4, 4)),
     }
 }
 

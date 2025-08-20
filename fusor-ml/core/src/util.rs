@@ -1,7 +1,9 @@
 use std::fmt::Display;
 
-use crate::{mir::globals::{ArrayType, KernelGlobalType, VectorType}, DataTypeEnum};
-
+use crate::{
+    DataTypeEnum,
+    mir::globals::{ArrayType, KernelGlobalType, VectorType},
+};
 
 pub(crate) fn maybe_vec_storage_type(size: u32, dtype: DataTypeEnum) -> String {
     match size {
@@ -32,7 +34,11 @@ pub(crate) fn maybe_vec_storage_subgroup_add(size: u32, value: impl Display) -> 
     }
 }
 
-pub(crate) fn maybe_vec_storage_index(size: u32, value: impl Display, index: impl Display) -> String {
+pub(crate) fn maybe_vec_storage_index(
+    size: u32,
+    value: impl Display,
+    index: impl Display,
+) -> String {
     match size {
         0 => unreachable!(),
         1 => format!("{value}"),

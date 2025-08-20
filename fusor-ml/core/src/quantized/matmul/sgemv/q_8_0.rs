@@ -4,9 +4,7 @@ use crate::{
         kernel::GenericKernel,
         workgroup_shape::WorkgroupShape,
     },
-    quantized::matmul::{
-        QMatMulOperation,
-    },
+    quantized::matmul::QMatMulOperation,
     util::{maybe_vec_storage_index, maybe_vec_storage_subgroup_add, maybe_vec_storage_type},
 };
 use std::fmt::Write;

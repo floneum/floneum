@@ -13,7 +13,16 @@ use wgpu::{
 };
 
 use crate::{
-    compute_graph::{AnyComputeKey, ComputeGraph}, index_select::IndexSelectOperation, layout::Layout, map_layout::MapLayoutOperation, mir::operation::Operation, quantized::{matmul::QMatMulOperation, QMatrix}, resize::ResizeOperation, slice_assign::SliceAssignOperation, Device, ElementWiseOperation, MatMulOperation, MatMulParams, PairWiseFunction, PairWiseOperation, ReduceFunction, ReduceOperation
+    Device, ElementWiseOperation, MatMulOperation, MatMulParams, PairWiseFunction,
+    PairWiseOperation, ReduceFunction, ReduceOperation,
+    compute_graph::{AnyComputeKey, ComputeGraph},
+    index_select::IndexSelectOperation,
+    layout::Layout,
+    map_layout::MapLayoutOperation,
+    mir::operation::Operation,
+    quantized::{QMatrix, matmul::QMatMulOperation},
+    resize::ResizeOperation,
+    slice_assign::SliceAssignOperation,
 };
 
 pub trait DataType:
@@ -828,7 +837,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
             other.data.key,
             self.shape(),
             other.shape(),
-            parameters
+            parameters,
         );
 
         Self::from_parts(self.data.mat_mul(operation))

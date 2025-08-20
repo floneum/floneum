@@ -1,12 +1,15 @@
 use std::fmt::Write;
 
 use crate::{
+    MatMulOperation,
     mir::{
         globals::KernelGlobalSpace, inputs::TensorInput, kernel::GenericKernel,
         workgroup_shape::WorkgroupShape,
-    }, util::{
-        maybe_vec_dot, maybe_vec_storage_index, maybe_vec_storage_subgroup_add, maybe_vec_storage_type, maybe_vec_storage_type_enum
-    }, MatMulOperation
+    },
+    util::{
+        maybe_vec_dot, maybe_vec_storage_index, maybe_vec_storage_subgroup_add,
+        maybe_vec_storage_type, maybe_vec_storage_type_enum,
+    },
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -102,11 +105,7 @@ pub(crate) fn sgemv(
     writeln!(&mut kernel, "var index = base_axis_index;").unwrap();
 
     let vec_storage = maybe_vec_storage_type(vector_size, dtype);
-    writeln!(
-        &mut kernel,
-        "var a_cache = array<{vec_storage}, 1>();"
-    )
-    .unwrap();
+    writeln!(&mut kernel, "var a_cache = array<{vec_storage}, 1>();").unwrap();
 
     // Loop over all of the vector chunks this thread is responsible for
     writeln!(&mut kernel, "while (index < end_axis_index) {{").unwrap();
@@ -125,11 +124,7 @@ pub(crate) fn sgemv(
         };
 
         // Load vector elements into cache (from input_b)
-        writeln!(
-            &mut kernel,
-            "var b_cache = array<{vec_storage}, 1>();"
-        )
-        .unwrap();
+        writeln!(&mut kernel, "var b_cache = array<{vec_storage}, 1>();").unwrap();
         writeln!(&mut kernel, "{{").unwrap();
         {
             for i in 0..vector_size {
@@ -327,9 +322,6 @@ impl SgemvParams {
 
 impl Default for SgemvParams {
     fn default() -> Self {
-        Self {
-            chunk_size: 2,
-            vector_size: 4,
-        }
+        SgemvParams::new(1, 4)
     }
 }

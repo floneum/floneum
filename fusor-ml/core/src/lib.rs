@@ -30,8 +30,8 @@ mod reduce;
 mod resize;
 mod slice_assign;
 mod tensor;
-mod visit_tiled;
 mod util;
+mod visit_tiled;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {

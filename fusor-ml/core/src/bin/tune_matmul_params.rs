@@ -9,6 +9,7 @@ struct BenchmarkResult {
     operation_type: OperationType,
     matrix_size: MatrixSize,
     duration: Duration,
+    runs: u32,
     error: Option<String>,
 }
 
@@ -33,8 +34,8 @@ impl MatrixSize {
 
 struct ParameterTuner {
     device: Device,
-    warmup_iterations: usize,
-    benchmark_iterations: usize,
+    warmup_time: Duration,
+    benchmark_time: Duration,
 }
 
 impl ParameterTuner {
@@ -42,8 +43,8 @@ impl ParameterTuner {
         let device = Device::new().await?;
         Ok(Self {
             device,
-            warmup_iterations: 3,
-            benchmark_iterations: 100,
+            warmup_time: Duration::from_millis(10),
+            benchmark_time: Duration::from_millis(100),
         })
     }
 
@@ -89,21 +90,32 @@ impl ParameterTuner {
                             let block_n = thread_n * block_n_mult;
 
                             // Ensure valid workgroup size constraints
-                            let threads_per_workgroup = (block_m * block_n) / (thread_m * thread_n);
-                            if threads_per_workgroup > 0
-                                && threads_per_workgroup <= 256
-                                && threads_per_workgroup > block_k
-                                && threads_per_workgroup > block_n
-                            {
-                                params.push(SgemmParams::new(
-                                    double_buffer,
-                                    block_m,
-                                    block_n,
-                                    block_k,
-                                    thread_m,
-                                    thread_n,
-                                ));
+                            if (block_m * block_n) % (thread_m * thread_n) != 0 {
+                                continue;
                             }
+                            let threads_per_workgroup = (block_m * block_n) / (thread_m * thread_n);
+                            if threads_per_workgroup == 0
+                                || threads_per_workgroup > 256
+                                || threads_per_workgroup < block_k
+                                || threads_per_workgroup < block_n
+                                || threads_per_workgroup % block_k != 0
+                                || threads_per_workgroup % block_n != 0
+                            {
+                                continue;
+                            }
+                            let threads_per_k_a: u32 = threads_per_workgroup / block_k;
+                            let threads_per_n_b: u32 = threads_per_workgroup / block_n;
+                            if block_m % threads_per_k_a != 0 || block_k % threads_per_n_b != 0 {
+                                continue;
+                            }
+                            params.push(SgemmParams::new(
+                                double_buffer,
+                                block_m,
+                                block_n,
+                                block_k,
+                                thread_m,
+                                thread_n,
+                            ));
                         }
                     }
                 }
@@ -117,11 +129,19 @@ impl ParameterTuner {
         vec![
             // Small vector operations
             MatrixSize::new(32, 1, 32),
+            MatrixSize::new(32, 1, 8),
             MatrixSize::new(64, 1, 64),
+            MatrixSize::new(64, 1, 16),
             MatrixSize::new(128, 1, 128),
+            MatrixSize::new(128, 1, 32),
             MatrixSize::new(256, 1, 256),
+            MatrixSize::new(256, 1, 64),
             MatrixSize::new(512, 1, 512),
+            MatrixSize::new(512, 1, 128),
             MatrixSize::new(1024, 1, 1024),
+            MatrixSize::new(1024, 1, 256),
+            MatrixSize::new(2048, 1, 2048),
+            MatrixSize::new(2048, 1, 512),
             // Tall vector operations
             MatrixSize::new(32, 16, 32),
             MatrixSize::new(64, 16, 64),
@@ -173,29 +193,37 @@ impl ParameterTuner {
         let matrix_b = self.create_test_matrix(size.k, size.n);
 
         // Warmup runs
-        for _ in 0..self.warmup_iterations {
+        let start_time = Instant::now();
+        while start_time.elapsed() < self.warmup_time {
             if let Err(e) = self.run_single_matmul(&matrix_a, &matrix_b, &params).await {
                 return BenchmarkResult {
                     params: params.clone(),
                     operation_type,
                     matrix_size: size,
                     duration: Duration::from_secs(0),
+                    runs: 0,
                     error: Some(format!("Warmup failed: {}", e)),
                 };
             }
         }
 
         // Benchmark runs
+        let start_time = Instant::now();
         let mut total_duration = Duration::from_secs(0);
-        for _ in 0..self.benchmark_iterations {
+        let mut runs = 0;
+        while start_time.elapsed() < self.benchmark_time {
             match self.run_single_matmul(&matrix_a, &matrix_b, &params).await {
-                Ok(duration) => total_duration += duration,
+                Ok(duration) => {
+                    total_duration += duration;
+                    runs += 1;
+                }
                 Err(e) => {
                     return BenchmarkResult {
                         params: params.clone(),
                         operation_type,
                         matrix_size: size,
                         duration: Duration::from_secs(0),
+                        runs: 0,
                         error: Some(format!("Benchmark failed: {}", e)),
                     };
                 }
@@ -206,7 +234,8 @@ impl ParameterTuner {
             params,
             operation_type,
             matrix_size: size,
-            duration: total_duration / self.benchmark_iterations as u32,
+            duration: total_duration,
+            runs,
             error: None,
         }
     }
@@ -293,12 +322,17 @@ impl ParameterTuner {
             }
 
             let size = result.matrix_size.clone();
+            let average_time = result.duration.div_f64(result.runs as f64);
+            println!("  Analyzing result for matrix size: {:?}", size);
+            println!("    Average Time: {:?}", average_time);
+            println!("    Parameters: {:?}", result.params);
+            println!();
             match best_results.get(&size) {
                 None => {
                     best_results.insert(size, result);
                 }
                 Some(current_best) => {
-                    if result.duration < current_best.duration {
+                    if average_time < current_best.duration.div_f64(current_best.runs as f64) {
                         best_results.insert(size, result);
                     }
                 }
