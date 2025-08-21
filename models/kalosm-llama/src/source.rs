@@ -730,6 +730,24 @@ impl LlamaSource {
         ))
     }
 
+    /// A preset for gemma 3 270m instruction fine tuned
+    ///
+    /// Note: The gemma model series does not support system prompts
+    pub fn gemma_3_270m_chat() -> Self {
+        // https://huggingface.co/unsloth/gemma-3-270m-it-GGUF/blob/main/gemma-3-270m-it-Q4_K_M.gguf
+        Self::new(FileSource::huggingface(
+            "unsloth/gemma-3-270m-it-GGUF".to_string(),
+            "main".to_string(),
+            "gemma-3-270m-it-Q4_K_M.gguf".to_string(),
+        ))
+        .with_tokenizer(FileSource::huggingface(
+            "google/gemma-3-270m-it".to_string(),
+            "main".to_string(),
+            "tokenizer.json".to_string(),
+        ))
+        .with_override_stop_token_string("<end_of_turn>")
+    }
+
     /// A preset for gemma 3 1b instruction fine tuned
     ///
     /// Note: The gemma model series does not support system prompts
