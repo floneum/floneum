@@ -214,7 +214,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     /// Select the top k records nearest records to the given item.
     ///
     /// NOTE: If your embedding model has a different query embedding and you pass in a raw embedding, that embedding will perform best if it was created with [`EmbedderExt::embed_query`].
-    pub fn search<E>(&self, embedding: E) -> DocumentTableSearchBuilder<C, R, M, K, E>
+    pub fn search<E>(&self, embedding: E) -> DocumentTableSearchBuilder<'_, C, R, M, K, E>
     where
         E: IntoEmbedding,
         R: DeserializeOwned,
@@ -490,7 +490,7 @@ pub enum DocumentTableCreationError {
 
 /// An extension trait for the surreal database to interact with document tables.
 pub trait DocumentTableSurrealExt<C: Connection> {
-    /// Create a new document table builder.    
+    /// Create a new document table builder.
     fn document_table_builder(&self, table: &str) -> DocumentTableBuilder<C, Bert, ChunkStrategy>;
 }
 
