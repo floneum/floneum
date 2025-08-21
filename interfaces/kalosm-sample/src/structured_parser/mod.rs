@@ -101,7 +101,7 @@ impl AsRef<dyn std::error::Error + Send + Sync + 'static> for ParserError {
 }
 
 impl Deref for ParserError {
-    type Target = (dyn Error + Send + Sync + 'static);
+    type Target = dyn Error + Send + Sync + 'static;
 
     fn deref(&self) -> &(dyn Error + Send + Sync + 'static) {
         self.0.as_ref()

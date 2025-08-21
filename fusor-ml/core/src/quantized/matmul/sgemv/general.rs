@@ -82,7 +82,7 @@ pub(crate) fn general_sgemv(
     writeln!(&mut kernel, "var index = base_axis_index;").unwrap();
 
     let chunk_blocks = elements_per_block / SGEMV_VECTOR_SIZE;
-    debug_assert!(elements_per_block % SGEMV_VECTOR_SIZE == 0);
+    debug_assert!(elements_per_block.is_multiple_of(SGEMV_VECTOR_SIZE));
     writeln!(
         &mut kernel,
         "var a_cache = array<vec{SGEMV_VECTOR_SIZE}<{dtype}>, {chunk_blocks}>();"

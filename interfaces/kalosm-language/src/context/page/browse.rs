@@ -108,7 +108,7 @@ impl Tab {
 
     /// Find the first element matching the given selector.
     #[tracing::instrument]
-    pub fn find(&self, selector: &str) -> Result<Node, anyhow::Error> {
+    pub fn find(&self, selector: &str) -> Result<Node<'_>, anyhow::Error> {
         let element = self.inner.wait_for_element(selector)?;
 
         Ok(Node { inner: element })

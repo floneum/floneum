@@ -22,8 +22,8 @@ pub(crate) fn process_image(
         image,
     );
 
-    assert!(resized.height() % merge_patch == 0);
-    assert!(resized.width() % merge_patch == 0);
+    assert!(resized.height().is_multiple_of(merge_patch));
+    assert!(resized.width().is_multiple_of(merge_patch));
     let rgb: Tensor = image_to_rgb(&resized, device)?;
     // Normalize the image
     let required_rgb_mean = Tensor::new(image_mean, device)?.reshape(&[1, 3, 1, 1])?;
