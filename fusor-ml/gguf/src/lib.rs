@@ -349,7 +349,7 @@ impl GgufTensorMetadata {
     fn byte_size(&self) -> Result<usize, GgufReadError> {
         let tensor_elems = self.shape.iter().copied().product::<u32>() as usize;
         let block_size = self.ty.block_size();
-        if tensor_elems % block_size != 0 {
+        if !tensor_elems.is_multiple_of(block_size) {
             return Err(GgufReadError::InvalidTensorSize {
                 tensor_elems,
                 block_size,
