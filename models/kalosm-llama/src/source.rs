@@ -734,7 +734,6 @@ impl LlamaSource {
     ///
     /// Note: The gemma model series does not support system prompts
     pub fn gemma_3_270m_chat() -> Self {
-        // https://huggingface.co/unsloth/gemma-3-270m-it-GGUF/blob/main/gemma-3-270m-it-Q4_K_M.gguf
         Self::new(FileSource::huggingface(
             "unsloth/gemma-3-270m-it-GGUF".to_string(),
             "main".to_string(),
