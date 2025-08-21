@@ -11,133 +11,136 @@ use crate::{
 pub mod sgemm;
 pub mod sgemv;
 
-#[inline]
-pub fn get_optimal_params(m: u32, n: u32, k: u32) -> MatMulParams {
-    let lm = (m.max(1) as f32).log2(); // log2(m)
-    let ln = (n.max(1) as f32).log2(); // log2(n)
-    let lk = (k.max(1) as f32).log2(); // log2(k)
-    let ar = if k == 0 { 0.0 } else { (m as f32) / (k as f32) }; // m/k
-    let nr = if m == 0 { 0.0 } else { (n as f32) / (m as f32) }; // n/m
-    let rk = if k == 0 { 0.0 } else { (n as f32) / (k as f32) }; // n/k
-
-    if n == 1 {
-        // Extra features for the vector (sgemv) tree
-        let k_d128: f32 = if k % 128 == 0 { 1.0 } else { 0.0 };
-        let m_d256: f32 = if m % 256 == 0 { 1.0 } else { 0.0 };
-
-        if lm <= 8.5 {
-            if lm <= 5.5 {
-                MatMulParams::Vector(SgemvParams::new(8, 1))
-            } else {
-                if m_d256 <= 0.5 {
-                    if ar <= 2.5 {
-                        if rk <= 0.011719 {
-                            MatMulParams::Vector(SgemvParams::new(16, 1))
-                        } else {
-                            MatMulParams::Vector(SgemvParams::new(4, 1))
-                        }
-                    } else {
-                        if lm <= 6.5 {
-                            MatMulParams::Vector(SgemvParams::new(16, 1))
-                        } else {
-                            MatMulParams::Vector(SgemvParams::new(8, 1))
-                        }
-                    }
-                } else {
-                    if k_d128 <= 0.5 {
-                        MatMulParams::Vector(SgemvParams::new(8, 2))
-                    } else {
-                        MatMulParams::Vector(SgemvParams::new(8, 1))
-                    }
-                }
-            }
-        } else {
-            if lk <= 7.5 {
-                MatMulParams::Vector(SgemvParams::new(16, 1))
-            } else {
-                MatMulParams::Vector(SgemvParams::new(8, 4))
-            }
-        }
-    } else if nr <= 0.75 {
-        if lm <= 8.5 {
-            if lm <= 7.5 {
-                if lk <= 6.5 {
-                    if lm <= 5.5 {
-                        MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 8, 2, 2))
-                    } else {
-                        MatMulParams::MatMul(SgemmParams::new(true, 64, 16, 16, 2, 2))
-                    }
-                } else {
-                    if rk <= 0.3125 {
-                        MatMulParams::MatMul(SgemmParams::new(false, 32, 16, 16, 2, 2))
-                    } else {
-                        MatMulParams::MatMul(SgemmParams::new(true, 16, 64, 16, 2, 2))
-                    }
-                }
-            } else {
-                if rk <= 0.15625 {
-                    MatMulParams::MatMul(SgemmParams::new(false, 32, 16, 32, 2, 2))
-                } else {
-                    if rk <= 0.375 {
-                        MatMulParams::MatMul(SgemmParams::new(true, 16, 64, 32, 2, 2))
-                    } else {
-                        MatMulParams::MatMul(SgemmParams::new(false, 32, 16, 32, 2, 2))
-                    }
-                }
-            }
-        } else {
-            if nr <= 0.09375 {
-                if rk <= 0.023438 {
-                    MatMulParams::MatMul(SgemmParams::new(true, 32, 16, 32, 2, 2))
-                } else {
-                    if nr <= 0.046875 {
-                        MatMulParams::MatMul(SgemmParams::new(true, 64, 32, 32, 4, 4))
-                    } else {
-                        MatMulParams::MatMul(SgemmParams::new(false, 8, 64, 16, 2, 2))
-                    }
-                }
-            } else {
-                if lk <= 9.5 {
-                    if nr <= 0.1875 {
-                        MatMulParams::MatMul(SgemmParams::new(true, 16, 16, 32, 2, 2))
-                    } else {
-                        MatMulParams::MatMul(SgemmParams::new(false, 64, 16, 16, 2, 2))
-                    }
-                } else {
-                    MatMulParams::MatMul(SgemmParams::new(false, 128, 16, 16, 4, 4))
-                }
-            }
-        }
-    } else {
-        if ln <= 7.5 {
-            if lm <= 5.5 {
-                if ln <= 6.5 {
-                    MatMulParams::MatMul(SgemmParams::new(true, 32, 16, 8, 2, 2))
-                } else {
-                    MatMulParams::MatMul(SgemmParams::new(false, 8, 16, 8, 2, 2))
-                }
-            } else {
-                if ln <= 6.5 {
-                    MatMulParams::MatMul(SgemmParams::new(false, 64, 16, 16, 2, 2))
-                } else {
-                    MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 16, 2, 2))
-                }
-            }
-        } else {
-            if lk <= 8.5 {
-                if nr <= 2.5 {
-                    MatMulParams::MatMul(SgemmParams::new(true, 32, 32, 32, 2, 2))
-                } else {
-                    MatMulParams::MatMul(SgemmParams::new(true, 16, 16, 16, 2, 2))
-                }
-            } else {
-                if lm <= 9.5 {
-                    MatMulParams::MatMul(SgemmParams::new(true, 128, 16, 8, 4, 4))
-                } else {
-                    MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 8, 4, 4))
-                }
-            }
-        }
+pub fn get_optimal_params(m: usize, n: usize, k: usize) -> MatMulParams {
+    match (m, n, k) {
+        (1024, 256, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 128, 16, 8, 4, 4)),
+        (2048, 1024, 256) => MatMulParams::MatMul(SgemmParams::new(false, 128, 16, 8, 4, 4)),
+        (2048, 2048, 256) => MatMulParams::MatMul(SgemmParams::new(false, 128, 16, 8, 4, 4)),
+        (512, 2048, 512) => MatMulParams::MatMul(SgemmParams::new(false, 128, 16, 8, 4, 4)),
+        (1024, 1024, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 16, 128, 8, 4, 4)),
+        (1024, 2048, 512) => MatMulParams::MatMul(SgemmParams::new(false, 16, 128, 8, 4, 4)),
+        (1024, 256, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 16, 128, 8, 4, 4)),
+        (128, 2048, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 16, 128, 8, 4, 4)),
+        (2048, 1024, 512) => MatMulParams::MatMul(SgemmParams::new(false, 16, 128, 8, 4, 4)),
+        (2048, 128, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 16, 128, 8, 4, 4)),
+        (256, 1024, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 16, 128, 8, 4, 4)),
+        (256, 2048, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 16, 128, 8, 4, 4)),
+        (512, 2048, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 16, 128, 8, 4, 4)),
+        (512, 512, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 16, 128, 8, 4, 4)),
+        (256, 256, 512) => MatMulParams::MatMul(SgemmParams::new(false, 16, 32, 32, 2, 2)),
+        (128, 1024, 128) => MatMulParams::MatMul(SgemmParams::new(false, 16, 32, 8, 2, 2)),
+        (2048, 2048, 512) => MatMulParams::MatMul(SgemmParams::new(false, 32, 128, 8, 4, 4)),
+        (128, 512, 128) => MatMulParams::MatMul(SgemmParams::new(false, 32, 16, 32, 2, 2)),
+        (512, 128, 512) => MatMulParams::MatMul(SgemmParams::new(false, 32, 16, 32, 2, 2)),
+        (256, 128, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 32, 16, 64, 2, 2)),
+        (1024, 256, 128) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 16, 2, 2)),
+        (128, 2048, 128) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 16, 2, 2)),
+        (128, 256, 128) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 16, 2, 2)),
+        (256, 1024, 128) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 16, 2, 2)),
+        (1024, 1024, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 16, 4, 4)),
+        (512, 2048, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 16, 4, 4)),
+        (128, 128, 128) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 32, 2, 2)),
+        (256, 512, 256) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 32, 2, 2)),
+        (512, 256, 128) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 32, 2, 2)),
+        (2048, 256, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 32, 32, 8, 4, 4)),
+        (2048, 2048, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 32, 64, 16, 4, 4)),
+        (1024, 2048, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 32, 64, 8, 4, 4)),
+        (2048, 1024, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 32, 64, 8, 4, 4)),
+        (1024, 512, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 64, 16, 16, 2, 2)),
+        (2048, 256, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 64, 16, 16, 2, 2)),
+        (512, 1024, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 64, 16, 16, 2, 2)),
+        (1024, 512, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 64, 16, 32, 2, 2)),
+        (128, 128, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 64, 16, 32, 2, 2)),
+        (256, 2048, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 64, 16, 32, 2, 2)),
+        (512, 1024, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 64, 16, 32, 2, 2)),
+        (2048, 512, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 64, 32, 16, 4, 4)),
+        (1024, 1024, 512) => MatMulParams::MatMul(SgemmParams::new(false, 64, 32, 4, 4, 4)),
+        (128, 2048, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 64, 32, 4, 4, 4)),
+        (2048, 128, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 64, 32, 4, 4, 4)),
+        (2048, 512, 512) => MatMulParams::MatMul(SgemmParams::new(false, 64, 32, 4, 4, 4)),
+        (256, 1024, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 64, 32, 4, 4, 4)),
+        (512, 512, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 64, 32, 4, 4, 4)),
+        (2048, 128, 512) => MatMulParams::MatMul(SgemmParams::new(false, 64, 32, 8, 4, 4)),
+        (2048, 512, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 64, 32, 8, 4, 4)),
+        (1024, 2048, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 64, 64, 16, 4, 4)),
+        (2048, 1024, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 64, 64, 16, 4, 4)),
+        (2048, 2048, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 64, 64, 16, 4, 4)),
+        (1024, 1024, 128) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (1024, 1024, 256) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (1024, 128, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (1024, 128, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (1024, 128, 512) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (1024, 2048, 128) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (1024, 2048, 256) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (1024, 256, 256) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (1024, 256, 512) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (1024, 512, 128) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (1024, 512, 256) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (1024, 512, 512) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (128, 1024, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (128, 1024, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (128, 1024, 512) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (128, 2048, 256) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (128, 2048, 512) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (128, 512, 512) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (2048, 1024, 128) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (2048, 128, 256) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (2048, 2048, 128) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (2048, 256, 128) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (2048, 256, 256) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (2048, 256, 512) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (2048, 512, 128) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (2048, 512, 256) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (256, 1024, 256) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (256, 1024, 512) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (256, 128, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (256, 2048, 128) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (256, 2048, 256) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (256, 2048, 512) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (256, 256, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (256, 256, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (256, 512, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (256, 512, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (256, 512, 512) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (512, 1024, 128) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (512, 1024, 256) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (512, 1024, 512) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (512, 128, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (512, 128, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (512, 2048, 128) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (512, 2048, 256) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (512, 256, 1024) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (512, 256, 2048) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (512, 256, 512) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (512, 512, 256) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (512, 512, 512) => MatMulParams::MatMul(SgemmParams::new(false, 64, 8, 16, 2, 2)),
+        (512, 512, 128) => MatMulParams::MatMul(SgemmParams::new(true, 128, 16, 8, 4, 4)),
+        (2048, 128, 128) => MatMulParams::MatMul(SgemmParams::new(true, 16, 32, 16, 2, 2)),
+        (128, 256, 256) => MatMulParams::MatMul(SgemmParams::new(true, 16, 64, 32, 2, 2)),
+        (128, 128, 2048) => MatMulParams::MatMul(SgemmParams::new(true, 16, 64, 64, 2, 2)),
+        (128, 256, 2048) => MatMulParams::MatMul(SgemmParams::new(true, 32, 16, 32, 2, 2)),
+        (1024, 128, 128) => MatMulParams::MatMul(SgemmParams::new(true, 32, 32, 32, 2, 2)),
+        (1024, 128, 256) => MatMulParams::MatMul(SgemmParams::new(true, 32, 32, 32, 2, 2)),
+        (128, 1024, 256) => MatMulParams::MatMul(SgemmParams::new(true, 32, 32, 32, 2, 2)),
+        (128, 128, 256) => MatMulParams::MatMul(SgemmParams::new(true, 32, 32, 32, 2, 2)),
+        (128, 512, 2048) => MatMulParams::MatMul(SgemmParams::new(true, 32, 32, 32, 2, 2)),
+        (256, 128, 128) => MatMulParams::MatMul(SgemmParams::new(true, 32, 32, 32, 2, 2)),
+        (256, 128, 256) => MatMulParams::MatMul(SgemmParams::new(true, 32, 32, 32, 2, 2)),
+        (256, 128, 512) => MatMulParams::MatMul(SgemmParams::new(true, 32, 32, 32, 2, 2)),
+        (256, 256, 128) => MatMulParams::MatMul(SgemmParams::new(true, 32, 32, 32, 2, 2)),
+        (256, 256, 256) => MatMulParams::MatMul(SgemmParams::new(true, 32, 32, 32, 2, 2)),
+        (256, 512, 128) => MatMulParams::MatMul(SgemmParams::new(true, 32, 32, 32, 2, 2)),
+        (512, 128, 128) => MatMulParams::MatMul(SgemmParams::new(true, 32, 32, 32, 2, 2)),
+        (512, 128, 256) => MatMulParams::MatMul(SgemmParams::new(true, 32, 32, 32, 2, 2)),
+        (512, 256, 256) => MatMulParams::MatMul(SgemmParams::new(true, 32, 32, 32, 2, 2)),
+        (128, 128, 512) => MatMulParams::MatMul(SgemmParams::new(true, 32, 32, 64, 2, 2)),
+        (128, 256, 512) => MatMulParams::MatMul(SgemmParams::new(true, 64, 16, 16, 2, 2)),
+        (128, 512, 256) => MatMulParams::MatMul(SgemmParams::new(true, 64, 64, 32, 4, 4)),
+        (128, 512, 1024) => MatMulParams::MatMul(SgemmParams::new(true, 64, 8, 16, 2, 2)),
+        (128, 256, 1024) => MatMulParams::MatMul(SgemmParams::new(true, 8, 32, 32, 2, 2)),
+        // Default fallback
+        (_, 1, _) => MatMulParams::Vector(SgemvParams::default()),
+        (_, _, _) => MatMulParams::MatMul(SgemmParams::default()),
     }
 }
 
@@ -174,7 +177,7 @@ impl MatMulOperation {
             let n = second_shape[second_shape.len() - 1];
             let m = first_shape[first_shape.len() - 2];
             let k = first_shape[first_shape.len() - 1];
-            get_optimal_params(m as u32, n as u32, k as u32)
+            get_optimal_params(m, n, k)
         });
         Self::new_with_parameters(
             datatype,

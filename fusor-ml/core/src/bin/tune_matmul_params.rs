@@ -43,8 +43,8 @@ impl ParameterTuner {
         let device = Device::new().await?;
         Ok(Self {
             device,
-            warmup_time: Duration::from_millis(10),
-            benchmark_time: Duration::from_millis(100),
+            warmup_time: Duration::from_millis(100),
+            benchmark_time: Duration::from_millis(500),
         })
     }
 
@@ -52,7 +52,7 @@ impl ParameterTuner {
         let mut params = Vec::new();
 
         // Test different chunk sizes
-        let chunk_sizes = [1, 2, 4, 8, 16, 32];
+        let chunk_sizes = [1, 2, 4, 8, 16, 32, 64];
         // Test different vector sizes
         let vector_sizes = [1, 2, 4];
 
@@ -72,9 +72,9 @@ impl ParameterTuner {
         let thread_sizes = [1, 2, 4];
 
         // Test different block sizes
-        let block_m_multipliers = [2, 4, 8, 16, 32];
-        let block_n_multipliers = [2, 4, 8, 16, 32];
-        let block_k_sizes = [2, 4, 8, 16, 32];
+        let block_m_multipliers = [2, 4, 8, 16, 32, 64];
+        let block_n_multipliers = [2, 4, 8, 16, 32, 64];
+        let block_k_sizes = [2, 4, 8, 16, 32, 64];
 
         // Test double buffering
         let double_buffer_options = [false, true];
@@ -126,55 +126,18 @@ impl ParameterTuner {
     }
 
     fn get_test_sizes() -> Vec<MatrixSize> {
-        vec![
-            // Small vector operations
-            MatrixSize::new(32, 1, 32),
-            MatrixSize::new(32, 1, 8),
-            MatrixSize::new(64, 1, 64),
-            MatrixSize::new(64, 1, 16),
-            MatrixSize::new(128, 1, 128),
-            MatrixSize::new(128, 1, 32),
-            MatrixSize::new(256, 1, 256),
-            MatrixSize::new(256, 1, 64),
-            MatrixSize::new(512, 1, 512),
-            MatrixSize::new(512, 1, 128),
-            MatrixSize::new(1024, 1, 1024),
-            MatrixSize::new(1024, 1, 256),
-            MatrixSize::new(2048, 1, 2048),
-            MatrixSize::new(2048, 1, 512),
-            // Tall vector operations
-            MatrixSize::new(32, 16, 32),
-            MatrixSize::new(64, 16, 64),
-            MatrixSize::new(128, 16, 128),
-            MatrixSize::new(256, 16, 256),
-            MatrixSize::new(512, 16, 512),
-            MatrixSize::new(1024, 16, 1024),
-            // Less Tall vector operations
-            MatrixSize::new(32, 64, 32),
-            MatrixSize::new(64, 64, 64),
-            MatrixSize::new(128, 64, 128),
-            MatrixSize::new(256, 64, 256),
-            MatrixSize::new(512, 64, 512),
-            MatrixSize::new(1024, 64, 1024),
-            // Even Less Tall vector operations
-            MatrixSize::new(32, 128, 32),
-            MatrixSize::new(64, 128, 64),
-            MatrixSize::new(128, 128, 128),
-            MatrixSize::new(256, 128, 256),
-            MatrixSize::new(512, 128, 512),
-            MatrixSize::new(1024, 128, 1024),
-            // Small matrix operations
-            MatrixSize::new(64, 64, 64),
-            MatrixSize::new(128, 128, 128),
-            MatrixSize::new(256, 256, 256),
-            MatrixSize::new(512, 512, 512),
-            // Medium matrix operations
-            MatrixSize::new(1024, 1024, 1024),
-            // Rectangular matrices
-            MatrixSize::new(128, 512, 256),
-            MatrixSize::new(256, 1024, 512),
-            MatrixSize::new(512, 256, 1024),
-        ]
+        let m_sized = [128, 256, 512, 1024, 2048];
+        let n_sized = [128, 256, 512, 1024, 2048];
+        let k_sized = [128, 256, 512, 1024, 2048];
+        let mut sizes = Vec::new();
+        for m in m_sized {
+            for n in n_sized {
+                for k in k_sized {
+                    sizes.push(MatrixSize { m, n, k });
+                }
+            }
+        }
+        sizes
     }
 
     async fn benchmark_configuration(
