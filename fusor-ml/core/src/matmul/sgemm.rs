@@ -702,7 +702,7 @@ pub(super) fn build_kernel(
     generic_kernel.push_body(&kernel);
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SgemmParams {
     double_buffer: bool,
     block_m_size: u32,

@@ -126,9 +126,9 @@ impl ParameterTuner {
     }
 
     fn get_test_sizes() -> Vec<MatrixSize> {
-        let m_sized = [128, 256, 512, 1024, 2048];
-        let n_sized = [128, 256, 512, 1024, 2048];
-        let k_sized = [128, 256, 512, 1024, 2048];
+        let m_sized = [32, 64, 128, 256, 512, 1024, 2048];
+        let n_sized = [1];
+        let k_sized = [32, 64, 128, 256, 512, 1024, 2048];
         let mut sizes = Vec::new();
         for m in m_sized {
             for n in n_sized {
