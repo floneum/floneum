@@ -53,10 +53,5 @@ pub(crate) fn workgroup_shape_constraints(
     _matrix: &QMatrix,
     _device: &Device,
 ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
-    let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
-
-    constraints.add_constraint(0, crate::mir::workgroup_shape::Constraint::Equals(1));
-    constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));
-    constraints.add_constraint(2, crate::mir::workgroup_shape::Constraint::Equals(1));
-    constraints
+    crate::mir::workgroup_shape::WorkgroupShapeConstraints::default()
 }
