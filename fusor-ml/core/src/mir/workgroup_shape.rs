@@ -123,9 +123,8 @@ impl WorkgroupShapeConstraints {
         });
         let mut write = cache.write();
         *write.get_or_insert_ref(self, || {
-            println!("constraints: {:?}", self.shape);
             // Find the smallest valid shape that matches the max subgroup size
-            let out = self.possible().min_by_key(|shape| {
+            self.possible().min_by_key(|shape| {
                 let linearized = shape.linearized();
                 (linearized as i64)
                     + if linearized % limits.max_subgroup_size == 0 {
@@ -133,9 +132,7 @@ impl WorkgroupShapeConstraints {
                     } else {
                         1024
                     }
-            });
-            println!("Found shape: {:?}", out);
-            out
+            })
         })
     }
 
