@@ -209,6 +209,10 @@ impl Constraint {
         Constraint::Not(Box::new(Constraint::LessThan(value)))
     }
 
+    pub(crate) fn less_than_or_equals(value: u32) -> Self {
+        Constraint::LessThan(value + 1)
+    }
+
     fn fits(&self, shape: u32) -> bool {
         match self {
             Constraint::Equals(value) => shape == *value,

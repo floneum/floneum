@@ -284,14 +284,18 @@ pub(crate) fn workgroup_shape_constraints(
     _: &SgemvParams,
 ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
     let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
-    let limits = device.wgpu_device().limits();
+    let limits = device.wgpu_adapter().limits();
     constraints.add_constraint(
         0,
         crate::mir::workgroup_shape::Constraint::less_than(limits.max_compute_workgroup_size_x + 1),
     );
     constraints.add_constraint(
         0,
-        crate::mir::workgroup_shape::Constraint::equals(limits.min_subgroup_size.max(16)),
+        crate::mir::workgroup_shape::Constraint::more_than_or_equals(limits.min_subgroup_size),
+    );
+    constraints.add_constraint(
+        0,
+        crate::mir::workgroup_shape::Constraint::less_than_or_equals(limits.max_subgroup_size),
     );
     constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));
     constraints.add_constraint(2, crate::mir::workgroup_shape::Constraint::Equals(1));

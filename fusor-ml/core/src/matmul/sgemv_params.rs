@@ -1,7 +1,7 @@
 use crate::sgemv::SgemvParams;
 
 #[inline]
-pub fn gemv_parameters(m: usize, n: usize, k: usize) -> SgemvParams {
+pub fn gemv_parameters(m: usize, _: usize, k: usize) -> SgemvParams {
     let m = m as f32;
     let k = k as f32;
     if k <= 384f32 {
