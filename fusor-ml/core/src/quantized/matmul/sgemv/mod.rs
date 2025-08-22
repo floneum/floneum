@@ -121,7 +121,7 @@ pub(crate) fn dispatch_size(matrix: &QMatrix, n: u32, _m: u32) -> [u32; 3] {
 }
 
 pub(crate) fn workgroup_shape_constraints(
-    matrix: &QMatrix,
+    _: &QMatrix,
     device: &Device,
 ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
     let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();

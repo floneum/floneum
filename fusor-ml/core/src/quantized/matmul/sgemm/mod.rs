@@ -3,7 +3,7 @@ use crate::{
     mir::{
         inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
-        workgroup_shape::WorkgroupShape,
+        workgroup_shape::{Constraint, WorkgroupShape},
     },
     quantized::matmul::{QMatMulOperation, sgemm::general::general_sgemm},
 };
@@ -50,8 +50,16 @@ pub(crate) fn dispatch_size(
 }
 
 pub(crate) fn workgroup_shape_constraints(
-    _matrix: &QMatrix,
+    matrix: &QMatrix,
     _device: &Device,
 ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
-    crate::mir::workgroup_shape::WorkgroupShapeConstraints::default()
+    let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
+    let second_dim = matrix.shape()[1];
+    let second_dim_block_width = second_dim.div_ceil(matrix.datatype().block_size());
+    constraints.add_constraint(
+        1,
+        Constraint::less_than_or_equals(second_dim_block_width as _),
+    );
+    constraints.add_constraint(2, Constraint::equals(1));
+    constraints
 }

@@ -120,9 +120,7 @@ impl Device {
     }
 
     pub fn limits(&self) -> wgpu::Limits {
-        let mut limits = self.inner.adapter.limits();
-        limits.max_subgroup_size = limits.max_subgroup_size;
-        limits
+        self.inner.adapter.limits()
     }
 
     pub fn wgpu_adapter(&self) -> &wgpu::Adapter {
