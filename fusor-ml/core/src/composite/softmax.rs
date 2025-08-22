@@ -232,7 +232,7 @@ impl SoftmaxOperation {
         writeln!(&mut kernel_body, "}}").unwrap();
         writeln!(&mut kernel_body).unwrap();
 
-        let limits = device.wgpu_adapter().limits();
+        let limits = device.limits();
         let max_subgroup_size = limits.max_subgroup_size;
 
         // Optimized subgroup reduction with unrolled shuffle operations
@@ -381,7 +381,7 @@ impl Operation for SoftmaxOperation {
         device: &crate::Device,
     ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
         let mut constraints = WorkgroupShapeConstraints::new();
-        let limits = device.wgpu_adapter().limits();
+        let limits = device.limits();
         constraints.add_constraint(
             0,
             Constraint::less_than(limits.max_compute_workgroup_size_x + 1),

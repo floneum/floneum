@@ -125,37 +125,15 @@ pub(crate) fn workgroup_shape_constraints(
     device: &Device,
 ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
     let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
-    let limits = device.wgpu_adapter().limits();
-    if matrix.datatype == GgmlType::Q6K
-        || matrix.datatype == GgmlType::Q4K
-        || matrix.datatype == GgmlType::Q4_0
-        || matrix.datatype == GgmlType::Q5_0
-        || matrix.datatype == GgmlType::Q8_0
-    {
-        constraints.add_constraint(
-            0,
-            crate::mir::workgroup_shape::Constraint::more_than_or_equals(limits.min_subgroup_size),
-        );
-        constraints.add_constraint(
-            0,
-            crate::mir::workgroup_shape::Constraint::less_than_or_equals(limits.max_subgroup_size),
-        );
-    } else {
-        constraints.add_constraint(
-            0,
-            crate::mir::workgroup_shape::Constraint::less_than(
-                limits.max_compute_workgroup_size_x + 1,
-            ),
-        );
-        constraints.add_constraint(
-            0,
-            crate::mir::workgroup_shape::Constraint::more_than_or_equals(limits.min_subgroup_size),
-        );
-        constraints.add_constraint(
-            0,
-            crate::mir::workgroup_shape::Constraint::less_than_or_equals(limits.max_subgroup_size),
-        );
-    }
+    let limits = device.limits();
+    constraints.add_constraint(
+        0,
+        crate::mir::workgroup_shape::Constraint::more_than_or_equals(limits.min_subgroup_size),
+    );
+    constraints.add_constraint(
+        0,
+        crate::mir::workgroup_shape::Constraint::less_than_or_equals(limits.max_subgroup_size),
+    );
     constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));
     constraints.add_constraint(2, crate::mir::workgroup_shape::Constraint::Equals(1));
     constraints

@@ -54,7 +54,7 @@ impl<'a> Resolver<'a> {
     }
 
     pub(crate) fn run(&mut self) -> TensorData {
-        let limits = self.graph.device.wgpu_adapter().limits();
+        let limits = self.graph.device.limits();
         self.queue_operations();
         let queued_operations = std::mem::take(&mut self.queued_operations);
 
