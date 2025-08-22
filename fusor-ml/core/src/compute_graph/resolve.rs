@@ -54,6 +54,7 @@ impl<'a> Resolver<'a> {
     }
 
     pub(crate) fn run(&mut self) -> TensorData {
+        let limits = self.graph.device.wgpu_adapter().limits();
         self.queue_operations();
         let queued_operations = std::mem::take(&mut self.queued_operations);
 
@@ -69,9 +70,9 @@ impl<'a> Resolver<'a> {
             let constraint = operation.workgroup_shape_constraints(&self.graph.device);
             let mut new_merged = current_constraints.clone();
             new_merged.merge(&constraint);
-            let old_best = current_constraints.solve().unwrap();
+            let old_best = current_constraints.solve(&limits).unwrap();
             let mut extend = self.should_extend_kernel(new_inputs.clone(), &inputs);
-            extend &= new_merged.solve().is_some();
+            extend &= new_merged.solve(&limits).is_some();
             current_constraints = new_merged;
             if !extend {
                 let kernel = std::mem::take(&mut kernel);
@@ -107,7 +108,7 @@ impl<'a> Resolver<'a> {
         }
 
         if !pending_operations.is_empty() {
-            let old_best = current_constraints.solve().unwrap_or_else(|| {
+            let old_best = current_constraints.solve(&limits).unwrap_or_else(|| {
                 panic!(
                     "Failed to find a valid workgroup shape for constraints {current_constraints:?}"
                 )

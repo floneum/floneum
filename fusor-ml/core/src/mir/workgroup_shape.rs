@@ -111,7 +111,7 @@ impl WorkgroupShapeConstraints {
         possible_workgroup_shapes().filter(move |shape| self.is_valid(shape))
     }
 
-    pub(crate) fn solve(&self) -> Option<WorkgroupShape> {
+    pub(crate) fn solve(&self, limits: &wgpu::Limits) -> Option<WorkgroupShape> {
         static CACHE: OnceLock<
             RwLock<LruCache<WorkgroupShapeConstraints, Option<WorkgroupShape>, FxBuildHasher>>,
         > = OnceLock::new();
@@ -123,7 +123,16 @@ impl WorkgroupShapeConstraints {
         });
         let mut write = cache.write();
         *write.get_or_insert_ref(self, || {
-            self.possible().max_by_key(|shape| shape.linearized())
+            // Find the smallest valid shape that matches the max subgroup size
+            self.possible().min_by_key(|shape| {
+                let linearized = shape.linearized();
+                (linearized as i64)
+                    + if linearized % limits.max_subgroup_size == 0 {
+                        0
+                    } else {
+                        1024
+                    }
+            })
         })
     }
 
@@ -160,7 +169,7 @@ fn test_workgroup_shape_constraints() {
         assert!(shape.shape[1] < 3);
     }
 
-    let valid_shape = constraints.solve();
+    let valid_shape = constraints.solve(&wgpu::Limits::defaults());
     assert_eq!(valid_shape.unwrap().shape, [4, 2, 32]);
     assert_eq!(valid_shape.unwrap().linearized(), 256);
 }
@@ -184,7 +193,7 @@ fn test_many_workgroup_shape_constraints() {
         assert!(shape.shape[1] < 3);
     }
 
-    let valid_shape = merged.solve();
+    let valid_shape = merged.solve(&wgpu::Limits::defaults());
     assert_eq!(valid_shape.unwrap().shape, [4, 2, 32]);
     assert_eq!(valid_shape.unwrap().linearized(), 256);
 }
