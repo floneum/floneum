@@ -754,15 +754,6 @@ dependencies = [
 
 [[package]]
 name = "bit-set"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0481a0e032742109b1133a095184ee93d88f3dc9e0d28a5d033dc77a073f44f"
-dependencies = [
- "bit-vec 0.7.0",
-]
-
-[[package]]
-name = "bit-set"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08807e080ed7f9d5433fa9b275196cfc35414f66a0c79d864dc51a0d825231a3"
@@ -775,12 +766,6 @@ name = "bit-vec"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "349f9b6a179ed607305526ca489b34ad0a41aed5f7980fa90eb03160b69598fb"
-
-[[package]]
-name = "bit-vec"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2c54ff287cfc0a34f38a6b832ea1bd8e448a330b3e40a50859e6488bee07f22"
 
 [[package]]
 name = "bit-vec"
@@ -890,7 +875,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ad8646f98db542e39fc66e68a20b2144f6a732636df7c2354e74645faaa433ce"
 dependencies = [
  "borsh-derive",
- "cfg_aliases 0.2.1",
+ "cfg_aliases",
 ]
 
 [[package]]
@@ -1229,12 +1214,6 @@ checksum = "2fd1289c04a9ea8cb22300a459a72a385d7c73d3259e2ed7dcb2af674838cfa9"
 
 [[package]]
 name = "cfg_aliases"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e"
-
-[[package]]
-name = "cfg_aliases"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
@@ -1391,16 +1370,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fa961b519f0b462e3a3b4a34b64d119eeaca1d59af726fe450bbba07a9fc0a1"
 dependencies = [
  "thiserror 2.0.16",
-]
-
-[[package]]
-name = "codespan-reporting"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3538270d33cc669650c4b093848450d380def10c331d38c768e34cac80576e6e"
-dependencies = [
- "termcolor",
- "unicode-width 0.1.14",
 ]
 
 [[package]]
@@ -2795,7 +2764,6 @@ dependencies = [
  "kalosm-common",
  "kalosm-model-types",
  "lru 0.14.0",
- "naga 22.1.0",
  "ndarray 0.16.1",
  "num-traits",
  "parking_lot",
@@ -5255,26 +5223,6 @@ dependencies = [
 
 [[package]]
 name = "naga"
-version = "22.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8bd5a652b6faf21496f2cfd88fc49989c8db0825d1f6746b1a71a6ede24a63ad"
-dependencies = [
- "arrayvec",
- "bit-set 0.6.0",
- "bitflags 2.9.3",
- "cfg_aliases 0.1.1",
- "codespan-reporting 0.11.1",
- "hexf-parse",
- "indexmap 2.11.0",
- "log",
- "rustc-hash 1.1.0",
- "termcolor",
- "thiserror 1.0.69",
- "unicode-xid",
-]
-
-[[package]]
-name = "naga"
 version = "26.0.0"
 source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#e211517369460f72a105ba3c565731218178bf1a"
 dependencies = [
@@ -5282,8 +5230,8 @@ dependencies = [
  "bit-set 0.8.0",
  "bitflags 2.9.3",
  "cfg-if",
- "cfg_aliases 0.2.1",
- "codespan-reporting 0.12.0",
+ "cfg_aliases",
+ "codespan-reporting",
  "half 2.6.0",
  "hashbrown 0.15.5",
  "hexf-parse",
@@ -6483,7 +6431,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "626214629cda6781b6dc1d316ba307189c85ba657213ce642d9c77670f8202c8"
 dependencies = [
  "bytes",
- "cfg_aliases 0.2.1",
+ "cfg_aliases",
  "pin-project-lite",
  "quinn-proto",
  "quinn-udp",
@@ -6523,7 +6471,7 @@ version = "0.5.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fcebb1209ee276352ef14ff8732e24cc2b02bbac986cd74a4c81bcb2f9881970"
 dependencies = [
- "cfg_aliases 0.2.1",
+ "cfg_aliases",
  "libc",
  "once_cell",
  "socket2 0.5.10",
@@ -9563,12 +9511,12 @@ dependencies = [
  "arrayvec",
  "bitflags 2.9.3",
  "cfg-if",
- "cfg_aliases 0.2.1",
+ "cfg_aliases",
  "document-features",
  "hashbrown 0.15.5",
  "js-sys",
  "log",
- "naga 26.0.0",
+ "naga",
  "parking_lot",
  "portable-atomic",
  "profiling",
@@ -9593,12 +9541,12 @@ dependencies = [
  "bit-vec 0.8.0",
  "bitflags 2.9.3",
  "bytemuck",
- "cfg_aliases 0.2.1",
+ "cfg_aliases",
  "document-features",
  "hashbrown 0.15.5",
  "indexmap 2.11.0",
  "log",
- "naga 26.0.0",
+ "naga",
  "once_cell",
  "parking_lot",
  "portable-atomic",
@@ -9651,7 +9599,7 @@ dependencies = [
  "block",
  "bytemuck",
  "cfg-if",
- "cfg_aliases 0.2.1",
+ "cfg_aliases",
  "core-graphics-types 0.2.0",
  "glow",
  "glutin_wgl_sys",
@@ -9665,7 +9613,7 @@ dependencies = [
  "libloading",
  "log",
  "metal 0.32.0",
- "naga 26.0.0",
+ "naga",
  "ndk-sys 0.6.0+11769913",
  "objc",
  "ordered-float 5.0.0",
