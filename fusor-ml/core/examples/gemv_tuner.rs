@@ -57,13 +57,8 @@ async fn tune_shape(device: &Device, m: usize, k: usize) {
     );
 
     // Test parameter combinations
-    let test_params = (0..6).step_by(1).flat_map(|chunk_exp| {
-        (0..3).map(move |vector_exp| {
-            SgemvParams::new(
-                1 << (chunk_exp),  // 16, 32
-                1 << (vector_exp), // 2, 4, 8
-            )
-        })
+    let test_params = (0..8).step_by(1).flat_map(|chunk_exp| {
+        (0..3).map(move |vector_exp| SgemvParams::new(1 << (chunk_exp), 1 << (vector_exp)))
     });
 
     let iterations = 250;
