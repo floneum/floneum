@@ -90,11 +90,7 @@ pub(crate) fn sgemv(
     writeln!(&mut kernel, "var acc = {storage_type}();").unwrap();
 
     // Find this threads position in the workgroup
-    writeln!(
-        &mut kernel,
-        "var index = {workgroup_local_index} * {vector_size};"
-    )
-    .unwrap();
+    writeln!(&mut kernel, "var index = {workgroup_local_index};").unwrap();
 
     let vec_storage = maybe_vec_storage_type(vector_size, dtype);
 
@@ -103,7 +99,11 @@ pub(crate) fn sgemv(
     {
         // Load vector elements into b_reg from input_b. This will be reused for each offset in the chunk
         for i in 0..vector_size {
-            writeln!(&mut kernel, "let input_b_{i}_index = index + {i};").unwrap();
+            writeln!(
+                &mut kernel,
+                "let input_b_{i}_index = index + {i} * {vector_size};"
+            )
+            .unwrap();
             let b_row_stride = input_b.stride_binding(op.rank() - 2);
             writeln!(&mut kernel, "let input_b_{i} = select({dtype}(0.0), {input_b}[b_start_index + input_b_{i}_index * {b_row_stride} + 0], input_b_{i}_index < {k_size});").unwrap();
         }
