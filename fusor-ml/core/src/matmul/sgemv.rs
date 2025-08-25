@@ -25,6 +25,7 @@ pub(crate) fn sgemv(
     _m_size: &str,
     k_size: &str,
     params: &SgemvParams,
+    graph: &crate::compute_graph::ComputeGraphInner,
 ) {
     let blocksize = workgroup_size.x();
     let dtype = op.datatype;
@@ -36,7 +37,8 @@ pub(crate) fn sgemv(
     let cache_size = params.cache_size;
 
     // We don't need to synchronize between the whole workgroup if there is only one subgroup
-    let workgroup_sync_data = (blocksize > 32).then(|| {
+    let subgroup_size = graph.device.limits().max_subgroup_size;
+    let workgroup_sync_data = (blocksize > subgroup_size).then(|| {
         let local_data = generic_kernel.add_global_array(
             KernelGlobalSpace::Workgroup,
             maybe_vec_storage_type_enum(chunk_size, dtype),

@@ -44,6 +44,7 @@ pub(crate) fn sgemv(
     // m size is always 1 for sgemv
     _m_size: &str,
     k_size: &str,
+    graph: &crate::compute_graph::ComputeGraphInner,
 ) {
     match op.matrix.datatype {
         GgmlType::Q6K => q6k_sgemv(
@@ -100,6 +101,7 @@ pub(crate) fn sgemv(
             _n_size,
             _m_size,
             k_size,
+            graph,
         ),
     }
 }

@@ -507,7 +507,7 @@ impl Operation for QMatMulOperation {
     // based on https://siboehm.com/articles/22/CUDA-MMM
     fn build_kernel(
         &self,
-        _: &crate::compute_graph::ComputeGraphInner,
+        graph: &crate::compute_graph::ComputeGraphInner,
         workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
         _: &[MirValue],
         generic_kernel: &mut GenericKernel,
@@ -540,6 +540,7 @@ impl Operation for QMatMulOperation {
             &n_size,
             &m_size,
             &k_size,
+            graph,
         );
     }
 

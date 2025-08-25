@@ -22,6 +22,7 @@ pub(crate) fn sgemm(
     // m size is always 1 for sgemv
     _m_size: &str,
     k_size: &str,
+    _: &crate::compute_graph::ComputeGraphInner,
 ) {
     general_sgemm(
         op,

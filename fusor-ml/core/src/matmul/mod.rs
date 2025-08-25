@@ -233,6 +233,7 @@ impl Operation for MatMulOperation {
                     &m_size,
                     &k_size,
                     sgemv_params,
+                    graph,
                 )
             }
             MatMulParams::MatMul(sgemm_params) => sgemm::build_kernel(
