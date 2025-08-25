@@ -4,11 +4,9 @@ use crate::{
         kernel::GenericKernel,
         workgroup_shape::WorkgroupShape,
     },
-    quantized::matmul::{
-        QMatMulOperation,
-        sgemv::{maybe_vec_storage_index, maybe_vec_storage_subgroup_add, maybe_vec_storage_type},
-    },
+    quantized::matmul::QMatMulOperation,
     shift_right_scale,
+    util::{maybe_vec_storage_index, maybe_vec_storage_subgroup_add, maybe_vec_storage_type},
 };
 use std::fmt::Write;
 

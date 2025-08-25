@@ -54,6 +54,7 @@ impl<'a> Resolver<'a> {
     }
 
     pub(crate) fn run(&mut self) -> TensorData {
+        let limits = self.graph.device.limits();
         self.queue_operations();
         let queued_operations = std::mem::take(&mut self.queued_operations);
 
@@ -69,9 +70,9 @@ impl<'a> Resolver<'a> {
             let constraint = operation.workgroup_shape_constraints(&self.graph.device);
             let mut new_merged = current_constraints.clone();
             new_merged.merge(&constraint);
-            let old_best = current_constraints.solve().unwrap();
+            let old_best = current_constraints.solve(&limits).unwrap();
             let mut extend = self.should_extend_kernel(new_inputs.clone(), &inputs);
-            extend &= new_merged.solve().is_some();
+            extend &= new_merged.solve(&limits).is_some();
             current_constraints = new_merged;
             if !extend {
                 let kernel = std::mem::take(&mut kernel);
@@ -107,7 +108,7 @@ impl<'a> Resolver<'a> {
         }
 
         if !pending_operations.is_empty() {
-            let old_best = current_constraints.solve().unwrap_or_else(|| {
+            let old_best = current_constraints.solve(&limits).unwrap_or_else(|| {
                 panic!(
                     "Failed to find a valid workgroup shape for constraints {current_constraints:?}"
                 )
@@ -399,6 +400,7 @@ impl<'a> Resolver<'a> {
         let mut second = operation.second;
         let second_shape = operation.second_shape.clone();
         let second_pre_element_wise = operation.pre_element_wise[1].clone();
+        let parameters = operation.parameters.clone();
 
         let first_pre_element_wise = if let AnyComputeKey::ElementWise(key) = first {
             let functions = self.collect_element_wise_ops(key);
@@ -415,12 +417,13 @@ impl<'a> Resolver<'a> {
             second_pre_element_wise
         };
 
-        let mut kernel = MatMulOperation::new(
+        let mut kernel = MatMulOperation::new_with_parameters(
             first_pre_element_wise.input_datatype(),
             first,
             second,
             &first_shape,
             &second_shape,
+            parameters,
         );
         let first_pre = first_pre_element_wise;
         let second_pre = second_pre_element_wise;
