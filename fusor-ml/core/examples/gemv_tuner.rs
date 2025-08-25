@@ -22,8 +22,10 @@ async fn benchmark_params(
     let matmul_params = MatMulParams::Vector(params.clone());
 
     // Warmup
-    let result = tensor_a.mat_mul_with_parameters(&tensor_b.t(), matmul_params.clone());
-    result.materialize().await;
+    for _ in 0..10 {
+        let result = tensor_a.mat_mul_with_parameters(&tensor_b.t(), matmul_params.clone());
+        result.materialize().await;
+    }
 
     // Benchmark
     let start = Instant::now();
@@ -56,9 +58,9 @@ async fn tune_shape(device: &Device, m: usize, k: usize) {
     );
 
     // Test parameter combinations
-    let test_params = (0..4).step_by(1).flat_map(|chunk_exp| {
+    let test_params = (0..6).step_by(1).flat_map(|chunk_exp| {
         (0..3).flat_map(move |vector_exp| {
-            (0..4).step_by(1).map(move |cache_exp| {
+            (0..6).step_by(1).map(move |cache_exp| {
                 SgemvParams::new(
                     1 << (chunk_exp),  // 16, 32
                     1 << (vector_exp), // 2, 4, 8
@@ -68,7 +70,7 @@ async fn tune_shape(device: &Device, m: usize, k: usize) {
         })
     });
 
-    let iterations = 100;
+    let iterations = 250;
     let mut results = Vec::new();
 
     for params in test_params {
@@ -124,15 +126,13 @@ async fn run_tuning() {
     println!("====================");
 
     // Test key matrix shapes
-    let shapes = [
-        (1, 512),     // Vector multiplication
-        (1, 2048),    // Larger vector
-        (8, 1024),    // Small batch
-        (768, 3072),  // BERT transformer
-        (1024, 4096), // GPT-2 transformer
-    ];
+    let sizes = [512, 1024, 2048, 4096];
+    let shapes = (sizes.iter().copied())
+        .flat_map(|m| sizes.iter().copied().map(move |k| (m, k)))
+        // .filter(|(m, k)| m >= k)
+    ;
 
-    for &(m, k) in &shapes {
+    for (m, k) in shapes {
         tune_shape(&device, m, k).await;
     }
 
