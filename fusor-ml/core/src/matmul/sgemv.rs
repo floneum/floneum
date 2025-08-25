@@ -92,10 +92,9 @@ pub(crate) fn sgemv(
     // Find this threads position in the workgroup
     writeln!(
         &mut kernel,
-        "let base_axis_index = {workgroup_local_index};"
+        "var index = {workgroup_local_index} * {vector_size};"
     )
     .unwrap();
-    writeln!(&mut kernel, "var index = base_axis_index;").unwrap();
 
     let vec_storage = maybe_vec_storage_type(vector_size, dtype);
 
