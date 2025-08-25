@@ -1,7 +1,7 @@
 use fusor_core::matmul::sgemv::SgemvParams;
 use fusor_core::matmul::{MatMulParams, get_optimal_params};
 use fusor_core::{Device, Tensor};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 async fn benchmark_params(
     device: &Device,
@@ -51,14 +51,23 @@ async fn tune_shape(device: &Device, m: usize, k: usize) {
     };
 
     println!(
-        "Current: chunk={}, vector={}",
+        "Current: chunk={}, vector={}, subgroups_per_workgroup={}",
         heuristic.chunk_size(),
         heuristic.vector_size(),
+        heuristic.subgroups_per_workgroup()
     );
 
     // Test parameter combinations
-    let test_params = (0..8).step_by(1).flat_map(|chunk_exp| {
-        (0..3).map(move |vector_exp| SgemvParams::new(1 << (chunk_exp), 1 << (vector_exp)))
+    let test_params = (0..6).flat_map(|chunk_exp| {
+        (0..3).flat_map(move |vector_exp| {
+            (0..6).map(move |subgroups_per_workgroup| {
+                SgemvParams::new(
+                    1 << chunk_exp,
+                    1 << vector_exp,
+                    1 << subgroups_per_workgroup,
+                )
+            })
+        })
     });
 
     let iterations = 250;
@@ -78,10 +87,11 @@ async fn tune_shape(device: &Device, m: usize, k: usize) {
     println!("Top 5 results:");
     for (i, (params, gflops)) in results.iter().take(5).enumerate() {
         println!(
-            "  {}. chunk={}, vector={} → {:e} GFLOPS",
+            "  {}. chunk={}, vector={}, subgroups_per_workgroup={} => {:e} GFLOPS",
             i + 1,
             params.chunk_size(),
             params.vector_size(),
+            params.subgroups_per_workgroup(),
             gflops
         );
     }

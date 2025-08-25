@@ -261,7 +261,7 @@ pub(crate) fn dispatch_size(
 pub(crate) fn workgroup_shape_constraints(
     _: &MatMulOperation,
     device: &crate::Device,
-    _: &SgemvParams,
+    params: &SgemvParams,
 ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
     let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
     let limits = device.limits();
@@ -275,7 +275,9 @@ pub(crate) fn workgroup_shape_constraints(
     );
     constraints.add_constraint(
         0,
-        crate::mir::workgroup_shape::Constraint::less_than_or_equals(limits.max_subgroup_size),
+        crate::mir::workgroup_shape::Constraint::less_than_or_equals(
+            limits.max_subgroup_size * params.subgroups_per_workgroup.min(limits.max_subgroup_size),
+        ),
     );
     constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));
     constraints.add_constraint(2, crate::mir::workgroup_shape::Constraint::Equals(1));
@@ -286,26 +288,33 @@ pub(crate) fn workgroup_shape_constraints(
 pub struct SgemvParams {
     chunk_size: u32,
     vector_size: u32,
+    subgroups_per_workgroup: u32,
 }
 
 impl SgemvParams {
-    pub fn new(chunk_size: u32, vector_size: u32) -> Self {
+    pub fn new(chunk_size: u32, vector_size: u32, subgroups_per_workgroup: u32) -> Self {
         Self {
             chunk_size,
             vector_size,
+            subgroups_per_workgroup,
         }
     }
 
     pub fn chunk_size(&self) -> u32 {
         self.chunk_size
     }
+
     pub fn vector_size(&self) -> u32 {
         self.vector_size
+    }
+
+    pub fn subgroups_per_workgroup(&self) -> u32 {
+        self.subgroups_per_workgroup
     }
 }
 
 impl Default for SgemvParams {
     fn default() -> Self {
-        SgemvParams::new(1, 4)
+        SgemvParams::new(1, 4, 1)
     }
 }
