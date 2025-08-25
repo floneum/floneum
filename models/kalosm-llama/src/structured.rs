@@ -582,12 +582,12 @@ where
 
 #[derive(Deserialize, Serialize, Clone, Default)]
 pub struct StructuredInferenceTimingInfo {
-    sampler_time: std::time::Duration,
-    constraint_time: std::time::Duration,
-    parser_time: std::time::Duration,
-    transformer_time: std::time::Duration,
-    trie_time: std::time::Duration,
-    total_time: std::time::Duration,
+    pub sampler_time: std::time::Duration,
+    pub constraint_time: std::time::Duration,
+    pub parser_time: std::time::Duration,
+    pub transformer_time: std::time::Duration,
+    pub trie_time: std::time::Duration,
+    pub total_time: std::time::Duration,
 }
 
 impl Display for StructuredInferenceTimingInfo {

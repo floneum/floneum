@@ -26,6 +26,7 @@ use std::{
     time::Duration,
 };
 use std::{io::Write, num::NonZeroUsize};
+use sygus_types::*;
 
 use clap::Parser as _;
 use nom::{
@@ -921,16 +922,6 @@ async fn run() {
     .unwrap();
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-struct Summary {
-    average_metadata: StructuredInferenceTimingInfo,
-    average_entropy: f64,
-    average_entropy_diff: f64,
-    average_tokenization_error: f64,
-    average_tokens_after_first_token_error: f64,
-    total_duration: Duration,
-}
-
 #[derive(Clone)]
 struct Interpreter {
     functions: HashMap<String, Arc<dyn Fn(&[SExpr], &mut Self) -> SExpr + Send + Sync>>,
@@ -1273,17 +1264,4 @@ fn create_grammar(
     grammar.inline_optimize();
 
     grammar.to_grammar()
-}
-
-#[derive(Serialize, Deserialize)]
-struct Run {
-    generation: u32,
-    metadata: StructuredInferenceTimingInfo,
-    pass: bool,
-    entropy: f64,
-    entropy_diff: f64,
-    tokenization_error: bool,
-    tokens_after_tokenization_error: u32,
-    result: String,
-    tokens: Vec<u32>,
 }

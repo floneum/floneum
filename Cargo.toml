@@ -30,7 +30,7 @@ members = [
     "fusor-ml/core",
     "fusor-ml/gguf",
     "sygus",
-    "cfg",
+    "cfg", "sygus-types", "sygus-analysis",
 ]
 
 [workspace.dependencies]

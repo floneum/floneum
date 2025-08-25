@@ -1,0 +1,9 @@
+[package]
+name = "sygus-analysis"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde_json = "1.0.143"
+sygus-types = { version = "0.1.0", path = "../sygus-types" }
+walkdir = "2"
