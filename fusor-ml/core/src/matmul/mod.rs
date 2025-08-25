@@ -156,6 +156,7 @@ impl Operation for MatMulOperation {
                 second_to_last_dim_size as u32,
                 1,
                 batch_size as u32,
+                workgroup_shape,
                 sgemv_params,
             ),
             MatMulParams::MatMul(sgemm_params) => sgemm::dispatch_size(

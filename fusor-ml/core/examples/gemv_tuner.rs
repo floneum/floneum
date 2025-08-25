@@ -51,22 +51,18 @@ async fn tune_shape(device: &Device, m: usize, k: usize) {
     };
 
     println!(
-        "Current: chunk={}, vector={}, cache={}",
+        "Current: chunk={}, vector={}",
         heuristic.chunk_size(),
         heuristic.vector_size(),
-        heuristic.cache_size()
     );
 
     // Test parameter combinations
     let test_params = (0..6).step_by(1).flat_map(|chunk_exp| {
-        (0..3).flat_map(move |vector_exp| {
-            (0..6).step_by(1).map(move |cache_exp| {
-                SgemvParams::new(
-                    1 << (chunk_exp),  // 16, 32
-                    1 << (vector_exp), // 2, 4, 8
-                    1 << (cache_exp),  // 16, 32, 64, 128, 256, 512
-                )
-            })
+        (0..3).map(move |vector_exp| {
+            SgemvParams::new(
+                1 << (chunk_exp),  // 16, 32
+                1 << (vector_exp), // 2, 4, 8
+            )
         })
     });
 
@@ -87,20 +83,17 @@ async fn tune_shape(device: &Device, m: usize, k: usize) {
     println!("Top 5 results:");
     for (i, (params, gflops)) in results.iter().take(5).enumerate() {
         println!(
-            "  {}. chunk={}, vector={}, cache={} → {:e} GFLOPS",
+            "  {}. chunk={}, vector={} → {:e} GFLOPS",
             i + 1,
             params.chunk_size(),
             params.vector_size(),
-            params.cache_size(),
             gflops
         );
     }
 
     // print the heuristic performance
     if let Some((_, heuristic_perf)) = results.iter().find(|(p, _)| {
-        p.chunk_size() == heuristic.chunk_size()
-            && p.vector_size() == heuristic.vector_size()
-            && p.cache_size() == heuristic.cache_size()
+        p.chunk_size() == heuristic.chunk_size() && p.vector_size() == heuristic.vector_size()
     }) {
         println!("Heuristic performance: {:e} GFLOPS", heuristic_perf);
     } else {
@@ -109,9 +102,7 @@ async fn tune_shape(device: &Device, m: usize, k: usize) {
 
     // Compare with heuristic
     if let Some((_, heuristic_perf)) = results.iter().find(|(p, _)| {
-        p.chunk_size() == heuristic.chunk_size()
-            && p.vector_size() == heuristic.vector_size()
-            && p.cache_size() == heuristic.cache_size()
+        p.chunk_size() == heuristic.chunk_size() && p.vector_size() == heuristic.vector_size()
     }) {
         let best_perf = results[0].1;
         let improvement = (best_perf / heuristic_perf - 1.0) * 100.0;

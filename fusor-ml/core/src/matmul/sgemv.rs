@@ -34,7 +34,6 @@ pub(crate) fn sgemv(
 
     let chunk_size = params.chunk_size;
     let vector_size = params.vector_size;
-    let cache_size = params.cache_size;
 
     // We don't need to synchronize between the whole workgroup if there is only one subgroup
     let subgroup_size = graph.device.limits().max_subgroup_size;
@@ -84,11 +83,7 @@ pub(crate) fn sgemv(
     }
 
     // In index of the single element in the vector we are multiplying against
-    writeln!(
-        &mut kernel,
-        "let workgroup_offset = {workgroup_index}.x * {chunk_size};"
-    )
-    .unwrap();
+    writeln!(&mut kernel, "let workgroup_offset = {workgroup_index}.x;").unwrap();
 
     let storage_type = maybe_vec_storage_type(chunk_size, dtype);
 
@@ -100,23 +95,28 @@ pub(crate) fn sgemv(
         "let base_axis_index = {workgroup_local_index};"
     )
     .unwrap();
-    writeln!(
-        &mut kernel,
-        "let end_axis_index = ({k_size} + {vector_size} - 1) / {vector_size};"
-    )
-    .unwrap();
     writeln!(&mut kernel, "var index = base_axis_index;").unwrap();
 
     let vec_storage = maybe_vec_storage_type(vector_size, dtype);
-    writeln!(
-        &mut kernel,
-        "var a_cache = array<{vec_storage}, {cache_size}>();"
-    )
-    .unwrap();
 
     // Loop over all of the vector chunks this thread is responsible for
-    writeln!(&mut kernel, "while (index < end_axis_index) {{").unwrap();
+    writeln!(&mut kernel, "while (index < {k_size}) {{").unwrap();
     {
+        // Load vector elements into b_reg from input_b. This will be reused for each offset in the chunk
+        for i in 0..vector_size {
+            writeln!(&mut kernel, "let input_b_{i}_index = index + {i};").unwrap();
+            let b_row_stride = input_b.stride_binding(op.rank() - 2);
+            writeln!(&mut kernel, "let input_b_{i} = select({dtype}(0.0), {input_b}[b_start_index + input_b_{i}_index * {b_row_stride} + 0], input_b_{i}_index < {k_size});").unwrap();
+        }
+        write!(&mut kernel, "let reg_b = {vec_storage}(").unwrap();
+        for i in 0..vector_size {
+            if i > 0 {
+                write!(&mut kernel, ", ").unwrap();
+            }
+            write!(&mut kernel, "input_b_{i}").unwrap();
+        }
+        writeln!(&mut kernel, ");").unwrap();
+
         if chunk_size > 1 {
             writeln!(
                 &mut kernel,
@@ -130,99 +130,32 @@ pub(crate) fn sgemv(
             "workgroup_offset"
         };
 
-        // Load vector elements into cache (from input_b)
-        writeln!(
-            &mut kernel,
-            "var b_cache = array<{vec_storage}, {cache_size}>();"
-        )
-        .unwrap();
-        writeln!(&mut kernel, "{{").unwrap();
-        {
-            writeln!(
-                &mut kernel,
-                "for (var cache_idx = 0u; cache_idx < {cache_size}; cache_idx += 1u) {{"
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "let thread_vector_index = index + cache_idx * {blocksize};"
-            )
-            .unwrap();
-
-            for i in 0..vector_size {
-                writeln!(
-                    &mut kernel,
-                    "let input_b_{i}_index = thread_vector_index * {vector_size} + {i};"
-                )
-                .unwrap();
-                let b_row_stride = input_b.stride_binding(op.rank() - 2);
-                writeln!(&mut kernel, "let input_b_{i} = select({dtype}(0.0), {input_b}[b_start_index + input_b_{i}_index * {b_row_stride} + 0], input_b_{i}_index < {k_size});").unwrap();
-            }
-            write!(&mut kernel, "b_cache[cache_idx] = {vec_storage}(").unwrap();
-            for i in 0..vector_size {
-                if i > 0 {
-                    write!(&mut kernel, ", ").unwrap();
-                }
-                write!(&mut kernel, "input_b_{i}").unwrap();
-            }
-            writeln!(&mut kernel, ");").unwrap();
-            writeln!(&mut kernel, "}}").unwrap();
+        // Load matrix row elements into a_reg from input_a
+        for i in 0..vector_size {
+            writeln!(&mut kernel, "let input_a_{i}_index = index + {i};").unwrap();
+            let a_row_stride = input_a.stride_binding(op.rank() - 2);
+            writeln!(&mut kernel, "let input_a_{i} = select({dtype}(0.0), {input_a}[a_start_index + {row_index} * {a_row_stride} + input_a_{i}_index], input_a_{i}_index < {k_size});").unwrap();
         }
-        writeln!(&mut kernel, "}}").unwrap();
-
-        // Load matrix row elements (from input_a)
-        writeln!(&mut kernel, "{{").unwrap();
-        {
-            writeln!(
-                &mut kernel,
-                "for (var cache_idx = 0u; cache_idx < {cache_size}; cache_idx += 1u) {{"
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "let thread_vector_index = index + cache_idx * {blocksize};"
-            )
-            .unwrap();
-
-            // Get the values first
-            for i in 0..vector_size {
-                writeln!(
-                    &mut kernel,
-                    "let input_a_{i}_index = thread_vector_index * {vector_size} + {i};"
-                )
-                .unwrap();
-                let a_row_stride = input_a.stride_binding(op.rank() - 2);
-                writeln!(&mut kernel, "let input_a_{i} = select({dtype}(0.0), {input_a}[a_start_index + {row_index} * {a_row_stride} + input_a_{i}_index], input_a_{i}_index < {k_size});").unwrap();
+        // Then pack them into a vector and write to the cache
+        write!(&mut kernel, "let reg_a = {vec_storage}(").unwrap();
+        for i in 0..vector_size {
+            if i > 0 {
+                write!(&mut kernel, ", ").unwrap();
             }
-            // Then pack them into a vector and write to the cache
-            write!(&mut kernel, "a_cache[cache_idx] = {vec_storage}(").unwrap();
-            for i in 0..vector_size {
-                if i > 0 {
-                    write!(&mut kernel, ", ").unwrap();
-                }
-                write!(&mut kernel, "input_a_{i}").unwrap();
-            }
-            writeln!(&mut kernel, ");").unwrap();
-            writeln!(&mut kernel, "}}").unwrap();
+            write!(&mut kernel, "input_a_{i}").unwrap();
         }
-        writeln!(&mut kernel, "}}").unwrap();
+        writeln!(&mut kernel, ");").unwrap();
 
-        // Compute dot product for all cached elements
-        writeln!(
-            &mut kernel,
-            "for (var cache_idx = 0u; cache_idx < {cache_size}; cache_idx += 1u) {{"
-        )
-        .unwrap();
+        // Compute dot product between the registers
         let acc_indexed = maybe_vec_storage_index(chunk_size, "acc", "offset");
-        let dot = maybe_vec_dot(vector_size, "a_cache[cache_idx]", "b_cache[cache_idx]");
+        let dot = maybe_vec_dot(vector_size, "reg_a", "reg_b");
         writeln!(&mut kernel, "{acc_indexed} += {dot};").unwrap();
-        writeln!(&mut kernel, "}}").unwrap();
 
         if chunk_size > 1 {
             writeln!(&mut kernel, "}}").unwrap();
         }
 
-        writeln!(&mut kernel, "index += {blocksize}u * {cache_size}u;").unwrap();
+        writeln!(&mut kernel, "index += {blocksize}u * {vector_size}u;").unwrap();
     }
 
     writeln!(&mut kernel, "}}").unwrap();
@@ -231,7 +164,7 @@ pub(crate) fn sgemv(
     writeln!(
         &mut kernel,
         "acc = {};",
-        maybe_vec_storage_subgroup_add(chunk_size, "acc",)
+        maybe_vec_storage_subgroup_add(chunk_size, "acc")
     )
     .unwrap();
 
@@ -316,7 +249,13 @@ pub(crate) fn sgemv(
     generic_kernel.push_body(&kernel);
 }
 
-pub(crate) fn dispatch_size(n: u32, _m: u32, batch_size: u32, params: &SgemvParams) -> [u32; 3] {
+pub(crate) fn dispatch_size(
+    n: u32,
+    _m: u32,
+    batch_size: u32,
+    _workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
+    params: &SgemvParams,
+) -> [u32; 3] {
     [n.div_ceil(params.chunk_size), 1, batch_size]
 }
 
@@ -348,15 +287,13 @@ pub(crate) fn workgroup_shape_constraints(
 pub struct SgemvParams {
     chunk_size: u32,
     vector_size: u32,
-    cache_size: u32,
 }
 
 impl SgemvParams {
-    pub fn new(chunk_size: u32, vector_size: u32, cache_size: u32) -> Self {
+    pub fn new(chunk_size: u32, vector_size: u32) -> Self {
         Self {
             chunk_size,
             vector_size,
-            cache_size,
         }
     }
 
@@ -366,13 +303,10 @@ impl SgemvParams {
     pub fn vector_size(&self) -> u32 {
         self.vector_size
     }
-    pub fn cache_size(&self) -> u32 {
-        self.cache_size
-    }
 }
 
 impl Default for SgemvParams {
     fn default() -> Self {
-        SgemvParams::new(1, 4, 4)
+        SgemvParams::new(1, 4)
     }
 }
