@@ -220,7 +220,7 @@ pub(crate) fn sgemv(
             writeln!(&mut kernel, "}}").unwrap();
         }
 
-        writeln!(&mut kernel, "index += {blocksize}u;").unwrap();
+        writeln!(&mut kernel, "index += {blocksize}u * {cache_size}u;").unwrap();
     }
 
     writeln!(&mut kernel, "}}").unwrap();
