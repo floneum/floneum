@@ -17,9 +17,6 @@ pub fn gemm_parameters(m: usize, n: usize, k: usize) -> SgemmParams {
         }
         a
     }
-    let m = m;
-    let n = n;
-    let k = k;
     let m_over_n = m / n;
     let m_over_k = m / k;
     let n_over_m = n / m;
@@ -112,133 +109,111 @@ pub fn gemm_parameters(m: usize, n: usize, k: usize) -> SgemmParams {
         } else {
             SgemmParams::new(false, 64u32, 8u32, 16u32, 2u32, 2u32)
         }
-    } else {
-        if sum_dim <= 3264f32 {
-            if min_dim <= 384f32 {
-                if log2_m <= 7.5f32 {
-                    if m_over_n <= 0.1875f32 {
-                        if n_over_k <= 12f32 {
-                            if sum_dim <= 2944f32 {
-                                SgemmParams::new(false, 64u32, 8u32, 16u32, 2u32, 2u32)
-                            } else if m_over_k <= 0.09375f32 {
-                                SgemmParams::new(false, 64u32, 8u32, 16u32, 2u32, 2u32)
-                            } else {
-                                SgemmParams::new(false, 64u32, 32u32, 4u32, 4u32, 4u32)
-                            }
-                        } else {
-                            SgemmParams::new(false, 32u32, 32u32, 16u32, 2u32, 2u32)
-                        }
-                    } else if n <= 384f32 {
-                        if diff_nk <= 1856f32 {
-                            SgemmParams::new(true, 32u32, 16u32, 32u32, 2u32, 2u32)
-                        } else {
-                            SgemmParams::new(true, 16u32, 64u32, 64u32, 2u32, 2u32)
-                        }
-                    } else if m_over_k <= 0.09375f32 {
-                        SgemmParams::new(true, 32u32, 32u32, 32u32, 2u32, 2u32)
-                    } else {
-                        SgemmParams::new(true, 64u32, 8u32, 16u32, 2u32, 2u32)
-                    }
-                } else if m_over_n <= 12f32 {
-                    if gcd_nk <= 768f32 {
-                        if gcd_mk <= 768f32 {
-                            SgemmParams::new(false, 64u32, 8u32, 16u32, 2u32, 2u32)
-                        } else if min_dim <= 192f32 {
+    } else if sum_dim <= 3264f32 {
+        if min_dim <= 384f32 {
+            if log2_m <= 7.5f32 {
+                if m_over_n <= 0.1875f32 {
+                    if n_over_k <= 12f32 {
+                        if sum_dim <= 2944f32 || m_over_k <= 0.09375f32 {
                             SgemmParams::new(false, 64u32, 8u32, 16u32, 2u32, 2u32)
                         } else {
-                            SgemmParams::new(
-                                false, 128u32, 16u32, 8u32, 4u32, 4u32,
-                            )
+                            SgemmParams::new(false, 64u32, 32u32, 4u32, 4u32, 4u32)
                         }
                     } else {
-                        SgemmParams::new(false, 64u32, 32u32, 4u32, 4u32, 4u32)
+                        SgemmParams::new(false, 32u32, 32u32, 16u32, 2u32, 2u32)
                     }
-                } else if n_over_k <= 0.375f32 {
-                    if k <= 768f32 {
-                        SgemmParams::new(false, 64u32, 32u32, 8u32, 4u32, 4u32)
+                } else if n <= 384f32 {
+                    if diff_nk <= 1856f32 {
+                        SgemmParams::new(true, 32u32, 16u32, 32u32, 2u32, 2u32)
                     } else {
-                        SgemmParams::new(false, 64u32, 32u32, 4u32, 4u32, 4u32)
+                        SgemmParams::new(true, 16u32, 64u32, 64u32, 2u32, 2u32)
                     }
-                } else if gcd_mk <= 192f32 {
-                    SgemmParams::new(true, 16u32, 32u32, 16u32, 2u32, 2u32)
+                } else if m_over_k <= 0.09375f32 {
+                    SgemmParams::new(true, 32u32, 32u32, 32u32, 2u32, 2u32)
                 } else {
-                    SgemmParams::new(false, 64u32, 8u32, 16u32, 2u32, 2u32)
+                    SgemmParams::new(true, 64u32, 8u32, 16u32, 2u32, 2u32)
                 }
-            } else if log2_k <= 9.5f32 {
-                if sum_dim <= 2304f32 {
-                    SgemmParams::new(false, 64u32, 8u32, 16u32, 2u32, 2u32)
-                } else if log2_n <= 10.5f32 {
-                    SgemmParams::new(false, 64u32, 32u32, 4u32, 4u32, 4u32)
+            } else if m_over_n <= 12f32 {
+                if gcd_nk <= 768f32 {
+                    if gcd_mk <= 768f32 || min_dim <= 192f32 {
+                        SgemmParams::new(false, 64u32, 8u32, 16u32, 2u32, 2u32)
+                    } else {
+                        SgemmParams::new(false, 128u32, 16u32, 8u32, 4u32, 4u32)
+                    }
                 } else {
-                    SgemmParams::new(false, 128u32, 16u32, 8u32, 4u32, 4u32)
-                }
-            } else if sum_dim <= 2816f32 {
-                if diff_mn <= 256f32 {
                     SgemmParams::new(false, 64u32, 32u32, 4u32, 4u32, 4u32)
+                }
+            } else if n_over_k <= 0.375f32 {
+                if k <= 768f32 {
+                    SgemmParams::new(false, 64u32, 32u32, 8u32, 4u32, 4u32)
+                } else {
+                    SgemmParams::new(false, 64u32, 32u32, 4u32, 4u32, 4u32)
+                }
+            } else if gcd_mk <= 192f32 {
+                SgemmParams::new(true, 16u32, 32u32, 16u32, 2u32, 2u32)
+            } else {
+                SgemmParams::new(false, 64u32, 8u32, 16u32, 2u32, 2u32)
+            }
+        } else if log2_k <= 9.5f32 {
+            if sum_dim <= 2304f32 {
+                SgemmParams::new(false, 64u32, 8u32, 16u32, 2u32, 2u32)
+            } else if log2_n <= 10.5f32 {
+                SgemmParams::new(false, 64u32, 32u32, 4u32, 4u32, 4u32)
+            } else {
+                SgemmParams::new(false, 128u32, 16u32, 8u32, 4u32, 4u32)
+            }
+        } else if sum_dim <= 2816f32 {
+            if diff_mn <= 256f32 {
+                SgemmParams::new(false, 64u32, 32u32, 4u32, 4u32, 4u32)
+            } else {
+                SgemmParams::new(false, 64u32, 16u32, 16u32, 2u32, 2u32)
+            }
+        } else {
+            SgemmParams::new(false, 16u32, 128u32, 8u32, 4u32, 4u32)
+        }
+    } else if min_dim <= 768f32 {
+        if k <= 384f32 {
+            if log2_m <= 10.5f32 || k <= 192f32 {
+                SgemmParams::new(false, 64u32, 8u32, 16u32, 2u32, 2u32)
+            } else {
+                SgemmParams::new(false, 128u32, 16u32, 8u32, 4u32, 4u32)
+            }
+        } else if sum_dim <= 4288f32 {
+            if diff_mn <= 640f32 {
+                SgemmParams::new(false, 64u32, 16u32, 32u32, 2u32, 2u32)
+            } else if diff_nk <= 896f32 {
+                if k_over_n <= 1.5f32 {
+                    SgemmParams::new(false, 16u32, 128u32, 8u32, 4u32, 4u32)
+                } else if m_over_n <= 6f32 {
+                    SgemmParams::new(false, 64u32, 32u32, 8u32, 4u32, 4u32)
                 } else {
                     SgemmParams::new(false, 64u32, 16u32, 16u32, 2u32, 2u32)
                 }
             } else {
                 SgemmParams::new(false, 16u32, 128u32, 8u32, 4u32, 4u32)
             }
-        } else {
-            if min_dim <= 768f32 {
-                if k <= 384f32 {
-                    if log2_m <= 10.5f32 {
-                        SgemmParams::new(false, 64u32, 8u32, 16u32, 2u32, 2u32)
-                    } else if k <= 192f32 {
-                        SgemmParams::new(false, 64u32, 8u32, 16u32, 2u32, 2u32)
-                    } else {
-                        SgemmParams::new(false, 128u32, 16u32, 8u32, 4u32, 4u32)
-                    }
-                } else if sum_dim <= 4288f32 {
-                    if diff_mn <= 640f32 {
-                        SgemmParams::new(false, 64u32, 16u32, 32u32, 2u32, 2u32)
-                    } else if diff_nk <= 896f32 {
-                        if k_over_n <= 1.5f32 {
-                            SgemmParams::new(
-                                false, 16u32, 128u32, 8u32, 4u32, 4u32,
-                            )
-                        } else if m_over_n <= 6f32 {
-                            SgemmParams::new(
-                                false, 64u32, 32u32, 8u32, 4u32, 4u32,
-                            )
-                        } else {
-                            SgemmParams::new(
-                                false, 64u32, 16u32, 16u32, 2u32, 2u32,
-                            )
-                        }
-                    } else {
-                        SgemmParams::new(false, 16u32, 128u32, 8u32, 4u32, 4u32)
-                    }
-                } else if m <= 1280f32 {
-                    if m_over_k <= 0.1875f32 {
-                        SgemmParams::new(false, 64u32, 16u32, 32u32, 2u32, 2u32)
-                    } else {
-                        SgemmParams::new(false, 32u32, 32u32, 16u32, 4u32, 4u32)
-                    }
-                } else if n_over_m <= 0.1875f32 {
-                    SgemmParams::new(false, 32u32, 32u32, 8u32, 4u32, 4u32)
-                } else if log2_n <= 10f32 {
-                    return SgemmParams::new(
-                        false, 64u32, 32u32, 16u32, 4u32, 4u32,
-                    );
-                } else {
-                    return SgemmParams::new(
-                        false, 32u32, 128u32, 8u32, 4u32, 4u32,
-                    );
-                }
-            } else if log2_k <= 10.5f32 {
-                if m_eq_n <= 0.5f32 {
-                    SgemmParams::new(false, 32u32, 64u32, 8u32, 4u32, 4u32)
-                } else {
-                    SgemmParams::new(false, 32u32, 64u32, 16u32, 4u32, 4u32)
-                }
-            } else if sum_dim <= 4608f32 {
-                SgemmParams::new(false, 32u32, 32u32, 16u32, 4u32, 4u32)
+        } else if m <= 1280f32 {
+            if m_over_k <= 0.1875f32 {
+                SgemmParams::new(false, 64u32, 16u32, 32u32, 2u32, 2u32)
             } else {
-                SgemmParams::new(false, 64u32, 64u32, 16u32, 4u32, 4u32)
+                SgemmParams::new(false, 32u32, 32u32, 16u32, 4u32, 4u32)
             }
+        } else if n_over_m <= 0.1875f32 {
+            SgemmParams::new(false, 32u32, 32u32, 8u32, 4u32, 4u32)
+        } else if log2_n <= 10f32 {
+            SgemmParams::new(false, 64u32, 32u32, 16u32, 4u32, 4u32)
+        } else {
+            SgemmParams::new(false, 32u32, 128u32, 8u32, 4u32, 4u32)
         }
+    } else if log2_k <= 10.5f32 {
+        if m_eq_n <= 0.5f32 {
+            SgemmParams::new(false, 32u32, 64u32, 8u32, 4u32, 4u32)
+        } else {
+            SgemmParams::new(false, 32u32, 64u32, 16u32, 4u32, 4u32)
+        }
+    } else if sum_dim <= 4608f32 {
+        SgemmParams::new(false, 32u32, 32u32, 16u32, 4u32, 4u32)
+    } else {
+        SgemmParams::new(false, 64u32, 64u32, 16u32, 4u32, 4u32)
     }
 }
