@@ -11,7 +11,7 @@ pub use reduce::*;
 pub use tensor::*;
 
 pub(crate) use element_wise::*;
-pub(crate) use matmul::*;
+pub use matmul::*;
 pub(crate) use pair_wise::*;
 
 mod composite;
@@ -21,7 +21,7 @@ mod element_wise;
 mod index_select;
 mod layout;
 mod map_layout;
-mod matmul;
+pub mod matmul;
 mod mir;
 mod pair_wise;
 mod quantized;
@@ -30,6 +30,7 @@ mod reduce;
 mod resize;
 mod slice_assign;
 mod tensor;
+mod util;
 mod visit_tiled;
 
 #[derive(thiserror::Error, Debug)]

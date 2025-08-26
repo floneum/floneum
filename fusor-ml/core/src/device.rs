@@ -7,6 +7,7 @@ use wgpu::{BindGroupLayout, PipelineLayout, ShaderModule};
 
 struct DeviceInner {
     device: wgpu::Device,
+    adapter: wgpu::Adapter,
     queue: wgpu::Queue,
     cache: Option<wgpu::PipelineCache>,
     cache_file: Option<PathBuf>,
@@ -75,6 +76,7 @@ impl Device {
         let device = Self {
             inner: Arc::new(DeviceInner {
                 device,
+                adapter,
                 queue,
                 cache,
                 cache_file,
@@ -115,6 +117,14 @@ impl Device {
                 wgpu::ShaderRuntimeChecks::unchecked(),
             )
         }
+    }
+
+    pub fn limits(&self) -> wgpu::Limits {
+        self.inner.adapter.limits()
+    }
+
+    pub fn wgpu_adapter(&self) -> &wgpu::Adapter {
+        &self.inner.adapter
     }
 
     pub fn wgpu_device(&self) -> &wgpu::Device {

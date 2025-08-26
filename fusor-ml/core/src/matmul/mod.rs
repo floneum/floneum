@@ -1,13 +1,31 @@
-use std::{fmt::Write, sync::OnceLock};
-
-use crate::mir::globals::KernelGlobalSpace;
+use crate::matmul::sgemm_params::gemm_parameters;
+use crate::matmul::sgemv_params::gemv_parameters;
 use crate::mir::operation::Operation;
 use crate::{
     Device, ElementWiseFunctions, Tensor,
     compute_graph::AnyComputeKey,
-    mir::{function::Function, kernel::GenericKernel},
+    mir::kernel::GenericKernel,
     tensor::{DataType, DataTypeEnum, TensorData},
 };
+
+pub mod sgemm;
+mod sgemm_params;
+pub mod sgemv;
+mod sgemv_params;
+
+pub fn get_optimal_params(m: usize, n: usize, k: usize) -> MatMulParams {
+    match (m, n, k) {
+        // Default fallback
+        (_, 1, _) => MatMulParams::Vector(gemv_parameters(m, n, k)),
+        (_, _, _) => MatMulParams::MatMul(gemm_parameters(m, n, k)),
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum MatMulParams {
+    Vector(sgemv::SgemvParams),
+    MatMul(sgemm::SgemmParams),
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct MatMulOperation {
@@ -19,6 +37,7 @@ pub(crate) struct MatMulOperation {
     pub(crate) out_shape: Box<[usize]>,
     pub(crate) pre_element_wise: [ElementWiseFunctions; 2],
     pub(crate) post_element_wise: ElementWiseFunctions,
+    pub(crate) parameters: MatMulParams,
 }
 
 impl MatMulOperation {
@@ -28,6 +47,32 @@ impl MatMulOperation {
         second: AnyComputeKey,
         first_shape: &[usize],
         second_shape: &[usize],
+        parameters: Option<MatMulParams>,
+    ) -> Self {
+        // Check if this is a matrix-vector multiplication (second matrix has 1 column and first matrix has multiple rows)
+        let parameters = parameters.unwrap_or_else(|| {
+            let n = second_shape[second_shape.len() - 1];
+            let m = first_shape[first_shape.len() - 2];
+            let k = first_shape[first_shape.len() - 1];
+            get_optimal_params(m, n, k)
+        });
+        Self::new_with_parameters(
+            datatype,
+            first,
+            second,
+            first_shape,
+            second_shape,
+            parameters,
+        )
+    }
+
+    pub(crate) fn new_with_parameters(
+        datatype: DataTypeEnum,
+        first: AnyComputeKey,
+        second: AnyComputeKey,
+        first_shape: &[usize],
+        second_shape: &[usize],
+        parameters: MatMulParams,
     ) -> Self {
         let last_dim = first_shape.len() - 1;
         let second_to_last_dim = first_shape.len() - 2;
@@ -56,6 +101,7 @@ impl MatMulOperation {
                 ElementWiseFunctions::empty(datatype),
             ],
             post_element_wise: ElementWiseFunctions::empty(datatype),
+            parameters,
         }
     }
 
@@ -75,21 +121,16 @@ impl MatMulOperation {
 impl Operation for MatMulOperation {
     fn workgroup_shape_constraints(
         &self,
-        _: &Device,
+        device: &Device,
     ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
-        let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
-        constraints.add_constraint(
-            0,
-            crate::mir::workgroup_shape::Constraint::Equals(
-                WORK_GROUP_BLOCK_M_SIZE / THREAD_BLOCK_M_SIZE,
-            ),
-        );
-        constraints.add_constraint(
-            1,
-            crate::mir::workgroup_shape::Constraint::Equals(WORK_GROUP_BLOCK_N_SIZE),
-        );
-        constraints.add_constraint(2, crate::mir::workgroup_shape::Constraint::Equals(1));
-        constraints
+        match &self.parameters {
+            MatMulParams::Vector(sgemv_params) => {
+                sgemv::workgroup_shape_constraints(self, device, sgemv_params)
+            }
+            MatMulParams::MatMul(sgemm_params) => {
+                sgemm::workgroup_shape_constraints(self, device, sgemm_params)
+            }
+        }
     }
 
     fn dispatch_size(
@@ -105,14 +146,27 @@ impl Operation for MatMulOperation {
         let a_shape = input_a.layout().shape();
         let b_shape = input_b.layout().shape();
         let last_dim = self.rank() as usize - 1;
+        let last_dim_size = b_shape[last_dim];
         let second_to_last_dim = self.rank() as usize - 2;
+        let second_to_last_dim_size = a_shape[second_to_last_dim];
         let batch_size = a_shape.iter().rev().skip(2).product::<usize>();
 
-        [
-            (b_shape[last_dim] as u32).div_ceil(WORK_GROUP_BLOCK_N_SIZE),
-            (a_shape[second_to_last_dim] as u32).div_ceil(WORK_GROUP_BLOCK_M_SIZE),
-            (batch_size as u32).div_ceil(workgroup_shape.z()),
-        ]
+        match &self.parameters {
+            MatMulParams::Vector(sgemv_params) => sgemv::dispatch_size(
+                second_to_last_dim_size as u32,
+                1,
+                batch_size as u32,
+                workgroup_shape,
+                sgemv_params,
+            ),
+            MatMulParams::MatMul(sgemm_params) => sgemm::dispatch_size(
+                last_dim_size,
+                second_to_last_dim_size,
+                batch_size,
+                workgroup_shape,
+                sgemm_params,
+            ),
+        }
     }
 
     fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
@@ -141,276 +195,57 @@ impl Operation for MatMulOperation {
     // 1000x1000 dense matmul time on M2 mac pro 1.4743 ms
     fn build_kernel(
         &self,
-        _: &crate::compute_graph::ComputeGraphInner,
-        _: &crate::mir::workgroup_shape::WorkgroupShape,
+        graph: &crate::compute_graph::ComputeGraphInner,
+        workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
         inputs: &[crate::mir::inputs::MirValue],
         generic_kernel: &mut GenericKernel,
     ) {
-        // based on https://siboehm.com/articles/22/CUDA-MMM
-        let [input_a, input_b, _] = inputs else {
-            panic!("MatMulOperation requires 3 inputs");
-        };
-        let input_a = input_a.as_tensor().unwrap();
-        let input_a_datatype = input_a.datatype();
-        let input_b = input_b.as_tensor().unwrap();
-        let input_b_datatype = input_b.datatype();
+        match &self.parameters {
+            MatMulParams::Vector(sgemv_params) => {
+                let [input_a, input_b, _] = inputs else {
+                    panic!("MatMulOperation requires 3 inputs");
+                };
+                let input_a = input_a.as_tensor().unwrap();
+                let input_b = input_b.as_tensor().unwrap();
 
-        let mut kernel = String::new();
+                let input_a =
+                    generic_kernel.add_tensor_input(self.rank(), false, input_a.datatype());
+                let input_b =
+                    generic_kernel.add_tensor_input(self.rank(), false, input_b.datatype());
+                let output = generic_kernel.add_tensor_input(
+                    self.rank(),
+                    true,
+                    self.post_element_wise.out_datatype(),
+                );
 
-        let pre_element_wise_functions: OnceLock<[Vec<Function>; 2]> = OnceLock::new();
-        let post_element_wise_functions = OnceLock::new();
+                // Get dimension bindings
+                let k_size = input_a.shape_binding(self.rank() - 1);
+                let m_size = input_a.shape_binding(self.rank() - 2);
+                let n_size = input_b.shape_binding(self.rank() - 1);
 
-        let input_a = generic_kernel.add_tensor_input(self.rank(), false, input_a_datatype);
-        let input_b = generic_kernel.add_tensor_input(self.rank(), false, input_b_datatype);
-        let output = generic_kernel.add_tensor_input(
-            self.rank(),
-            true,
-            self.post_element_wise.out_datatype(),
-        );
-
-        let cache_a = generic_kernel.add_global_array(
-            KernelGlobalSpace::Workgroup,
-            self.datatype,
-            (WORK_GROUP_BLOCK_M_SIZE * WORK_GROUP_BLOCK_K_SIZE).to_string(),
-        );
-        let cache_b = generic_kernel.add_global_array(
-            KernelGlobalSpace::Workgroup,
-            self.datatype,
-            (WORK_GROUP_BLOCK_N_SIZE * WORK_GROUP_BLOCK_K_SIZE).to_string(),
-        );
-
-        let datatype = self.datatype;
-        let workgroup_index = generic_kernel.workgroup_index();
-        let workgroup_local_index = generic_kernel.workgroup_local_index();
-
-        let k_size = input_a.shape_binding(self.rank() - 1);
-        let a_k_stride = input_a.stride_binding(self.rank() - 1);
-        let b_k_stride = input_b.stride_binding(self.rank() - 2);
-
-        let m_size = input_a.shape_binding(self.rank() - 2);
-        let a_m_stride = input_a.stride_binding(self.rank() - 2);
-        let c_m_stride = output.stride_binding(self.rank() - 2);
-
-        let n_size = input_b.shape_binding(self.rank() - 1);
-        let b_n_stride = input_b.stride_binding(self.rank() - 1);
-        let c_n_stride = output.stride_binding(self.rank() - 1);
-
-        writeln!(&mut kernel, "let block_col = {workgroup_index}.x;").unwrap();
-        writeln!(&mut kernel, "let block_row = {workgroup_index}.y;").unwrap();
-        writeln!(&mut kernel, "var block_batch = {workgroup_index}.z;").unwrap();
-
-        for dim in (0..self.rank()).rev().skip(2) {
-            let shape = input_a.shape_binding(dim);
-            writeln!(
-                &mut kernel,
-                "let block_batch_{dim} = block_batch % {shape};"
-            )
-            .unwrap();
-            writeln!(&mut kernel, "block_batch /= {shape};").unwrap();
-        }
-
-        // Find the batch offset for a, b and output
-        for (name, tensor) in [("a", &input_a), ("b", &input_b), ("output", &output)] {
-            writeln!(&mut kernel, "let {name}_start_index = ").unwrap();
-            let offset = tensor.offset_binding();
-            write!(&mut kernel, "{offset}").unwrap();
-            for dim in (0..self.rank()).rev().skip(2) {
-                let stride = tensor.stride_binding(dim);
-                write!(&mut kernel, " + block_batch_{dim}*{stride}").unwrap();
+                sgemv::sgemv(
+                    self,
+                    generic_kernel,
+                    workgroup_shape,
+                    &input_a,
+                    &input_b,
+                    &output,
+                    &n_size,
+                    &m_size,
+                    &k_size,
+                    sgemv_params,
+                    graph,
+                )
             }
-            writeln!(&mut kernel, ";").unwrap();
+            MatMulParams::MatMul(sgemm_params) => sgemm::build_kernel(
+                self,
+                graph,
+                workgroup_shape,
+                inputs,
+                generic_kernel,
+                sgemm_params,
+            ),
         }
-
-        writeln!(
-            &mut kernel,
-            "let thread_col = {workgroup_local_index} % {WORK_GROUP_BLOCK_N_SIZE};"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "let thread_row = {workgroup_local_index} / {WORK_GROUP_BLOCK_N_SIZE};"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "let a_thread_col = {workgroup_local_index} % {WORK_GROUP_BLOCK_K_SIZE};"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "let a_thread_row = {workgroup_local_index} / {WORK_GROUP_BLOCK_K_SIZE};"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "let b_thread_col = {workgroup_local_index} % {WORK_GROUP_BLOCK_N_SIZE};"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "let b_thread_row = {workgroup_local_index} / {WORK_GROUP_BLOCK_N_SIZE};"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "var results: array<{datatype}, {THREAD_BLOCK_M_SIZE}>;"
-        )
-        .unwrap();
-        // Each thread in the workgroup is offset by an amount in the a matrix in the x direction. It will shift
-        // by blocks inside the loop in the K direction.
-        writeln!(&mut kernel, "var a_col = {a_k_stride} * a_thread_col;").unwrap();
-        // Each thread in the workgroup is offset by an amount in the a matrix in the y direction.
-        writeln!(
-            &mut kernel,
-            "let a_row = {a_m_stride} * (a_thread_row + block_row * {WORK_GROUP_BLOCK_M_SIZE});"
-        )
-        .unwrap();
-        // The max x index on the a matrix is k size
-        writeln!(&mut kernel, "let a_col_max = {k_size} * {a_k_stride};").unwrap();
-        // The max y index on the a matrix is m*k size
-        writeln!(&mut kernel, "let a_row_max = {m_size} * {a_m_stride};").unwrap();
-        // The b matrix x index it determined by the thread and block index. It doesn't change with k
-        writeln!(
-            &mut kernel,
-            "let b_col = {b_n_stride} * (b_thread_col + block_col * {WORK_GROUP_BLOCK_N_SIZE});"
-        )
-        .unwrap();
-        // The b matrix y index has an offset based on the thread index. It will shift by blocks of k in the loop
-        writeln!(&mut kernel, "var b_row = {b_k_stride} * b_thread_row;").unwrap();
-        // The max x index on the b matrix is n size
-        writeln!(&mut kernel, "let b_col_max = {n_size} * {b_n_stride};").unwrap();
-        // The max y index on the b matrix is k*n size
-        writeln!(&mut kernel, "let b_row_max = {k_size} * {b_k_stride};").unwrap();
-
-        // Loop over the K dimension in blocks of WORK_GROUP_BLOCK_K_SIZE
-        writeln!(&mut kernel, "for (var block_index = 0u; block_index < {k_size}; block_index += {WORK_GROUP_BLOCK_K_SIZE}) {{").unwrap();
-
-        let pre_element_wise_functions = pre_element_wise_functions.get_or_init(|| {
-            std::array::from_fn(|i| self.pre_element_wise[i].add_functions(generic_kernel))
-        });
-
-        // Make sure everything is in bounds of the a matrix
-        writeln!(&mut kernel, "if a_col < a_col_max && a_row < a_row_max {{").unwrap();
-        writeln!(&mut kernel, "let a_index = a_row + a_col;").unwrap();
-        // If everything is in range, load the value into the workgroup cache
-        write!(
-            &mut kernel,
-            "{cache_a}[a_thread_row * {WORK_GROUP_BLOCK_K_SIZE} + a_thread_col] = "
-        )
-        .unwrap();
-        let first_value = pre_element_wise_functions[0]
-            .iter()
-            .fold(format!("{input_a}[a_start_index + a_index]"), |acc, f| {
-                f.call(vec![acc])
-            });
-        writeln!(&mut kernel, "{first_value};").unwrap();
-        writeln!(&mut kernel, "}}").unwrap();
-        writeln!(&mut kernel, "else {{").unwrap();
-        writeln!(
-            &mut kernel,
-            "{cache_a}[a_thread_row * {WORK_GROUP_BLOCK_K_SIZE} + a_thread_col] = 0.0;"
-        )
-        .unwrap();
-        writeln!(&mut kernel, "}}").unwrap();
-        // Make sure everything is in bounds of the b matrix
-        writeln!(&mut kernel, "if b_col < b_col_max && b_row < b_row_max {{").unwrap();
-        writeln!(&mut kernel, "let b_index = b_row + b_col;").unwrap();
-        // If everything is in range, load the value into the workgroup cache
-        write!(
-            &mut kernel,
-            "{cache_b}[b_thread_row * {WORK_GROUP_BLOCK_N_SIZE} + b_thread_col] = "
-        )
-        .unwrap();
-        let first_value = pre_element_wise_functions[1]
-            .iter()
-            .fold(format!("{input_b}[b_start_index + b_index]"), |acc, f| {
-                f.call(vec![acc])
-            });
-        writeln!(&mut kernel, "{first_value};").unwrap();
-        writeln!(&mut kernel, "}}").unwrap();
-        writeln!(&mut kernel, "else {{").unwrap();
-        writeln!(
-            &mut kernel,
-            "{cache_b}[b_thread_row * {WORK_GROUP_BLOCK_N_SIZE} + b_thread_col] = 0.0;"
-        )
-        .unwrap();
-        writeln!(&mut kernel, "}}").unwrap();
-
-        writeln!(&mut kernel, "workgroupBarrier();").unwrap();
-
-        // Move a forward by WORK_GROUP_BLOCK_K_SIZE
-        writeln!(
-            &mut kernel,
-            "a_col += {WORK_GROUP_BLOCK_K_SIZE} * {a_k_stride};"
-        )
-        .unwrap();
-        // Move b forward by WORK_GROUP_BLOCK_K_SIZE in the y direction
-        writeln!(
-            &mut kernel,
-            "b_row += {WORK_GROUP_BLOCK_K_SIZE} * {b_k_stride};"
-        )
-        .unwrap();
-
-        // Go through every row/column pair in the K dim
-        writeln!(
-            &mut kernel,
-            "for (var dot_index = 0u; dot_index < {WORK_GROUP_BLOCK_K_SIZE}; dot_index += 1u) {{"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "let tmp = {cache_b}[dot_index * {WORK_GROUP_BLOCK_N_SIZE} + thread_col];"
-        )
-        .unwrap();
-        writeln!(&mut kernel, "for (var result_index = 0u; result_index < {THREAD_BLOCK_M_SIZE}; result_index += 1u) {{").unwrap();
-        writeln!(&mut kernel, "results[result_index] = fma({cache_a}[(thread_row * {THREAD_BLOCK_M_SIZE} + result_index) * {WORK_GROUP_BLOCK_K_SIZE} + dot_index], tmp, results[result_index]);").unwrap();
-        writeln!(&mut kernel, "}}").unwrap();
-        writeln!(&mut kernel, "}}").unwrap();
-
-        writeln!(&mut kernel, "workgroupBarrier();").unwrap();
-
-        writeln!(&mut kernel, "}}").unwrap();
-
-        writeln!(
-            &mut kernel,
-            "let start_output_col = thread_col + block_col * {WORK_GROUP_BLOCK_N_SIZE};"
-        )
-        .unwrap();
-        writeln!(&mut kernel, "let start_output_row = thread_row * {THREAD_BLOCK_M_SIZE} + block_row * {WORK_GROUP_BLOCK_M_SIZE};").unwrap();
-        writeln!(&mut kernel, "for (var result_index = 0u; result_index < {THREAD_BLOCK_M_SIZE}; result_index += 1u) {{").unwrap();
-        writeln!(&mut kernel, "let output_col = start_output_col;").unwrap();
-        writeln!(
-            &mut kernel,
-            "let output_row = start_output_row + result_index;"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "if output_col < {n_size} && output_row < {m_size} {{"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "let output_index = output_row * {c_m_stride} + output_col * {c_n_stride};"
-        )
-        .unwrap();
-        write!(
-            &mut kernel,
-            "{output}[output_start_index + output_index] = "
-        )
-        .unwrap();
-        let post_element_wise_functions = post_element_wise_functions
-            .get_or_init(|| self.post_element_wise.add_functions(generic_kernel));
-        let result = post_element_wise_functions
-            .iter()
-            .fold("results[result_index]".to_string(), |acc, f| {
-                f.call(vec![acc])
-            });
-        writeln!(&mut kernel, "{result};").unwrap();
-        writeln!(&mut kernel, "}}").unwrap();
-        writeln!(&mut kernel, "}}").unwrap();
-
-        generic_kernel.push_body(&kernel);
     }
 
     fn output(
@@ -441,17 +276,116 @@ impl Operation for MatMulOperation {
 }
 
 impl<const R: usize, T: DataType> Tensor<R, T> {
-    // (..., M, K) @ (..., K, N) -> (..., M, N)
     pub fn mat_mul(&self, other: &Self) -> Self {
-        self.add_mat_mul(other)
+        self.add_mat_mul(other, None)
+    }
+
+    pub fn mat_mul_with_parameters(&self, other: &Self, parameters: MatMulParams) -> Self {
+        self.add_mat_mul(other, Some(parameters))
     }
 }
 
-const WORK_GROUP_BLOCK_M_SIZE: u32 = THREAD_BLOCK_M_SIZE * 4;
-const WORK_GROUP_BLOCK_N_SIZE: u32 = 16;
-const WORK_GROUP_BLOCK_K_SIZE: u32 = 4;
+#[cfg(test)]
+#[tokio::test]
+async fn test_matrix_vector_mul() {
+    let device = Device::new().await.unwrap();
 
-const THREAD_BLOCK_M_SIZE: u32 = 4;
+    // Test matrix-vector multiplication: [2x3] * [3x1] = [2x1]
+    let matrix = [[1., 2., 3.], [4., 5., 6.]];
+    let vector = [[7.], [8.], [9.]];
+    let tensor_matrix = Tensor::new(&device, &matrix);
+    let tensor_vector = Tensor::new(&device, &vector);
+    let result = tensor_matrix.mat_mul(&tensor_vector);
+    let as_slice = result.as_slice().await.unwrap();
+
+    // Expected: [1*7 + 2*8 + 3*9, 4*7 + 5*8 + 6*9] = [50, 122]
+    assert_eq!(as_slice[[0, 0]], 50.);
+    assert_eq!(as_slice[[1, 0]], 122.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_matrix_vector_mul_non_contiguous() {
+    let device = Device::new().await.unwrap();
+
+    // Test with non-contiguous tensors
+    let matrix = [[1., 2., 3., 10.], [4., 5., 6., 11.]];
+    let vector = [[7.], [8.], [9.]];
+
+    // Take a slice of the matrix to make it non-contiguous
+    let tensor_matrix = Tensor::new(&device, &matrix).narrow(1, 0, 3);
+    let tensor_vector = Tensor::new(&device, &vector);
+    let result = tensor_matrix.mat_mul(&tensor_vector);
+    let as_slice = result.as_slice().await.unwrap();
+
+    // Expected: same as before since we removed the last column
+    assert_eq!(as_slice[[0, 0]], 50.);
+    assert_eq!(as_slice[[1, 0]], 122.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_multi_row_matrix_vector_mul() {
+    let device = Device::new().await.unwrap();
+
+    // Test matrix-vector multiplication with multiple rows: [3x2] * [2x1] = [3x1]
+    let matrix = [[1., 2.], [3., 4.], [5., 6.]];
+    let vector = [[7.], [8.]];
+    let tensor_matrix = Tensor::new(&device, &matrix);
+    let tensor_vector = Tensor::new(&device, &vector);
+    let result = tensor_matrix.mat_mul(&tensor_vector);
+    let as_slice = result.as_slice().await.unwrap();
+
+    // Expected: [1*7 + 2*8, 3*7 + 4*8, 5*7 + 6*8] = [23, 53, 83]
+    assert_eq!(as_slice[[0, 0]], 23.);
+    assert_eq!(as_slice[[1, 0]], 53.);
+    assert_eq!(as_slice[[2, 0]], 83.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_batched_matrix_vector_mul() {
+    let device = Device::new().await.unwrap();
+
+    // Test simpler batched case first: [1x2x3] * [1x3x1] = [1x2x1]
+    let matrices = [[[1., 2., 3.], [4., 5., 6.]]];
+    let vectors = [[[7.], [8.], [9.]]];
+
+    let tensor_matrices = Tensor::new(&device, &matrices);
+    let tensor_vectors = Tensor::new(&device, &vectors);
+    let result = tensor_matrices.mat_mul(&tensor_vectors);
+    let as_slice = result.as_slice().await.unwrap();
+
+    // Expected: [1*7 + 2*8 + 3*9, 4*7 + 5*8 + 6*9] = [50, 122]
+    assert_eq!(as_slice[[0, 0, 0]], 50.);
+    assert_eq!(as_slice[[0, 1, 0]], 122.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_full_batched_matrix_vector_mul() {
+    let device = Device::new().await.unwrap();
+
+    // Test batched matrix-vector multiplication: [2x2x3] * [2x3x1] = [2x2x1]
+    let matrices = [
+        [[1., 2., 3.], [4., 5., 6.]],
+        [[7., 8., 9.], [10., 11., 12.]],
+    ];
+    let vectors = [[[13.], [14.], [15.]], [[16.], [17.], [18.]]];
+
+    let tensor_matrices = Tensor::new(&device, &matrices);
+    let tensor_vectors = Tensor::new(&device, &vectors);
+    let result = tensor_matrices.mat_mul(&tensor_vectors);
+    let as_slice = result.as_slice().await.unwrap();
+
+    // First batch: [1*13 + 2*14 + 3*15, 4*13 + 5*14 + 6*15] = [86, 212]
+    assert_eq!(as_slice[[0, 0, 0]], 86.);
+    assert_eq!(as_slice[[0, 1, 0]], 212.);
+
+    // Second batch: [7*16 + 8*17 + 9*18, 10*16 + 11*17 + 12*18] = [410, 563]
+    assert_eq!(as_slice[[1, 0, 0]], 410.);
+    assert_eq!(as_slice[[1, 1, 0]], 563.);
+}
 
 #[cfg(test)]
 #[tokio::test]

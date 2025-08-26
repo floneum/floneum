@@ -262,8 +262,8 @@ impl ReduceOperation {
         writeln!(&mut kernel_body, "index += 1u;").unwrap();
         writeln!(&mut kernel_body, "}}").unwrap();
 
-        let limits = device.wgpu_device().limits();
-        let max_subgroup_size = limits.max_subgroup_size.max(32);
+        let limits = device.limits();
+        let max_subgroup_size = limits.max_subgroup_size;
 
         // Optimized subgroup reduction with unrolled shuffle operations
         let mut offset = max_subgroup_size;
@@ -362,15 +362,13 @@ impl Operation for ReduceOperation {
         device: &crate::Device,
     ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
         let mut constraints = WorkgroupShapeConstraints::new();
-        let limits = device.wgpu_device().limits();
+        let limits = device.limits();
         constraints.add_constraint(
             0,
             Constraint::less_than(limits.max_compute_workgroup_size_x + 1),
         );
-        constraints.add_constraint(
-            0,
-            Constraint::more_than_or_equals(limits.min_subgroup_size.max(32)),
-        );
+        constraints.add_constraint(0, Constraint::more_than_or_equals(limits.min_subgroup_size));
+        constraints.add_constraint(0, Constraint::less_than_or_equals(limits.max_subgroup_size));
         constraints.add_constraint(1, Constraint::equals(1));
         constraints.add_constraint(2, Constraint::equals(1));
         constraints
