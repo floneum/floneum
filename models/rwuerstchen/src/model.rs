@@ -332,7 +332,7 @@ impl WuerstchenInner {
         if height > 1536 || width > 1536 {
             println!("Warning: Würstchen was trained on image resolutions between 1024x1024 & 1536x1536. {height}x{width} is above the maximum resolution. Image quality may be poor.");
         }
-        let chech_dims = if height % 128 != 0 || width % 128 != 0 {
+        let chech_dims = if !height.is_multiple_of(128) || !width.is_multiple_of(128) {
             Err(candle_core::Error::Msg(
                 "Image resolution must be a multiple of 128".to_string(),
             ))

@@ -160,7 +160,7 @@ impl OcrSource {
         &self,
         device: &Device,
         mut handler: impl FnMut(ModelLoadingProgress) + Send + Sync,
-    ) -> Result<VarBuilder, LoadOcrError> {
+    ) -> Result<VarBuilder<'_>, LoadOcrError> {
         let source = format!("Model ({})", self.model);
         let mut create_progress = ModelLoadingProgress::downloading_progress(source);
         let cache = Cache::default();
