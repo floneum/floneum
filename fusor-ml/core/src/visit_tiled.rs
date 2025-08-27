@@ -132,6 +132,7 @@ pub(crate) fn build_visit_tiled_kernel(
     kernel: &mut GenericKernel,
 ) {
     let kernel_text = build_tiled_map_kernel(shape, tile_size, &datatypes, kernel, modify_data);
+    println!("kernel:\n{kernel_text}");
     kernel.push_body(&kernel_text);
 }
 
@@ -206,10 +207,7 @@ fn build_tiled_map_kernel(
         .count();
     let less_than_two_interesting_extra_dims = interesting_extra_dims < 2;
 
-    let effective_dims = shape.iter().take(2).count() + interesting_extra_dims;
-    // scaled_tile_size ^ effective_dims ~ tile_size
-    let scaled_tile_size =
-        ((tile_size as f64).powf(1.0 / effective_dims as f64).round() as u32).max(1);
+    let scaled_tile_size = scaled_tile_size(shape, tile_size);
 
     if less_than_two_interesting_extra_dims {
         for index in &shape_dims_after_2_greater_than_1 {
@@ -395,12 +393,30 @@ fn build_tiled_map_kernel(
     kernel_body
 }
 
-pub(crate) fn titled_map_workgroup_size_constraints(rank: u32) -> WorkgroupShapeConstraints {
+fn scaled_tile_size(shape: &[usize], tile_size: u32) -> u32 {
+    let effective_dims = shape.iter().filter(|&&x| x > 1).count().max(1);
+    // scaled_tile_size ^ effective_dims ~ tile_size
+    ((tile_size as f64).powf(1.0 / effective_dims as f64).round() as u32).max(1)
+}
+
+pub(crate) fn titled_map_workgroup_size_constraints(
+    shape: &[usize],
+    device: &crate::Device,
+) -> WorkgroupShapeConstraints {
     let mut constraints = WorkgroupShapeConstraints::new();
-    for i in (0..rank as usize).take(3) {
+    let effective_rank = shape.iter().filter(|&&x| x > 1).count() as u32;
+    for i in (0..effective_rank as usize).take(3) {
+        if i == 0 {
+            constraints.add_constraint(
+                i,
+                crate::mir::workgroup_shape::Constraint::more_than_or_equals(
+                    device.limits().min_subgroup_size,
+                ),
+            );
+        }
         constraints.add_constraint(i, crate::mir::workgroup_shape::Constraint::LessThan(256));
     }
-    for i in rank as usize..3 {
+    for i in effective_rank as usize..3 {
         constraints.add_constraint(i, crate::mir::workgroup_shape::Constraint::Equals(1));
     }
     constraints
@@ -414,17 +430,21 @@ pub(crate) fn titled_map_dispatch_size<'a>(
     let mut tensors = tensors.into_iter();
     let layout = tensors.next().unwrap().layout();
     let shape = layout.shape();
+    let scaled_tile_size = scaled_tile_size(shape, tile_size);
     let workgroup_size_x = shape
         .first()
-        .map(|x| (*x as u32).div_ceil(tile_size * workgroup_shape.x()))
+        .map(|x| (*x as u32).div_ceil(scaled_tile_size * workgroup_shape.x()))
         .unwrap_or(1);
     let workgroup_size_y = shape
         .get(1)
-        .map(|x| (*x as u32).div_ceil(tile_size * workgroup_shape.y()))
+        .map(|x| (*x as u32).div_ceil(scaled_tile_size * workgroup_shape.y()))
         .unwrap_or(1);
     let workgroup_size_z = shape
-        .get(2)
-        .map(|x| (*x as u32).div_ceil(tile_size * workgroup_shape.z()))
-        .unwrap_or(1);
+        .iter()
+        .skip(2)
+        .map(|x| (*x as u32).div_ceil(scaled_tile_size))
+        .product::<u32>()
+        .div_ceil(workgroup_shape.z())
+        .max(1);
     [workgroup_size_x, workgroup_size_y, workgroup_size_z]
 }

@@ -78,6 +78,15 @@ impl WorkgroupShape {
     }
 }
 
+impl IntoIterator for WorkgroupShape {
+    type Item = u32;
+    type IntoIter = std::array::IntoIter<u32, 3>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.shape.into_iter()
+    }
+}
+
 #[derive(Default, Debug, Clone, Hash, PartialEq, Eq)]
 pub(crate) struct WorkgroupShapeConstraints {
     shape: [Vec<Constraint>; 3],
@@ -156,6 +165,13 @@ fn test_all_possible_workgroup_shapes() {
     assert_eq!(possible_workgroup_shapes().count(), 5136);
 }
 
+#[cfg(test)]
+fn test_limits() -> wgpu::Limits {
+    let mut limits = wgpu::Limits::default();
+    limits.max_subgroup_size = 64;
+    limits
+}
+
 #[test]
 fn test_workgroup_shape_constraints() {
     let mut constraints = WorkgroupShapeConstraints::new();
@@ -169,9 +185,9 @@ fn test_workgroup_shape_constraints() {
         assert!(shape.shape[1] < 3);
     }
 
-    let valid_shape = constraints.solve(&wgpu::Limits::defaults());
-    assert_eq!(valid_shape.unwrap().shape, [4, 2, 32]);
-    assert_eq!(valid_shape.unwrap().linearized(), 256);
+    let valid_shape = constraints.solve(&test_limits());
+    assert_eq!(valid_shape.unwrap().shape, [4, 1, 16]);
+    assert_eq!(valid_shape.unwrap().linearized(), 64);
 }
 
 #[test]
@@ -193,9 +209,9 @@ fn test_many_workgroup_shape_constraints() {
         assert!(shape.shape[1] < 3);
     }
 
-    let valid_shape = merged.solve(&wgpu::Limits::defaults());
-    assert_eq!(valid_shape.unwrap().shape, [4, 2, 32]);
-    assert_eq!(valid_shape.unwrap().linearized(), 256);
+    let valid_shape = merged.solve(&test_limits());
+    assert_eq!(valid_shape.unwrap().shape, [4, 2, 8]);
+    assert_eq!(valid_shape.unwrap().linearized(), 64);
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]

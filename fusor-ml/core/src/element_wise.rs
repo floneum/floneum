@@ -118,10 +118,6 @@ impl ElementWiseOperation {
         self.functions.input_datatype
     }
 
-    pub fn rank(&self) -> u32 {
-        self.shape.len() as u32
-    }
-
     pub fn shape(&self) -> &[usize] {
         &self.shape
     }
@@ -145,9 +141,9 @@ impl ElementWiseOperation {
 impl Operation for ElementWiseOperation {
     fn workgroup_shape_constraints(
         &self,
-        _: &crate::Device,
+        device: &crate::Device,
     ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
-        titled_map_workgroup_size_constraints(self.rank())
+        titled_map_workgroup_size_constraints(self.shape(), device)
     }
 
     fn dispatch_size(

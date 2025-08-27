@@ -104,9 +104,9 @@ impl WhereCondOperation {
 impl Operation for WhereCondOperation {
     fn workgroup_shape_constraints(
         &self,
-        _: &crate::Device,
+        device: &crate::Device,
     ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
-        titled_map_workgroup_size_constraints(self.rank())
+        titled_map_workgroup_size_constraints(&self.shape, device)
     }
 
     fn dispatch_size(
