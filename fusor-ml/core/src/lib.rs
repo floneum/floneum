@@ -2,7 +2,6 @@
 // most of the crates in the workspace
 #![allow(missing_docs)]
 
-pub use composite::*;
 pub use device::*;
 pub use element_wise::CastTensor;
 pub use layout::*;

@@ -10,8 +10,8 @@ where
         let self_shape = *self.shape();
         let f32_self = self.cast::<f32>();
         let norm_x = f32_self.sqr().sum(1) / hidden_size as f32;
-        let x_normed = f32_self / (norm_x + eps).sqrt().broadcast(self_shape);
-        x_normed.cast::<T>() * weight.broadcast(self_shape)
+        let x_normed = f32_self / (norm_x + eps).sqrt().broadcast_as(self_shape);
+        x_normed.cast::<T>() * weight.broadcast_as(self_shape)
     }
 }
 

@@ -23,10 +23,10 @@ where
     pub fn softmax_slow(&self, dim: usize) -> Self {
         let size = *self.shape();
         let max = self.max(dim);
-        let normalized = self - &max.broadcast(size);
+        let normalized = self - &max.broadcast_as(size);
         let exp = normalized.exp();
         let sum = exp.sum(dim);
-        exp / sum.broadcast(size)
+        exp / sum.broadcast_as(size)
     }
 
     pub fn softmax_slow_last_dim(&self) -> Self {
