@@ -8,6 +8,21 @@ pub trait NextRank<const R: usize, D>: NextRankInner<NextRank = Tensor<R, D>> {}
 
 impl<const R: usize, D, T> NextRank<R, D> for T where T: NextRankInner<NextRank = Tensor<R, D>> {}
 
+pub trait SmallerRankInner<const R: usize> {
+    type SmallerRank;
+    type SmallerByArray;
+}
+
+pub trait SmallerRank<const R: usize, const S: usize, D>:
+    SmallerRankInner<R, SmallerRank = Tensor<S, D>, SmallerByArray = [usize; R]>
+{
+}
+
+impl<const R: usize, const S: usize, D, T> SmallerRank<R, S, D> for T where
+    T: SmallerRankInner<R, SmallerRank = Tensor<S, D>, SmallerByArray = [usize; R]>
+{
+}
+
 pub trait LastRankInner {
     type LastRank;
 }
@@ -16,8 +31,50 @@ pub trait LastRank<const R: usize, D>: LastRankInner<LastRank = Tensor<R, D>> {}
 
 impl<const R: usize, D, T> LastRank<R, D> for T where T: LastRankInner<LastRank = Tensor<R, D>> {}
 
+pub trait LargerRankInner<const R: usize> {
+    type LargerRank;
+    type LargerByArray;
+}
+
+pub trait LargerRank<const R: usize, const L: usize, D>:
+    LargerRankInner<R, LargerRank = Tensor<L, D>, LargerByArray = [usize; R]>
+{
+}
+
+impl<const R: usize, const L: usize, D, T> LargerRank<R, L, D> for T where
+    T: LargerRankInner<R, LargerRank = Tensor<L, D>, LargerByArray = [usize; R]>
+{
+}
+
 macro_rules! impl_next_last {
-    ($R:expr) => {
+    ($($smaller:literal, )* [0] $(, $larger:literal)*) => {
+        $(
+            impl<D: DataType> SmallerRankInner<{0 - $smaller}> for Tensor<0, D> {
+                type SmallerRank = Tensor<$smaller, D>;
+                type SmallerByArray = [usize; {0 - $smaller}];
+            }
+        )*
+
+        impl<D: DataType> NextRankInner for Tensor<0, D> {
+            type NextRank = Tensor<1, D>;
+        }
+
+        $(
+            impl<D: DataType> LargerRankInner<{$larger - 0}> for Tensor<0, D> {
+                type LargerRank = Tensor<$larger, D>;
+                type LargerByArray = [usize; {$larger - 0}];
+            }
+        )*
+    };
+
+    ($($smaller:literal, )* [$R:literal] $(, $larger:literal)*) => {
+        $(
+            impl<D: DataType> SmallerRankInner<{$R - $smaller}> for Tensor<$R, D> {
+                type SmallerRank = Tensor<$smaller, D>;
+                type SmallerByArray = [usize; {$R - $smaller}];
+            }
+        )*
+
         impl<D: DataType> NextRankInner for Tensor<$R, D> {
             type NextRank = Tensor<{ $R + 1 }, D>;
         }
@@ -25,30 +82,39 @@ macro_rules! impl_next_last {
         impl<D: DataType> LastRankInner for Tensor<$R, D> {
             type LastRank = Tensor<{ $R - 1 }, D>;
         }
+
+        $(
+            impl<D: DataType> LargerRankInner<{$larger - $R}> for Tensor<$R, D> {
+                type LargerRank = Tensor<$larger, D>;
+                type LargerByArray = [usize; {$larger - $R}];
+            }
+        )*
     };
 }
 
-impl<D: DataType> NextRankInner for Tensor<0, D> {
-    type NextRank = Tensor<1, D>;
-}
+#[rustfmt::skip]
+mod impls {
+    use super::*;
 
-impl_next_last!(1);
-impl_next_last!(2);
-impl_next_last!(3);
-impl_next_last!(4);
-impl_next_last!(5);
-impl_next_last!(6);
-impl_next_last!(7);
-impl_next_last!(8);
-impl_next_last!(9);
-impl_next_last!(10);
-impl_next_last!(11);
-impl_next_last!(12);
-impl_next_last!(13);
-impl_next_last!(14);
-impl_next_last!(15);
-impl_next_last!(16);
-impl_next_last!(17);
-impl_next_last!(18);
-impl_next_last!(19);
-impl_next_last!(20);
+    impl_next_last!([0], 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20);
+    impl_next_last!(0, [1], 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20);
+    impl_next_last!(0, 1, [2], 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20);
+    impl_next_last!(0, 1, 2, [3], 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20);
+    impl_next_last!(0, 1, 2, 3, [4], 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20);
+    impl_next_last!(0, 1, 2, 3, 4, [5], 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20);
+    impl_next_last!(0, 1, 2, 3, 4, 5, [6], 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20);
+    impl_next_last!(0, 1, 2, 3, 4, 5, 6, [7], 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20);
+    impl_next_last!(0, 1, 2, 3, 4, 5, 6, 7, [8], 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20);
+    impl_next_last!(0, 1, 2, 3, 4, 5, 6, 7, 8, [9], 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20);
+    impl_next_last!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, [10], 11, 12, 13, 14, 15, 16, 17, 18, 19, 20);
+    impl_next_last!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, [11], 12, 13, 14, 15, 16, 17, 18, 19, 20);
+    impl_next_last!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, [12], 13, 14, 15, 16, 17, 18, 19, 20);
+    impl_next_last!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, [13], 14, 15, 16, 17, 18, 19, 20);
+    impl_next_last!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, [14], 15, 16, 17, 18, 19, 20);
+    impl_next_last!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, [15], 16, 17, 18, 19, 20);
+    impl_next_last!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, [16], 17, 18, 19, 20);
+    impl_next_last!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, [17], 18, 19, 20);
+    impl_next_last!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, [18], 19, 20);
+    impl_next_last!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, [19], 20);
+    impl_next_last!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, [20]);
+}
