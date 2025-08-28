@@ -7,6 +7,7 @@ pub use device::*;
 pub use element_wise::CastTensor;
 pub use layout::*;
 pub use quantized::*;
+pub use rank::*;
 pub use reduce::*;
 pub use tensor::*;
 
@@ -26,6 +27,7 @@ mod mir;
 mod pair_wise;
 mod quantized;
 mod quantized_types_wgsl;
+mod rank;
 mod reduce;
 mod resize;
 mod slice_assign;

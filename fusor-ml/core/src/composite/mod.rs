@@ -8,4 +8,6 @@ mod unsqueeze;
 pub use unsqueeze::Unsqueeze;
 mod rope;
 mod sqr;
+mod squeeze;
 mod where_cond;
+pub use squeeze::Squeeze;

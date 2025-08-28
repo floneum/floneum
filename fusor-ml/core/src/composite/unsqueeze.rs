@@ -1,4 +1,4 @@
-use crate::{DataType, Tensor};
+use crate::{DataType, NextRank, Tensor};
 
 fn unchecked_unsqueeze<const R1: usize, const R2: usize, D: DataType>(
     tensor: &Tensor<R1, D>,
@@ -13,44 +13,21 @@ fn unchecked_unsqueeze<const R1: usize, const R2: usize, D: DataType>(
     }))
 }
 
-pub trait Unsqueeze {
-    type Output;
-
-    fn unsqueeze(&self, axis: usize) -> Self::Output;
+pub trait Unsqueeze<const R: usize, D>: NextRank<R, D> {
+    fn unsqueeze(&self, axis: usize) -> Self::NextRank;
 }
 
-macro_rules! impl_unsqueeze {
-    ($R:expr) => {
-        impl<D: DataType> Unsqueeze for Tensor<$R, D> {
-            type Output = Tensor<{ $R + 1 }, D>;
-
-            fn unsqueeze(&self, axis: usize) -> Self::Output {
-                unchecked_unsqueeze(self, axis)
-            }
+impl<const R1: usize, const R2: usize, D: DataType> Unsqueeze<R2, D> for Tensor<R1, D>
+where
+    Self: NextRank<R2, D>,
+{
+    fn unsqueeze(&self, axis: usize) -> Self::NextRank {
+        const {
+            assert!(R1 + 1 == R2);
         }
-    };
+        unchecked_unsqueeze(self, axis)
+    }
 }
-
-impl_unsqueeze!(1);
-impl_unsqueeze!(2);
-impl_unsqueeze!(3);
-impl_unsqueeze!(4);
-impl_unsqueeze!(5);
-impl_unsqueeze!(6);
-impl_unsqueeze!(7);
-impl_unsqueeze!(8);
-impl_unsqueeze!(9);
-impl_unsqueeze!(10);
-impl_unsqueeze!(11);
-impl_unsqueeze!(12);
-impl_unsqueeze!(13);
-impl_unsqueeze!(14);
-impl_unsqueeze!(15);
-impl_unsqueeze!(16);
-impl_unsqueeze!(17);
-impl_unsqueeze!(18);
-impl_unsqueeze!(19);
-impl_unsqueeze!(20);
 
 #[cfg(test)]
 #[tokio::test]
