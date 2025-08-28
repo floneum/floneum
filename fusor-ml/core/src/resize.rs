@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use crate::{
-    DataTypeEnum, TILE_SIZE, Tensor, TensorData,
+    DataTypeEnum, SmallerRank, SmallerRankInner, TILE_SIZE, Tensor, TensorData,
     compute_graph::AnyComputeKey,
     mir::{
         kernel::GenericKernel,
@@ -192,6 +192,41 @@ impl<const R: usize, T: crate::DataType> Tensor<R, T> {
             new_shape.clone(),
         ))
     }
+
+    pub fn flatten_last_n<const FROM_END: usize, const O: usize>(&self) -> Tensor<O, T>
+    where
+        Self: SmallerRank<FROM_END, O, T>,
+    {
+        let new_shape = std::array::from_fn(|i| {
+            if i < self.rank() - 1 - FROM_END {
+                self.shape()[i]
+            } else if i == self.rank() - 1 - FROM_END {
+                self.shape()[i..].iter().product()
+            } else {
+                1
+            }
+        });
+        self.reshape(new_shape)
+    }
+
+    pub fn flatten_first_n<const FROM_START: usize, const O: usize>(&self) -> Tensor<O, T>
+    where
+        Self: SmallerRank<FROM_START, O, T>,
+    {
+        let new_shape = std::array::from_fn(|i| {
+            if i == 0 {
+                self.shape()[..=FROM_START].iter().product()
+            } else {
+                self.shape()[i - FROM_START]
+            }
+        });
+        self.reshape(new_shape)
+    }
+
+    pub fn flatten_all(&self) -> Tensor<1, T> {
+        let size = self.shape().iter().product();
+        self.reshape([size])
+    }
 }
 
 #[cfg(test)]
@@ -265,4 +300,64 @@ async fn test_transposed_reshape() {
     assert_eq!(as_slice[[1, 0]], 2.);
     assert_eq!(as_slice[[1, 1]], 4.);
     assert_eq!(as_slice[[1, 2]], 6.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_flatten_last_n() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+    let tensor = tensor.flatten_last_n::<1, _>();
+    let as_slice = tensor.as_slice().await.unwrap();
+    println!("{as_slice:?}");
+    assert_eq!(as_slice[[0]], 1.);
+    assert_eq!(as_slice[[1]], 2.);
+    assert_eq!(as_slice[[2]], 3.);
+    assert_eq!(as_slice[[3]], 4.);
+    assert_eq!(as_slice[[4]], 5.);
+    assert_eq!(as_slice[[5]], 6.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_flatten_first_n() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+    let tensor = tensor.flatten_first_n::<1, _>();
+    let as_slice = tensor.as_slice().await.unwrap();
+    println!("{as_slice:?}");
+    assert_eq!(as_slice[[0]], 1.);
+    assert_eq!(as_slice[[1]], 2.);
+    assert_eq!(as_slice[[2]], 3.);
+    assert_eq!(as_slice[[3]], 4.);
+    assert_eq!(as_slice[[4]], 5.);
+    assert_eq!(as_slice[[5]], 6.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_flatten_all() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+    let tensor = tensor.flatten_all();
+    let as_slice = tensor.as_slice().await.unwrap();
+    println!("{as_slice:?}");
+    assert_eq!(as_slice[[0]], 1.);
+    assert_eq!(as_slice[[1]], 2.);
+    assert_eq!(as_slice[[2]], 3.);
+    assert_eq!(as_slice[[3]], 4.);
+    assert_eq!(as_slice[[4]], 5.);
+    assert_eq!(as_slice[[5]], 6.);
 }
