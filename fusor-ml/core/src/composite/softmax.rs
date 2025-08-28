@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    DataType, DataTypeEnum, Layout, Max, Sum, Tensor, TensorData,
+    DataType, DataTypeEnum, LastRank, Layout, Tensor, TensorData,
     compute_graph::AnyComputeKey,
     mir::{
         globals::KernelGlobalSpace,
@@ -15,12 +15,11 @@ use crate::{
     },
 };
 
-impl<const R: usize, const R2: usize, D: DataType> Tensor<R, D>
-where
-    Tensor<R, D>: Max<Output = Tensor<R2, D>>,
-    Tensor<R, D>: Sum<Output = Tensor<R2, D>>,
-{
-    pub fn softmax_slow(&self, dim: usize) -> Self {
+impl<const R: usize, D: DataType> Tensor<R, D> {
+    pub fn softmax_slow<const R2: usize>(&self, dim: usize) -> Self
+    where
+        Tensor<R, D>: LastRank<R2, D>,
+    {
         let size = *self.shape();
         let max = self.max(dim);
         let normalized = self - &max.broadcast_as(size);
@@ -29,18 +28,27 @@ where
         exp / sum.broadcast_as(size)
     }
 
-    pub fn softmax_slow_last_dim(&self) -> Self {
+    pub fn softmax_slow_last_dim<const R2: usize>(&self) -> Self
+    where
+        Tensor<R, D>: LastRank<R2, D>,
+    {
         self.softmax_slow(self.rank() - 1)
     }
 
-    pub fn softmax(&self, axis: usize) -> Self {
+    pub fn softmax<const R2: usize>(&self, axis: usize) -> Self
+    where
+        Tensor<R, D>: LastRank<R2, D>,
+    {
         let operation = SoftmaxOperation::new(self.key(), self.datatype(), axis, self.shape());
         let data = self.data();
 
         Self::from_parts(data.custom(Arc::new(operation)))
     }
 
-    pub fn softmax_last_dim(&self) -> Self {
+    pub fn softmax_last_dim<const R2: usize>(&self) -> Self
+    where
+        Tensor<R, D>: LastRank<R2, D>,
+    {
         self.softmax(self.rank() - 1)
     }
 }

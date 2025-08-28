@@ -1,4 +1,4 @@
-use crate::{CastTensor, DataType, Sum, Tensor};
+use crate::{CastTensor, DataType, Tensor};
 
 impl<T> Tensor<2, T>
 where
