@@ -13,6 +13,7 @@ pub use tensor::*;
 pub(crate) use element_wise::*;
 pub use matmul::*;
 pub(crate) use pair_wise::*;
+pub use varbuilder::VarBuilder;
 
 mod composite;
 mod compute_graph;
@@ -32,12 +33,15 @@ mod resize;
 mod slice_assign;
 mod tensor;
 mod util;
+mod varbuilder;
 mod visit_tiled;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("Failed to find a suitable device {0}")]
     RequestDeviceError(#[from] wgpu::RequestDeviceError),
+    #[error("GGUF Error {0}")]
+    GgufError(#[from] fusor_gguf::GgufReadError),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
