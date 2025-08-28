@@ -163,10 +163,9 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
             move |_| out_shape.into(),
             move |offset, strides| {
                 let mut new_strides = [0; R2];
-                let mut new_strides_fill = 0;
                 let mut current_shape = current_shape.into_iter().rev().peekable();
-                let mut strides = strides.into_iter().rev();
-                for new_shape in out_shape.into_iter().rev() {
+                let mut strides = strides.iter().rev();
+                for (new_strides_fill, new_shape) in out_shape.into_iter().enumerate().rev() {
                     let stride = if current_shape.next_if_eq(&new_shape).is_some() {
                         *strides.next().unwrap()
                     } else {
@@ -174,10 +173,8 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
                         0
                     };
                     new_strides[new_strides_fill] = stride;
-                    new_strides_fill += 1;
                 }
                 assert_eq!(current_shape.len(), 0);
-                new_strides.reverse();
                 (offset, new_strides.into())
             },
         ))

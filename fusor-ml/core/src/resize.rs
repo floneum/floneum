@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use crate::{
-    DataTypeEnum, SmallerRank, SmallerRankInner, TILE_SIZE, Tensor, TensorData,
+    DataTypeEnum, SmallerRank, TILE_SIZE, Tensor, TensorData,
     compute_graph::AnyComputeKey,
     mir::{
         kernel::GenericKernel,
