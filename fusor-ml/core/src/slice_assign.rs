@@ -26,17 +26,21 @@ impl SliceAssignOperation {
         }
     }
 
-    pub fn rank(&self) -> usize {
-        self.slices.len()
+    pub fn shape(&self) -> Box<[usize]> {
+        self.slices
+            .iter()
+            .map(|r| r.len())
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
     }
 }
 
 impl Operation for SliceAssignOperation {
     fn workgroup_shape_constraints(
         &self,
-        _: &crate::Device,
+        device: &crate::Device,
     ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
-        titled_map_workgroup_size_constraints(self.rank() as _)
+        titled_map_workgroup_size_constraints(&self.shape(), device)
     }
 
     fn dispatch_size(
