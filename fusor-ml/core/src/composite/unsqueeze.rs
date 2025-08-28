@@ -14,7 +14,7 @@ fn unchecked_unsqueeze<const R1: usize, const R2: usize, const DIFF: usize, D: D
     axis.sort_unstable();
     let mut iter = axis.into_iter().peekable();
     tensor.reshape(std::array::from_fn(|i| {
-        if iter.next_if(|o| o >= &i).is_some() {
+        if iter.next_if(|o| o <= &i).is_some() {
             return 1;
         }
         let remaining = iter.len();
@@ -74,12 +74,13 @@ async fn test_unsqueeze_dims() {
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
     let unsqueezed = tensor.unsqueeze_dims([2, 0]);
+    println!("{unsqueezed:?}");
     let as_slice = unsqueezed.as_slice().await.unwrap();
     println!("{as_slice:?}");
     assert_eq!(as_slice[[0, 0, 0, 0]], 1.);
-    assert_eq!(as_slice[[0, 0, 1, 0]], 2.);
+    assert_eq!(as_slice[[0, 0, 0, 1]], 2.);
     assert_eq!(as_slice[[0, 1, 0, 0]], 3.);
-    assert_eq!(as_slice[[0, 1, 1, 0]], 4.);
+    assert_eq!(as_slice[[0, 1, 0, 1]], 4.);
     assert_eq!(as_slice[[0, 2, 0, 0]], 5.);
-    assert_eq!(as_slice[[0, 2, 1, 0]], 6.);
+    assert_eq!(as_slice[[0, 2, 0, 1]], 6.);
 }
