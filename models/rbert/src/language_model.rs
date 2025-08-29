@@ -33,26 +33,23 @@ impl ModelBuilder for BertBuilder {
 
 impl Bert {
     /// Embed a sentence with a specific pooling strategy.
-    pub fn embed_with_pooling(
+    pub async fn embed_with_pooling(
         &self,
         input: &str,
         pooling: Pooling,
     ) -> Result<Embedding, BertError> {
         let mut tensors = self.embed_batch_raw(vec![input], pooling)?;
 
-        Ok(Embedding::from(
-            tensors
-                .pop()
-                .unwrap()
-                .to_vec2()?
-                .into_iter()
-                .next()
-                .unwrap(),
-        ))
+        let last = tensors.pop().unwrap();
+        let last_slice = last
+            .as_slice()
+            .await
+            .map_err(|err| BertError::Fusor(fusor_core::Error::BufferAsyncError(err)))?;
+        Ok(Embedding::from(last_slice.into_iter().next().unwrap()))
     }
 
     /// Embed a batch of sentences with a specific pooling strategy.
-    pub fn embed_batch_with_pooling(
+    pub async fn embed_batch_with_pooling(
         &self,
         inputs: Vec<&str>,
         pooling: Pooling,

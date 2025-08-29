@@ -1,5 +1,5 @@
-use candle_core::{Result, Tensor};
-use candle_nn::{Module, VarBuilder};
+use fusor_core::{Device, VarBuilder};
+use fusor_core::{Result, Tensor};
 
 use super::{BertAttention, BertIntermediate, BertOutput};
 
@@ -12,10 +12,14 @@ pub(crate) struct BertLayer {
 }
 
 impl BertLayer {
-    pub(crate) fn load(vb: VarBuilder, config: &super::Config) -> Result<Self> {
-        let attention = BertAttention::load(vb.pp("attention"), config)?;
-        let intermediate = BertIntermediate::load(vb.pp("intermediate"), config)?;
-        let output = BertOutput::load(vb.pp("output"), config)?;
+    pub(crate) fn load(
+        device: &Device,
+        vb: &mut VarBuilder,
+        config: &super::Config,
+    ) -> Result<Self> {
+        let attention = BertAttention::load(device, &mut vb.pp("attention"), config)?;
+        let intermediate = BertIntermediate::load(device, &mut vb.pp("intermediate"), config)?;
+        let output = BertOutput::load(device, &mut vb.pp("output"), config)?;
         Ok(Self {
             attention,
             intermediate,
@@ -26,18 +30,12 @@ impl BertLayer {
 
     pub(crate) fn forward(
         &self,
-        hidden_states: &Tensor,
-        attention_mask: Option<&Tensor>,
-        train: bool,
-    ) -> Result<Tensor> {
+        hidden_states: &Tensor<2, f32>,
+        attention_mask: Option<&Tensor<2, u32>>,
+    ) -> Tensor<2, f32> {
         let _enter = self.span.enter();
-        let attention_output = self
-            .attention
-            .forward(hidden_states, attention_mask, train)?;
-        let intermediate_output = self.intermediate.forward(&attention_output)?;
-        let layer_output = self
-            .output
-            .forward(&intermediate_output, &attention_output, train)?;
-        Ok(layer_output)
+        let attention_output = self.attention.forward(hidden_states, attention_mask);
+        let intermediate_output = self.intermediate.forward(&attention_output);
+        self.output.forward(&intermediate_output, &attention_output)
     }
 }

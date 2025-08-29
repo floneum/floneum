@@ -40,8 +40,10 @@ mod visit_tiled;
 pub enum Error {
     #[error("Failed to find a suitable device {0}")]
     RequestDeviceError(#[from] wgpu::RequestDeviceError),
-    #[error("GGUF Error {0}")]
+    #[error("GGUF error {0}")]
     GgufError(#[from] fusor_gguf::GgufReadError),
+    #[error("WGSL async buffer error {0}")]
+    BufferAsyncError(#[from] wgpu::BufferAsyncError),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
