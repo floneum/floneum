@@ -16,7 +16,7 @@ use crate::{
 };
 
 impl<const R: usize, D: DataType> Tensor<R, D> {
-    pub fn where_cond<D2>(self, on_true: Tensor<R, D2>, on_false: Tensor<R, D2>) -> Tensor<R, D2>
+    pub fn where_cond<D2>(self, on_true: &Tensor<R, D2>, on_false: &Tensor<R, D2>) -> Tensor<R, D2>
     where
         D2: DataType,
     {
@@ -190,7 +190,7 @@ async fn test_where_cond() {
     let even = Tensor::arange(&device, 0, 10) % 2;
     let zero = Tensor::splat(&device, 0., *data.shape());
 
-    let data_where_even = even.where_cond(data, zero);
+    let data_where_even = even.where_cond(&data, &zero);
 
     let result = data_where_even.as_slice().await.unwrap();
     println!("result: {result:?}");
