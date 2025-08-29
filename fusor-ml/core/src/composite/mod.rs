@@ -1,6 +1,8 @@
 mod arange;
 mod cat;
+mod gelu;
 mod narrow;
+mod relu;
 mod rms_norm;
 mod rope;
 mod silu;
