@@ -116,7 +116,7 @@ impl QMatrix {
         &self.buffer
     }
 
-    pub(crate) fn shape(&self) -> &[usize] {
+    pub fn shape(&self) -> &[usize] {
         &self.shape
     }
 

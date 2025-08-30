@@ -1,4 +1,4 @@
-use crate::{DataType, Tensor};
+use crate::{DataType, NextRank, Tensor};
 
 impl<const R: usize, D: DataType> Tensor<R, D> {
     pub fn cat(vectors: impl IntoIterator<Item = Self>, dim: usize) -> Self {
@@ -38,6 +38,18 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             index += length;
         }
         larger
+    }
+}
+
+impl<const R1: usize, D: DataType> Tensor<R1, D> {
+    pub fn stack<const R2: usize>(
+        vectors: impl IntoIterator<Item = Self>,
+        dim: usize,
+    ) -> Tensor<R2, D>
+    where
+        Self: NextRank<R2, D>,
+    {
+        Tensor::cat(vectors.into_iter().map(|t| t.unsqueeze(dim)), dim)
     }
 }
 

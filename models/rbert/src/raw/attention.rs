@@ -1,5 +1,5 @@
-use candle_core::{Result, Tensor};
-use candle_nn::VarBuilder;
+use fusor_core::{Device, VarBuilder};
+use fusor_core::{Result, Tensor};
 
 use super::{BertSelfAttention, BertSelfOutput};
 
@@ -11,9 +11,13 @@ pub(crate) struct BertAttention {
 }
 
 impl BertAttention {
-    pub(crate) fn load(vb: VarBuilder, config: &super::Config) -> Result<Self> {
-        let self_attention = BertSelfAttention::load(vb.pp("self"), config)?;
-        let self_output = BertSelfOutput::load(vb.pp("output"), config)?;
+    pub(crate) fn load(
+        device: &Device,
+        vb: &mut VarBuilder,
+        config: &super::Config,
+    ) -> Result<Self> {
+        let self_attention = BertSelfAttention::load(device, &mut vb.pp("self"), config)?;
+        let self_output = BertSelfOutput::load(device, &mut vb.pp("output"), config)?;
         Ok(Self {
             self_attention,
             self_output,
@@ -23,17 +27,11 @@ impl BertAttention {
 
     pub(crate) fn forward(
         &self,
-        hidden_states: &Tensor,
-        attention_mask: Option<&Tensor>,
-        train: bool,
-    ) -> Result<Tensor> {
+        hidden_states: &Tensor<2, f32>,
+        attention_mask: Option<&Tensor<2, u32>>,
+    ) -> Tensor<2, f32> {
         let _enter = self.span.enter();
-        let self_outputs = self
-            .self_attention
-            .forward(hidden_states, attention_mask, train)?;
-        let attention_output = self
-            .self_output
-            .forward(&self_outputs, hidden_states, train)?;
-        Ok(attention_output)
+        let self_outputs = self.self_attention.forward(hidden_states, attention_mask);
+        self.self_output.forward(&self_outputs, hidden_states)
     }
 }

@@ -1,40 +1,37 @@
-use candle_core::{Result, Tensor};
-use candle_nn::{Dropout, Module, ModuleT, VarBuilder};
-use candle_transformers::models::with_tracing::{layer_norm, linear, LayerNorm, Linear};
+use fusor_core::{Device, VarBuilder};
+use fusor_core::{Result, Tensor};
+
+use crate::raw::layer_norm::{layer_norm, LayerNorm};
+use crate::raw::linear::Linear;
 
 pub(crate) struct BertSelfOutput {
     dense: Linear,
     layer_norm: LayerNorm,
-    dropout: Dropout,
     span: tracing::Span,
 }
 
 impl BertSelfOutput {
-    pub(crate) fn load(vb: VarBuilder, config: &super::Config) -> Result<Self> {
-        let dense = linear(config.hidden_size, config.hidden_size, vb.pp("dense"))?;
-        let layer_norm = layer_norm(
-            config.hidden_size,
-            config.layer_norm_eps,
-            vb.pp("LayerNorm"),
-        )?;
-        let dropout = Dropout::new(config.hidden_dropout_prob);
+    pub(crate) fn load(
+        device: &Device,
+        vb: &mut VarBuilder,
+        config: &super::Config,
+    ) -> Result<Self> {
+        let dense = Linear::load(device, &mut vb.pp("dense"))?;
+        let layer_norm = layer_norm(device, &mut vb.pp("LayerNorm"), config.layer_norm_eps as _)?;
         Ok(Self {
             dense,
             layer_norm,
-            dropout,
             span: tracing::span!(tracing::Level::TRACE, "self-out"),
         })
     }
 
     pub(crate) fn forward(
         &self,
-        hidden_states: &Tensor,
-        input_tensor: &Tensor,
-        train: bool,
-    ) -> Result<Tensor> {
+        hidden_states: &Tensor<2, f32>,
+        input_tensor: &Tensor<2, f32>,
+    ) -> Tensor<2, f32> {
         let _enter = self.span.enter();
-        let hidden_states = self.dense.forward(hidden_states)?;
-        let hidden_states = self.dropout.forward_t(&hidden_states, train)?;
-        self.layer_norm.forward(&(hidden_states + input_tensor)?)
+        let hidden_states = self.dense.forward(hidden_states);
+        self.layer_norm.forward(&(&hidden_states + input_tensor))
     }
 }

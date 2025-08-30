@@ -6707,14 +6707,9 @@ dependencies = [
 name = "rbert"
 version = "0.4.0"
 dependencies = [
- "accelerate-src",
  "anyhow",
- "candle-core",
- "candle-nn",
- "candle-transformers",
- "cudarc 0.9.15",
- "half 2.6.0",
- "intel-mkl-src",
+ "fusor-core",
+ "fusor-gguf",
  "kalosm",
  "kalosm-common",
  "kalosm-language-model",

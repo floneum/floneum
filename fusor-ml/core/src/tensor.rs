@@ -579,6 +579,13 @@ pub trait IntoTensor<const R: usize, D> {
     fn into_tensor(self, device: &Device) -> Tensor<R, D>;
 }
 
+impl<'a, D: DataType> IntoTensor<0, D> for () {
+    fn into_tensor(self, device: &Device) -> Tensor<0, D> {
+        let iter = std::iter::empty();
+        Tensor::new_inner(device, iter, [])
+    }
+}
+
 impl<'a, I, D: DataType> IntoTensor<1, D> for I
 where
     I: IntoIterator<Item = &'a D, IntoIter: ExactSizeIterator>,
@@ -892,6 +899,27 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         }
     }
 
+    pub(crate) fn reduce_keepdim(&self, function: ReduceFunction, keep_dim: usize) -> Tensor<1, D> {
+        let mut current_data = self.data.clone();
+        for dim in 0..self.rank() {
+            if dim == keep_dim {
+                continue;
+            }
+            let dim = if dim < keep_dim { 0 } else { 1 };
+            current_data = current_data.reduce(ReduceOperation::new(
+                current_data.key,
+                function.clone(),
+                dim,
+                current_data.info.shape(),
+            ));
+        }
+
+        Tensor {
+            data: current_data,
+            datatype: PhantomData,
+        }
+    }
+
     pub(crate) fn add_map_layout<const R2: usize>(&self, op: MapLayoutOperation) -> Tensor<R2, D> {
         Tensor::from_parts(self.data.map_layout(op))
     }
@@ -1153,6 +1181,10 @@ impl<D: DataType, const R: usize> TensorSlice<R, D> {
 }
 
 impl<D: DataType, const R: usize> TensorSlice<R, D> {
+    pub fn shape(&self) -> &[usize] {
+        self.layout.shape()
+    }
+
     fn get(&self, index: [usize; R]) -> Option<&D> {
         let mut index_sum = 0;
         let layout = &self.layout;

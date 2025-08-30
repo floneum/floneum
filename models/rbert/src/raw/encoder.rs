@@ -1,5 +1,5 @@
-use candle_core::{Result, Tensor};
-use candle_nn::VarBuilder;
+use fusor_core::{Device, VarBuilder};
+use fusor_core::{Result, Tensor};
 
 use super::BertLayer;
 
@@ -10,9 +10,13 @@ pub(crate) struct BertEncoder {
 }
 
 impl BertEncoder {
-    pub(crate) fn load(vb: VarBuilder, config: &super::Config) -> Result<Self> {
+    pub(crate) fn load(
+        device: &Device,
+        vb: &mut VarBuilder,
+        config: &super::Config,
+    ) -> Result<Self> {
         let layers = (0..config.num_hidden_layers)
-            .map(|index| BertLayer::load(vb.pp(format!("layer.{index}")), config))
+            .map(|index| BertLayer::load(device, &mut vb.pp(format!("layer.{index}")), config))
             .collect::<Result<Vec<_>>>()?;
         let span = tracing::span!(tracing::Level::TRACE, "encoder");
         Ok(BertEncoder { layers, span })
@@ -20,16 +24,15 @@ impl BertEncoder {
 
     pub fn forward(
         &self,
-        hidden_states: &Tensor,
-        attention_mask: Option<&Tensor>,
-        train: bool,
-    ) -> Result<Tensor> {
+        hidden_states: &Tensor<2, f32>,
+        attention_mask: Option<&Tensor<2, u32>>,
+    ) -> Tensor<2, f32> {
         let _enter = self.span.enter();
         let mut hidden_states = hidden_states.clone();
         // Use a loop rather than a fold as it's easier to modify when adding debug/...
         for layer in self.layers.iter() {
-            hidden_states = layer.forward(&hidden_states, attention_mask, train)?
+            hidden_states = layer.forward(&hidden_states, attention_mask)
         }
-        Ok(hidden_states)
+        hidden_states
     }
 }

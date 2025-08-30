@@ -1,7 +1,7 @@
 use std::fmt::{Display, Write};
 
 use crate::{
-    ElementWiseFunctions,
+    ElementWiseFunctions, LastRank,
     mir::{
         globals::KernelGlobalSpace,
         operation::Operation,
@@ -487,55 +487,22 @@ impl ReduceFunction {
     }
 }
 
-macro_rules! impl_reduce {
-    ($R:expr, $T:ident, $f_untyped:ident, $f:ident, $($arg:ident: $arg_type:ty),*) => {
-        impl<D: DataType> $T for Tensor<$R, D> {
-            type Output = Tensor<{ $R - 1 }, D>;
+impl<const N: usize, D: DataType> Tensor<N, D> {
+    pub fn sum<const O: usize>(&self, dim: usize) -> Tensor<O, D>
+    where
+        Self: LastRank<O, D>,
+    {
+        self.reduce(sum_fn::<D>(), dim)
+    }
 
-            fn $f(&self $(, $arg: $arg_type)*) -> Self::Output {
-                $f_untyped(self $(, $arg)*)
-            }
-        }
-    };
+    pub fn sum_keepdim(&self, dim: usize) -> Tensor<1, D> {
+        self.reduce_keepdim(sum_fn::<D>(), dim)
+    }
 }
 
-pub trait Sum {
-    type Output;
-
-    fn sum(&self, dim: usize) -> Self::Output;
+fn sum_fn<D: DataType>() -> ReduceFunction {
+    ReduceFunction::new("let output = a + b;".to_string(), "0.0", D::WGSL_TYPE).with_name("sum")
 }
-
-fn unchecked_sum<const R1: usize, const R2: usize, D: DataType>(
-    tensor: &Tensor<R1, D>,
-    dim: usize,
-) -> Tensor<R2, D> {
-    tensor.reduce(
-        ReduceFunction::new("let output = a + b;".to_string(), "0.0", D::WGSL_TYPE)
-            .with_name("sum"),
-        dim,
-    )
-}
-
-impl_reduce!(1, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(2, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(3, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(4, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(5, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(6, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(7, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(8, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(9, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(10, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(11, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(12, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(13, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(14, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(15, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(16, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(17, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(18, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(19, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(20, Sum, unchecked_sum, sum, dim: usize);
 
 #[cfg(test)]
 #[tokio::test]
@@ -698,47 +665,60 @@ async fn test_reduce_const_sum_then_add_fused() {
     assert_eq!(output[[2]], 1. + 11.);
 }
 
-fn unchecked_max<const R1: usize, const R2: usize, D: DataType>(
-    tensor: &Tensor<R1, D>,
-    dim: usize,
-) -> Tensor<R2, D> {
-    tensor.reduce(
-        ReduceFunction::new(
-            "let output = max(a, b);".to_string(),
-            "-3.40282e+38",
-            D::WGSL_TYPE,
-        )
-        .with_name("max"),
-        dim,
+#[cfg(test)]
+#[tokio::test]
+async fn test_sum_keepdim() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data = [[[1.], [2.], [3.]], [[4.], [5.], [6.]]];
+    let tensor = Tensor::new(&device, &data);
+
+    println!("{tensor:?}");
+    let output = tensor.sum_keepdim(2);
+
+    let output = output.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert_eq!(output[[0]], 21.);
+
+    let output = tensor.sum_keepdim(1);
+
+    let output = output.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert_eq!(output[[0]], 5.);
+    assert_eq!(output[[1]], 7.);
+    assert_eq!(output[[2]], 9.);
+
+    let output = tensor.sum_keepdim(0);
+
+    let output = output.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert_eq!(output[[0]], 6.);
+    assert_eq!(output[[1]], 15.);
+}
+
+impl<const N: usize, D: DataType> Tensor<N, D> {
+    pub fn max<const O: usize>(&self, dim: usize) -> Tensor<O, D>
+    where
+        Self: LastRank<O, D>,
+    {
+        self.reduce(max_fn::<D>(), dim)
+    }
+
+    pub fn max_keepdim(&self, dim: usize) -> Tensor<1, D> {
+        self.reduce_keepdim(max_fn::<D>(), dim)
+    }
+}
+
+fn max_fn<D: DataType>() -> ReduceFunction {
+    ReduceFunction::new(
+        "let output = max(a, b);".to_string(),
+        "-3.40282e+38",
+        D::WGSL_TYPE,
     )
+    .with_name("max")
 }
-
-pub trait Max {
-    type Output;
-
-    fn max(&self, dim: usize) -> Self::Output;
-}
-
-impl_reduce!(1, Max, unchecked_max, max, dim: usize);
-impl_reduce!(2, Max, unchecked_max, max, dim: usize);
-impl_reduce!(3, Max, unchecked_max, max, dim: usize);
-impl_reduce!(4, Max, unchecked_max, max, dim: usize);
-impl_reduce!(5, Max, unchecked_max, max, dim: usize);
-impl_reduce!(6, Max, unchecked_max, max, dim: usize);
-impl_reduce!(7, Max, unchecked_max, max, dim: usize);
-impl_reduce!(8, Max, unchecked_max, max, dim: usize);
-impl_reduce!(9, Max, unchecked_max, max, dim: usize);
-impl_reduce!(10, Max, unchecked_max, max, dim: usize);
-impl_reduce!(11, Max, unchecked_max, max, dim: usize);
-impl_reduce!(12, Max, unchecked_max, max, dim: usize);
-impl_reduce!(13, Max, unchecked_max, max, dim: usize);
-impl_reduce!(14, Max, unchecked_max, max, dim: usize);
-impl_reduce!(15, Max, unchecked_max, max, dim: usize);
-impl_reduce!(16, Max, unchecked_max, max, dim: usize);
-impl_reduce!(17, Max, unchecked_max, max, dim: usize);
-impl_reduce!(18, Max, unchecked_max, max, dim: usize);
-impl_reduce!(19, Max, unchecked_max, max, dim: usize);
-impl_reduce!(20, Max, unchecked_max, max, dim: usize);
 
 #[cfg(test)]
 #[tokio::test]
@@ -766,47 +746,27 @@ async fn test_reduce_max() {
     assert_eq!(output[[2]], 6.);
 }
 
-fn unchecked_min<const R1: usize, const R2: usize, D: DataType>(
-    tensor: &Tensor<R1, D>,
-    dim: usize,
-) -> Tensor<R2, D> {
-    tensor.reduce(
-        ReduceFunction::new(
-            "let output = min(a, b);".to_string(),
-            "3.40282e+38",
-            D::WGSL_TYPE,
-        )
-        .with_name("min"),
-        dim,
+fn min_fn<D: DataType>() -> ReduceFunction {
+    ReduceFunction::new(
+        "let output = min(a, b);".to_string(),
+        "3.40282e+38",
+        D::WGSL_TYPE,
     )
+    .with_name("min")
 }
 
-pub trait Min {
-    type Output;
+impl<const N: usize, D: DataType> Tensor<N, D> {
+    pub fn min<const O: usize>(&self, dim: usize) -> Tensor<O, D>
+    where
+        Self: LastRank<O, D>,
+    {
+        self.reduce(min_fn::<D>(), dim)
+    }
 
-    fn min(&self, dim: usize) -> Self::Output;
+    pub fn min_keepdim(&self, dim: usize) -> Tensor<1, D> {
+        self.reduce_keepdim(min_fn::<D>(), dim)
+    }
 }
-
-impl_reduce!(1, Min, unchecked_min, min, dim: usize);
-impl_reduce!(2, Min, unchecked_min, min, dim: usize);
-impl_reduce!(3, Min, unchecked_min, min, dim: usize);
-impl_reduce!(4, Min, unchecked_min, min, dim: usize);
-impl_reduce!(5, Min, unchecked_min, min, dim: usize);
-impl_reduce!(6, Min, unchecked_min, min, dim: usize);
-impl_reduce!(7, Min, unchecked_min, min, dim: usize);
-impl_reduce!(8, Min, unchecked_min, min, dim: usize);
-impl_reduce!(9, Min, unchecked_min, min, dim: usize);
-impl_reduce!(10, Min, unchecked_min, min, dim: usize);
-impl_reduce!(11, Min, unchecked_min, min, dim: usize);
-impl_reduce!(12, Min, unchecked_min, min, dim: usize);
-impl_reduce!(13, Min, unchecked_min, min, dim: usize);
-impl_reduce!(14, Min, unchecked_min, min, dim: usize);
-impl_reduce!(15, Min, unchecked_min, min, dim: usize);
-impl_reduce!(16, Min, unchecked_min, min, dim: usize);
-impl_reduce!(17, Min, unchecked_min, min, dim: usize);
-impl_reduce!(18, Min, unchecked_min, min, dim: usize);
-impl_reduce!(19, Min, unchecked_min, min, dim: usize);
-impl_reduce!(20, Min, unchecked_min, min, dim: usize);
 
 #[cfg(test)]
 #[tokio::test]
@@ -834,43 +794,22 @@ async fn test_reduce_min() {
     assert_eq!(output[[2]], 5.);
 }
 
-fn unchecked_product<const R1: usize, const R2: usize, D: DataType>(
-    tensor: &Tensor<R1, D>,
-    dim: usize,
-) -> Tensor<R2, D> {
-    tensor.reduce(
-        ReduceFunction::new("let output = a * b;".to_string(), "1.0", D::WGSL_TYPE)
-            .with_name("product"),
-        dim,
-    )
+fn product_fn<D: DataType>() -> ReduceFunction {
+    ReduceFunction::new("let output = a * b;".to_string(), "1.0", D::WGSL_TYPE).with_name("product")
 }
 
-pub trait Product {
-    type Output;
+impl<const N: usize, D: DataType> Tensor<N, D> {
+    pub fn product<const O: usize>(&self, dim: usize) -> Tensor<O, D>
+    where
+        Self: LastRank<O, D>,
+    {
+        self.reduce(product_fn::<D>(), dim)
+    }
 
-    fn product(&self, dim: usize) -> Self::Output;
+    pub fn product_keepdim(&self, dim: usize) -> Tensor<1, D> {
+        self.reduce_keepdim(product_fn::<D>(), dim)
+    }
 }
-
-impl_reduce!(1, Product, unchecked_product, product, dim: usize);
-impl_reduce!(2, Product, unchecked_product, product, dim: usize);
-impl_reduce!(3, Product, unchecked_product, product, dim: usize);
-impl_reduce!(4, Product, unchecked_product, product, dim: usize);
-impl_reduce!(5, Product, unchecked_product, product, dim: usize);
-impl_reduce!(6, Product, unchecked_product, product, dim: usize);
-impl_reduce!(7, Product, unchecked_product, product, dim: usize);
-impl_reduce!(8, Product, unchecked_product, product, dim: usize);
-impl_reduce!(9, Product, unchecked_product, product, dim: usize);
-impl_reduce!(10, Product, unchecked_product, product, dim: usize);
-impl_reduce!(11, Product, unchecked_product, product, dim: usize);
-impl_reduce!(12, Product, unchecked_product, product, dim: usize);
-impl_reduce!(13, Product, unchecked_product, product, dim: usize);
-impl_reduce!(14, Product, unchecked_product, product, dim: usize);
-impl_reduce!(15, Product, unchecked_product, product, dim: usize);
-impl_reduce!(16, Product, unchecked_product, product, dim: usize);
-impl_reduce!(17, Product, unchecked_product, product, dim: usize);
-impl_reduce!(18, Product, unchecked_product, product, dim: usize);
-impl_reduce!(19, Product, unchecked_product, product, dim: usize);
-impl_reduce!(20, Product, unchecked_product, product, dim: usize);
 
 #[cfg(test)]
 #[tokio::test]
