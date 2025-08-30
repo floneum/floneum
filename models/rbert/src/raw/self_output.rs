@@ -6,7 +6,7 @@ use crate::raw::linear::Linear;
 
 pub(crate) struct BertSelfOutput {
     dense: Linear,
-    layer_norm: LayerNorm,
+    layer_norm: LayerNorm<1>,
     span: tracing::Span,
 }
 
@@ -16,8 +16,12 @@ impl BertSelfOutput {
         vb: &mut VarBuilder,
         config: &super::Config,
     ) -> Result<Self> {
-        let dense = Linear::load(device, &mut vb.pp("dense"))?;
-        let layer_norm = layer_norm(device, &mut vb.pp("LayerNorm"), config.layer_norm_eps as _)?;
+        let dense = Linear::load(device, &mut vb.pp("attn_output"))?;
+        let layer_norm = layer_norm(
+            device,
+            &mut vb.pp("attn_output_norm"),
+            config.layer_norm_eps as _,
+        )?;
         Ok(Self {
             dense,
             layer_norm,

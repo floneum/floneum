@@ -17,9 +17,9 @@ impl BertLayer {
         vb: &mut VarBuilder,
         config: &super::Config,
     ) -> Result<Self> {
-        let attention = BertAttention::load(device, &mut vb.pp("attention"), config)?;
-        let intermediate = BertIntermediate::load(device, &mut vb.pp("intermediate"), config)?;
-        let output = BertOutput::load(device, &mut vb.pp("output"), config)?;
+        let attention = BertAttention::load(device, vb, config)?;
+        let intermediate = BertIntermediate::load(device, vb, config)?;
+        let output = BertOutput::load(device, vb, config)?;
         Ok(Self {
             attention,
             intermediate,

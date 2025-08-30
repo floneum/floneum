@@ -94,7 +94,7 @@ impl BertModel {
     pub fn load(device: &Device, vb: &mut VarBuilder, config: &Config) -> Result<Self> {
         let (embeddings, encoder) = match (
             BertEmbeddings::load(device, vb, config),
-            BertEncoder::load(device, &mut vb.pp("encoder"), config),
+            BertEncoder::load(device, vb, config),
         ) {
             (Ok(embeddings), Ok(encoder)) => (embeddings, encoder),
             (Err(err), _) | (_, Err(err)) => {

@@ -16,8 +16,8 @@ impl BertAttention {
         vb: &mut VarBuilder,
         config: &super::Config,
     ) -> Result<Self> {
-        let self_attention = BertSelfAttention::load(device, &mut vb.pp("self"), config)?;
-        let self_output = BertSelfOutput::load(device, &mut vb.pp("output"), config)?;
+        let self_attention = BertSelfAttention::load(device, vb, config)?;
+        let self_output = BertSelfOutput::load(device, vb, config)?;
         Ok(Self {
             self_attention,
             self_output,

@@ -1,16 +1,14 @@
 use crate::{CastTensor, DataType, LastRank, Tensor};
 
-impl<const N: usize, T> Tensor<N, T>
-where
-    T: DataType + CastTensor<f32>,
-    f32: CastTensor<T>,
-{
+impl<const N: usize, T> Tensor<N, T> {
     pub fn layer_norm<const R: usize, const N2: usize>(
         &self,
         weight: &Tensor<R, T>,
         eps: f32,
     ) -> Self
     where
+        T: DataType + CastTensor<f32>,
+        f32: CastTensor<T>,
         Tensor<N, f32>: LastRank<N2, f32>,
     {
         let hidden_size = *self.shape().last().unwrap();

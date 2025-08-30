@@ -20,9 +20,9 @@ impl BertSelfAttention {
         config: &super::Config,
     ) -> Result<Self> {
         let attention_head_size = config.hidden_size / config.num_attention_heads;
-        let query = Linear::load(device, &mut vb.pp("query"))?;
-        let value = Linear::load(device, &mut vb.pp("value"))?;
-        let key = Linear::load(device, &mut vb.pp("key"))?;
+        let query = Linear::load(device, &mut vb.pp("attn_q"))?;
+        let value = Linear::load(device, &mut vb.pp("attn_v"))?;
+        let key = Linear::load(device, &mut vb.pp("attn_k"))?;
         Ok(Self {
             query,
             key,

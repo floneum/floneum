@@ -7,7 +7,7 @@ use crate::raw::linear::Linear;
 // https://github.com/huggingface/transformers/blob/6eedfa6dd15dc1e22a55ae036f681914e5a0d9a1/src/transformers/models/bert/modeling_bert.py#L456
 pub(crate) struct BertOutput {
     dense: Linear,
-    layer_norm: LayerNorm,
+    layer_norm: LayerNorm<1>,
     span: tracing::Span,
 }
 
@@ -17,8 +17,12 @@ impl BertOutput {
         vb: &mut VarBuilder,
         config: &super::Config,
     ) -> Result<Self> {
-        let dense = Linear::load(device, &mut vb.pp("dense"))?;
-        let layer_norm = layer_norm(device, &mut vb.pp("LayerNorm"), config.layer_norm_eps as _)?;
+        let dense = Linear::load(device, &mut vb.pp("ffn_down"))?;
+        let layer_norm = layer_norm(
+            device,
+            &mut vb.pp("layer_output_norm"),
+            config.layer_norm_eps as _,
+        )?;
         Ok(Self {
             dense,
             layer_norm,

@@ -18,7 +18,7 @@ impl BertIntermediate {
         vb: &mut VarBuilder,
         config: &super::Config,
     ) -> Result<Self> {
-        let dense = Linear::load(device, &mut vb.pp("dense"))?;
+        let dense = Linear::load(device, &mut vb.pp("ffn_up"))?;
         Ok(Self {
             dense,
             intermediate_act: HiddenActLayer::new(config.hidden_act),

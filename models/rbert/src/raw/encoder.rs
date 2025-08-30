@@ -16,7 +16,7 @@ impl BertEncoder {
         config: &super::Config,
     ) -> Result<Self> {
         let layers = (0..config.num_hidden_layers)
-            .map(|index| BertLayer::load(device, &mut vb.pp(format!("layer.{index}")), config))
+            .map(|index| BertLayer::load(device, &mut vb.pp(format!("blk.{index}")), config))
             .collect::<Result<Vec<_>>>()?;
         let span = tracing::span!(tracing::Level::TRACE, "encoder");
         Ok(BertEncoder { layers, span })

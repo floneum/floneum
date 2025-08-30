@@ -13,7 +13,7 @@ pub(crate) struct BertEmbeddings {
     word_embeddings: Embedding,
     position_embeddings: Option<Embedding>,
     token_type_embeddings: Embedding,
-    layer_norm: LayerNorm,
+    layer_norm: LayerNorm<1>,
     span: tracing::Span,
 }
 
@@ -28,7 +28,7 @@ impl BertEmbeddings {
         let token_type_embeddings = embedding(device, &mut vb.pp("token_types"))?;
         let layer_norm = layer_norm(
             device,
-            &mut vb.pp("token_types"),
+            &mut vb.pp("token_embd_norm"),
             config.layer_norm_eps as _,
         )?;
         Ok(Self {
@@ -55,7 +55,7 @@ impl BertEmbeddings {
             let pos_emb = position_embeddings.forward(&position_ids.unsqueeze(0));
             embeddings = embeddings.add_(&pos_emb)
         }
-        self.layer_norm.forward_3d(&embeddings)
+        self.layer_norm.forward(&embeddings)
     }
 
     pub(crate) fn embedding_dim(&self) -> usize {
