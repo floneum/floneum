@@ -163,18 +163,18 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
             move |_| out_shape.into(),
             move |offset, strides| {
                 let mut new_strides = [0; R2];
-                let mut current_shape = current_shape.into_iter().rev().peekable();
+                let mut current_shape_iter = current_shape.into_iter().rev().peekable();
                 let mut strides = strides.iter().rev();
                 for (new_strides_fill, new_shape) in out_shape.into_iter().enumerate().rev() {
-                    let stride = if current_shape.next_if_eq(&new_shape).is_some() {
+                    let stride = if current_shape_iter.next_if_eq(&new_shape).is_some() {
                         *strides.next().unwrap()
                     } else {
-                        _ = current_shape.next_if_eq(&1);
+                        _ = current_shape_iter.next_if_eq(&1);
                         0
                     };
                     new_strides[new_strides_fill] = stride;
                 }
-                assert_eq!(current_shape.len(), 0);
+                assert_eq!(current_shape_iter.len(), 0, "failed to broadcast tensor: input shape {current_shape:?} is not compatible with output shape {out_shape:?}");
                 (offset, new_strides.into())
             },
         ))

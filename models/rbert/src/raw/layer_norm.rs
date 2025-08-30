@@ -14,4 +14,8 @@ impl LayerNorm {
     pub fn forward(&self, input: &Tensor<2, f32>) -> Tensor<2, f32> {
         input.layer_norm(&self.weight, self.eps)
     }
+    
+    pub fn forward_3d(&self, input: &Tensor<3, f32>) -> Tensor<3, f32> {
+        input.layer_norm(&self.weight, self.eps)
+    }
 }

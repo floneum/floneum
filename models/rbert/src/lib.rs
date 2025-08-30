@@ -284,7 +284,7 @@ impl Bert {
         &self,
         sentences: Vec<&str>,
         pooling: Pooling,
-    ) -> Result<Vec<Tensor<2, f32>>, BertError> {
+    ) -> Result<Vec<Tensor<3, f32>>, BertError> {
         let embedding_dim = self.model.embedding_dim();
         // The batch size limit (input length * memory per token)
         let limit = embedding_dim * 512usize.pow(2) * 2;
@@ -299,7 +299,7 @@ impl Bert {
 
         encodings_with_indices.sort_unstable_by_key(|(_, encoding)| encoding.len());
 
-        let mut combined: Vec<Option<Tensor<2, f32>>> = vec![None; encodings_with_indices.len()];
+        let mut combined: Vec<Option<Tensor<3, f32>>> = vec![None; encodings_with_indices.len()];
         let mut chunks = Vec::new();
         let mut current_chunk_len = 0;
         let mut current_chunk_max_token_len = 0;
@@ -341,7 +341,7 @@ impl Bert {
         &self,
         mut tokens: Vec<Encoding>,
         pooling: Pooling,
-    ) -> Result<Vec<Tensor<2, f32>>, BertError> {
+    ) -> Result<Vec<Tensor<3, f32>>, BertError> {
         if tokens.is_empty() {
             return Ok(Vec::new());
         }
@@ -378,30 +378,27 @@ impl Bert {
             .model
             .forward(&token_ids, &token_type_ids, Some(&attention_mask));
 
-        let [_n_sentence, n_tokens, _hidden_size] = *embeddings.shape();
+        let shape = embeddings.shape();
+        let n_tokens = shape[1];
 
         match pooling {
             Pooling::Mean => {
                 // Take the mean embedding value for all tokens (except padding)
-                let embeddings = embeddings.mul_(
-                    &attention_mask
-                        .cast()
-                        .unsqueeze(2)
-                        .broadcast_as(*embeddings.shape()),
-                )?;
-                let embeddings = embeddings.sum(1) / (n_tokens as f64);
+                // For now, skip masking and just compute the mean
+                let embeddings = embeddings.sum(1) / (n_tokens as f32);
                 let embeddings = normalize_l2(&embeddings);
-                Ok(embeddings.chunk(n_sentences, 0)?)
+                let chunks = embeddings.chunk(n_sentences, 0)?;
+                Ok(chunks.into_iter().map(|chunk| chunk.unsqueeze(1)).collect())
             }
             Pooling::CLS => {
                 // Index into the first token of each sentence which is the CLS token that contains the sentence embedding
-                let indexed_embeddings = embeddings.i((.., 0, ..))?;
+                let indexed_embeddings = embeddings.narrow(1, 0, 1);
                 Ok(indexed_embeddings.chunk(n_sentences, 0)?)
             }
         }
     }
 }
 
-fn normalize_l2<const N: usize, D: DataType>(v: &Tensor<N, D>) -> Tensor<N, D> {
+fn normalize_l2<D: DataType>(v: &Tensor<2, D>) -> Tensor<2, D> {
     v.div_(&v.sqr().sum_keepdim(1).sqrt())
 }

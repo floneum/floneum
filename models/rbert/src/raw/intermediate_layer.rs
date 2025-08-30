@@ -1,7 +1,7 @@
 use fusor_core::{Device, VarBuilder};
 use fusor_core::{Result, Tensor};
 
-use crate::raw::linear::{self, Linear};
+use crate::raw::linear::Linear;
 
 use super::HiddenActLayer;
 

@@ -45,7 +45,8 @@ impl Bert {
             .as_slice()
             .await
             .map_err(|err| BertError::Fusor(fusor_core::Error::BufferAsyncError(err)))?;
-        Ok(Embedding::from(last_slice.into_iter().next().unwrap()))
+        let slice_data = last_slice.to_vec3();
+        Ok(Embedding::from(slice_data.into_iter().next().unwrap().into_iter().next().unwrap()))
     }
 
     /// Embed a batch of sentences with a specific pooling strategy.
@@ -58,8 +59,9 @@ impl Bert {
 
         let mut embeddings = Vec::with_capacity(tensors.len());
         for tensor in tensors {
+            let slice_data = tensor.to_vec3().await?;
             embeddings.push(Embedding::from(
-                tensor.to_vec2()?.into_iter().next().unwrap(),
+                slice_data.into_iter().next().unwrap().into_iter().next().unwrap(),
             ));
         }
 
@@ -105,18 +107,12 @@ impl Embedder for Bert {
     }
 
     async fn embed_string(&self, input: String) -> Result<Embedding, Self::Error> {
-        let self_clone = self.clone();
-        tokio::task::spawn_blocking(move || self_clone.embed_with_pooling(&input, Pooling::CLS))
-            .await?
+        self.embed_with_pooling(&input, Pooling::CLS).await
     }
 
     async fn embed_vec(&self, inputs: Vec<String>) -> Result<Vec<Embedding>, Self::Error> {
-        let self_clone = self.clone();
-        tokio::task::spawn_blocking(move || {
-            let inputs_borrowed = inputs.iter().map(|s| s.as_str()).collect::<Vec<_>>();
-            self_clone.embed_batch_with_pooling(inputs_borrowed, Pooling::CLS)
-        })
-        .await?
+        let inputs_borrowed = inputs.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+        self.embed_batch_with_pooling(inputs_borrowed, Pooling::CLS).await
     }
 }
 
@@ -140,10 +136,7 @@ impl Deref for Bert {
             let input = text.to_string();
 
             Box::pin(async move {
-                tokio::task::spawn_blocking(move || {
-                    self_clone.embed_with_pooling(&input, Pooling::CLS)
-                })
-                .await?
+                self_clone.embed_with_pooling(&input, Pooling::CLS).await
             })
                 as Pin<Box<dyn Future<Output = Result<Embedding, BertError>> + Send + 'static>>
         };

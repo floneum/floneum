@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 use crate::{Device, QMatrix};
 use fusor_gguf::{GgufMetadata, GgufReadError};
@@ -11,6 +11,15 @@ pub struct VarBuilder<'a> {
     reader: &'a mut dyn ReadAndSeek,
     metadata: Arc<GgufMetadata>,
     path: Vec<String>,
+}
+
+impl<'a> Debug for VarBuilder<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VarBuilder")
+            .field("path", &self.path)
+            .field("metadata", &self.metadata)
+            .finish()
+    }
 }
 
 impl<'a> VarBuilder<'a> {
@@ -47,7 +56,9 @@ impl<'a> VarBuilder<'a> {
 
     pub fn get(&mut self, key: &str, device: &Device) -> crate::Result<QMatrix> {
         let full_path = self.format_path(key);
-        let q_matrix_metadata = self.metadata.tensor_infos.get(&*full_path).unwrap();
+        let q_matrix_metadata = self.metadata.tensor_infos.get(&*full_path).ok_or_else(|| {
+            crate::Error::VarBuilder(format!("Key '{}' not found in GGUF metadata", full_path))
+        })?;
 
         let q_matrix = QMatrix::read(
             &device,
@@ -62,5 +73,13 @@ impl<'a> VarBuilder<'a> {
     pub fn contains_key(&self, key: &str) -> bool {
         let full_path = self.format_path(key);
         self.metadata.tensor_infos.contains_key(&*full_path)
+    }
+
+    pub fn list_all_keys(&self) -> Vec<String> {
+        self.metadata
+            .tensor_infos
+            .keys()
+            .map(|k| k.to_string())
+            .collect()
     }
 }

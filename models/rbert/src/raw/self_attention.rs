@@ -62,11 +62,19 @@ impl BertSelfAttention {
         // If there is an attention mask, filter the attention scores by that mask
         if let Some(attention_mask) = attention_mask {
             // The attention mask is a tensor of shape (bsize, seq_len)
-            // the attention scores are a tensor of shape (bsize, _, seq_len, seq_len)
-            // We expand the attention mask to (bsize, 1, 1, seq_len)
-            let mask = attention_mask.unsqueeze(1).unsqueeze(2);
+            // the attention scores are a tensor of shape (bsize, heads, seq_len) or similar
+            // We expand the attention mask to match the shape
             let shape = *attention_scores.shape();
-            let mask = mask.broadcast_as(shape).cast();
+            let mask = if shape.len() == 3 {
+                attention_mask.unsqueeze(1).broadcast_as(shape).cast()
+            } else {
+                // For other dimensions, we need to create the proper mask
+                // For a 2D attention_mask (batch, seq_len), we need to expand it correctly
+                let expanded_mask = attention_mask.unsqueeze(1);
+                let mut mask_shape = vec![shape[0], 1];
+                mask_shape.extend(&shape[2..]);
+                expanded_mask.broadcast_as(shape).cast()
+            };
             // We use a value slightly larger that the true f32 min value to avoid NaN
             const FALSE_MIN: f32 = -3.4028235e34f32;
             let on_false = Tensor::splat(mask.device(), FALSE_MIN, shape);

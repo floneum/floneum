@@ -1,6 +1,8 @@
 mod arange;
 mod cat;
+mod chunk;
 mod gelu;
+mod index;
 mod narrow;
 mod relu;
 mod rms_norm;
@@ -9,5 +11,7 @@ mod silu;
 mod softmax;
 mod sqr;
 mod squeeze;
+mod to_vec;
 mod unsqueeze;
 mod where_cond;
+mod zeros_like;

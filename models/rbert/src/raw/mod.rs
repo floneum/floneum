@@ -20,7 +20,7 @@ mod embedding;
 mod layer_norm;
 mod linear;
 
-use fusor_core::{DataType, Device, FloatDataType, Result, Tensor, VarBuilder};
+use fusor_core::{Device, FloatDataType, Result, Tensor, VarBuilder};
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -93,7 +93,7 @@ impl BertModel {
     /// Load a new [`BertModel`] from [`VarBuilder`] with a [`Config`].
     pub fn load(device: &Device, vb: &mut VarBuilder, config: &Config) -> Result<Self> {
         let (embeddings, encoder) = match (
-            BertEmbeddings::load(device, &mut vb.pp("embeddings"), config),
+            BertEmbeddings::load(device, vb, config),
             BertEncoder::load(device, &mut vb.pp("encoder"), config),
         ) {
             (Ok(embeddings), Ok(encoder)) => (embeddings, encoder),
@@ -138,10 +138,13 @@ impl BertModel {
         input_ids: &Tensor<2, u32>,
         token_type_ids: &Tensor<2, u32>,
         attention_mask: Option<&Tensor<2, u32>>,
-    ) -> Tensor<2, f32> {
+    ) -> Tensor<3, f32> {
         let _enter = self.span.enter();
         let embedding_output = self.embeddings.forward(input_ids, token_type_ids);
-        self.encoder.forward(&embedding_output, attention_mask)
+        let [batch_size, seq_len, hidden_size] = *embedding_output.shape();
+        let embedding_2d = embedding_output.reshape([batch_size * seq_len, hidden_size]);
+        let encoder_output = self.encoder.forward(&embedding_2d, attention_mask);
+        encoder_output.reshape([batch_size, seq_len, hidden_size])
     }
 
     pub(crate) fn max_seq_len(&self) -> usize {

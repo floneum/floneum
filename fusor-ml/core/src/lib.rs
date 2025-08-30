@@ -44,6 +44,8 @@ pub enum Error {
     GgufError(#[from] fusor_gguf::GgufReadError),
     #[error("WGSL async buffer error {0}")]
     BufferAsyncError(#[from] wgpu::BufferAsyncError),
+    #[error("VarBuilder error {0}")]
+    VarBuilder(String),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

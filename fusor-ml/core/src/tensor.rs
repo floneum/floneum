@@ -1181,6 +1181,10 @@ impl<D: DataType, const R: usize> TensorSlice<R, D> {
 }
 
 impl<D: DataType, const R: usize> TensorSlice<R, D> {
+    pub fn shape(&self) -> &[usize] {
+        self.layout.shape()
+    }
+
     fn get(&self, index: [usize; R]) -> Option<&D> {
         let mut index_sum = 0;
         let layout = &self.layout;

@@ -23,10 +23,14 @@ impl BertEmbeddings {
         vb: &mut VarBuilder,
         config: &super::Config,
     ) -> Result<Self> {
-        let word_embeddings = embedding(device, &mut vb.pp("word_embeddings"))?;
-        let position_embeddings = embedding(device, &mut vb.pp("position_embeddings"))?;
-        let token_type_embeddings = embedding(device, &mut vb.pp("token_type_embeddings"))?;
-        let layer_norm = layer_norm(device, &mut vb.pp("LayerNorm"), config.layer_norm_eps as _)?;
+        let word_embeddings = embedding(device, &mut vb.pp("token_embd"))?;
+        let position_embeddings = embedding(device, &mut vb.pp("position_embd"))?;
+        let token_type_embeddings = embedding(device, &mut vb.pp("token_types"))?;
+        let layer_norm = layer_norm(
+            device,
+            &mut vb.pp("token_types"),
+            config.layer_norm_eps as _,
+        )?;
         Ok(Self {
             word_embeddings,
             position_embeddings: Some(position_embeddings),
@@ -40,7 +44,7 @@ impl BertEmbeddings {
         &self,
         input_ids: &Tensor<2, u32>,
         token_type_ids: &Tensor<2, u32>,
-    ) -> Tensor<2, f32> {
+    ) -> Tensor<3, f32> {
         let _enter = self.span.enter();
         let [_bsize, seq_len] = *input_ids.shape();
         let input_embeddings = self.word_embeddings.forward(input_ids);
@@ -48,9 +52,10 @@ impl BertEmbeddings {
         let mut embeddings = &input_embeddings + &token_type_embeddings;
         if let Some(position_embeddings) = &self.position_embeddings {
             let position_ids = Tensor::arange(input_ids.device(), 0, seq_len as u32);
-            embeddings = embeddings.add_(&position_embeddings.forward(&position_ids))
+            let pos_emb = position_embeddings.forward(&position_ids.unsqueeze(0));
+            embeddings = embeddings.add_(&pos_emb)
         }
-        self.layer_norm.forward(&embeddings)
+        self.layer_norm.forward_3d(&embeddings)
     }
 
     pub(crate) fn embedding_dim(&self) -> usize {
