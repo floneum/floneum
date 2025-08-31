@@ -284,7 +284,7 @@ impl Bert {
         &self,
         sentences: Vec<&str>,
         pooling: Pooling,
-    ) -> Result<Vec<Tensor<3, f32>>, BertError> {
+    ) -> Result<Vec<Tensor<2, f32>>, BertError> {
         let embedding_dim = self.model.embedding_dim();
         // The batch size limit (input length * memory per token)
         let limit = embedding_dim * 512usize.pow(2) * 2;
@@ -299,7 +299,7 @@ impl Bert {
 
         encodings_with_indices.sort_unstable_by_key(|(_, encoding)| encoding.len());
 
-        let mut combined: Vec<Option<Tensor<3, f32>>> = vec![None; encodings_with_indices.len()];
+        let mut combined: Vec<Option<Tensor<2, f32>>> = vec![None; encodings_with_indices.len()];
         let mut chunks = Vec::new();
         let mut current_chunk_len = 0;
         let mut current_chunk_max_token_len = 0;
@@ -341,7 +341,7 @@ impl Bert {
         &self,
         mut tokens: Vec<Encoding>,
         pooling: Pooling,
-    ) -> Result<Vec<Tensor<3, f32>>, BertError> {
+    ) -> Result<Vec<Tensor<2, f32>>, BertError> {
         if tokens.is_empty() {
             return Ok(Vec::new());
         }
@@ -383,21 +383,20 @@ impl Bert {
         let shape = embeddings.shape();
         let n_tokens = shape[1];
 
-        dbg!(match pooling {
+        match pooling {
             Pooling::Mean => {
                 // Take the mean embedding value for all tokens (except padding)
                 // For now, skip masking and just compute the mean
                 let embeddings = embeddings.sum(1) / (n_tokens as f32);
                 let embeddings = normalize_l2(&embeddings);
-                let chunks = embeddings.chunk(n_sentences, 0)?;
-                Ok(chunks.into_iter().map(|chunk| chunk.unsqueeze(1)).collect())
+                Ok(embeddings.chunk(n_sentences, 0)?)
             }
             Pooling::CLS => {
                 // Index into the first token of each sentence which is the CLS token that contains the sentence embedding
-                let indexed_embeddings = embeddings.i((.., 0, ..))?;
-                Ok(indexed_embeddings.chunk(n_sentences, 0)?)
+                let indexed_embeddings = dbg!(embeddings.i((.., 0, ..))?);
+                Ok(dbg!(indexed_embeddings.chunk(dbg!(n_sentences), 0)?))
             }
-        })
+        }
     }
 }
 
