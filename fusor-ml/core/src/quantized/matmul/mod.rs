@@ -129,36 +129,45 @@ async fn test_fuzz_q_mat_mul() {
     let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("blk.0.attn_q.weight").await;
 
     for _ in 0..25 {
-        let random_data: Vec<Vec<f32>> = (0..576)
-            .map(|_| (0..576).map(|_| rand::random()).collect())
+        let len = rand::random::<u32>() as usize % 10;
+        let random_data: Vec<Vec<Vec<f32>>> = (0..len)
+            .map(|_| {
+                (0..576)
+                    .map(|_| (0..576).map(|_| rand::random()).collect())
+                    .collect()
+            })
             .collect();
-        let tensor = Tensor::<2, f32>::new(&device, &random_data);
+        let tensor = Tensor::<3, f32>::new(&device, &random_data);
 
         let result = tensor.q_mat_mul(&q_matrix);
         let fusor_shape = result.shape();
         let result = result.as_slice().await.unwrap();
 
         let candle_b = candle_core::Tensor::from_iter(
-            random_data.iter().flat_map(|x| x.iter().copied()),
+            random_data
+                .iter()
+                .flat_map(|x| x.iter().flat_map(|x| x.iter().copied())),
             &candle_core::Device::Cpu,
         )
         .unwrap()
-        .reshape(&[576, 576])
+        .reshape(&[len, 576, 576])
         .unwrap();
         let candle_result = candle_q_matrix.forward(&candle_b).unwrap();
-        assert_eq!(candle_result.shape().dims(), &[576, 576]);
-        let candle_result = candle_result.to_vec2::<f32>().unwrap();
+        assert_eq!(candle_result.shape().dims(), &[len, 576, 576]);
+        let candle_result = candle_result.to_vec3::<f32>().unwrap();
 
-        assert_eq!(fusor_shape, &[576, 576]);
+        assert_eq!(fusor_shape, &[len, 576, 576]);
 
-        for x in 0..576 {
-            for y in 0..576 {
-                let expected = candle_result[x][y];
-                let actual = result[[x, y]];
-                if (expected - actual).abs() > 3. {
-                    println!("Expected: {candle_result:?}");
-                    println!("Actual: {result:?}");
-                    panic!("expected: {expected}, actual: {actual}");
+        for batch in 0..len {
+            for x in 0..576 {
+                for y in 0..576 {
+                    let expected = candle_result[batch][x][y];
+                    let actual = result[[batch, x, y]];
+                    if (expected - actual).abs() > 3. {
+                        println!("Expected: {candle_result:?}");
+                        println!("Actual: {result:?}");
+                        panic!("expected: {expected}, actual: {actual}");
+                    }
                 }
             }
         }
