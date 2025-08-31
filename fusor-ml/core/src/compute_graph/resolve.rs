@@ -66,15 +66,19 @@ impl<'a> Resolver<'a> {
         let mut kernel = GenericKernel::new();
 
         for (node, operation) in queued_operations {
+            println!("queuing {node:?}");
             let new_inputs = operation.inputs(self.graph);
             let constraint = operation.workgroup_shape_constraints(&self.graph.device);
+            println!("new constraint: {constraint:?}");
             let mut new_merged = current_constraints.clone();
             new_merged.merge(&constraint);
+            println!("current_constraints: {current_constraints:?}");
             let old_best = current_constraints.solve(&limits).unwrap();
             let mut extend = self.should_extend_kernel(new_inputs.clone(), &inputs);
             extend &= new_merged.solve(&limits).is_some();
-            current_constraints = new_merged;
-            if !extend {
+            if extend {
+                current_constraints = new_merged;
+            } else {
                 let kernel = std::mem::take(&mut kernel);
                 let inputs = std::mem::take(&mut inputs);
                 let all_input_values = std::mem::take(&mut all_input_values);
@@ -86,7 +90,7 @@ impl<'a> Resolver<'a> {
                     all_input_values,
                     old_best,
                 );
-                current_constraints.clear();
+                current_constraints = constraint;
             }
             // Map layout isn't really a kernel. Resolve it immediately
             if let AnyComputeKey::MapLayout(key) = node {
@@ -108,6 +112,7 @@ impl<'a> Resolver<'a> {
         }
 
         if !pending_operations.is_empty() {
+            println!("final");
             let old_best = current_constraints.solve(&limits).unwrap_or_else(|| {
                 panic!(
                     "Failed to find a valid workgroup shape for constraints {current_constraints:?}"
@@ -184,6 +189,7 @@ impl<'a> Resolver<'a> {
     ) {
         let mut max_dispatch_size = [0; 3];
         for ((key, operation), inputs) in queued_operations.into_iter().zip(inputs) {
+            println!("adding key: {key:?}");
             // Map layout isn't really a kernel. Skip it
             if matches!(key, AnyComputeKey::MapLayout(_)) {
                 continue;
@@ -210,6 +216,7 @@ impl<'a> Resolver<'a> {
                 self.graph.check_life(dependency);
             }
         }
+        println!("workgroup_shape: {workgroup_shape:?}");
         kernel.set_workgroup_size(workgroup_shape);
         kernel.run(
             &self.graph.device,

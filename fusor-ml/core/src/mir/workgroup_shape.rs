@@ -93,7 +93,12 @@ pub(crate) struct WorkgroupShapeConstraints {
 }
 
 impl WorkgroupShapeConstraints {
+    #[track_caller]
     pub(crate) fn new() -> Self {
+        println!(
+            "WorkgroupShapeConstraints::new called from {:?}",
+            std::panic::Location::caller()
+        );
         Self::default()
     }
 
