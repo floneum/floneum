@@ -32,9 +32,9 @@ impl BertOutput {
 
     pub(crate) fn forward(
         &self,
-        hidden_states: &Tensor<2, f32>,
-        input_tensor: &Tensor<2, f32>,
-    ) -> Tensor<2, f32> {
+        hidden_states: &Tensor<3, f32>,
+        input_tensor: &Tensor<3, f32>,
+    ) -> Tensor<3, f32> {
         let _enter = self.span.enter();
         let hidden_states = self.dense.forward(hidden_states);
         self.layer_norm.forward(&(&hidden_states + input_tensor))

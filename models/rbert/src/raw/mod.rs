@@ -141,10 +141,7 @@ impl BertModel {
     ) -> Tensor<3, f32> {
         let _enter = self.span.enter();
         let embedding_output = self.embeddings.forward(input_ids, token_type_ids);
-        let [batch_size, seq_len, hidden_size] = *embedding_output.shape();
-        let embedding_2d = embedding_output.reshape([batch_size * seq_len, hidden_size]);
-        let encoder_output = self.encoder.forward(&embedding_2d, attention_mask);
-        encoder_output.reshape([batch_size, seq_len, hidden_size])
+        self.encoder.forward(&embedding_output, attention_mask)
     }
 
     pub(crate) fn max_seq_len(&self) -> usize {

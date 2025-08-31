@@ -24,9 +24,9 @@ impl BertEncoder {
 
     pub fn forward(
         &self,
-        hidden_states: &Tensor<2, f32>,
+        hidden_states: &Tensor<3, f32>,
         attention_mask: Option<&Tensor<2, u32>>,
-    ) -> Tensor<2, f32> {
+    ) -> Tensor<3, f32> {
         let _enter = self.span.enter();
         let mut hidden_states = hidden_states.clone();
         // Use a loop rather than a fold as it's easier to modify when adding debug/...

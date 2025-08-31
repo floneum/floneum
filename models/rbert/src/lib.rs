@@ -377,11 +377,13 @@ impl Bert {
         let embeddings = self
             .model
             .forward(&token_ids, &token_type_ids, Some(&attention_mask));
+        println!("embeddings: {embeddings:?}");
+        println!("n_sentences: {n_sentences}");
 
         let shape = embeddings.shape();
         let n_tokens = shape[1];
 
-        match pooling {
+        dbg!(match pooling {
             Pooling::Mean => {
                 // Take the mean embedding value for all tokens (except padding)
                 // For now, skip masking and just compute the mean
@@ -392,10 +394,10 @@ impl Bert {
             }
             Pooling::CLS => {
                 // Index into the first token of each sentence which is the CLS token that contains the sentence embedding
-                let indexed_embeddings = embeddings.narrow(1, 0, 1);
+                let indexed_embeddings = embeddings.i((.., 0, ..))?;
                 Ok(indexed_embeddings.chunk(n_sentences, 0)?)
             }
-        }
+        })
     }
 }
 

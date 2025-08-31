@@ -25,7 +25,12 @@ impl QMatMulOperation {
         input: AnyComputeKey,
         matrix: QMatrix,
     ) -> Self {
-        let out_shape = vec![input_shape[0], matrix.shape[0]];
+        let last_dim = input_shape.len() - 1;
+        // let mut out_shape = vec![input_shape[second_to_last_dim], matrix.shape[0]];
+        // out_shape.extend(input_shape.iter().copied().skip(2));
+        let mut out_shape = input_shape.to_vec();
+        out_shape[last_dim] = matrix.shape[0];
+        assert_eq!(input_shape[last_dim], matrix.shape[1]);
         let out_shape = out_shape.into_boxed_slice();
         QMatMulOperation {
             input_datatype,
@@ -53,7 +58,7 @@ impl QMatMulOperation {
     }
 }
 
-impl<T: DataType> Tensor<2, T> {
+impl<const R: usize, T: DataType> Tensor<R, T> {
     pub fn q_mat_mul(&self, other: &QMatrix) -> Self {
         self.add_q_mat_mul(other)
     }
@@ -493,10 +498,7 @@ impl Operation for QMatMulOperation {
         let input = nodes.get_result(self.input).unwrap();
         let q_matrix = self.matrix.clone();
         let device = input.device();
-        let a_shape = input.layout().shape();
-        let b_shape = &self.matrix.shape;
-        let output_tensor =
-            TensorData::new_for_shape(device, &[a_shape[0], b_shape[0]], input.datatype());
+        let output_tensor = TensorData::new_for_shape(device, &self.out_shape, input.datatype());
         vec![input.into(), q_matrix.into(), output_tensor.into()]
     }
 

@@ -27,9 +27,9 @@ impl BertAttention {
 
     pub(crate) fn forward(
         &self,
-        hidden_states: &Tensor<2, f32>,
+        hidden_states: &Tensor<3, f32>,
         attention_mask: Option<&Tensor<2, u32>>,
-    ) -> Tensor<2, f32> {
+    ) -> Tensor<3, f32> {
         let _enter = self.span.enter();
         let self_outputs = self.self_attention.forward(hidden_states, attention_mask);
         self.self_output.forward(&self_outputs, hidden_states)

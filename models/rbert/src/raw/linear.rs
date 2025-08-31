@@ -12,7 +12,7 @@ impl Linear {
         Ok(Self { weight, bias })
     }
 
-    pub(crate) fn forward(&self, input: &Tensor<2, f32>) -> Tensor<2, f32> {
+    pub(crate) fn forward(&self, input: &Tensor<3, f32>) -> Tensor<3, f32> {
         let output = input.q_mat_mul(&self.weight);
         output.add_(&self.bias)
     }

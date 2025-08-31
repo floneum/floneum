@@ -213,6 +213,7 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
         (Tensor<R, T>, Tensor<R2, T>): MaxRank<R3, T>,
     {
         let (b1, b2) = Self::broadcast_together(first, second);
+        assert_eq!(b1.shape(), b2.shape());
         op(b1, b2)
     }
 }
