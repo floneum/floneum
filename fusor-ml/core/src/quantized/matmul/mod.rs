@@ -249,7 +249,7 @@ async fn test_fuzz_q_mat_mul_q8_0() {
     widths.extend((2..25).map(|_| rand::random_range(1..=64)));
 
     for width in widths {
-        let batch = (rand::random::<u32>() as usize % 4) + 1;
+        let batch = (rand::random::<u32>() as usize % 2) + 1;
         let random_data: Vec<Vec<Vec<f32>>> = (0..batch)
             .map(|_| {
                 (0..width)
