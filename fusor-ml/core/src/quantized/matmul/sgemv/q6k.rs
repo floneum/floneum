@@ -36,20 +36,7 @@ pub(crate) fn q6k_sgemv(
     let mut kernel = String::new();
 
     // Handle batch dimensions
-    writeln!(&mut kernel, "var block_batch = {global_id}.z;").unwrap();
-    
-    // Decompose the batch index for higher-dimensional tensors  
-    for dim in (0..input_a.rank()).rev().skip(2) {
-        let shape = input_a.shape_binding(dim);
-        writeln!(
-            &mut kernel,
-            "let block_batch_{dim} = block_batch % {shape};"
-        ).unwrap();
-        writeln!(
-            &mut kernel, 
-            "block_batch = block_batch / {shape};"
-        ).unwrap();
-    }
+    writeln!(&mut kernel, "let batch_idx = {global_id}.z;").unwrap();
 
     // Find the reduce size in blocks rounded up
     writeln!(
@@ -124,9 +111,10 @@ pub(crate) fn q6k_sgemv(
     .unwrap();
     {
         // First load the values of a into cached_a_values
+        writeln!(&mut kernel, "let batch_offset = batch_idx * {k_size};").unwrap();
         writeln!(
             &mut kernel,
-            "let vector_offset = i * {elements_per_block} + y_offset;"
+            "let vector_offset = batch_offset + i * {elements_per_block} + y_offset;"
         )
         .unwrap();
         let load_value = |kernel: &mut String, j: &str, offset: u32| {
@@ -260,14 +248,7 @@ pub(crate) fn q6k_sgemv(
         } else {
             "row".to_string()
         };
-        let mut output_indices = vec![];
-        // Add batch indices first
-        for dim in (0..output.rank()).rev().skip(2) {
-            output_indices.push(format!("block_batch_{dim}"));
-        }
-        // Then add M and N indices (M=0 for sgemv, N=index)
-        output_indices.push("0".to_string());
-        output_indices.push(index);
+        let output_indices = vec!["batch_idx".to_string(), "0".to_string(), index];
         output.strided_index(&mut kernel, output_indices);
         let indexed = maybe_vec_storage_index(Q6K_SGEMV_CHUNK_SIZE, "sum", "offset");
         writeln!(&mut kernel, "] = {indexed};").unwrap();

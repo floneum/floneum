@@ -38,20 +38,7 @@ pub(crate) fn q_8_0_sgemv(
     let mut kernel = String::new();
 
     // Handle batch dimensions
-    writeln!(&mut kernel, "var block_batch = {global_id}.z;").unwrap();
-    
-    // Decompose the batch index for higher-dimensional tensors  
-    for dim in (0..input_a.rank()).rev().skip(2) {
-        let shape = input_a.shape_binding(dim);
-        writeln!(
-            &mut kernel,
-            "let block_batch_{dim} = block_batch % {shape};"
-        ).unwrap();
-        writeln!(
-            &mut kernel, 
-            "block_batch = block_batch / {shape};"
-        ).unwrap();
-    }
+    writeln!(&mut kernel, "let batch_idx = {global_id}.z;").unwrap();
 
     // Find the reduce size in blocks rounded up
     writeln!(
@@ -83,9 +70,10 @@ pub(crate) fn q_8_0_sgemv(
     )
     .unwrap();
 
+    writeln!(&mut kernel, "let batch_offset = batch_idx * {k_size};").unwrap();
     writeln!(
         &mut kernel,
-        "var y_offset = thread_id * {elements_per_block} + lane_index;"
+        "var y_offset = batch_offset + thread_id * {elements_per_block} + lane_index;"
     )
     .unwrap();
 
@@ -167,14 +155,7 @@ pub(crate) fn q_8_0_sgemv(
             // Write the output to the output tensor if this is the first thread in the workgroup
             write!(&mut kernel, "{output}[").unwrap();
             let index = format!("row + {offset}");
-            let mut output_indices = vec![];
-            // Add batch indices first
-            for dim in (0..output.rank()).rev().skip(2) {
-                output_indices.push(format!("block_batch_{dim}"));
-            }
-            // Then add M and N indices (M=0 for sgemv, N=index)
-            output_indices.push("0".to_string());
-            output_indices.push(index);
+            let output_indices = vec!["batch_idx".to_string(), "0".to_string(), index];
             output.strided_index(&mut kernel, output_indices);
             let indexed = maybe_vec_storage_index(Q_8_0_SGEMV_CHUNK_SIZE, "sum", offset);
             writeln!(&mut kernel, "] = {indexed};").unwrap();
