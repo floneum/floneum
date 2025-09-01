@@ -102,12 +102,6 @@ impl WorkgroupShapeConstraints {
         Self::default()
     }
 
-    pub(crate) fn clear(&mut self) {
-        for constraints in &mut self.shape {
-            constraints.clear();
-        }
-    }
-
     pub(crate) fn add_constraint(&mut self, dimension: usize, constraint: Constraint) {
         assert!(dimension < 3, "Dimension must be 0, 1, or 2");
         self.shape[dimension].push(constraint);
