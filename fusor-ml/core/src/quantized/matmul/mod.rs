@@ -273,7 +273,7 @@ async fn test_fuzz_q_mat_mul_q8_0() {
         .reshape(&[batch, width, 576])
         .unwrap();
         let candle_result = candle_q_matrix.forward(&candle_b).unwrap();
-        assert_eq!(candle_result.shape().dims(), &[width, 49152]);
+        assert_eq!(candle_result.shape().dims(), &[batch, width, 49152]);
         let candle_result = candle_result.to_vec3::<f32>().unwrap();
 
         assert_eq!(fusor_shape, &[batch, width, 49152]);
