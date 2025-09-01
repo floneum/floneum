@@ -135,7 +135,7 @@ impl WorkgroupShapeConstraints {
             self.possible().min_by_key(|shape| {
                 let linearized = shape.linearized();
                 (linearized as i64)
-                    + if linearized % limits.max_subgroup_size == 0 {
+                    + if shape.x() % limits.max_subgroup_size == 0 {
                         0
                     } else {
                         1024
