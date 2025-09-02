@@ -391,8 +391,8 @@ impl Bert {
             }
             Pooling::CLS => {
                 // Index into the first token of each sentence which is the CLS token that contains the sentence embedding
-                let indexed_embeddings = dbg!(embeddings.i((.., 0, ..))?);
-                Ok(dbg!(indexed_embeddings.chunk(dbg!(n_sentences), 0)?))
+                let indexed_embeddings = embeddings.i((.., 0, ..))?;
+                Ok(indexed_embeddings.chunk(n_sentences, 0)?)
             }
         }
     }

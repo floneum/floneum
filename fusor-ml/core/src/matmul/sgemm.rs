@@ -24,7 +24,7 @@ pub(super) fn workgroup_shape_constraints(
     );
     constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));
     constraints.add_constraint(2, crate::mir::workgroup_shape::Constraint::Equals(1));
-    dbg!(constraints)
+    constraints
 }
 
 pub(super) fn dispatch_size(
@@ -133,8 +133,6 @@ pub(super) fn build_kernel(
         matmul.datatype,
         cache_b_size.to_string(),
     );
-
-    println!("workgroup_shape: {workgroup_shape:?}");
 
     assert_eq!(
         workgroup_shape.x(),
