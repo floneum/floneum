@@ -14,7 +14,7 @@ impl<const R: usize, D: FloatDataType + DataType> Tensor<R, D> {
         let tanh = tanh_inner.tanh_exact();
         let one_plus_tanh = tanh + D::from_f32(1.0);
         let half = D::from_f32(0.5);
-        &myself * &one_plus_tanh * half
+        self * &one_plus_tanh * half
     }
 }
 
