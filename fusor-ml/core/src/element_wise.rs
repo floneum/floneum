@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    Tensor,
+    FloatDataType, Tensor,
     compute_graph::{AnyComputeKey, ComputeGraphInner},
     layout::TILE_SIZE,
     mir::{function::Function, inputs::MirValue, kernel::GenericKernel, operation::Operation},
@@ -838,7 +838,7 @@ async fn test_mod_const_reversed() {
 
 impl<const R: usize, T: DataType> Tensor<R, T> {
     /// Check if each value in the tensor is equal to the given value. Returns 1 for true and 0 for false.
-    pub fn eq<D: DataType>(self, rhs: T) -> Tensor<R, D> {
+    pub fn eq<D: DataType>(&self, rhs: T) -> Tensor<R, D> {
         let datatype = D::WGSL_TYPE;
         self.element_wise(ElementWiseOperation::new(
             self.datatype(),
@@ -871,6 +871,148 @@ async fn test_eq_const() {
     assert_eq!(output[[1, 1]], 0.);
     assert_eq!(output[[2, 0]], 0.);
     assert_eq!(output[[2, 1]], 0.);
+}
+
+impl<const R: usize, T: DataType> Tensor<R, T> {
+    /// Check if each value in the tensor is less than to the given value. Returns 1 for true and 0 for false.
+    pub fn lt<D: DataType>(&self, rhs: T) -> Tensor<R, D> {
+        let datatype = D::WGSL_TYPE;
+        self.element_wise(ElementWiseOperation::new(
+            self.datatype(),
+            self.key(),
+            ElementWiseFunction::new(
+                format!("let output = {datatype}(input < {rhs});"),
+                D::WGSL_TYPE,
+            )
+            .with_name("lt_const"),
+            self.shape().as_slice(),
+        ))
+    }
+
+    /// Check if each value in the tensor is less than or equal to the given value. Returns 1 for true and 0 for false.
+    pub fn lte<D: DataType>(&self, rhs: T) -> Tensor<R, D> {
+        let datatype = D::WGSL_TYPE;
+        self.element_wise(ElementWiseOperation::new(
+            self.datatype(),
+            self.key(),
+            ElementWiseFunction::new(
+                format!("let output = {datatype}(input <= {rhs});"),
+                D::WGSL_TYPE,
+            )
+            .with_name("lt_const"),
+            self.shape().as_slice(),
+        ))
+    }
+
+    /// Check if each value in the tensor is more than to the given value. Returns 1 for true and 0 for false.
+    pub fn mt<D: DataType>(&self, rhs: T) -> Tensor<R, D> {
+        let datatype = D::WGSL_TYPE;
+        self.element_wise(ElementWiseOperation::new(
+            self.datatype(),
+            self.key(),
+            ElementWiseFunction::new(
+                format!("let output = {datatype}(input > {rhs});"),
+                D::WGSL_TYPE,
+            )
+            .with_name("lt_const"),
+            self.shape().as_slice(),
+        ))
+    }
+
+    /// Check if each value in the tensor is more than or equal to the given value. Returns 1 for true and 0 for false.
+    pub fn mte<D: DataType>(&self, rhs: T) -> Tensor<R, D> {
+        let datatype = D::WGSL_TYPE;
+        self.element_wise(ElementWiseOperation::new(
+            self.datatype(),
+            self.key(),
+            ElementWiseFunction::new(
+                format!("let output = {datatype}(input >= {rhs});"),
+                D::WGSL_TYPE,
+            )
+            .with_name("lt_const"),
+            self.shape().as_slice(),
+        ))
+    }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_lt_const() {
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+
+    let tensor: Tensor<2, f32> = tensor.lt(2.0);
+
+    let output = tensor.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert_eq!(output[[0, 0]], 1.);
+    assert_eq!(output[[0, 1]], 0.);
+    assert_eq!(output[[1, 0]], 0.);
+    assert_eq!(output[[1, 1]], 0.);
+    assert_eq!(output[[2, 0]], 0.);
+    assert_eq!(output[[2, 1]], 0.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_lte_const() {
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+
+    let tensor: Tensor<2, f32> = tensor.lte(2.0);
+
+    let output = tensor.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert_eq!(output[[0, 0]], 1.);
+    assert_eq!(output[[0, 1]], 1.);
+    assert_eq!(output[[1, 0]], 0.);
+    assert_eq!(output[[1, 1]], 0.);
+    assert_eq!(output[[2, 0]], 0.);
+    assert_eq!(output[[2, 1]], 0.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_mt_const() {
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+
+    let tensor: Tensor<2, f32> = tensor.mt(2.0);
+
+    let output = tensor.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert_eq!(output[[0, 0]], 0.);
+    assert_eq!(output[[0, 1]], 0.);
+    assert_eq!(output[[1, 0]], 1.);
+    assert_eq!(output[[1, 1]], 1.);
+    assert_eq!(output[[2, 0]], 1.);
+    assert_eq!(output[[2, 1]], 1.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_mte_const() {
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+
+    let tensor: Tensor<2, f32> = tensor.mte(2.0);
+
+    let output = tensor.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert_eq!(output[[0, 0]], 0.);
+    assert_eq!(output[[0, 1]], 1.);
+    assert_eq!(output[[1, 0]], 1.);
+    assert_eq!(output[[1, 1]], 1.);
+    assert_eq!(output[[2, 0]], 1.);
+    assert_eq!(output[[2, 1]], 1.);
 }
 
 #[cfg(test)]
@@ -1345,6 +1487,22 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             self.datatype(),
             self.key(),
             ElementWiseFunction::new("let output = tanh(input);", D::WGSL_TYPE).with_name("tanh"),
+            self.shape().as_slice(),
+        ))
+    }
+}
+
+impl<const R: usize, D: DataType> Tensor<R, D> {
+    /// Calculates tanh with (e^x - e^-x) / (e^x + e^-x)
+    pub fn tanh_exact(&self) -> Self {
+        self.element_wise(ElementWiseOperation::new(
+            self.datatype(),
+            self.key(),
+            ElementWiseFunction::new(
+                "let output = (exp(input) - exp(-input)) / (exp(input) + exp(-input));",
+                D::WGSL_TYPE,
+            )
+            .with_name("tanh_exact"),
             self.shape().as_slice(),
         ))
     }

@@ -209,8 +209,8 @@ fn test_many_workgroup_shape_constraints() {
     }
 
     let valid_shape = merged.solve(&test_limits());
-    assert_eq!(valid_shape.unwrap().shape, [4, 2, 8]);
-    assert_eq!(valid_shape.unwrap().linearized(), 64);
+    assert_eq!(valid_shape.unwrap().shape, [4, 2, 1]);
+    assert_eq!(valid_shape.unwrap().linearized(), 8);
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]

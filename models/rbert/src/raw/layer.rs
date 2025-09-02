@@ -34,8 +34,16 @@ impl BertLayer {
         attention_mask: Option<&Tensor<2, u32>>,
     ) -> Tensor<3, f32> {
         let _enter = self.span.enter();
-        let attention_output = self.attention.forward(hidden_states, attention_mask);
-        let intermediate_output = self.intermediate.forward(&attention_output);
-        self.output.forward(&intermediate_output, &attention_output)
+        let attention_output = self
+            .attention
+            .forward(hidden_states, attention_mask)
+            .debug_assert_real();
+        let intermediate_output = self
+            .intermediate
+            .forward(&attention_output)
+            .debug_assert_real();
+        self.output
+            .forward(&intermediate_output, &attention_output)
+            .debug_assert_real()
     }
 }

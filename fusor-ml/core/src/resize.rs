@@ -15,14 +15,21 @@ const BLOCKSIZE: u32 = 256;
 #[derive(Debug, Clone)]
 pub(crate) struct ResizeOperation {
     pub(crate) input: AnyComputeKey,
+    pub(crate) current_shape: Box<[usize]>,
     pub(crate) new_shape: Box<[usize]>,
     pub(crate) fill_shape: Box<[usize]>,
 }
 
 impl ResizeOperation {
-    pub fn new(input: AnyComputeKey, new_shape: Box<[usize]>, fill_shape: Box<[usize]>) -> Self {
+    pub fn new(
+        input: AnyComputeKey,
+        current_shape: Box<[usize]>,
+        new_shape: Box<[usize]>,
+        fill_shape: Box<[usize]>,
+    ) -> Self {
         Self {
             input,
+            current_shape,
             new_shape,
             fill_shape,
         }
@@ -150,7 +157,7 @@ impl Operation for ResizeOperation {
     fn name(&self) -> String {
         format!(
             "resize_from_{}_to_{}",
-            self.fill_shape
+            self.current_shape
                 .iter()
                 .map(|x| x.to_string())
                 .collect::<Vec<_>>()
@@ -170,6 +177,7 @@ impl<const R: usize, T: crate::DataType> Tensor<R, T> {
         let input = self.key();
         self.add_resize(ResizeOperation::new(
             input,
+            (*self.shape()).into(),
             new_shape,
             (*self.shape()).into(),
         ))
@@ -188,6 +196,7 @@ impl<const R: usize, T: crate::DataType> Tensor<R, T> {
         let input = self.key();
         self.add_resize(ResizeOperation::new(
             input,
+            (*self.shape()).into(),
             new_shape.clone(),
             new_shape.clone(),
         ))

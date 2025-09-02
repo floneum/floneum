@@ -23,6 +23,7 @@ thiserror.workspace = true
 parking_lot = "0.12.3"
 tracing = "0.1.41"
 lru = "0.14.0"
+pollster = "0.4.0"
 
 [features]
 extra_assertions = []

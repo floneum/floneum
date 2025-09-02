@@ -6,6 +6,7 @@ use std::{
 };
 
 use bytemuck::{AnyBitPattern, NoUninit};
+use pollster::FutureExt as _;
 use tabbycat::Graph;
 use wgpu::{
     BufferDescriptor, COPY_BUFFER_ALIGNMENT,
@@ -48,6 +49,8 @@ pub trait DataType:
 
 pub trait FloatDataType: DataType {
     fn from_f32(value: f32) -> Self;
+
+    fn is_finite(&self) -> bool;
 }
 
 impl DataType for f32 {
@@ -66,6 +69,10 @@ impl FloatDataType for f32 {
     fn from_f32(value: f32) -> Self {
         value
     }
+
+    fn is_finite(&self) -> bool {
+        f32::is_finite(*self)
+    }
 }
 
 impl DataType for half::f16 {
@@ -83,6 +90,10 @@ impl DataType for half::f16 {
 impl FloatDataType for half::f16 {
     fn from_f32(value: f32) -> Self {
         half::f16::from_f32(value)
+    }
+
+    fn is_finite(&self) -> bool {
+        half::f16::is_finite(*self)
     }
 }
 
@@ -551,6 +562,12 @@ pub struct Tensor<const R: usize, D> {
     datatype: PhantomData<D>,
 }
 
+impl<const R: usize, D: DataType> Display for Tensor<R, D> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} x {:?}", self.datatype(), self.shape())
+    }
+}
+
 impl<const R: usize, D: DataType> Debug for Tensor<R, D> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Tensor({} x {:?})", self.datatype(), self.shape())
@@ -809,6 +826,20 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         let out = Self::as_slice_from_tensor_data(&tensor).await;
         tracing::trace!("Downloaded tensor in {:?}", start_time.elapsed());
         out
+    }
+
+    pub fn debug_assert_real(self) -> Self
+    where
+        D: FloatDataType,
+    {
+        #[cfg(debug_assertions)]
+        {
+            let as_slice = self.as_slice().block_on().unwrap();
+            for item in as_slice.as_slice() {
+                assert!(item.is_finite(), "Tensor contains non-finite value: {item}");
+            }
+        }
+        self
     }
 
     pub(crate) fn element_wise<D2: DataType>(

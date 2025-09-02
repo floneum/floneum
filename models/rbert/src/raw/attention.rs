@@ -31,7 +31,12 @@ impl BertAttention {
         attention_mask: Option<&Tensor<2, u32>>,
     ) -> Tensor<3, f32> {
         let _enter = self.span.enter();
-        let self_outputs = self.self_attention.forward(hidden_states, attention_mask);
-        self.self_output.forward(&self_outputs, hidden_states)
+        let self_outputs = self
+            .self_attention
+            .forward(hidden_states, attention_mask)
+            .debug_assert_real();
+        self.self_output
+            .forward(&self_outputs, hidden_states)
+            .debug_assert_real()
     }
 }

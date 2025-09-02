@@ -1,6 +1,8 @@
 // Forked from https://github.com/huggingface/candle/blob/main/candle-transformers/src/models/bert.rs
 
 mod embeddings;
+use std::fmt::Debug;
+
 use embeddings::*;
 mod attention;
 use attention::*;
@@ -20,7 +22,7 @@ mod embedding;
 mod layer_norm;
 mod linear;
 
-use fusor_core::{Device, FloatDataType, Result, Tensor, VarBuilder};
+use fusor_core::{Device, FloatDataType, Result, Tensor, TensorSlice, VarBuilder};
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -45,8 +47,8 @@ impl HiddenActLayer {
         let _enter = self.span.enter();
         match self.act {
             // https://github.com/huggingface/transformers/blob/cd4584e3c809bb9e1392ccd3fe38b40daba5519a/src/transformers/activations.py#L213
-            HiddenAct::Gelu => xs.gelu(),
-            HiddenAct::Relu => xs.relu(),
+            HiddenAct::Gelu => xs.gelu().debug_assert_real(),
+            HiddenAct::Relu => xs.relu().debug_assert_real(),
         }
     }
 }

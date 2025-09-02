@@ -23,6 +23,7 @@ kalosm-common = { workspace = true }
 kalosm-model-types.workspace = true
 kalosm-language-model.workspace = true
 metal = { version = "0.27.0", features = ["mps"], optional = true }
+pollster = "0.4.0"
 
 [dev-dependencies]
 kalosm = { workspace = true, features = ["language"], default-features = true }
