@@ -17,9 +17,9 @@ async fn test_zeros_like() {
     let data = [[1., 2.], [3., 4.]];
     let tensor = Tensor::new(&device, &data);
     let zeros = tensor.zeros_like();
-    
+
     assert_eq!(zeros.shape(), tensor.shape());
-    
+
     let zeros_slice = zeros.as_slice().await.unwrap();
     assert_eq!(zeros_slice[[0, 0]], 0.);
     assert_eq!(zeros_slice[[0, 1]], 0.);

@@ -35,9 +35,7 @@ impl BertSelfOutput {
         input_tensor: &Tensor<3, f32>,
     ) -> Tensor<3, f32> {
         let _enter = self.span.enter();
-        println!("hidden_states output: {hidden_states:?}");
         let hidden_states = self.dense.forward(hidden_states);
-        println!("hidden_states output after: {hidden_states:?}");
         self.layer_norm.forward(&(&hidden_states + input_tensor))
     }
 }

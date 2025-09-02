@@ -14,9 +14,7 @@ impl Linear {
     }
 
     pub(crate) fn forward(&self, input: &Tensor<3, f32>) -> Tensor<3, f32> {
-        println!("input: {:?}", input.as_slice().block_on());
         let output = input.q_mat_mul(&self.weight).debug_assert_real();
-        println!("output: {:?}", output.as_slice().block_on());
         output.add_(&self.bias).debug_assert_real()
     }
 }

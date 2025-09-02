@@ -48,8 +48,7 @@ pub(crate) fn q_n_sgemv(
 
     // In index of the single element in the vector we are multiplying against
     writeln!(&mut kernel, "let workgroup_offset = {workgroup_index}.x;").unwrap();
-    writeln!(&mut kernel, "let batch_offset = batch_idx * {k_size};")
-    .unwrap();
+    writeln!(&mut kernel, "let batch_offset = batch_idx * {k_size};").unwrap();
     writeln!(
         &mut kernel,
         "let row = ({SUBGROUP_COUNT} * workgroup_offset + {subgroup_index}) * {Q_N_SGEMV_CHUNK_SIZE};"

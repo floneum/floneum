@@ -35,7 +35,6 @@ impl BertSelfAttention {
     }
 
     pub(crate) fn transpose_for_scores(&self, xs: &Tensor<3, f32>) -> Tensor<4, f32> {
-        println!("xs: {xs:?}");
         let new_x_shape = [
             xs.shape()[0],
             xs.shape()[1],
@@ -43,7 +42,6 @@ impl BertSelfAttention {
             self.attention_head_size,
         ];
         let xs = xs.reshape(new_x_shape).transpose(1, 2);
-        println!("xs out : {xs:?}");
         xs
     }
 
@@ -53,7 +51,6 @@ impl BertSelfAttention {
         attention_mask: Option<&Tensor<2, u32>>,
     ) -> Tensor<3, f32> {
         let _enter = self.span.enter();
-        println!("hidden_states in: {hidden_states:?}");
         let query_layer = self.query.forward(hidden_states);
         let key_layer = self.key.forward(hidden_states);
         let value_layer = self.value.forward(hidden_states);
@@ -90,14 +87,9 @@ impl BertSelfAttention {
             let _enter_sm = self.span_softmax.enter();
             attention_scores.softmax(attention_scores.rank() - 1)
         };
-        println!("attention_probs before matmul: {attention_probs:?}");
-        println!("value_layer before matmul: {value_layer:?}");
         let context_layer = attention_probs.mat_mul(&value_layer);
-        println!("context_layer after matmul: {context_layer:?}");
         let context_layer = context_layer.transpose(1, 2);
-        let context_layer = context_layer.flatten_last_n::<1, _>();
-        println!("context_layer after change: {context_layer:?}");
-        context_layer
+        context_layer.flatten_last_n::<1, _>()
     }
 }
 

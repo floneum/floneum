@@ -22,7 +22,7 @@ impl<D: DataType> TensorSlice<2, D> {
         let shape = self.shape();
         let rows = shape[0];
         let cols = shape[1];
-        
+
         let mut result = Vec::with_capacity(rows);
         for i in 0..rows {
             let mut row = Vec::with_capacity(cols);
@@ -42,7 +42,7 @@ impl<D: DataType> TensorSlice<3, D> {
         let dim0 = shape[0];
         let dim1 = shape[1];
         let dim2 = shape[2];
-        
+
         let mut result = Vec::with_capacity(dim0);
         for i in 0..dim0 {
             let mut layer = Vec::with_capacity(dim1);
@@ -69,7 +69,7 @@ async fn test_to_vec2() {
     let data = [[1., 2.], [3., 4.]];
     let tensor = Tensor::new(&device, &data);
     let vec2 = tensor.to_vec2().await.unwrap();
-    
+
     assert_eq!(vec2.len(), 2);
     assert_eq!(vec2[0].len(), 2);
     assert_eq!(vec2[0][0], 1.);
