@@ -135,6 +135,20 @@ impl<'a> Resolver<'a> {
         new_inputs: Vec<MirValue>,
         inputs: &[Vec<MirValue>],
     ) -> bool {
+        if inputs
+            .iter()
+            .flat_map(|inputs| inputs.iter().map(MirValue::input_values))
+            .sum::<usize>()
+            + new_inputs.iter().map(MirValue::input_values).sum::<usize>()
+            > self
+                .graph
+                .device
+                .wgpu_device()
+                .limits()
+                .max_storage_buffers_per_shader_stage as _
+        {
+            return false;
+        }
         for input in &new_inputs {
             for other in inputs.iter().flatten() {
                 if let (MirValue::Tensor(input_tensor), MirValue::Tensor(other_tensor)) =
