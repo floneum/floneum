@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    FloatDataType, Tensor,
+    Tensor,
     compute_graph::{AnyComputeKey, ComputeGraphInner},
     layout::TILE_SIZE,
     mir::{function::Function, inputs::MirValue, kernel::GenericKernel, operation::Operation},

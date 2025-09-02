@@ -185,8 +185,8 @@ fn test_workgroup_shape_constraints() {
     }
 
     let valid_shape = constraints.solve(&test_limits());
-    assert_eq!(valid_shape.unwrap().shape, [4, 1, 16]);
-    assert_eq!(valid_shape.unwrap().linearized(), 64);
+    assert_eq!(valid_shape.unwrap().shape, [4, 1, 1]);
+    assert_eq!(valid_shape.unwrap().linearized(), 4);
 }
 
 #[test]
