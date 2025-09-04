@@ -552,28 +552,37 @@ async fn fuzz_batched_matmul() {
     let device = Device::new().await.unwrap();
 
     let min_batch_size = 2;
-    let max_batch_size = 20;
+    let max_batch_size = 4;
     let min_size = 1;
     let max_size = 512;
     let iterations = if cfg!(debug_assertions) { 10 } else { 100 };
 
     for _ in 0..iterations {
-        let batch_size = rand::rng().random_range(min_batch_size..max_batch_size);
+        let batch_size_1 = rand::rng().random_range(min_batch_size..max_batch_size);
+        let batch_size_2 = rand::rng().random_range(min_batch_size..max_batch_size);
         let size1 = rand::rng().random_range(min_size..max_size);
         let size2 = rand::rng().random_range(min_size..max_size);
         let size3 = rand::rng().random_range(min_size..max_size);
 
-        let data_a: Vec<Vec<Vec<f32>>> = (0..batch_size)
+        let data_a: Vec<Vec<Vec<Vec<f32>>>> = (0..batch_size_1)
             .map(|_| {
-                (0..size1)
-                    .map(|_| (0..size2).map(|_| rand::random()).collect())
+                (0..batch_size_2)
+                    .map(|_| {
+                        (0..size1)
+                            .map(|_| (0..size2).map(|_| rand::random()).collect())
+                            .collect()
+                    })
                     .collect()
             })
             .collect();
-        let data_b: Vec<Vec<Vec<f32>>> = (0..batch_size)
+        let data_b: Vec<Vec<Vec<Vec<f32>>>> = (0..batch_size_1)
             .map(|_| {
-                (0..size2)
-                    .map(|_| (0..size3).map(|_| rand::random()).collect())
+                (0..batch_size_2)
+                    .map(|_| {
+                        (0..size2)
+                            .map(|_| (0..size3).map(|_| rand::random()).collect())
+                            .collect()
+                    })
                     .collect()
             })
             .collect();
@@ -581,49 +590,67 @@ async fn fuzz_batched_matmul() {
         let tensor_a = Tensor::new(&device, &data_a);
         let tensor_b = Tensor::new(&device, &data_b);
 
-        let ndarray_a = (0..batch_size)
-            .map(|i| {
-                let mut array = ndarray::Array2::zeros((size1, size2));
-                for j in 0..size1 {
-                    for k in 0..size2 {
-                        array[[j, k]] = data_a[i][j][k];
-                    }
-                }
-                array
+        let ndarray_a = (0..batch_size_1)
+            .map(|i_1| {
+                (0..batch_size_2)
+                    .map(|i_2| {
+                        let mut array = ndarray::Array2::zeros((size1, size2));
+                        for j in 0..size1 {
+                            for k in 0..size2 {
+                                array[[j, k]] = data_a[i_1][i_2][j][k];
+                            }
+                        }
+                        array
+                    })
+                    .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
 
-        let ndarray_b = (0..batch_size)
-            .map(|i| {
-                let mut array = ndarray::Array2::zeros((size2, size3));
-                for j in 0..size2 {
-                    for k in 0..size3 {
-                        array[[j, k]] = data_b[i][j][k];
-                    }
-                }
-                array
+        let ndarray_b = (0..batch_size_1)
+            .map(|i_1| {
+                (0..batch_size_2)
+                    .map(|i_2| {
+                        let mut array = ndarray::Array2::zeros((size2, size3));
+                        for j in 0..size2 {
+                            for k in 0..size3 {
+                                array[[j, k]] = data_b[i_1][i_2][j][k];
+                            }
+                        }
+                        array
+                    })
+                    .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
         let dot = ndarray_a
             .iter()
             .zip(ndarray_b.iter())
-            .map(|(a, b)| a.dot(b))
+            .map(|(a, b)| {
+                a.iter()
+                    .zip(b.iter())
+                    .map(|(a, b)| a.dot(b))
+                    .collect::<Vec<_>>()
+            })
             .collect::<Vec<_>>();
 
         let tensor = tensor_a.mat_mul(&tensor_b);
         let as_slice = tensor.as_slice().await.unwrap();
-        for batch in 0..batch_size {
-            for i in 0..size1 {
-                for j in 0..size3 {
-                    if (as_slice[[batch, i, j]] - dot[batch][[i, j]]).abs() > 0.001 {
-                        println!(
-                            "Mismatch at ({}, {}): {} != {}",
-                            i,
-                            j,
-                            as_slice[[batch, i, j]],
-                            dot[batch][[i, j]]
-                        );
-                        panic!("fuzz failed with size ({size1}x{size2})*({size2}x{size3})");
+        for batch_1 in 0..batch_size_1 {
+            for batch_2 in 0..batch_size_2 {
+                for i in 0..size1 {
+                    for j in 0..size3 {
+                        if (as_slice[[batch_1, batch_2, i, j]] - dot[batch_1][batch_2][[i, j]])
+                            .abs()
+                            > 0.001
+                        {
+                            println!(
+                                "Mismatch at ({}, {}): {} != {}",
+                                i,
+                                j,
+                                as_slice[[batch_1, batch_2, i, j]],
+                                dot[batch_1][batch_2][[i, j]]
+                            );
+                            panic!("fuzz failed with size ({size1}x{size2})*({size2}x{size3})");
+                        }
                     }
                 }
             }
