@@ -125,7 +125,7 @@ fn qmatmul(c: &mut Criterion) {
     }
 }
 
-#[allow(clippy::to_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn bench_candle_with_device(
     bytes: &[u8],
     size: usize,

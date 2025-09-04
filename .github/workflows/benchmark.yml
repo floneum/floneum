@@ -1,0 +1,81 @@
+on: [pull_request]
+name: benchmark fusor
+jobs:
+  qmatmul:
+    if: github.event.pull_request.draft == false
+    name: qmatmul benchmark
+    runs-on: macos-latest
+    steps:
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v4
+      - uses: boa-dev/criterion-compare-action@v3
+        with:
+          cwd: "fusor-ml/core"
+          benchName: "qmatmul"
+          branchName: ${{ github.base_ref }}
+  matmul:
+    if: github.event.pull_request.draft == false
+    name: matmul benchmark
+    runs-on: macos-latest
+    steps:
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v4
+      - uses: boa-dev/criterion-compare-action@v3
+        with:
+          cwd: "fusor-ml/core"
+          benchName: "matmul"
+          branchName: ${{ github.base_ref }}
+  elementwise:
+    if: github.event.pull_request.draft == false
+    name: elementwise benchmark
+    runs-on: macos-latest
+    steps:
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v4
+      - uses: boa-dev/criterion-compare-action@v3
+        with:
+          cwd: "fusor-ml/core"
+          benchName: "elementwise"
+          branchName: ${{ github.base_ref }}
+  fused:
+    if: github.event.pull_request.draft == false
+    name: fused benchmark
+    runs-on: macos-latest
+    steps:
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v4
+      - uses: boa-dev/criterion-compare-action@v3
+        with:
+          cwd: "fusor-ml/core"
+          benchName: "fused"
+          branchName: ${{ github.base_ref }}
+  reduce:
+    if: github.event.pull_request.draft == false
+    name: reduce benchmark
+    runs-on: macos-latest
+    steps:
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v4
+      - uses: boa-dev/criterion-compare-action@v3
+        with:
+          cwd: "fusor-ml/core"
+          benchName: "reduce"
+          branchName: ${{ github.base_ref }}
+  pairwise:
+    if: github.event.pull_request.draft == false
+    name: pairwise benchmark
+    runs-on: macos-latest
+    steps:
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v4
+      - uses: boa-dev/criterion-compare-action@v3
+        with:
+          cwd: "fusor-ml/core"
+          benchName: "pairwise"
+          branchName: ${{ github.base_ref }}
