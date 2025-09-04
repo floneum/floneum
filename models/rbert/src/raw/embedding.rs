@@ -1,5 +1,5 @@
 //! Embedding Layer.
-use fusor_core::{Device, Result, Tensor};
+use fusor_core::{Device, NextRank, Result, Tensor};
 
 #[derive(Clone, Debug)]
 pub struct Embedding {
@@ -26,8 +26,20 @@ impl Embedding {
 }
 
 impl Embedding {
-    pub fn forward(&self, indexes: &Tensor<2, u32>) -> Tensor<3, f32> {
-        let final_dims = [indexes.shape()[0], indexes.shape()[1], self.hidden_size];
+    pub fn forward<const N: usize, const M: usize>(
+        &self,
+        indexes: &Tensor<N, u32>,
+    ) -> Tensor<M, f32>
+    where
+        Tensor<N, u32>: NextRank<M, u32>,
+    {
+        let final_dims = std::array::from_fn(|i| {
+            if i < N {
+                indexes.shape()[i]
+            } else {
+                self.hidden_size
+            }
+        });
         let indexes = indexes.flatten_all();
         let values = self.embeddings.index_select(0, &indexes);
         values.reshape(final_dims)

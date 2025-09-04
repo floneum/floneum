@@ -1,5 +1,4 @@
-use fusor_core::{DataType, Device, QMatrix, Result, Tensor, VarBuilder};
-use pollster::FutureExt;
+use fusor_core::{Device, QMatrix, Result, Tensor, VarBuilder};
 
 pub struct Linear {
     weight: QMatrix,

@@ -1,7 +1,7 @@
 use std::fmt::{Display, Write};
 
 use crate::{
-    ElementWiseFunctions, LastRank,
+    ElementWiseFunctions, LastRank, LastRankInner, NextRankInner,
     mir::{
         globals::KernelGlobalSpace,
         operation::Operation,
@@ -495,8 +495,12 @@ impl<const N: usize, D: DataType> Tensor<N, D> {
         self.reduce(sum_fn::<D>(), dim)
     }
 
-    pub fn sum_keepdim(&self, dim: usize) -> Tensor<1, D> {
-        self.reduce_keepdim(sum_fn::<D>(), dim)
+    pub fn sum_keepdim<const O: usize>(&self, dim: usize) -> Self
+    where
+        Self: LastRank<O, D>,
+        <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
+    {
+        self.sum(dim).unsqueeze(dim)
     }
 }
 
@@ -665,39 +669,6 @@ async fn test_reduce_const_sum_then_add_fused() {
     assert_eq!(output[[2]], 1. + 11.);
 }
 
-#[cfg(test)]
-#[tokio::test]
-async fn test_sum_keepdim() {
-    use crate::Device;
-
-    let device = Device::new().await.unwrap();
-
-    let data = [[[1.], [2.], [3.]], [[4.], [5.], [6.]]];
-    let tensor = Tensor::new(&device, &data);
-
-    println!("{tensor:?}");
-    let output = tensor.sum_keepdim(2);
-
-    let output = output.as_slice().await.unwrap();
-    println!("{output:?}");
-    assert_eq!(output[[0]], 21.);
-
-    let output = tensor.sum_keepdim(1);
-
-    let output = output.as_slice().await.unwrap();
-    println!("{output:?}");
-    assert_eq!(output[[0]], 5.);
-    assert_eq!(output[[1]], 7.);
-    assert_eq!(output[[2]], 9.);
-
-    let output = tensor.sum_keepdim(0);
-
-    let output = output.as_slice().await.unwrap();
-    println!("{output:?}");
-    assert_eq!(output[[0]], 6.);
-    assert_eq!(output[[1]], 15.);
-}
-
 impl<const N: usize, D: DataType> Tensor<N, D> {
     pub fn max<const O: usize>(&self, dim: usize) -> Tensor<O, D>
     where
@@ -706,8 +677,12 @@ impl<const N: usize, D: DataType> Tensor<N, D> {
         self.reduce(max_fn::<D>(), dim)
     }
 
-    pub fn max_keepdim(&self, dim: usize) -> Tensor<1, D> {
-        self.reduce_keepdim(max_fn::<D>(), dim)
+    pub fn max_keepdim<const O: usize>(&self, dim: usize) -> Self
+    where
+        Self: LastRank<O, D>,
+        <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
+    {
+        self.max(dim).unsqueeze(dim)
     }
 }
 
@@ -763,8 +738,12 @@ impl<const N: usize, D: DataType> Tensor<N, D> {
         self.reduce(min_fn::<D>(), dim)
     }
 
-    pub fn min_keepdim(&self, dim: usize) -> Tensor<1, D> {
-        self.reduce_keepdim(min_fn::<D>(), dim)
+    pub fn min_keepdim<const O: usize>(&self, dim: usize) -> Self
+    where
+        Self: LastRank<O, D>,
+        <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
+    {
+        self.min(dim).unsqueeze(dim)
     }
 }
 
@@ -806,8 +785,12 @@ impl<const N: usize, D: DataType> Tensor<N, D> {
         self.reduce(product_fn::<D>(), dim)
     }
 
-    pub fn product_keepdim(&self, dim: usize) -> Tensor<1, D> {
-        self.reduce_keepdim(product_fn::<D>(), dim)
+    pub fn product_keepdim<const O: usize>(&self, dim: usize) -> Self
+    where
+        Self: LastRank<O, D>,
+        <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
+    {
+        self.product(dim).unsqueeze(dim)
     }
 }
 

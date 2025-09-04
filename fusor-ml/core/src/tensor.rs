@@ -936,7 +936,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
             if dim == keep_dim {
                 continue;
             }
-            let dim = if dim < keep_dim { 0 } else { 1 };
+            let dim = if dim > keep_dim { 0 } else { 1 };
             current_data = current_data.reduce(ReduceOperation::new(
                 current_data.key,
                 function.clone(),

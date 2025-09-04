@@ -1,4 +1,4 @@
-use fusor_core::{Device, LastRank, Result, Tensor};
+use fusor_core::{Device, LastRank, NextRankInner, Result, Tensor};
 
 pub fn layer_norm<const N: usize>(
     device: &Device,
@@ -6,11 +6,13 @@ pub fn layer_norm<const N: usize>(
     eps: f32,
 ) -> Result<LayerNorm<N>> {
     let weight = vb.get("weight", device)?.dequantize();
-    Ok(LayerNorm { weight, eps })
+    let bias = vb.get("bias", device).ok().map(|b| b.dequantize());
+    Ok(LayerNorm { weight, bias, eps })
 }
 
 pub struct LayerNorm<const N: usize> {
     weight: Tensor<N, f32>,
+    bias: Option<Tensor<N, f32>>,
     eps: f32,
 }
 
@@ -21,7 +23,8 @@ impl<const N: usize> LayerNorm<N> {
     ) -> Tensor<N2, f32>
     where
         Tensor<N2, f32>: LastRank<N3, f32>,
+        Tensor<N3, f32>: NextRankInner<NextRank = Tensor<N2, f32>>,
     {
-        input.layer_norm(&self.weight, self.eps)
+        input.layer_norm(&self.weight, self.bias.as_ref(), self.eps)
     }
 }
