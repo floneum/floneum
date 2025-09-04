@@ -33,6 +33,7 @@ pub(crate) fn general_sgemv(
 ) {
     let blocksize = workgroup_size.x();
     let dtype = op.input_datatype;
+    let global_id = generic_kernel.global_id();
     let workgroup_index = generic_kernel.workgroup_index();
     let workgroup_local_index = generic_kernel.workgroup_local_index();
     let elements_per_block = op.elements_per_block();
@@ -56,6 +57,9 @@ pub(crate) fn general_sgemv(
     });
 
     let mut kernel = String::new();
+
+    // Handle batch dimensions
+    writeln!(&mut kernel, "let batch_idx = {global_id}.z;").unwrap();
 
     // In index of the single element in the vector we are multiplying against
     writeln!(
@@ -106,7 +110,14 @@ pub(crate) fn general_sgemv(
             for i in 0..SGEMV_VECTOR_SIZE {
                 writeln!(&mut kernel, "let input_a_{i}_index = index * {elements_per_block} + i * {SGEMV_VECTOR_SIZE} + {i};").unwrap();
                 write!(&mut kernel, "let input_a_{i} = {input_a}[").unwrap();
-                input_a.strided_index(&mut kernel, ["0".to_string(), format!("input_a_{i}_index")]);
+                input_a.strided_index(
+                    &mut kernel,
+                    vec![
+                        "batch_idx".to_string(),
+                        "0".to_string(),
+                        format!("input_a_{i}_index"),
+                    ],
+                );
                 writeln!(&mut kernel, "];").unwrap();
             }
             // The pack them into a vector and write to the cache
@@ -229,7 +240,14 @@ pub(crate) fn general_sgemv(
             writeln!(&mut kernel, "let output_index = workgroup_offset;").unwrap();
         }
         write!(&mut kernel, "{output}[").unwrap();
-        output.strided_index(&mut kernel, ["0".to_string(), "output_index".to_string()]);
+        output.strided_index(
+            &mut kernel,
+            vec![
+                "batch_idx".to_string(),
+                "0".to_string(),
+                "output_index".to_string(),
+            ],
+        );
         writeln!(
             &mut kernel,
             "] = {};",

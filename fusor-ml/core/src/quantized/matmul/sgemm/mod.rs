@@ -42,11 +42,12 @@ pub(crate) fn dispatch_size(
     _matrix: &QMatrix,
     n: u32,
     m: u32,
+    batch_size: u32,
 ) -> [u32; 3] {
     [
         n.div_ceil(workgroup_shape.x()),
         m.div_ceil(workgroup_shape.y()),
-        1,
+        batch_size.div_ceil(workgroup_shape.z()),
     ]
 }
 

@@ -6,6 +6,7 @@ use std::{
 };
 
 use bytemuck::{AnyBitPattern, NoUninit};
+use pollster::FutureExt as _;
 use tabbycat::Graph;
 use wgpu::{
     BufferDescriptor, COPY_BUFFER_ALIGNMENT,
@@ -48,6 +49,8 @@ pub trait DataType:
 
 pub trait FloatDataType: DataType {
     fn from_f32(value: f32) -> Self;
+
+    fn is_finite(&self) -> bool;
 }
 
 impl DataType for f32 {
@@ -66,6 +69,10 @@ impl FloatDataType for f32 {
     fn from_f32(value: f32) -> Self {
         value
     }
+
+    fn is_finite(&self) -> bool {
+        f32::is_finite(*self)
+    }
 }
 
 impl DataType for half::f16 {
@@ -83,6 +90,10 @@ impl DataType for half::f16 {
 impl FloatDataType for half::f16 {
     fn from_f32(value: f32) -> Self {
         half::f16::from_f32(value)
+    }
+
+    fn is_finite(&self) -> bool {
+        half::f16::is_finite(*self)
     }
 }
 
@@ -551,6 +562,12 @@ pub struct Tensor<const R: usize, D> {
     datatype: PhantomData<D>,
 }
 
+impl<const R: usize, D: DataType> Display for Tensor<R, D> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} x {:?}", self.datatype(), self.shape())
+    }
+}
+
 impl<const R: usize, D: DataType> Debug for Tensor<R, D> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Tensor({} x {:?})", self.datatype(), self.shape())
@@ -577,6 +594,13 @@ impl<const R: usize, D> Clone for Tensor<R, D> {
 
 pub trait IntoTensor<const R: usize, D> {
     fn into_tensor(self, device: &Device) -> Tensor<R, D>;
+}
+
+impl<'a, D: DataType> IntoTensor<0, D> for () {
+    fn into_tensor(self, device: &Device) -> Tensor<0, D> {
+        let iter = std::iter::empty();
+        Tensor::new_inner(device, iter, [])
+    }
 }
 
 impl<'a, I, D: DataType> IntoTensor<1, D> for I
@@ -804,6 +828,20 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         out
     }
 
+    pub fn debug_assert_real(self) -> Self
+    where
+        D: FloatDataType,
+    {
+        #[cfg(debug_assertions)]
+        {
+            let as_slice = self.as_slice().block_on().unwrap();
+            for item in as_slice.as_slice() {
+                assert!(item.is_finite(), "Tensor contains non-finite value: {item}");
+            }
+        }
+        self
+    }
+
     pub(crate) fn element_wise<D2: DataType>(
         &self,
         function: ElementWiseOperation,
@@ -888,6 +926,27 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
                 dim,
                 self.shape(),
             )),
+            datatype: PhantomData,
+        }
+    }
+
+    pub(crate) fn reduce_keepdim(&self, function: ReduceFunction, keep_dim: usize) -> Tensor<1, D> {
+        let mut current_data = self.data.clone();
+        for dim in 0..self.rank() {
+            if dim == keep_dim {
+                continue;
+            }
+            let dim = if dim < keep_dim { 0 } else { 1 };
+            current_data = current_data.reduce(ReduceOperation::new(
+                current_data.key,
+                function.clone(),
+                dim,
+                current_data.info.shape(),
+            ));
+        }
+
+        Tensor {
+            data: current_data,
             datatype: PhantomData,
         }
     }
@@ -1153,6 +1212,10 @@ impl<D: DataType, const R: usize> TensorSlice<R, D> {
 }
 
 impl<D: DataType, const R: usize> TensorSlice<R, D> {
+    pub fn shape(&self) -> &[usize] {
+        self.layout.shape()
+    }
+
     fn get(&self, index: [usize; R]) -> Option<&D> {
         let mut index_sum = 0;
         let layout = &self.layout;

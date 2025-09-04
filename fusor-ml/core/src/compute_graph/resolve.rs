@@ -73,8 +73,9 @@ impl<'a> Resolver<'a> {
             let old_best = current_constraints.solve(&limits).unwrap();
             let mut extend = self.should_extend_kernel(new_inputs.clone(), &inputs);
             extend &= new_merged.solve(&limits).is_some();
-            current_constraints = new_merged;
-            if !extend {
+            if extend {
+                current_constraints = new_merged;
+            } else {
                 let kernel = std::mem::take(&mut kernel);
                 let inputs = std::mem::take(&mut inputs);
                 let all_input_values = std::mem::take(&mut all_input_values);
@@ -86,7 +87,7 @@ impl<'a> Resolver<'a> {
                     all_input_values,
                     old_best,
                 );
-                current_constraints.clear();
+                current_constraints = constraint;
             }
             // Map layout isn't really a kernel. Resolve it immediately
             if let AnyComputeKey::MapLayout(key) = node {
@@ -130,6 +131,20 @@ impl<'a> Resolver<'a> {
         new_inputs: Vec<MirValue>,
         inputs: &[Vec<MirValue>],
     ) -> bool {
+        if inputs
+            .iter()
+            .flat_map(|inputs| inputs.iter().map(MirValue::input_values))
+            .sum::<usize>()
+            + new_inputs.iter().map(MirValue::input_values).sum::<usize>()
+            > self
+                .graph
+                .device
+                .wgpu_device()
+                .limits()
+                .max_storage_buffers_per_shader_stage as _
+        {
+            return false;
+        }
         for input in &new_inputs {
             for other in inputs.iter().flatten() {
                 if let (MirValue::Tensor(input_tensor), MirValue::Tensor(other_tensor)) =

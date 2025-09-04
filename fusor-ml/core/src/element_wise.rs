@@ -838,7 +838,7 @@ async fn test_mod_const_reversed() {
 
 impl<const R: usize, T: DataType> Tensor<R, T> {
     /// Check if each value in the tensor is equal to the given value. Returns 1 for true and 0 for false.
-    pub fn eq<D: DataType>(self, rhs: T) -> Tensor<R, D> {
+    pub fn eq<D: DataType>(&self, rhs: T) -> Tensor<R, D> {
         let datatype = D::WGSL_TYPE;
         self.element_wise(ElementWiseOperation::new(
             self.datatype(),
@@ -871,6 +871,148 @@ async fn test_eq_const() {
     assert_eq!(output[[1, 1]], 0.);
     assert_eq!(output[[2, 0]], 0.);
     assert_eq!(output[[2, 1]], 0.);
+}
+
+impl<const R: usize, T: DataType> Tensor<R, T> {
+    /// Check if each value in the tensor is less than to the given value. Returns 1 for true and 0 for false.
+    pub fn lt<D: DataType>(&self, rhs: T) -> Tensor<R, D> {
+        let datatype = D::WGSL_TYPE;
+        self.element_wise(ElementWiseOperation::new(
+            self.datatype(),
+            self.key(),
+            ElementWiseFunction::new(
+                format!("let output = {datatype}(input < {rhs});"),
+                D::WGSL_TYPE,
+            )
+            .with_name("lt_const"),
+            self.shape().as_slice(),
+        ))
+    }
+
+    /// Check if each value in the tensor is less than or equal to the given value. Returns 1 for true and 0 for false.
+    pub fn lte<D: DataType>(&self, rhs: T) -> Tensor<R, D> {
+        let datatype = D::WGSL_TYPE;
+        self.element_wise(ElementWiseOperation::new(
+            self.datatype(),
+            self.key(),
+            ElementWiseFunction::new(
+                format!("let output = {datatype}(input <= {rhs});"),
+                D::WGSL_TYPE,
+            )
+            .with_name("lt_const"),
+            self.shape().as_slice(),
+        ))
+    }
+
+    /// Check if each value in the tensor is more than to the given value. Returns 1 for true and 0 for false.
+    pub fn mt<D: DataType>(&self, rhs: T) -> Tensor<R, D> {
+        let datatype = D::WGSL_TYPE;
+        self.element_wise(ElementWiseOperation::new(
+            self.datatype(),
+            self.key(),
+            ElementWiseFunction::new(
+                format!("let output = {datatype}(input > {rhs});"),
+                D::WGSL_TYPE,
+            )
+            .with_name("lt_const"),
+            self.shape().as_slice(),
+        ))
+    }
+
+    /// Check if each value in the tensor is more than or equal to the given value. Returns 1 for true and 0 for false.
+    pub fn mte<D: DataType>(&self, rhs: T) -> Tensor<R, D> {
+        let datatype = D::WGSL_TYPE;
+        self.element_wise(ElementWiseOperation::new(
+            self.datatype(),
+            self.key(),
+            ElementWiseFunction::new(
+                format!("let output = {datatype}(input >= {rhs});"),
+                D::WGSL_TYPE,
+            )
+            .with_name("lt_const"),
+            self.shape().as_slice(),
+        ))
+    }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_lt_const() {
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+
+    let tensor: Tensor<2, f32> = tensor.lt(2.0);
+
+    let output = tensor.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert_eq!(output[[0, 0]], 1.);
+    assert_eq!(output[[0, 1]], 0.);
+    assert_eq!(output[[1, 0]], 0.);
+    assert_eq!(output[[1, 1]], 0.);
+    assert_eq!(output[[2, 0]], 0.);
+    assert_eq!(output[[2, 1]], 0.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_lte_const() {
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+
+    let tensor: Tensor<2, f32> = tensor.lte(2.0);
+
+    let output = tensor.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert_eq!(output[[0, 0]], 1.);
+    assert_eq!(output[[0, 1]], 1.);
+    assert_eq!(output[[1, 0]], 0.);
+    assert_eq!(output[[1, 1]], 0.);
+    assert_eq!(output[[2, 0]], 0.);
+    assert_eq!(output[[2, 1]], 0.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_mt_const() {
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+
+    let tensor: Tensor<2, f32> = tensor.mt(2.0);
+
+    let output = tensor.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert_eq!(output[[0, 0]], 0.);
+    assert_eq!(output[[0, 1]], 0.);
+    assert_eq!(output[[1, 0]], 1.);
+    assert_eq!(output[[1, 1]], 1.);
+    assert_eq!(output[[2, 0]], 1.);
+    assert_eq!(output[[2, 1]], 1.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_mte_const() {
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+
+    let tensor: Tensor<2, f32> = tensor.mte(2.0);
+
+    let output = tensor.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert_eq!(output[[0, 0]], 0.);
+    assert_eq!(output[[0, 1]], 1.);
+    assert_eq!(output[[1, 0]], 1.);
+    assert_eq!(output[[1, 1]], 1.);
+    assert_eq!(output[[2, 0]], 1.);
+    assert_eq!(output[[2, 1]], 1.);
 }
 
 #[cfg(test)]
@@ -1015,6 +1157,41 @@ async fn test_log2() {
     assert!((output[[1, 1]] - data[1][1].log2()).abs() < 0.001);
     assert!((output[[2, 0]] - data[2][0].log2()).abs() < 0.001);
     assert!((output[[2, 1]] - data[2][1].log2()).abs() < 0.001);
+}
+
+impl<const R: usize, D: DataType> Tensor<R, D> {
+    pub fn pow_elementwise(&self, exponent: D) -> Self {
+        self.element_wise(ElementWiseOperation::new(
+            self.datatype(),
+            self.key(),
+            ElementWiseFunction::new(
+                format!("let output = pow(input, {exponent});"),
+                D::WGSL_TYPE,
+            )
+            .with_name("pow"),
+            self.shape().as_slice(),
+        ))
+    }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_pow() {
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+
+    let tensor = tensor.pow_elementwise(2.0);
+
+    let output = tensor.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert!((output[[0, 0]] - data[0][0].powi(2)).abs() < 0.001);
+    assert!((output[[0, 1]] - data[0][1].powi(2)).abs() < 0.001);
+    assert!((output[[1, 0]] - data[1][0].powi(2)).abs() < 0.001);
+    assert!((output[[1, 1]] - data[1][1].powi(2)).abs() < 0.001);
+    assert!((output[[2, 0]] - data[2][0].powi(2)).abs() < 0.001);
+    assert!((output[[2, 1]] - data[2][1].powi(2)).abs() < 0.001);
 }
 
 impl<const R: usize, D: DataType> Tensor<R, D> {
@@ -1315,6 +1492,22 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
     }
 }
 
+impl<const R: usize, D: DataType> Tensor<R, D> {
+    /// Calculates tanh with (e^x - e^-x) / (e^x + e^-x)
+    pub fn tanh_exact(&self) -> Self {
+        self.element_wise(ElementWiseOperation::new(
+            self.datatype(),
+            self.key(),
+            ElementWiseFunction::new(
+                "let output = (exp(input) - exp(-input)) / (exp(input) + exp(-input));",
+                D::WGSL_TYPE,
+            )
+            .with_name("tanh_exact"),
+            self.shape().as_slice(),
+        ))
+    }
+}
+
 #[cfg(test)]
 #[tokio::test]
 async fn test_tanh() {
@@ -1506,8 +1699,74 @@ async fn test_neg() {
     assert!((output[[2, 1]] + data[2][1]).abs() < 0.001);
 }
 
+impl<const R: usize, D: DataType> Tensor<R, D> {
+    pub fn max_elementwise(&self, element: D) -> Self {
+        self.element_wise(ElementWiseOperation::new(
+            self.datatype(),
+            self.key(),
+            ElementWiseFunction::new(format!("let output = max(input, {element});"), D::WGSL_TYPE)
+                .with_name("max"),
+            self.shape().as_slice(),
+        ))
+    }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_max() {
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., -2.], [-3., 4.], [5., -6.]];
+
+    let tensor = Tensor::new(&device, &data);
+
+    let tensor = tensor.max_elementwise(0.0);
+
+    let output = tensor.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert!((output[[0, 0]] - output[[0, 0]]).abs() < 0.001);
+    assert!((output[[0, 1]] - 0.0).abs() < 0.001);
+    assert!((output[[1, 0]] - 0.0).abs() < 0.001);
+    assert!((output[[1, 1]] - output[[1, 1]]).abs() < 0.001);
+    assert!((output[[2, 0]] - output[[2, 0]]).abs() < 0.001);
+    assert!((output[[2, 1]] - 0.0).abs() < 0.001);
+}
+
+impl<const R: usize, D: DataType> Tensor<R, D> {
+    pub fn min_elementwise(&self, element: D) -> Self {
+        self.element_wise(ElementWiseOperation::new(
+            self.datatype(),
+            self.key(),
+            ElementWiseFunction::new(format!("let output = min(input, {element});"), D::WGSL_TYPE)
+                .with_name("max"),
+            self.shape().as_slice(),
+        ))
+    }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_min() {
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., -2.], [-3., 4.], [5., -6.]];
+
+    let tensor = Tensor::new(&device, &data);
+
+    let tensor = tensor.min_elementwise(0.0);
+
+    let output = tensor.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert!((output[[0, 0]] - 0.0).abs() < 0.001);
+    assert!((output[[0, 1]] - output[[0, 1]]).abs() < 0.001);
+    assert!((output[[1, 0]] - output[[1, 0]]).abs() < 0.001);
+    assert!((output[[1, 1]] - 0.0).abs() < 0.001);
+    assert!((output[[2, 0]] - 0.0).abs() < 0.001);
+    assert!((output[[2, 1]] - output[[2, 1]]).abs() < 0.001);
+}
+
 impl<const R: usize, T> Tensor<R, T> {
-    pub fn cast<T2>(self) -> Tensor<R, T2>
+    pub fn cast<T2>(&self) -> Tensor<R, T2>
     where
         T: CastTensor<T2>,
     {
@@ -1517,17 +1776,17 @@ impl<const R: usize, T> Tensor<R, T> {
 
 pub trait CastTensor<T>: Sized {
     /// Casts the tensor to another type
-    fn cast<const R: usize>(tensor: Tensor<R, Self>) -> Tensor<R, T>;
+    fn cast<const R: usize>(tensor: &Tensor<R, Self>) -> Tensor<R, T>;
 }
 
 impl<T> CastTensor<T> for T {
-    fn cast<const R: usize>(tensor: Tensor<R, Self>) -> Tensor<R, Self> {
-        tensor
+    fn cast<const R: usize>(tensor: &Tensor<R, Self>) -> Tensor<R, Self> {
+        tensor.clone()
     }
 }
 
 impl CastTensor<half::f16> for f32 {
-    fn cast<const R: usize>(tensor: Tensor<R, Self>) -> Tensor<R, half::f16> {
+    fn cast<const R: usize>(tensor: &Tensor<R, Self>) -> Tensor<R, half::f16> {
         tensor.element_wise(ElementWiseOperation::new(
             tensor.datatype(),
             tensor.key(),
@@ -1559,7 +1818,7 @@ async fn test_f32_to_f16_cast() {
 }
 
 impl CastTensor<f32> for half::f16 {
-    fn cast<const R: usize>(tensor: Tensor<R, Self>) -> Tensor<R, f32> {
+    fn cast<const R: usize>(tensor: &Tensor<R, Self>) -> Tensor<R, f32> {
         tensor.element_wise(ElementWiseOperation::new(
             tensor.datatype(),
             tensor.key(),

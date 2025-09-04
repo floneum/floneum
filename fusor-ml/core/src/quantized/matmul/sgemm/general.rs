@@ -32,6 +32,20 @@ pub(crate) fn general_sgemm(
     writeln!(&mut kernel, "let x = {global_id}.x;").unwrap();
     writeln!(&mut kernel, "let y = {global_id}.y;").unwrap();
 
+    // Handle batch dimensions
+    writeln!(&mut kernel, "var block_batch = {global_id}.z;").unwrap();
+
+    // Decompose the batch index for higher-dimensional tensors
+    for dim in (0..input_a.rank()).rev().skip(2) {
+        let shape = input_a.shape_binding(dim);
+        writeln!(
+            &mut kernel,
+            "let block_batch_{dim} = block_batch % {shape};"
+        )
+        .unwrap();
+        writeln!(&mut kernel, "block_batch = block_batch / {shape};").unwrap();
+    }
+
     writeln!(&mut kernel, "var acc = 0.0;").unwrap();
 
     writeln!(
@@ -71,10 +85,15 @@ pub(crate) fn general_sgemm(
                     write!(code, ", ").unwrap();
                 }
                 write!(code, "{input_a}[").unwrap();
-                input_a.strided_index(
-                    code,
-                    ["y".to_string(), format!("a_index_local_offset + {local}")],
-                );
+                let mut indices = vec![];
+                // Add batch indices first
+                for dim in (0..input_a.rank()).rev().skip(2) {
+                    indices.push(format!("block_batch_{dim}"));
+                }
+                // Then add M and K indices
+                indices.push("y".to_string());
+                indices.push(format!("a_index_local_offset + {local}"));
+                input_a.strided_index(code, indices);
                 write!(code, "]").unwrap();
             }
             writeln!(code, ");").unwrap();
@@ -93,7 +112,15 @@ pub(crate) fn general_sgemm(
     // Then write the result
     writeln!(&mut kernel, "if x < {n_size} && y < {m_size} {{").unwrap();
     write!(&mut kernel, "let output_index = ").unwrap();
-    output.strided_index(&mut kernel, ["y".to_string(), "x".to_string()]);
+    let mut output_indices = vec![];
+    // Add batch indices first
+    for dim in (0..output.rank()).rev().skip(2) {
+        output_indices.push(format!("block_batch_{dim}"));
+    }
+    // Then add M and N indices
+    output_indices.push("y".to_string());
+    output_indices.push("x".to_string());
+    output.strided_index(&mut kernel, output_indices);
     writeln!(&mut kernel, ";").unwrap();
     writeln!(&mut kernel, "{output}[output_index] = acc;").unwrap();
     writeln!(&mut kernel, "}}").unwrap();

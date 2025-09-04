@@ -36,6 +36,9 @@ pub(crate) fn q_n_sgemv(
 
     let mut kernel = String::new();
 
+    // Handle batch dimensions
+    writeln!(&mut kernel, "let batch_idx = {workgroup_index}.z;").unwrap();
+
     // Find the reduce size in blocks rounded up
     writeln!(
         &mut kernel,
@@ -45,6 +48,7 @@ pub(crate) fn q_n_sgemv(
 
     // In index of the single element in the vector we are multiplying against
     writeln!(&mut kernel, "let workgroup_offset = {workgroup_index}.x;").unwrap();
+    writeln!(&mut kernel, "let batch_offset = batch_idx * {k_size};").unwrap();
     writeln!(
         &mut kernel,
         "let row = ({SUBGROUP_COUNT} * workgroup_offset + {subgroup_index}) * {Q_N_SGEMV_CHUNK_SIZE};"
@@ -86,35 +90,35 @@ pub(crate) fn q_n_sgemv(
         {
             writeln!(
                 &mut kernel,
-                "vector_sum[0] += {input_a}[j + y_offset + 0] + {input_a}[j + y_offset + 1];"
+                "vector_sum[0] += {input_a}[batch_offset + j + y_offset + 0] + {input_a}[batch_offset + j + y_offset + 1];"
             )
             .unwrap();
             writeln!(
                 &mut kernel,
-                "cached_a_values[j + 0] = {input_a}[j + y_offset + 0];"
+                "cached_a_values[j + 0] = {input_a}[batch_offset + j + y_offset + 0];"
             )
             .unwrap();
             writeln!(
                 &mut kernel,
-                "cached_a_values[j + 1] = {input_a}[j + y_offset + 1] * {};",
+                "cached_a_values[j + 1] = {input_a}[batch_offset + j + y_offset + 1] * {};",
                 shift_right_scale(8)
             )
             .unwrap();
 
             writeln!(
                 &mut kernel,
-                "vector_sum[1] += {input_a}[j + y_offset + 16] + {input_a}[j + y_offset + 17];"
+                "vector_sum[1] += {input_a}[batch_offset + j + y_offset + 16] + {input_a}[batch_offset + j + y_offset + 17];"
             )
             .unwrap();
             writeln!(
                 &mut kernel,
-                "cached_a_values[j + 8] = {input_a}[j + y_offset + 16] * {};",
+                "cached_a_values[j + 8] = {input_a}[batch_offset + j + y_offset + 16] * {};",
                 shift_right_scale(4)
             )
             .unwrap();
             writeln!(
                 &mut kernel,
-                "cached_a_values[j + 9] = {input_a}[j + y_offset + 17] * {};",
+                "cached_a_values[j + 9] = {input_a}[batch_offset + j + y_offset + 17] * {};",
                 shift_right_scale(12)
             )
             .unwrap();
@@ -176,7 +180,8 @@ pub(crate) fn q_n_sgemv(
             } else {
                 "row".to_string()
             };
-            output.strided_index(&mut kernel, ["0".to_string(), index]);
+            let output_indices = vec!["batch_idx".to_string(), "0".to_string(), index];
+            output.strided_index(&mut kernel, output_indices);
             let indexed = maybe_vec_storage_index(Q_N_SGEMV_CHUNK_SIZE, "sum", "offset");
             writeln!(&mut kernel, "] = {indexed};").unwrap();
         }

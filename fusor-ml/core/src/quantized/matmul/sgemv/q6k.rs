@@ -27,12 +27,16 @@ pub(crate) fn q6k_sgemv(
     k_size: &str,
 ) {
     let dtype = op.input_datatype;
+    let global_id = generic_kernel.global_id();
     let workgroup_index = generic_kernel.workgroup_index();
     let subgroup_index = generic_kernel.subgroup_index();
     let subgroup_local_index = generic_kernel.subgroup_local_index();
     let elements_per_block = op.elements_per_block();
 
     let mut kernel = String::new();
+
+    // Handle batch dimensions
+    writeln!(&mut kernel, "let batch_idx = {global_id}.z;").unwrap();
 
     // Find the reduce size in blocks rounded up
     writeln!(
@@ -107,9 +111,10 @@ pub(crate) fn q6k_sgemv(
     .unwrap();
     {
         // First load the values of a into cached_a_values
+        writeln!(&mut kernel, "let batch_offset = batch_idx * {k_size};").unwrap();
         writeln!(
             &mut kernel,
-            "let vector_offset = i * {elements_per_block} + y_offset;"
+            "let vector_offset = batch_offset + i * {elements_per_block} + y_offset;"
         )
         .unwrap();
         let load_value = |kernel: &mut String, j: &str, offset: u32| {
@@ -243,7 +248,8 @@ pub(crate) fn q6k_sgemv(
         } else {
             "row".to_string()
         };
-        output.strided_index(&mut kernel, ["0".to_string(), index]);
+        let output_indices = vec!["batch_idx".to_string(), "0".to_string(), index];
+        output.strided_index(&mut kernel, output_indices);
         let indexed = maybe_vec_storage_index(Q6K_SGEMV_CHUNK_SIZE, "sum", "offset");
         writeln!(&mut kernel, "] = {indexed};").unwrap();
     }
