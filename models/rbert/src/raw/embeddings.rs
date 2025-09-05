@@ -49,23 +49,13 @@ impl BertEmbeddings {
         let _enter = self.span.enter();
         let [_bsize, seq_len] = *input_ids.shape();
         let input_embeddings = self.word_embeddings.forward(input_ids);
-        println!(
-            "input_embeddings: {:?}",
-            input_embeddings.as_slice().block_on()
-        );
         let token_type_embeddings = self.token_type_embeddings.forward(token_type_ids);
-        println!(
-            "token_type_embeddings: {:?}",
-            token_type_embeddings.as_slice().block_on()
-        );
         let mut embeddings = &input_embeddings + &token_type_embeddings;
         if let Some(position_embeddings) = &self.position_embeddings {
             let position_ids = Tensor::arange(input_ids.device(), 0, seq_len as u32);
             let pos_emb = position_embeddings.forward(&position_ids);
-            println!("pos_emb: {:?}", pos_emb.as_slice().block_on());
             embeddings = embeddings.add_(&pos_emb)
         }
-        println!("embeddings: {:?}", embeddings.as_slice().block_on());
         self.layer_norm.forward(&embeddings)
     }
 

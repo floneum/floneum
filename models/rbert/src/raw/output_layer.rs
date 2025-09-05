@@ -1,5 +1,6 @@
 use fusor_core::{Device, VarBuilder};
 use fusor_core::{Result, Tensor};
+use pollster::FutureExt;
 
 use crate::raw::layer_norm::{layer_norm, LayerNorm};
 use crate::raw::linear::Linear;
@@ -37,6 +38,7 @@ impl BertOutput {
     ) -> Tensor<3, f32> {
         let _enter = self.span.enter();
         let hidden_states = self.dense.forward(hidden_states);
+        println!("hidden_states: {:?}", hidden_states.as_slice().block_on());
         self.layer_norm.forward(&(&hidden_states + input_tensor))
     }
 }

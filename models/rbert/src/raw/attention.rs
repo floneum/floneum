@@ -1,5 +1,6 @@
 use fusor_core::{Device, VarBuilder};
 use fusor_core::{Result, Tensor};
+use pollster::FutureExt;
 
 use super::{BertSelfAttention, BertSelfOutput};
 
@@ -35,6 +36,7 @@ impl BertAttention {
             .self_attention
             .forward(hidden_states, attention_mask)
             .debug_assert_real();
+        println!("self_outputs: {:?}", self_outputs.as_slice().block_on());
         self.self_output
             .forward(&self_outputs, hidden_states)
             .debug_assert_real()

@@ -1,5 +1,6 @@
 use fusor_core::{Device, VarBuilder};
 use fusor_core::{Result, Tensor};
+use pollster::FutureExt;
 
 use crate::raw::linear::Linear;
 
@@ -56,40 +57,57 @@ impl BertSelfAttention {
         let value_layer = self.value.forward(hidden_states);
 
         let query_layer = self.transpose_for_scores(&query_layer);
+        println!("query_layer: {:?}", query_layer.as_slice().block_on());
         let key_layer = self.transpose_for_scores(&key_layer);
+        println!("key_layer: {:?}", key_layer.as_slice().block_on());
         let value_layer = self.transpose_for_scores(&value_layer);
+        println!("value_layer: {:?}", value_layer.as_slice().block_on());
 
-        let attention_scores = query_layer.mat_mul(&key_layer.t());
-        let mut attention_scores = attention_scores / (self.attention_head_size as f32).sqrt();
+        let transposed_key = key_layer.t();
+        println!("transposed_key: {:?}", transposed_key.as_slice().block_on());
+        let attention_scores = query_layer.mat_mul(&transposed_key);
+        println!("attention_scores before: {:?}", attention_scores);
+        let mut attention_scores =
+            attention_scores / (dbg!(self.attention_head_size) as f32).sqrt();
+
         // If there is an attention mask, filter the attention scores by that mask
         if let Some(attention_mask) = attention_mask {
             // The attention mask is a tensor of shape (bsize, seq_len)
-            // the attention scores are a tensor of shape (bsize, heads, seq_len) or similar
-            // We expand the attention mask to match the shape
+            // the attention scores are a tensor of shape (bsize, _, seq_len, seq_len)
+            // We expand the attention mask to (bsize, 1, 1, seq_len)
+            let mask = attention_mask.unsqueeze(1).unsqueeze(2);
             let shape = *attention_scores.shape();
-            let mask = if shape.len() == 3 {
-                attention_mask.unsqueeze(1).broadcast_as(shape).cast()
-            } else {
-                // For other dimensions, we need to create the proper mask
-                // For a 2D attention_mask (batch, seq_len), we need to expand it correctly
-                let expanded_mask = attention_mask.unsqueeze(1);
-                let mut mask_shape = vec![shape[0], 1];
-                mask_shape.extend(&shape[2..]);
-                expanded_mask.broadcast_as(shape).cast()
-            };
+            let mask = mask.broadcast_as(shape);
             // We use a value slightly larger that the true f32 min value to avoid NaN
             const FALSE_MIN: f32 = -3.4028235e34f32;
             let on_false = Tensor::splat(mask.device(), FALSE_MIN, shape);
             attention_scores = mask.where_cond(&attention_scores, &on_false);
         }
+        println!(
+            "attention_scores: {:?}",
+            attention_scores.as_slice().block_on()
+        );
 
         let attention_probs = {
             let _enter_sm = self.span_softmax.enter();
-            attention_scores.softmax(attention_scores.rank() - 1)
+            attention_scores.softmax_last_dim()
         };
+        println!(
+            "attention_probs: {:?}",
+            attention_probs.as_slice().block_on()
+        );
         let context_layer = attention_probs.mat_mul(&value_layer);
         let context_layer = context_layer.transpose(1, 2);
-        context_layer.flatten_last_n::<1, _>()
+        println!(
+            "context_layer before: {:?}",
+            context_layer.as_slice().block_on()
+        );
+        let context_layer = context_layer.flatten_last_n::<1, _>();
+        println!(
+            "context_layer after: {:?}",
+            context_layer.as_slice().block_on()
+        );
+        context_layer
     }
 }
 
