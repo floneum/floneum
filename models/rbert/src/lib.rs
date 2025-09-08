@@ -311,7 +311,7 @@ impl Bert {
             current_chunk_len += 1;
             let score = current_chunk_len
                 * (embedding_dim * 8 + embedding_dim * current_chunk_max_token_len.pow(2));
-            if score > limit {
+            if score > limit || !current_chunk_indices.is_empty() {
                 chunks.push((
                     std::mem::take(&mut current_chunk_indices),
                     std::mem::take(&mut current_chunk_text),
@@ -323,10 +323,12 @@ impl Bert {
             current_chunk_text.push(encoding);
         }
         // Add the last chunk even if the score isn't maxed out
-        chunks.push((
-            std::mem::take(&mut current_chunk_indices),
-            std::mem::take(&mut current_chunk_text),
-        ));
+        if !current_chunk_indices.is_empty() {
+            chunks.push((
+                std::mem::take(&mut current_chunk_indices),
+                std::mem::take(&mut current_chunk_text),
+            ));
+        }
 
         for (indices, encodings) in chunks {
             let embeddings = self.embed_batch_raw_inner(encodings, pooling)?;
