@@ -261,6 +261,30 @@ async fn test_broadcast_as() {
 
 #[cfg(test)]
 #[tokio::test]
+async fn test_broadcast_as_non_continuous() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2., -1.], [3., 4., -1.]];
+    let tensor = Tensor::new(&device, &data);
+    println!("tensor: {tensor:?}");
+    let sliced = tensor.slice([0..2, 0..2]);
+    println!("sliced: {sliced:?}");
+    let broadcasted = sliced.broadcast_as([2, 2, 3]);
+    println!("{broadcasted:?}");
+    let as_slice = broadcasted.as_slice().await.unwrap();
+    println!("{as_slice:?}");
+    for i in 0..2 {
+        assert_eq!(as_slice[[0, 0, i]], 1.);
+        assert_eq!(as_slice[[0, 1, i]], 2.);
+        assert_eq!(as_slice[[1, 0, i]], 3.);
+        assert_eq!(as_slice[[1, 1, i]], 4.);
+    }
+}
+
+#[cfg(test)]
+#[tokio::test]
 async fn test_broadcast_together_first_larger() {
     use crate::Device;
 

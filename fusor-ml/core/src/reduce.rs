@@ -616,6 +616,32 @@ async fn test_reduce_sliced_sum() {
 
 #[cfg(test)]
 #[tokio::test]
+async fn test_reduce_transposed_sum() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 3., 5.], [2., 4., 6.]];
+    let tensor = Tensor::new(&device, &data).t();
+
+    let output = tensor.sum(0);
+
+    let output = output.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert_eq!(output[[0]], 9.);
+    assert_eq!(output[[1]], 12.);
+
+    let output = tensor.sum(1);
+
+    let output = output.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert_eq!(output[[0]], 3.);
+    assert_eq!(output[[1]], 7.);
+    assert_eq!(output[[2]], 11.);
+}
+
+#[cfg(test)]
+#[tokio::test]
 async fn test_reduce_const_add_then_sum_fused() {
     use crate::Device;
 

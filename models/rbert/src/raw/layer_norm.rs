@@ -25,6 +25,6 @@ impl<const N: usize> LayerNorm<N> {
         Tensor<N2, f32>: LastRank<N3, f32>,
         Tensor<N3, f32>: NextRankInner<NextRank = Tensor<N2, f32>>,
     {
-        input.layer_norm(&self.weight, self.bias.as_ref(), self.eps)
+        input.layer_norm(&self.weight, self.bias.as_ref(), self.eps, true)
     }
 }

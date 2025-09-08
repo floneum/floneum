@@ -6,6 +6,7 @@ impl<const N: usize, T> Tensor<N, T> {
         weight: &Tensor<R, T>,
         bias: Option<&Tensor<R, T>>,
         eps: f32,
+        remove_mean: bool,
     ) -> Self
     where
         T: DataType + CastTensor<f32>,
@@ -16,7 +17,7 @@ impl<const N: usize, T> Tensor<N, T> {
         let self_shape = *self.shape();
         let hidden_size = self_shape.last().copied().unwrap();
         let f32_self = self.cast::<f32>();
-        let f32_self = if true {
+        let f32_self = if remove_mean {
             let mean_self = f32_self.sum_keepdim(N - 1) / hidden_size as f32;
             f32_self - mean_self.broadcast_as(self_shape)
         } else {
@@ -42,7 +43,7 @@ async fn test_layer_norm() {
 
     let tensor = Tensor::new(&device, &[[1., 2.], [3., 4.], [5., 6.]]);
     let weight = Tensor::new(&device, &[2., 3.]);
-    let tensor = tensor.layer_norm(&weight, None, 1e-5);
+    let tensor = tensor.layer_norm(&weight, None, 1e-5, false);
     let as_slice = tensor.as_slice().await.unwrap();
     assert!((as_slice[[0, 0]] - 1.2649086).abs() < 0.001);
     assert!((as_slice[[0, 1]] - 3.7947257).abs() < 0.001);

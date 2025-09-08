@@ -48,7 +48,7 @@ impl QMatMulOperation {
         // For 2D: [M, K], check in_shape[0]
         // For 3D: [batch, M, K], check in_shape[1]
         let m_dim_idx = self.in_shape.len() - 2;
-        self.in_shape[m_dim_idx] == 1
+        self.in_shape[m_dim_idx] == 1 && self.in_shape.iter().rev().skip(2).product::<usize>() == 1
     }
 
     fn m_size(&self) -> u32 {
@@ -283,6 +283,62 @@ async fn test_fuzz_q_mat_mul_sgemv() {
                     if (expected - actual).abs() > 3. {
                         println!("Expected: {candle_result:?}");
                         println!("Actual: {result:?}");
+                        panic!("expected: {expected}, actual: {actual}");
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_fuzz_q_mat_mul_gemv_transposed() {
+    use crate::Tensor;
+    use candle_core::Module;
+
+    let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("blk.0.attn_q.weight").await;
+    println!("q_matrix: {q_matrix:?}");
+
+    for _ in 0..25 {
+        let batch = (rand::random::<u32>() as usize % 4) + 1;
+        let random_data: Vec<Vec<Vec<f32>>> = (0..576)
+            .map(|_| {
+                (0..1)
+                    .map(|_| (0..batch).map(|_| rand::random()).collect())
+                    .collect()
+            })
+            .collect();
+        let tensor = Tensor::<3, f32>::new(&device, &random_data);
+        println!("tensor: {tensor:?}");
+
+        let result = tensor.transpose(0, 2).q_mat_mul(&q_matrix);
+        let fusor_shape = result.shape();
+        let result = result.as_slice().await.unwrap();
+
+        let candle_b = candle_core::Tensor::from_iter(
+            random_data
+                .iter()
+                .flat_map(|x| x.iter().flat_map(|x| x.iter().copied())),
+            &candle_core::Device::Cpu,
+        )
+        .unwrap()
+        .reshape(&[576, 1, batch])
+        .unwrap();
+        let candle_result = candle_q_matrix
+            .forward(&candle_b.transpose(0, 2).unwrap().contiguous().unwrap())
+            .unwrap();
+        assert_eq!(candle_result.shape().dims(), &[batch, 1, 576]);
+        let candle_result = candle_result.to_vec3::<f32>().unwrap();
+
+        assert_eq!(fusor_shape, &[batch, 1, 576]);
+
+        for batch in 0..batch {
+            for x in 0..1 {
+                for y in 0..576 {
+                    let expected = candle_result[batch][x][y];
+                    let actual = result[[batch, x, y]];
+                    if (expected - actual).abs() > 3. {
                         panic!("expected: {expected}, actual: {actual}");
                     }
                 }
