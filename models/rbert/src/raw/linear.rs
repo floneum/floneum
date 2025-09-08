@@ -13,7 +13,7 @@ impl Linear {
     }
 
     pub(crate) fn forward(&self, input: &Tensor<3, f32>) -> Tensor<3, f32> {
-        let output = input.q_mat_mul(&self.weight).debug_assert_real();
-        output.add_(&self.bias).debug_assert_real()
+        let output = input.q_mat_mul(&self.weight);
+        output.add_(&self.bias)
     }
 }

@@ -31,9 +31,7 @@ impl BertEncoder {
         let mut hidden_states = hidden_states.clone();
         // Use a loop rather than a fold as it's easier to modify when adding debug/...
         for layer in self.layers.iter() {
-            hidden_states = layer
-                .forward(&hidden_states, attention_mask)
-                .debug_assert_real()
+            hidden_states = layer.forward(&hidden_states, attention_mask)
         }
         hidden_states
     }

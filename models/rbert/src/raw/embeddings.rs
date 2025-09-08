@@ -4,7 +4,6 @@
 
 use fusor_core::{Device, VarBuilder};
 use fusor_core::{Result, Tensor};
-use pollster::FutureExt;
 
 use crate::raw::embedding::{embedding, Embedding};
 use crate::raw::layer_norm::{layer_norm, LayerNorm};

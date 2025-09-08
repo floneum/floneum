@@ -47,8 +47,8 @@ impl HiddenActLayer {
         let _enter = self.span.enter();
         match self.act {
             // https://github.com/huggingface/transformers/blob/cd4584e3c809bb9e1392ccd3fe38b40daba5519a/src/transformers/activations.py#L213
-            HiddenAct::Gelu => xs.gelu().debug_assert_real(),
-            HiddenAct::Relu => xs.relu().debug_assert_real(),
+            HiddenAct::Gelu => xs.gelu(),
+            HiddenAct::Relu => xs.relu(),
         }
     }
 }

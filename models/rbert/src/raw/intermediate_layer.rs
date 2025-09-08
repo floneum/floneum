@@ -30,9 +30,7 @@ impl BertIntermediate {
 impl BertIntermediate {
     pub(crate) fn forward(&self, hidden_states: &Tensor<3, f32>) -> Tensor<3, f32> {
         let _enter = self.span.enter();
-        let hidden_states = self.dense.forward(hidden_states).debug_assert_real();
-        self.intermediate_act
-            .forward(&hidden_states)
-            .debug_assert_real()
+        let hidden_states = self.dense.forward(hidden_states);
+        self.intermediate_act.forward(&hidden_states)
     }
 }
