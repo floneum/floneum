@@ -428,7 +428,10 @@ async fn test_matmul_fused() {
 #[cfg(test)]
 #[tokio::test]
 async fn test_transposed_matmul() {
+    use candle_core::IndexOp;
+
     let device = Device::new().await.unwrap();
+    let candle_device = candle_core::Device::Cpu;
 
     let data_a = [[1.], [3.]];
     let data_b = [[1., 2.]];
@@ -439,6 +442,39 @@ async fn test_transposed_matmul() {
     println!("{as_slice:?}");
 
     assert_eq!(as_slice[[0, 0]], 7.);
+
+    let data_a = [[[[1., 2.], [3., 4.]], [[5., 6.], [7., 8.]]]];
+    let data_b = [[[[9., 10.], [11., 12.]], [[13., 14.], [15., 16.]]]];
+    let tensor_a = Tensor::new(&device, &data_a).transpose(1, 2);
+    let tensor_b = Tensor::new(&device, &data_b).transpose(1, 2).t();
+    let candle_tensor_a = candle_core::Tensor::new(&data_a, &candle_device)
+        .unwrap()
+        .transpose(1, 2)
+        .unwrap();
+    let candle_tensor_b = candle_core::Tensor::new(&data_a, &candle_device)
+        .unwrap()
+        .transpose(1, 2)
+        .unwrap()
+        .t()
+        .unwrap();
+    let tensor = tensor_a.mat_mul(&tensor_b);
+    let candle_tensor = candle_tensor_a.matmul(&candle_tensor_b).unwrap();
+    let candle_as_slice = candle_tensor
+        .i((0, .., .., ..))
+        .unwrap()
+        .to_vec3::<f32>()
+        .unwrap();
+    let as_slice = tensor.as_slice().await.unwrap();
+    println!("fusor: {as_slice:?}");
+    println!("candle: {candle_as_slice:?}");
+
+    for z in 0..2 {
+        for y in 0..2 {
+            for x in 0..2 {
+                assert_eq!(as_slice[[0, z, y, x]], candle_as_slice[z][y][x]);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
