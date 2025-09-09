@@ -21,7 +21,6 @@ mod layer_norm;
 mod linear;
 
 use fusor_core::{Device, FloatDataType, Result, Tensor, VarBuilder};
-use pollster::FutureExt;
 use serde::Deserialize;
 use std::fmt::Debug;
 
@@ -143,8 +142,6 @@ impl BertModel {
     ) -> Tensor<3, f32> {
         let _enter = self.span.enter();
         let embedding_output = self.embeddings.forward(input_ids, token_type_ids);
-        let embedding_output_slice = embedding_output.as_slice().block_on();
-        println!("embedding_output_slice: {embedding_output_slice:?}");
         self.encoder.forward(&embedding_output, attention_mask)
     }
 

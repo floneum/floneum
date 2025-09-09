@@ -1,6 +1,5 @@
 use fusor_core::{Device, VarBuilder};
 use fusor_core::{Result, Tensor};
-use pollster::FutureExt;
 
 use crate::raw::linear::Linear;
 
@@ -57,18 +56,11 @@ impl BertSelfAttention {
         let value_layer = self.value.forward(hidden_states);
 
         let query_layer = self.transpose_for_scores(&query_layer);
-        println!("query_layer: {:?}", query_layer.as_slice().block_on());
         let key_layer = self.transpose_for_scores(&key_layer);
-        println!("key_layer: {:?}", key_layer.as_slice().block_on());
         let value_layer = self.transpose_for_scores(&value_layer);
-        println!("value_layer: {:?}", value_layer.as_slice().block_on());
 
-        let transposed_key = key_layer.t();
-        println!("transposed_key: {:?}", transposed_key.as_slice().block_on());
-        let attention_scores = query_layer.mat_mul(&transposed_key);
-        println!("attention_scores before: {:?}", attention_scores);
-        let mut attention_scores =
-            attention_scores / (dbg!(self.attention_head_size) as f32).sqrt();
+        let attention_scores = query_layer.mat_mul(&key_layer.t());
+        let mut attention_scores = attention_scores / (self.attention_head_size as f32).sqrt();
 
         // If there is an attention mask, filter the attention scores by that mask
         if let Some(attention_mask) = attention_mask {
@@ -83,31 +75,14 @@ impl BertSelfAttention {
             let on_false = Tensor::splat(mask.device(), FALSE_MIN, shape);
             attention_scores = mask.where_cond(&attention_scores, &on_false);
         }
-        println!(
-            "attention_scores: {:?}",
-            attention_scores.as_slice().block_on()
-        );
 
         let attention_probs = {
             let _enter_sm = self.span_softmax.enter();
             attention_scores.softmax_last_dim()
         };
-        println!(
-            "attention_probs: {:?}",
-            attention_probs.as_slice().block_on()
-        );
         let context_layer = attention_probs.mat_mul(&value_layer);
         let context_layer = context_layer.transpose(1, 2);
-        println!(
-            "context_layer before: {:?}",
-            context_layer.as_slice().block_on()
-        );
-        let context_layer = context_layer.flatten_last_n::<1, _>();
-        println!(
-            "context_layer after: {:?}",
-            context_layer.as_slice().block_on()
-        );
-        context_layer
+        context_layer.flatten_last_n::<1, _>()
     }
 }
 

@@ -1,6 +1,5 @@
 use fusor_core::{Device, VarBuilder};
 use fusor_core::{Result, Tensor};
-use pollster::FutureExt;
 
 use super::{BertAttention, BertIntermediate, BertOutput};
 
@@ -36,15 +35,7 @@ impl BertLayer {
     ) -> Tensor<3, f32> {
         let _enter = self.span.enter();
         let attention_output = self.attention.forward(hidden_states, attention_mask);
-        println!(
-            "attention_output: {:?}",
-            attention_output.as_slice().block_on()
-        );
         let intermediate_output = self.intermediate.forward(&attention_output);
-        println!(
-            "intermediate_output: {:?}",
-            intermediate_output.as_slice().block_on()
-        );
         self.output.forward(&intermediate_output, &attention_output)
     }
 }
