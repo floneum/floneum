@@ -6,7 +6,6 @@ use std::{
 };
 
 use bytemuck::{AnyBitPattern, NoUninit};
-use pollster::FutureExt as _;
 use tabbycat::Graph;
 use wgpu::{
     BufferDescriptor, COPY_BUFFER_ALIGNMENT,
@@ -834,6 +833,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
     {
         #[cfg(debug_assertions)]
         {
+            use pollster::FutureExt as _;
             let as_slice = self.as_slice().block_on().unwrap();
             for item in as_slice.as_slice() {
                 assert!(item.is_finite(), "Tensor contains non-finite value: {item}");

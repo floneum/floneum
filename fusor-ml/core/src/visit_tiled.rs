@@ -11,7 +11,7 @@ use crate::{
     },
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) enum MaybeQData {
     Tensor(TensorData),
     QMatrix(QMatrix),

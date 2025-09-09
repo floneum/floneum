@@ -1,7 +1,7 @@
-use crate::{DataType, Tensor};
+use crate::Tensor;
 
 pub trait NextRankInner {
-    type NextRank;
+    type NextRank: LastRankInner + NextRankInner;
 }
 
 pub trait NextRank<const R: usize, D>: NextRankInner<NextRank = Tensor<R, D>> {}
@@ -24,7 +24,7 @@ impl<const R: usize, const S: usize, D, T> SmallerRank<R, S, D> for T where
 }
 
 pub trait LastRankInner {
-    type LastRank;
+    type LastRank: NextRankInner;
 }
 
 pub trait LastRank<const R: usize, D>: LastRankInner<LastRank = Tensor<R, D>> {}
@@ -57,31 +57,27 @@ impl<const R: usize, D, T> MaxRank<R, D> for T where T: MaxRankInner<MaxRank = T
 macro_rules! impl_next_last {
     ($($smaller:literal, )* [0] $(, $larger:literal)*) => {
         $(
-            impl<D: DataType> SmallerRankInner<{0 - $smaller}> for Tensor<0, D> {
+            impl<D> SmallerRankInner<{0 - $smaller}> for Tensor<0, D> {
                 type SmallerRank = Tensor<$smaller, D>;
                 type SmallerByArray = [usize; {0 - $smaller}];
             }
         )*
 
-        impl<D: DataType> NextRankInner for Tensor<0, D> {
+        impl<D> NextRankInner for Tensor<0, D> {
             type NextRank = Tensor<1, D>;
         }
 
-        impl<D: DataType> MaxRankInner for (Tensor<0, D>, Tensor<0, D>) {
-            type MaxRank = Tensor<0, D>;
-        }
-
         $(
-            impl<D: DataType> LargerRankInner<{$larger - 0}> for Tensor<0, D> {
+            impl<D> LargerRankInner<{$larger - 0}> for Tensor<0, D> {
                 type LargerRank = Tensor<$larger, D>;
                 type LargerByArray = [usize; {$larger - 0}];
             }
 
-            impl<D: DataType> MaxRankInner for (Tensor<0, D>, Tensor<$larger, D>) {
+            impl<D> MaxRankInner for (Tensor<0, D>, Tensor<$larger, D>) {
                 type MaxRank = Tensor<$larger, D>;
             }
 
-            impl<D: DataType> MaxRankInner for (Tensor<$larger, D>, Tensor<0, D>) {
+            impl<D> MaxRankInner for (Tensor<$larger, D>, Tensor<0, D>) {
                 type MaxRank = Tensor<$larger, D>;
             }
         )*
@@ -89,39 +85,47 @@ macro_rules! impl_next_last {
 
     ($($smaller:literal, )* [$R:literal] $(, $larger:literal)*) => {
         $(
-            impl<D: DataType> SmallerRankInner<{$R - $smaller}> for Tensor<$R, D> {
+            impl<D> SmallerRankInner<{$R - $smaller}> for Tensor<$R, D> {
                 type SmallerRank = Tensor<$smaller, D>;
                 type SmallerByArray = [usize; {$R - $smaller}];
             }
         )*
 
-        impl<D: DataType> NextRankInner for Tensor<$R, D> {
+        impl<D> NextRankInner for Tensor<$R, D> {
             type NextRank = Tensor<{ $R + 1 }, D>;
         }
 
-        impl<D: DataType> LastRankInner for Tensor<$R, D> {
+        impl<D> LastRankInner for Tensor<$R, D> {
             type LastRank = Tensor<{ $R - 1 }, D>;
         }
 
-        impl<D: DataType> MaxRankInner for (Tensor<$R, D>, Tensor<$R, D>) {
-            type MaxRank = Tensor<$R, D>;
-        }
-
         $(
-            impl<D: DataType> LargerRankInner<{$larger - $R}> for Tensor<$R, D> {
+            impl<D> LargerRankInner<{$larger - $R}> for Tensor<$R, D> {
                 type LargerRank = Tensor<$larger, D>;
                 type LargerByArray = [usize; {$larger - $R}];
             }
 
-            impl<D: DataType> MaxRankInner for (Tensor<$R, D>, Tensor<$larger, D>) {
+            impl<D> MaxRankInner for (Tensor<$R, D>, Tensor<$larger, D>) {
                 type MaxRank = Tensor<$larger, D>;
             }
 
-            impl<D: DataType> MaxRankInner for (Tensor<$larger, D>, Tensor<$R, D>) {
+            impl<D> MaxRankInner for (Tensor<$larger, D>, Tensor<$R, D>) {
                 type MaxRank = Tensor<$larger, D>;
             }
         )*
     };
+}
+
+impl<const N: usize, D> MaxRankInner for (Tensor<N, D>, Tensor<N, D>) {
+    type MaxRank = Tensor<N, D>;
+}
+
+impl<D> LastRankInner for Tensor<21, D> {
+    type LastRank = Tensor<20, D>;
+}
+
+impl<D> NextRankInner for Tensor<21, D> {
+    type NextRank = Tensor<21, D>;
 }
 
 #[rustfmt::skip]

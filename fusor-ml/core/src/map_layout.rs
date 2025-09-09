@@ -164,12 +164,21 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
             move |offset, strides| {
                 let mut new_strides = [0; R2];
                 let mut current_shape_iter = current_shape.into_iter().rev().peekable();
-                let mut strides = strides.iter().rev();
+                let mut strides_iter = strides.iter().rev();
+
                 for (new_strides_fill, new_shape) in out_shape.into_iter().enumerate().rev() {
-                    let stride = if current_shape_iter.next_if_eq(&new_shape).is_some() {
-                        *strides.next().unwrap()
+                    let stride = if let Some(current_dim) = current_shape_iter.next_if(|&current_dim|current_dim == new_shape || (current_dim == 1 && new_shape > 1 )) {
+                        let stride = *strides_iter.next().unwrap();
+                        // Matching dim, use the same stride
+                        if current_dim == new_shape {
+                            stride
+                        }
+                        // Broadcasted dim, set stride to 0
+                        else {
+                            0
+                        }
                     } else {
-                        _ = current_shape_iter.next_if_eq(&1);
+                        // New dimension
                         0
                     };
                     new_strides[new_strides_fill] = stride;
