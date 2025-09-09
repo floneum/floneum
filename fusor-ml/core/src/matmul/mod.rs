@@ -451,7 +451,7 @@ async fn test_transposed_matmul() {
         .unwrap()
         .transpose(1, 2)
         .unwrap();
-    let candle_tensor_b = candle_core::Tensor::new(&data_a, &candle_device)
+    let candle_tensor_b = candle_core::Tensor::new(&data_b, &candle_device)
         .unwrap()
         .transpose(1, 2)
         .unwrap()
