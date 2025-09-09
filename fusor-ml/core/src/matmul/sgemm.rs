@@ -295,8 +295,10 @@ pub(super) fn build_kernel(
     };
     let write_read_a = |kernel: &mut String| {
         writeln!(kernel, "            var a_val = ").unwrap();
+        let a_row_stride = input_a.stride_binding(matmul.rank() - 2);
+        let a_col_stride = input_a.stride_binding(matmul.rank() - 1);
         let first_value = pef[0].iter().fold(
-            format!("{input_a}[a_start_index + a_row * {k_size} + a_col]"),
+            format!("{input_a}[a_start_index + a_row * {a_row_stride} + a_col * {a_col_stride}]"),
             |acc, f| f.call(vec![acc]),
         );
         writeln!(kernel, "{first_value};").unwrap();
@@ -351,8 +353,10 @@ pub(super) fn build_kernel(
     };
     let write_read_b = |kernel: &mut String| {
         writeln!(kernel, "            var b_val = ").unwrap();
+        let b_row_stride = input_b.stride_binding(matmul.rank() - 2);
+        let b_col_stride = input_b.stride_binding(matmul.rank() - 1);
         let second_value_fast = pef[1].iter().fold(
-            format!("{input_b}[b_start_index + b_row * {n_size} + b_col]"),
+            format!("{input_b}[b_start_index + b_row * {b_row_stride} + b_col * {b_col_stride}]"),
             |acc, f| f.call(vec![acc]),
         );
         writeln!(kernel, "{second_value_fast};").unwrap();
@@ -532,8 +536,10 @@ pub(super) fn build_kernel(
         .unwrap();
         writeln!(&mut kernel, "                let a_col = bkIdx + col_raw;").unwrap();
         writeln!(&mut kernel, "                var a_val = ").unwrap();
+        let a_row_stride = input_a.stride_binding(matmul.rank() - 2);
+        let a_col_stride = input_a.stride_binding(matmul.rank() - 1);
         let first_value_fast = pef[0].iter().fold(
-            format!("{input_a}[a_start_index + a_row * {k_size} + a_col]"),
+            format!("{input_a}[a_start_index + a_row * {a_row_stride} + a_col * {a_col_stride}]"),
             |acc, f| f.call(vec![acc]),
         );
         writeln!(&mut kernel, "{first_value_fast};").unwrap();
@@ -565,8 +571,10 @@ pub(super) fn build_kernel(
         )
         .unwrap();
         writeln!(&mut kernel, "                var a_val = ").unwrap();
+        let a_row_stride = input_a.stride_binding(matmul.rank() - 2);
+        let a_col_stride = input_a.stride_binding(matmul.rank() - 1);
         let first_value = pef[0].iter().fold(
-            format!("{input_a}[a_start_index + a_row * {k_size} + a_col]"),
+            format!("{input_a}[a_start_index + a_row * {a_row_stride} + a_col * {a_col_stride}]"),
             |acc, f| f.call(vec![acc]),
         );
         writeln!(&mut kernel, "{first_value};").unwrap();
@@ -593,8 +601,10 @@ pub(super) fn build_kernel(
         )
         .unwrap();
         writeln!(&mut kernel, "                var b_val = ").unwrap();
+        let b_row_stride = input_b.stride_binding(matmul.rank() - 2);
+        let b_col_stride = input_b.stride_binding(matmul.rank() - 1);
         let second_value_fast = pef[1].iter().fold(
-            format!("{input_b}[b_start_index + b_row * {n_size} + b_col]"),
+            format!("{input_b}[b_start_index + b_row * {b_row_stride} + b_col * {b_col_stride}]"),
             |acc, f| f.call(vec![acc]),
         );
         writeln!(&mut kernel, "{second_value_fast};").unwrap();
@@ -631,8 +641,10 @@ pub(super) fn build_kernel(
         )
         .unwrap();
         writeln!(&mut kernel, "                var b_val = ").unwrap();
+        let b_row_stride = input_b.stride_binding(matmul.rank() - 2);
+        let b_col_stride = input_b.stride_binding(matmul.rank() - 1);
         let second_value = pef[1].iter().fold(
-            format!("{input_b}[b_start_index + b_row * {n_size} + b_col]"),
+            format!("{input_b}[b_start_index + b_row * {b_row_stride} + b_col * {b_col_stride}]"),
             |acc, f| f.call(vec![acc]),
         );
         writeln!(&mut kernel, "{second_value};").unwrap();
@@ -685,9 +697,11 @@ pub(super) fn build_kernel(
         for res_idx_n in 0..thread_n_size {
             let post_element_wise_functions = post_element_wise_functions
                 .get_or_init(|| matmul.post_element_wise.add_functions(generic_kernel));
+            let out_row_stride = output.stride_binding(matmul.rank() - 2);
+            let out_col_stride = output.stride_binding(matmul.rank() - 1);
             write!(
                 &mut kernel,
-                "{output}[c_start_index + outRow{res_idx_m} * {n_size} + outCol{res_idx_n}] = "
+                "{output}[c_start_index + outRow{res_idx_m} * {out_row_stride} + outCol{res_idx_n} * {out_col_stride}] = "
             )
             .unwrap();
             let result = post_element_wise_functions.iter().fold(
