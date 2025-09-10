@@ -1,3 +1,6 @@
+use fusor_gguf::GgmlType;
+
+use crate::Layout;
 use crate::mir::inputs::MirValue;
 use crate::mir::operation::Operation;
 use crate::mir::workgroup_shape::WorkgroupShapeConstraints;
@@ -161,6 +164,19 @@ impl QMatrix {
             self.shape.len(),
             self.shape
         );
+
+        // If the types already match, just return a view of the existing data
+        if self.datatype == GgmlType::F32 && T::WGSL_TYPE == DataTypeEnum::F32
+            || self.datatype == GgmlType::F16 && T::WGSL_TYPE == DataTypeEnum::F16
+        {
+            let device = &self.device;
+            let buffer = self.buffer.clone();
+            let layout = Layout::contiguous(&self.shape);
+            let datatype = T::WGSL_TYPE;
+            return Tensor::from_parts(LazyTensorData::new(TensorData::new_from_parts(
+                &device, buffer, layout, datatype,
+            )));
+        }
 
         let device = self.device.clone();
         let graph = ComputeGraph::new(device.clone());
