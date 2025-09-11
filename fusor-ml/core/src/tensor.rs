@@ -818,11 +818,15 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
     }
 
     pub async fn as_slice(&self) -> Result<TensorSlice<R, D>, wgpu::BufferAsyncError> {
+        #[cfg(not(target_arch = "wasm32"))]
         let start_time = std::time::Instant::now();
         let tensor = self.data.materialize();
+        #[cfg(not(target_arch = "wasm32"))]
         tracing::trace!("Materialized tensor in {:?}", start_time.elapsed());
+        #[cfg(not(target_arch = "wasm32"))]
         let start_time = std::time::Instant::now();
         let out = Self::as_slice_from_tensor_data(&tensor).await;
+        #[cfg(not(target_arch = "wasm32"))]
         tracing::trace!("Downloaded tensor in {:?}", start_time.elapsed());
         out
     }

@@ -27,3 +27,6 @@ pollster = "0.4.0"
 kalosm = { workspace = true, features = ["language"], default-features = true }
 anyhow.workspace = true
 postcard = { version = "1.0.8", features = ["use-std"] }
+
+[features]
+tokio = ["kalosm-common/tokio"]

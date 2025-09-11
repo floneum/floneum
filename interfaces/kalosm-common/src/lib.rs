@@ -9,9 +9,7 @@ use candle_core::{
     Device, Storage, Tensor, WithDType,
 };
 
-#[cfg(feature = "tokio")]
 mod cache;
-#[cfg(feature = "tokio")]
 pub use cache::*;
 #[cfg(feature = "candle")]
 mod kv_cache;

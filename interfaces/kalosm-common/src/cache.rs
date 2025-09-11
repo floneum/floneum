@@ -1,4 +1,3 @@
-use hf_hub::{Repo, RepoType};
 use httpdate::parse_http_date;
 use kalosm_model_types::{FileLoadingProgress, FileSource};
 use reqwest::{
@@ -8,14 +7,19 @@ use reqwest::{
 use reqwest::{Response, StatusCode};
 use std::path::PathBuf;
 use std::str::FromStr;
+
+#[cfg(feature = "tokio")]
 use tokio::fs::{File, OpenOptions};
+#[cfg(feature = "tokio")]
 use tokio::io::AsyncWriteExt;
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum CacheError {
+    #[cfg(feature = "tokio")]
     #[error("Hugging Face API error: {0}")]
-    HuggingFaceApi(#[from] hf_hub::api::tokio::ApiError),
+    HuggingFaceApi(#[from] hf_hub::api::sync::ApiError),
+    #[cfg(feature = "tokio")]
     #[error("Unable to get file metadata for {0}: {1}")]
     UnableToGetFileMetadata(PathBuf, #[source] tokio::io::Error),
     #[error("IO error: {0}")]
@@ -65,7 +69,51 @@ impl Cache {
         }
     }
 
+    /// Get the bytes from the cache, downloading it if necessary
+    pub async fn get_bytes(
+        &self,
+        source: &FileSource,
+        progress: impl FnMut(FileLoadingProgress),
+    ) -> Result<Vec<u8>, CacheError> {
+        #[cfg(feature = "tokio")]
+        {
+            let path = self.get(source, progress).await;
+            tokio::fs::read(path?).await.map_err(CacheError::from)
+        }
+        #[cfg(not(feature = "tokio"))]
+        {
+            match source {
+                FileSource::HuggingFace {
+                    model_id,
+                    revision,
+                    file,
+                } => {
+                    let token = self.huggingface_token.clone().or_else(huggingface_token);
+                    let url =
+                        format!("https://huggingface.co/{model_id}/resolve/{revision}/{file}");
+                    let client = reqwest::Client::new();
+                    tracing::trace!("Fetching metadata for {file} from {url}");
+                    let response = client
+                        .get(&url)
+                        .with_authorization_header(token.clone())
+                        .send()
+                        .await
+                        .map_err(CacheError::from)?
+                        .bytes()
+                        .await
+                        .map_err(CacheError::from)?;
+                    Ok(response.to_vec())
+                }
+                _ => Err(CacheError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Local file access not supported without the 'tokio' feature",
+                ))),
+            }
+        }
+    }
+
     /// Get the file from the cache, downloading it if necessary
+    #[cfg(feature = "tokio")]
     pub async fn get(
         &self,
         source: &FileSource,
@@ -79,15 +127,12 @@ impl Cache {
             } => {
                 let token = self.huggingface_token.clone().or_else(huggingface_token);
 
-                let path = self.location.join(model_id).join(revision);
-                let complete_download = path.join(file);
-
                 let repo = Repo::with_revision(
                     model_id.to_string(),
                     RepoType::Model,
                     revision.to_string(),
                 );
-                let api = hf_hub::api::tokio::Api::new()?.repo(repo);
+                let api = hf_hub::api::sync::Api::new()?.repo(repo);
                 let url = api.url(file);
                 let client = reqwest::Client::new();
                 tracing::trace!("Fetching metadata for {file} from {url}");
@@ -96,6 +141,9 @@ impl Cache {
                     .with_authorization_header(token.clone())
                     .send()
                     .await;
+
+                let path = self.location.join(model_id).join(revision);
+                let complete_download = path.join(file);
 
                 if complete_download.exists() {
                     let metadata = tokio::fs::metadata(&complete_download).await.map_err(|e| {
@@ -145,12 +193,22 @@ impl Cache {
 impl Default for Cache {
     fn default() -> Self {
         Self {
-            location: dirs::data_dir().unwrap().join("kalosm").join("cache"),
+            location: {
+                #[cfg(feature = "tokio")]
+                {
+                    dirs::data_dir().unwrap().join("kalosm").join("cache")
+                }
+                #[cfg(not(feature = "tokio"))]
+                {
+                    Default::default()
+                }
+            },
             huggingface_token: None,
         }
     }
 }
 
+#[cfg(feature = "tokio")]
 async fn download_into<U: IntoUrl>(
     url: U,
     file: &PathBuf,
@@ -263,6 +321,10 @@ async fn downloads_work() {
 }
 
 fn huggingface_token() -> Option<String> {
-    let cache = hf_hub::Cache::default();
-    cache.token().or_else(|| std::env::var("HF_TOKEN").ok())
+    cfg!(not(target_arch = "wasm32"))
+        .then(|| {
+            let cache = hf_hub::Cache::default();
+            cache.token().or_else(|| std::env::var("HF_TOKEN").ok())
+        })
+        .flatten()
 }

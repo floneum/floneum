@@ -118,7 +118,6 @@ impl BertBuilder {
 /// An error that can occur when loading a Bert model.
 #[derive(Debug, thiserror::Error)]
 pub enum BertLoadingError {
-    #[cfg(feature = "tokio")]
     /// An error that can occur when trying to load a Bert model from huggingface or a local file.
     #[error("Failed to load model from huggingface or local file: {0}")]
     DownloadingError(#[from] CacheError),
@@ -237,38 +236,36 @@ impl Bert {
 
         let source = format!("Config ({config})");
         let mut create_progress = ModelLoadingProgress::downloading_progress(source);
-        let config_filename = cache
-            .get(&config, |progress| {
+        let config = cache
+            .get_bytes(&config, |progress| {
                 progress_handler(create_progress(progress))
             })
             .await?;
         let tokenizer_source = format!("Tokenizer ({tokenizer})");
         let mut create_progress = ModelLoadingProgress::downloading_progress(tokenizer_source);
-        let tokenizer_filename = cache
-            .get(&tokenizer, |progress| {
+        let tokenizer_bytes = cache
+            .get_bytes(&tokenizer, |progress| {
                 progress_handler(create_progress(progress))
             })
             .await?;
         let model_source = format!("Model ({model})");
         let mut create_progress = ModelLoadingProgress::downloading_progress(model_source);
-        let weights_filename = cache
-            .get(&model, |progress| {
+        let weights_bytes = cache
+            .get_bytes(&model, |progress| {
                 progress_handler(create_progress(progress))
             })
             .await?;
 
-        let config = std::fs::read_to_string(config_filename)
-            .map_err(|_| BertLoadingError::ConfigNotFound)?;
-        let config: Config = serde_json::from_str(&config).map_err(BertLoadingError::LoadConfig)?;
+        let config: Config =
+            serde_json::from_slice(&config).map_err(BertLoadingError::LoadConfig)?;
 
         let device = Device::new().await?;
-        let mut weights = std::fs::File::open(weights_filename)?;
-        let mut weights = std::io::BufReader::new(&mut weights);
+        let mut weights = std::io::Cursor::new(&weights_bytes);
         let mut vb = VarBuilder::from_gguf(&mut weights)
             .map_err(|err| BertLoadingError::LoadModel(err.into()))?;
         let model = BertModel::load(&device, &mut vb, &config)?;
         let mut tokenizer =
-            Tokenizer::from_file(&tokenizer_filename).map_err(BertLoadingError::LoadTokenizer)?;
+            Tokenizer::from_bytes(&tokenizer_bytes).map_err(BertLoadingError::LoadTokenizer)?;
         tokenizer.with_padding(None);
 
         Ok(Bert {

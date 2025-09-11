@@ -37,9 +37,9 @@ pretty_assertions = "1.4.1"
 reqwest = "0.12.15"
 num-traits = "0.2.19"
 tracing-subscriber = "0.3.19"
-candle-core = { workspace = true, features = ["tokio"] }
+candle-core = { workspace = true }
 candle-nn = { workspace = true }
-kalosm-common.workspace = true
+kalosm-common = { workspace = true, features = ["tokio"] }
 kalosm-model-types.workspace = true
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]

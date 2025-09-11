@@ -70,7 +70,11 @@ impl<'a> Resolver<'a> {
             let constraint = operation.workgroup_shape_constraints(&self.graph.device);
             let mut new_merged = current_constraints.clone();
             new_merged.merge(&constraint);
-            let old_best = current_constraints.solve(&limits).unwrap();
+            let old_best = current_constraints.solve(&limits).unwrap_or_else(|| {
+                panic!(
+                    "Failed to find a valid workgroup shape for constraints {current_constraints:?}"
+                )
+            });
             let mut extend = self.should_extend_kernel(new_inputs.clone(), &inputs);
             extend &= new_merged.solve(&limits).is_some();
             if extend {
