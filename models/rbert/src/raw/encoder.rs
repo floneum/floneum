@@ -1,6 +1,5 @@
 use fusor_core::{Device, VarBuilder};
 use fusor_core::{Result, Tensor};
-use pollster::FutureExt;
 
 use super::BertLayer;
 
@@ -33,8 +32,6 @@ impl BertEncoder {
         // Use a loop rather than a fold as it's easier to modify when adding debug/...
         for layer in self.layers.iter() {
             hidden_states = layer.forward(&hidden_states, attention_mask);
-            // TODO: this shouldn't be required
-            _ = hidden_states.materialize().block_on();
         }
         hidden_states
     }
