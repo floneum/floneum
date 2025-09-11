@@ -76,6 +76,7 @@ impl BertBuilder {
             .await
     }
 
+    #[cfg(feature = "tokio")]
     /// Set the cache location to use for the model (defaults DATA_DIR/kalosm/cache)
     pub fn with_cache(mut self, cache: kalosm_common::Cache) -> Self {
         self.cache = cache;
@@ -117,6 +118,7 @@ impl BertBuilder {
 /// An error that can occur when loading a Bert model.
 #[derive(Debug, thiserror::Error)]
 pub enum BertLoadingError {
+    #[cfg(feature = "tokio")]
     /// An error that can occur when trying to load a Bert model from huggingface or a local file.
     #[error("Failed to load model from huggingface or local file: {0}")]
     DownloadingError(#[from] CacheError),
@@ -146,9 +148,6 @@ pub enum BertError {
     /// An error that can occur when tokenizing or detokenizing text.
     #[error("Failed to tokenize: {0}")]
     TokenizerError(tokenizers::Error),
-    /// Failed to join the thread that is running the model
-    #[error("Failed to join thread: {0}")]
-    Join(#[from] tokio::task::JoinError),
 }
 
 /// The pooling strategy to use when embedding text.

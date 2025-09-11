@@ -8,6 +8,8 @@ use crate::BertBuilder;
 use crate::BertError;
 use crate::BertLoadingError;
 use crate::Pooling;
+use kalosm_language_model::FutureWasmNotSend;
+use kalosm_language_model::WasmNotSend;
 pub use kalosm_language_model::{
     Embedder, EmbedderCacheExt, EmbedderExt, Embedding, EmbeddingInput, EmbeddingVariant,
     ModelBuilder,
@@ -77,7 +79,7 @@ impl Embedder for Bert {
     fn embed_for(
         &self,
         input: EmbeddingInput,
-    ) -> impl Future<Output = Result<Embedding, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Embedding, Self::Error>> + WasmNotSend {
         match (&*self.embedding_search_prefix, input.variant) {
             (Some(prefix), EmbeddingVariant::Query) => {
                 let mut new_input = prefix.clone();
@@ -91,7 +93,7 @@ impl Embedder for Bert {
     fn embed_vec_for(
         &self,
         inputs: Vec<EmbeddingInput>,
-    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + WasmNotSend {
         let inputs = inputs
             .into_iter()
             .map(
@@ -123,7 +125,7 @@ impl Deref for Bert {
     type Target = dyn Fn(
         &str,
     ) -> Pin<
-        Box<dyn Future<Output = Result<Embedding, BertError>> + Send + 'static>,
+        Box<dyn FutureWasmNotSend<Output = Result<Embedding, BertError>> + 'static>,
     >;
 
     fn deref(&self) -> &Self::Target {
@@ -139,7 +141,7 @@ impl Deref for Bert {
             let input = text.to_string();
 
             Box::pin(async move { self_clone.embed_with_pooling(&input, Pooling::CLS).await })
-                as Pin<Box<dyn Future<Output = Result<Embedding, BertError>> + Send + 'static>>
+                as Pin<Box<dyn FutureWasmNotSend<Output = Result<Embedding, BertError>> + 'static>>
         };
 
         // Make sure the layout of the closure and Self is the same.

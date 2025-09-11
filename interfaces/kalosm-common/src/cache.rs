@@ -12,6 +12,7 @@ use tokio::fs::{File, OpenOptions};
 use tokio::io::AsyncWriteExt;
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum CacheError {
     #[error("Hugging Face API error: {0}")]
     HuggingFaceApi(#[from] hf_hub::api::tokio::ApiError),

@@ -11,23 +11,19 @@ keywords = ["ai", "llm", "bert", "nlp", "transformers"]
 [dependencies]
 fusor-core = { workspace = true }
 fusor-gguf = { workspace = true }
-tokenizers = { workspace = true, features = ["onig"] }
+tokenizers = { workspace = true, features = ["fancy-regex"] }
 thiserror.workspace = true
 
 tracing = "0.1.37"
 serde_json = "1.0.106"
 serde = { version = "1", features = ["derive"] }
-tokio = { version = "1.33.0", features = ["rt"] }
 
 kalosm-common = { workspace = true }
 kalosm-model-types.workspace = true
 kalosm-language-model.workspace = true
-metal = { version = "0.27.0", features = ["mps"], optional = true }
 pollster = "0.4.0"
 
 [dev-dependencies]
 kalosm = { workspace = true, features = ["language"], default-features = true }
 anyhow.workspace = true
 postcard = { version = "1.0.8", features = ["use-std"] }
-
-[features]
