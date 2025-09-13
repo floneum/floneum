@@ -429,7 +429,7 @@ impl WgslQuantizedType for BlockQ5_0 {
             .unwrap();
             writeln!(
                 &mut code,
-                "let data{offset} = vec2((byte{offset} & 0x0F) | ((high_bits >> (i*4 + {offset})) << 4) & {FIFTH_BIT}, (byte{offset} >> 4) | (high_bits >> (i*4 + {offset} + 12)) & {FIFTH_BIT});"
+                "let data{offset} = vec2((byte{offset} & 0x0F) | (((high_bits >> (i*4 + {offset})) << 4) & {FIFTH_BIT}), (byte{offset} >> 4) | ((high_bits >> (i*4 + {offset} + 12)) & {FIFTH_BIT}));"
             )
             .unwrap();
             writeln!(
@@ -489,7 +489,7 @@ impl WgslQuantizedType for BlockQ5_0 {
                 .unwrap();
                 writeln!(
                 &mut code,
-                "let data_{offset}_{i} = vec2((byte_{offset}_{i} & 0x0F) | ((high_bits >> ({i}*4 + {offset})) << 4) & {FIFTH_BIT}, (byte_{offset}_{i} >> 4) | (high_bits >> ({i}*4 + {offset} + 12)) & {FIFTH_BIT});"
+                "let data_{offset}_{i} = vec2((byte_{offset}_{i} & 0x0F) | (((high_bits >> ({i}*4 + {offset})) << 4) & {FIFTH_BIT}), (byte_{offset}_{i} >> 4) | ((high_bits >> ({i}*4 + {offset} + 12)) & {FIFTH_BIT}));"
             )
             .unwrap();
                 writeln!(
