@@ -6719,7 +6719,6 @@ dependencies = [
  "anyhow",
  "fusor-core",
  "fusor-gguf",
- "kalosm",
  "kalosm-common",
  "kalosm-language-model",
  "kalosm-model-types",
@@ -6729,6 +6728,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.16",
  "tokenizers",
+ "tokio",
  "tracing",
 ]
 

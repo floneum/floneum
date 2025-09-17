@@ -24,9 +24,9 @@ kalosm-language-model.workspace = true
 pollster = "0.4.0"
 
 [dev-dependencies]
-kalosm = { workspace = true, features = ["language"], default-features = true }
 anyhow.workspace = true
 postcard = { version = "1.0.8", features = ["use-std"] }
+tokio = { version = "1", features = ["full"] }
 
 [features]
 tokio = ["kalosm-common/tokio"]
