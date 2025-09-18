@@ -76,8 +76,8 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
         }
         if changed {
             let start = std::time::Instant::now();
-            grammar.garbage_collect_non_terminals();
-            grammar.deduplicate_non_terminals();
+            // grammar.garbage_collect_non_terminals();
+            // grammar.deduplicate_non_terminals();
             println!("Time to garbage collect: {:?}", start.elapsed());
             println!("after merge rule count: {}", grammar.rules.len());
             println!(

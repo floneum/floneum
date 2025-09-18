@@ -323,6 +323,10 @@ impl<'bump> Recognizer<'bump> {
     }
 
     pub fn push(&mut self, byte: u32) -> RecognizerState {
+        println!("{byte},");
+        while self.chart.len() > 2 {
+            self.chart.remove(0);
+        }
         let k = self.chart.len() - 1;
         let mut new_positions = Vec::new();
 
