@@ -601,6 +601,18 @@ impl SlabGrammar {
                                     vec![Symbol::NonTerminal(first_common), second.clone()].into(),
                                 );
                             }
+                            if let Symbol::NonTerminal(nt) = second {
+                                let [_, second_common] = merged_appear_at_start[&nt];
+                                if !self.rules[second_common as usize].rhs.is_empty() {
+                                    dont_merge_rhs.insert(
+                                        vec![
+                                            Symbol::NonTerminal(first_common),
+                                            Symbol::NonTerminal(second_common),
+                                        ]
+                                        .into(),
+                                    );
+                                }
+                            }
                         } else {
                             do_merge_rhs.push(Symbol::Terminal(merge.new_token));
                         }
@@ -613,7 +625,7 @@ impl SlabGrammar {
                                 );
                             }
                         }
-                        dont_merge_rhs.insert(vec![first.clone(), second.clone()].into());
+                        // dont_merge_rhs.insert(vec![first.clone(), second.clone()].into());
                         self.push_rhs(maybe_merge, do_merge_rhs.into());
                         for dont_merge_rhs in dont_merge_rhs {
                             self.push_rhs(maybe_merge, dont_merge_rhs);
@@ -718,12 +730,12 @@ impl SlabGrammar {
                             self.remove_reference(&Symbol::NonTerminal(*nt), loc);
                             *nt = canonical_nt_map[&rule_id];
                             self.add_reference(&Symbol::NonTerminal(*nt), loc);
-                            changed = true;
                         }
                     }
                 }
                 self.rules[loc.rule as usize].rhs[loc.index as usize] = rhs.into();
             }
+            changed = true;
             self.remove(rule_id);
         }
 
@@ -736,7 +748,6 @@ impl SlabGrammar {
         for (_, rule) in &self.rules {
             if rule.used_in.len() == 1 && rule.rhs.len() == 1 {
                 to_be_inlined.insert(rule.lhs);
-                changed = true;
             }
         }
         while let Some(pos) = to_be_inlined
@@ -750,7 +761,6 @@ impl SlabGrammar {
             }) {
             let rule =self.rules[*pos as usize].clone();
             to_be_inlined.remove(&rule.lhs);
-
 
             let (loc, _) = rule.used_in.iter().next().unwrap();
             let (_, rule_rhs) = rule.rhs.iter().next().unwrap();
@@ -771,6 +781,7 @@ impl SlabGrammar {
                 self.add_reference(symbol, *loc);
             }
             self.rules[loc.rule as usize].rhs[loc.index as usize] = new_rhs.into();
+            changed = true;
             self.remove(rule.lhs);
         }
         changed
@@ -831,15 +842,19 @@ impl SlabGrammar {
     }
 
     pub fn inline_optimize(&mut self) {
-        // loop {
-        //     let mut changed = self.inline_single_use_non_terminals();
-        //     changed |= self.inline_simple();
-        //     changed |= self.garbage_collect_non_terminals();
-        //     changed |= self.deduplicate_non_terminals();
-        //     if !changed {
-        //         break;
-        //     }
-        // }
+        loop {
+            let mut changed = self.inline_single_use_non_terminals();
+            self.verify_integrity("after gc");
+            changed |= self.inline_simple();
+            self.verify_integrity("after inline");
+            changed |= self.garbage_collect_non_terminals();
+            self.verify_integrity("after inline");
+            changed |= self.deduplicate_non_terminals();
+            self.verify_integrity("after deduplicate");
+            if !changed {
+                break;
+            }
+        }
     }
 
     pub fn to_grammar(&self) -> Grammar<u32> {
