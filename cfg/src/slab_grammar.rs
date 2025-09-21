@@ -551,21 +551,32 @@ impl SlabGrammar {
             );
         }
 
+        // If neither of the pair tokens are present in the grammar, we can skip the merge
+        let (Some(pair_0), Some(pair_1)) = (
+            self.terminal_locations.get(&merge.pair[0]).cloned(),
+            self.terminal_locations.get(&merge.pair[1]).cloned(),
+        ) else {
+            return false;
+        };
+
+        // First identify locations where the two pairs are adjacent in the same rule
+        let starts_with_pair_1 = self.find_starts_with_token(
+            merge.pair[1],
+            pair_1.keys().cloned().collect(),
+            Default::default(),
+        );
+        let ends_with_pair_0 = self.find_ends_with_token(
+            merge.pair[0],
+            pair_0.keys().cloned().collect(),
+            Default::default(),
+        );
+
         let appear_adjacent =
             self.find_merge_canidates(merge, &starts_with_pair_1, &ends_with_pair_0);
 
         // Then substitute the new token in all locations where the pair appears
         for loc in appear_adjacent {
             let mut new_rhs = Vec::new();
-            println!("loc: {loc:?}");
-            println!(
-                "self.rules[loc.rule as usize]: {:?}",
-                self.rules[loc.rule as usize].rhs.iter().collect::<Vec<_>>()
-            );
-            println!(
-                "rewriting rule from {:?}",
-                self.rules[loc.rule as usize].rhs[loc.index as usize]
-            );
             let mut i = 0;
             while i < self.rules[loc.rule as usize].rhs[loc.index as usize].len() {
                 let first = self.rules[loc.rule as usize].rhs[loc.index as usize][i].clone();
@@ -602,6 +613,7 @@ impl SlabGrammar {
                                 );
                             }
                         }
+                        dont_merge_rhs.insert(vec![first.clone(), second.clone()].into());
                         self.push_rhs(maybe_merge, do_merge_rhs.into());
                         for dont_merge_rhs in dont_merge_rhs {
                             self.push_rhs(maybe_merge, dont_merge_rhs);
@@ -616,7 +628,6 @@ impl SlabGrammar {
                     i += 1;
                 }
             }
-            println!("rewriting rule to {:?}", new_rhs);
             self.rules[loc.rule as usize].rhs[loc.index as usize] = new_rhs.into();
             self.verify_integrity("after rewriting rule in shortcut_merge");
         }

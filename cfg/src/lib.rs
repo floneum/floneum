@@ -323,7 +323,6 @@ impl<'bump> Recognizer<'bump> {
     }
 
     pub fn push(&mut self, byte: u32) -> RecognizerState {
-        println!("{byte},");
         while self.chart.len() > 2 {
             self.chart.remove(0);
         }
