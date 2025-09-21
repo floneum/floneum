@@ -339,11 +339,11 @@ impl SlabGrammar {
         let mut possible_set = starting_set;
         let mut starts_with_token = starting_set_symbols;
         starts_with_token.insert(Symbol::Terminal(token));
-        let mut last_starts_with_token = starts_with_token.len() + 1;
+        let mut last_starts_with_token = 0;
         while starts_with_token.len() != last_starts_with_token {
             last_starts_with_token = starts_with_token.len();
             let mut new_possible = Vec::new();
-            for loc in &possible_set {
+            for loc in possible_set.drain() {
                 let rule = &self.rules[loc.rule as usize];
                 let rhs = &rule.rhs[loc.index as usize];
                 if let Some(first) = rhs.first() {
@@ -367,11 +367,11 @@ impl SlabGrammar {
         let mut possible_set = starting_set;
         let mut ends_with_token = starting_set_symbols;
         ends_with_token.insert(Symbol::Terminal(token));
-        let mut last_ends_with_token = ends_with_token.len() + 1;
+        let mut last_ends_with_token = 0;
         while ends_with_token.len() != last_ends_with_token {
             last_ends_with_token = ends_with_token.len();
             let mut new_possible = Vec::new();
-            for loc in &possible_set {
+            for loc in possible_set.drain() {
                 let rule = &self.rules[loc.rule as usize];
                 let rhs = &rule.rhs[loc.index as usize];
                 if let Some(first) = rhs.last() {
@@ -596,22 +596,11 @@ impl SlabGrammar {
                         if let Symbol::NonTerminal(nt) = first {
                             let [first_merged, first_common] = merged_appear_at_end[&nt];
                             do_merge_rhs.push(Symbol::NonTerminal(first_merged));
-                            if !self.rules[first_common as usize].rhs.is_empty() {
+                            if !self.rules[first_common as usize].rhs.is_empty() && !allow_incorrect
+                            {
                                 dont_merge_rhs.insert(
                                     vec![Symbol::NonTerminal(first_common), second.clone()].into(),
                                 );
-                            }
-                            if let Symbol::NonTerminal(nt) = second {
-                                let [_, second_common] = merged_appear_at_start[&nt];
-                                if !self.rules[second_common as usize].rhs.is_empty() {
-                                    dont_merge_rhs.insert(
-                                        vec![
-                                            Symbol::NonTerminal(first_common),
-                                            Symbol::NonTerminal(second_common),
-                                        ]
-                                        .into(),
-                                    );
-                                }
                             }
                         } else {
                             do_merge_rhs.push(Symbol::Terminal(merge.new_token));
@@ -619,13 +608,17 @@ impl SlabGrammar {
                         if let Symbol::NonTerminal(nt) = second {
                             let [second_merged, second_common] = merged_appear_at_start[&nt];
                             do_merge_rhs.push(Symbol::NonTerminal(second_merged));
-                            if !self.rules[second_common as usize].rhs.is_empty() {
+                            if !self.rules[second_common as usize].rhs.is_empty()
+                                && !allow_incorrect
+                            {
                                 dont_merge_rhs.insert(
                                     vec![first.clone(), Symbol::NonTerminal(second_common)].into(),
                                 );
                             }
                         }
-                        // dont_merge_rhs.insert(vec![first.clone(), second.clone()].into());
+                        if allow_incorrect {
+                            dont_merge_rhs.insert(vec![first.clone(), second.clone()].into());
+                        }
                         self.push_rhs(maybe_merge, do_merge_rhs.into());
                         for dont_merge_rhs in dont_merge_rhs {
                             self.push_rhs(maybe_merge, dont_merge_rhs);
@@ -651,15 +644,14 @@ impl SlabGrammar {
         // Remove any non-terminals that are not used in any rules
         let mut used_non_terminals = FxHashSet::default();
         let mut queue = vec![self.start.clone()];
+        used_non_terminals.insert(self.start);
         while let Some(nt) = queue.pop() {
-            if used_non_terminals.insert(nt) {
-                let rule = &self.rules[nt as usize];
-                for (_, rhs) in &rule.rhs {
-                    for symbol in &**rhs {
-                        if let parse::Symbol::NonTerminal(non_terminal) = symbol {
-                            if !used_non_terminals.contains(non_terminal) {
-                                queue.push(non_terminal.clone());
-                            }
+            let rule = &self.rules[nt as usize];
+            for (_, rhs) in &rule.rhs {
+                for symbol in &**rhs {
+                    if let parse::Symbol::NonTerminal(non_terminal) = symbol {
+                        if used_non_terminals.insert(*non_terminal) {
+                            queue.push(non_terminal.clone());
                         }
                     }
                 }
@@ -699,6 +691,10 @@ impl SlabGrammar {
             let mut rhs: Vec<_> = rule.rhs.iter().map(|(_, r)| r.clone()).collect();
             rhs.sort();
             rhs_to_lhs.entry(rhs).or_default().push(rule.lhs);
+        }
+
+        for value in rhs_to_lhs.values_mut() {
+            value.sort_unstable_by_key(|a| if *a == self.start { 0 } else { 1 });
         }
 
         // Keep only the first occurrence of each RHS
@@ -755,7 +751,7 @@ impl SlabGrammar {
             .find(|pos| {
                 !self.rules[**pos as usize].rhs.iter().any(|(_, r)| {
                     !r.iter().any(
-                        |s| matches!(s, Symbol::NonTerminal(nt) if !to_be_inlined.contains(nt) || *nt == **pos),
+                        |s| matches!(s, Symbol::NonTerminal(nt) if to_be_inlined.contains(nt) || *nt != **pos),
                     )
                 })
             }) {
@@ -804,7 +800,7 @@ impl SlabGrammar {
         while let Some(nt) = nt_to_remove.iter().copied().find(|pos| {
             !self.rules[*pos as usize].rhs.iter().any(|(_, r)| {
                 !r.iter().any(
-                    |s| matches!(s, Symbol::NonTerminal(nt) if !nt_to_remove.contains(nt) || *nt == *pos),
+                    |s| matches!(s, Symbol::NonTerminal(nt) if nt_to_remove.contains(nt) && *nt != *pos),
                 )
             })
         }) {
@@ -876,6 +872,13 @@ impl SlabGrammar {
             return;
         }
 
+        // Make sure the start rule exists
+        assert!(
+            self.rules.contains(self.start as usize),
+            "Start rule {} does not exist in the rules {msg}",
+            self.start
+        );
+
         // Verify that all non-terminals exist in the rules
         for (lhs, rules) in &self.rules {
             assert_eq!(
@@ -894,10 +897,11 @@ impl SlabGrammar {
                 }
             }
         }
-        self.verify_referenc_integrity(msg)
+
+        self.verify_reference_integrity(msg)
     }
 
-    fn verify_referenc_integrity(&self, msg: &str) {
+    fn verify_reference_integrity(&self, msg: &str) {
         let correct_terminal_locations: FxHashMap<u32, FxHashMap<UsedLocation, usize>> = self
             .rules
             .iter()
