@@ -24,6 +24,26 @@ pub enum Symbol<T = String> {
     Epsilon,
 }
 
+impl<T: Ord> PartialOrd for Symbol<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(match (self, other) {
+            (Symbol::Epsilon, Symbol::Epsilon) => std::cmp::Ordering::Equal,
+            (Symbol::Epsilon, _) => std::cmp::Ordering::Less,
+            (_, Symbol::Epsilon) => std::cmp::Ordering::Greater,
+            (Symbol::Terminal(a), Symbol::Terminal(b)) => a.cmp(b),
+            (Symbol::Terminal(_), Symbol::NonTerminal(_)) => std::cmp::Ordering::Less,
+            (Symbol::NonTerminal(_), Symbol::Terminal(_)) => std::cmp::Ordering::Greater,
+            (Symbol::NonTerminal(a), Symbol::NonTerminal(b)) => a.cmp(b),
+        })
+    }
+}
+
+impl<T: Ord> Ord for Symbol<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+
 impl<T: Display> Display for Symbol<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {

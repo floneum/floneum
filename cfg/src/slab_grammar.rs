@@ -95,7 +95,7 @@ pub struct SlabRule {
     /// Alternative right‑hand sides, each a vector of symbols composing a *sequence*.
     pub rhs: Slab<Cow<'static, [Symbol<u32>]>>,
     /// Where this rule is used
-    pub used_in: FxHashSet<UsedLocation>,
+    pub used_in: FxHashMap<UsedLocation, usize>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -108,7 +108,7 @@ struct UsedLocation {
 pub struct SlabGrammar {
     pub start: u32,
     pub rules: slab::Slab<SlabRule>,
-    pub terminal_locations: FxHashMap<u32, FxHashSet<UsedLocation>>,
+    pub terminal_locations: FxHashMap<u32, FxHashMap<UsedLocation, usize>>,
 }
 
 impl SlabGrammar {
@@ -131,11 +131,12 @@ impl SlabGrammar {
             rules.insert(SlabRule {
                 lhs: rule.lhs,
                 rhs,
-                used_in: FxHashSet::default(),
+                used_in: Default::default(),
             });
         }
 
-        let mut terminals_locations: FxHashMap<u32, FxHashSet<UsedLocation>> = FxHashMap::default();
+        let mut terminals_locations: FxHashMap<u32, FxHashMap<UsedLocation, usize>> =
+            FxHashMap::default();
 
         // Collect all terminals present in the grammar
         let rule_ids = rules.iter().map(|(id, _)| id as u32).collect::<Vec<_>>();
@@ -151,25 +152,23 @@ impl SlabGrammar {
                         rule: rule_id as u32,
                         index: i as u32,
                     };
-                    println!("adding {location:?}");
                     match symbol {
                         Symbol::Terminal(token) => {
-                            terminals_locations
+                            *terminals_locations
                                 .entry(*token)
                                 .or_default()
-                                .insert(location);
+                                .entry(location)
+                                .or_default() += 1;
                         }
                         Symbol::NonTerminal(nt) => {
                             let rule = &mut rules[*nt as usize];
-                            rule.used_in.insert(location);
+                            *rule.used_in.entry(location).or_default() += 1;
                         }
                         _ => {}
                     }
                 }
             }
         }
-
-        println!("rules: {rules:?}");
 
         Self {
             start,
@@ -189,15 +188,11 @@ impl SlabGrammar {
             for i in 0..len {
                 let rhs = &mut self.rules[id as usize].rhs[rule_id as usize];
                 let symbol = rhs[i].clone();
-                if let Symbol::Terminal(token) = symbol {
-                    if let Some(locations) = self.terminal_locations.get_mut(&token) {
-                        locations.retain(|loc| loc.rule != id as u32);
-                    }
-                } else if let Symbol::NonTerminal(nt) = symbol {
-                    if let Some(nt_rule) = self.rules.get_mut(nt as usize) {
-                        nt_rule.used_in.retain(|loc| loc.rule != id as u32);
-                    }
-                }
+                let loc = UsedLocation {
+                    rule: id,
+                    index: rule_id,
+                };
+                self.remove_reference(&symbol, loc);
             }
         }
         self.rules.remove(id as usize);
@@ -210,10 +205,244 @@ impl SlabGrammar {
         entry.insert(SlabRule {
             lhs,
             rhs,
-            used_in: FxHashSet::default(),
+            used_in: Default::default(),
         });
 
         lhs
+    }
+
+    fn push_rhs(&mut self, lhs: u32, rhs: Cow<'static, [Symbol<u32>]>) {
+        let rhs_clone = rhs.clone();
+        let rule = &mut self.rules[lhs as usize];
+        let index = rule.rhs.insert(rhs);
+        let location = UsedLocation {
+            rule: lhs,
+            index: index as u32,
+        };
+        for symbol in &*rhs_clone {
+            self.add_reference(symbol, location);
+        }
+    }
+
+    fn add_reference(&mut self, symbol: &Symbol<u32>, location: UsedLocation) {
+        match symbol {
+            Symbol::Terminal(token) => {
+                *self
+                    .terminal_locations
+                    .entry(*token)
+                    .or_default()
+                    .entry(location)
+                    .or_default() += 1;
+            }
+            Symbol::NonTerminal(nt) => {
+                let rule = &mut self.rules[*nt as usize];
+                *rule.used_in.entry(location).or_default() += 1;
+            }
+            _ => {}
+        }
+    }
+
+    fn remove_reference(&mut self, symbol: &Symbol<u32>, location: UsedLocation) {
+        match symbol {
+            Symbol::Terminal(token) => {
+                if let Some(locations) = self.terminal_locations.get_mut(&token) {
+                    let entry = locations.entry(location).or_default();
+                    if *entry > 1 {
+                        *entry -= 1;
+                    } else {
+                        locations.remove(&location);
+                    }
+                    if locations.is_empty() {
+                        self.terminal_locations.remove(&token);
+                    }
+                }
+            }
+            Symbol::NonTerminal(nt) => {
+                if let Some(rule) = self.rules.get_mut(*nt as usize) {
+                    let entry = rule.used_in.entry(location).or_default();
+                    if *entry > 1 {
+                        *entry -= 1;
+                    } else {
+                        rule.used_in.remove(&location);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn split_nt(
+        &mut self,
+        loc: &u32,
+        new_loc: &u32,
+        common: &u32,
+        mut new_row: impl FnMut(&[Symbol<u32>]) -> bool,
+        mut replace_row: impl FnMut(&[Symbol<u32>]) -> Vec<Symbol<u32>>,
+    ) {
+        let mut id_mapping = FxHashMap::default();
+        let mut changed = Slab::new();
+        let mut unchanged = Slab::new();
+        self.rules[*loc as usize].rhs.retain(|i, rhs| {
+            if new_row(&rhs) {
+                changed.insert(rhs.clone());
+                true
+            } else {
+                let new_id = unchanged.insert(rhs.clone());
+                id_mapping.insert(new_id, i);
+                false
+            }
+        });
+
+        let mut merged = changed;
+        for (i, rhs) in &mut merged {
+            if new_row(&rhs) {
+                *rhs = replace_row(&rhs).into();
+            }
+            let location = UsedLocation {
+                rule: *new_loc,
+                index: i as u32,
+            };
+            for symbol in &**rhs {
+                self.add_reference(symbol, location);
+            }
+        }
+        self.rules[*new_loc as usize].rhs = merged;
+
+        if !unchanged.is_empty() {
+            for (id, rhs) in &unchanged {
+                let old_location = UsedLocation {
+                    rule: *loc,
+                    index: id_mapping[&id] as u32,
+                };
+                let common_location = UsedLocation {
+                    rule: *common,
+                    index: id as u32,
+                };
+                for symbol in &**rhs {
+                    self.remove_reference(symbol, old_location);
+                    self.add_reference(symbol, common_location);
+                }
+            }
+            self.rules[*common as usize].rhs = unchanged;
+            self.push_rhs(*loc, vec![Symbol::NonTerminal(*common)].into());
+        }
+
+        self.verify_integrity("after split_nt");
+    }
+
+    fn find_starts_with_token(
+        &self,
+        token: u32,
+        starting_set: FxHashSet<UsedLocation>,
+        starting_set_symbols: FxHashSet<Symbol<u32>>,
+    ) -> FxHashSet<Symbol<u32>> {
+        let mut possible_set = starting_set;
+        let mut starts_with_token = starting_set_symbols;
+        starts_with_token.insert(Symbol::Terminal(token));
+        let mut last_starts_with_token = starts_with_token.len() + 1;
+        while starts_with_token.len() != last_starts_with_token {
+            last_starts_with_token = starts_with_token.len();
+            let mut new_possible = Vec::new();
+            for loc in &possible_set {
+                let rule = &self.rules[loc.rule as usize];
+                let rhs = &rule.rhs[loc.index as usize];
+                if let Some(first) = rhs.first() {
+                    if starts_with_token.contains(first) {
+                        starts_with_token.insert(Symbol::NonTerminal(loc.rule));
+                        new_possible.extend(rule.used_in.keys().copied());
+                    }
+                }
+            }
+            possible_set.extend(new_possible);
+        }
+        starts_with_token
+    }
+
+    fn find_ends_with_token(
+        &self,
+        token: u32,
+        starting_set: FxHashSet<UsedLocation>,
+        starting_set_symbols: FxHashSet<Symbol<u32>>,
+    ) -> FxHashSet<Symbol<u32>> {
+        let mut possible_set = starting_set;
+        let mut ends_with_token = starting_set_symbols;
+        ends_with_token.insert(Symbol::Terminal(token));
+        let mut last_ends_with_token = ends_with_token.len() + 1;
+        while ends_with_token.len() != last_ends_with_token {
+            last_ends_with_token = ends_with_token.len();
+            let mut new_possible = Vec::new();
+            for loc in &possible_set {
+                let rule = &self.rules[loc.rule as usize];
+                let rhs = &rule.rhs[loc.index as usize];
+                if let Some(first) = rhs.last() {
+                    if ends_with_token.contains(first) {
+                        ends_with_token.insert(Symbol::NonTerminal(loc.rule));
+                        new_possible.extend(rule.used_in.keys().copied());
+                    }
+                }
+            }
+            possible_set.extend(new_possible);
+        }
+        ends_with_token
+    }
+
+    fn find_merge_canidates(
+        &self,
+        merge: &Merge,
+        starts_with_pair_1: &FxHashSet<Symbol<u32>>,
+        ends_with_pair_0: &FxHashSet<Symbol<u32>>,
+    ) -> FxHashSet<UsedLocation> {
+        let pair_0 = &self.terminal_locations[&merge.pair[0]];
+        let pair_1 = &self.terminal_locations[&merge.pair[1]];
+
+        // Now we need to find any locations where every starts_with_pair_1 is used
+        let ends_with_pair_0_used = ends_with_pair_0
+            .iter()
+            .filter_map(|loc| {
+                if let Symbol::NonTerminal(nt) = loc {
+                    Some(*nt)
+                } else {
+                    None
+                }
+            })
+            .flat_map(|loc| self.rules[loc as usize].used_in.keys())
+            .chain(pair_0.keys())
+            .cloned()
+            .collect::<FxHashSet<_>>();
+        let starts_with_pair_1_used = starts_with_pair_1
+            .iter()
+            .filter_map(|loc| {
+                if let Symbol::NonTerminal(nt) = loc {
+                    Some(*nt)
+                } else {
+                    None
+                }
+            })
+            .flat_map(|loc| self.rules[loc as usize].used_in.keys())
+            .chain(pair_1.keys())
+            .cloned()
+            .collect::<FxHashSet<_>>();
+
+        // Find all adjacent pairs of ends_with_pair_0_used and starts_with_pair_1_used
+        let both_appear = ends_with_pair_0_used
+            .union(&starts_with_pair_1_used)
+            .cloned()
+            .collect::<FxHashSet<_>>();
+        let mut appear_adjacent = FxHashSet::default();
+
+        for loc in &both_appear {
+            let rule = &self.rules[loc.rule as usize];
+            let rhs = &rule.rhs[loc.index as usize];
+            for window in rhs.windows(2) {
+                let first = &window[0];
+                let second = &window[1];
+                if ends_with_pair_0.contains(first) && starts_with_pair_1.contains(second) {
+                    appear_adjacent.insert(loc.clone());
+                }
+            }
+        }
+
+        appear_adjacent
     }
 
     // a -> b
@@ -229,214 +458,167 @@ impl SlabGrammar {
         };
 
         // First identify locations where the two pairs are adjacent in the same rule
-        let mut possible_set = pair_1.clone();
-        let mut starts_with_pair_1 = [Symbol::Terminal(merge.pair[1])]
-            .into_iter()
-            .collect::<FxHashSet<_>>();
-        let mut last_starts_with_pair_1 = starts_with_pair_1.len() + 1;
-        while starts_with_pair_1.len() != last_starts_with_pair_1 {
-            last_starts_with_pair_1 = starts_with_pair_1.len();
-            let mut new_possible = Vec::new();
-            for loc in &possible_set {
-                println!("{:?}", self.rules);
-                let rule = &self.rules[dbg!(loc.rule) as usize];
-                let rhs = &rule.rhs[loc.index as usize];
-                let this_nt = Symbol::NonTerminal(loc.rule);
-                if let Some(first) = rhs.first() {
-                    if starts_with_pair_1.contains(first) {
-                        starts_with_pair_1.insert(this_nt);
-                        new_possible.extend(rule.used_in.iter().copied());
-                    }
-                }
-            }
-            possible_set.extend(new_possible);
-        }
-
-        let mut possible_set = pair_1.clone();
-        let mut ends_with_pair_0 = [Symbol::Terminal(merge.pair[0])]
-            .into_iter()
-            .collect::<FxHashSet<_>>();
-        let mut last_ends_with_pair_0 = ends_with_pair_0.len() + 1;
-        while ends_with_pair_0.len() != last_ends_with_pair_0 {
-            last_ends_with_pair_0 = ends_with_pair_0.len();
-            let mut new_possible = Vec::new();
-            for loc in &possible_set {
-                let rule = &self.rules[loc.rule as usize];
-                let rhs = &rule.rhs[loc.index as usize];
-                let this_nt = Symbol::NonTerminal(loc.rule);
-                if let Some(first) = rhs.last() {
-                    if ends_with_pair_0.contains(first) {
-                        ends_with_pair_0.insert(this_nt);
-                        new_possible.extend(rule.used_in.iter().copied());
-                    }
-                }
-            }
-            possible_set.extend(new_possible);
-        }
-
-        // Now we need to find any locations where every starts_with_pair_1 is used
-        let ends_with_pair_0_used = ends_with_pair_0
-            .iter()
-            .filter_map(|loc| {
-                if let Symbol::NonTerminal(nt) = loc {
-                    Some(*nt)
-                } else {
-                    None
-                }
-            })
-            .flat_map(|loc| self.rules[loc as usize].used_in.iter())
-            .chain(pair_0.iter())
-            .cloned()
-            .collect::<FxHashSet<_>>();
-        let starts_with_pair_1_used = starts_with_pair_1
-            .iter()
-            .filter_map(|loc| {
-                if let Symbol::NonTerminal(nt) = loc {
-                    Some(*nt)
-                } else {
-                    None
-                }
-            })
-            .flat_map(|loc| self.rules[loc as usize].used_in.iter())
-            .chain(pair_1.iter())
-            .cloned()
-            .collect::<FxHashSet<_>>();
-
-        // Find all adjacent pairs of ends_with_pair_0_used and starts_with_pair_1_used
-        let both_appear = ends_with_pair_0_used
-            .union(&starts_with_pair_1_used)
-            .collect::<FxHashSet<_>>();
-        let mut appear_adjacent = FxHashSet::default();
-        let mut appear_at_start = FxHashSet::default();
-        let mut appear_at_end = FxHashSet::default();
-        for loc in both_appear {
-            let rule = &self.rules[loc.rule as usize];
-            let rhs = &rule.rhs[loc.index as usize];
-            for i in 0..rhs.len() - 1 {
-                let first = &rhs[i];
-                let second = &rhs[i + 1];
-                if ends_with_pair_0.contains(&*first) && starts_with_pair_1.contains(&*second) {
-                    appear_adjacent.insert(loc.clone());
-                    if let Symbol::NonTerminal(token) = first {
-                        appear_at_end.insert(*token);
-                    }
-                    if let Symbol::NonTerminal(token) = second {
-                        appear_at_start.insert(*token);
-                    }
-                }
-            }
-        }
-
-        println!("appear_adjacent: {appear_adjacent:?}");
+        let starts_with_pair_1 = self.find_starts_with_token(
+            merge.pair[1],
+            pair_1.keys().cloned().collect(),
+            Default::default(),
+        );
+        let ends_with_pair_0 = self.find_ends_with_token(
+            merge.pair[0],
+            pair_0.keys().cloned().collect(),
+            Default::default(),
+        );
 
         // Create a variant of appear_at_end with the last symbol swapped for the new token
         let mut merged_appear_at_end = FxHashMap::default();
         // First insert an empty value for each non-terminal
-        for loc in &appear_at_end {
-            let empty = self.insert(Default::default());
-            merged_appear_at_end.insert(*loc, empty);
+        for symbol in &ends_with_pair_0 {
+            let Symbol::NonTerminal(nt) = symbol else {
+                continue;
+            };
+            merged_appear_at_end.insert(
+                *nt,
+                [
+                    self.insert(Default::default()),
+                    self.insert(Default::default()),
+                ],
+            );
         }
         // Then fill it in
-        for loc in &appear_at_end {
-            let mut unchanged = Slab::new();
-            self.rules[*loc as usize].rhs.retain(|_, rhs| {
-                if rhs.last().is_some_and(|rhs| ends_with_pair_0.contains(rhs)) {
-                    true
-                } else {
-                    unchanged.insert(rhs.clone());
-                    false
-                }
-            });
-            let common = self.insert(unchanged);
-            let old_rule = &mut self.rules[*loc as usize];
-            _ = old_rule
-                .rhs
-                .insert(vec![Symbol::NonTerminal(common)].into());
-            let mut merged = old_rule.clone();
-            for (_, rhs) in &mut merged.rhs {
-                if rhs.last().is_some_and(|rhs| ends_with_pair_0.contains(rhs)) {
+        for (loc, [new_loc, common]) in &merged_appear_at_end {
+            self.split_nt(
+                loc,
+                new_loc,
+                common,
+                |rhs| rhs.last().is_some_and(|rhs| ends_with_pair_0.contains(rhs)),
+                |rhs| {
                     let mut new_rhs = rhs.to_vec();
                     let tok = new_rhs.pop().unwrap();
                     new_rhs.push(match tok {
                         Symbol::Terminal(_) => Symbol::Terminal(merge.new_token),
-                        Symbol::NonTerminal(nt) => Symbol::NonTerminal(merged_appear_at_end[&nt]),
+                        Symbol::NonTerminal(nt) => {
+                            Symbol::NonTerminal(merged_appear_at_end[&nt][0])
+                        }
                         other => other,
                     });
-                    *rhs = new_rhs.into();
-                }
-            }
+                    new_rhs
+                },
+            );
         }
 
         // Create a variant of appear_at_start with the first symbol removed
         let mut merged_appear_at_start = FxHashMap::default();
         // First insert an empty value for each non-terminal
-        for loc in &appear_at_start {
-            let empty = self.insert(Default::default());
-            merged_appear_at_start.insert(*loc, empty);
+        for symbol in &starts_with_pair_1 {
+            let Symbol::NonTerminal(nt) = symbol else {
+                continue;
+            };
+            merged_appear_at_start.insert(
+                *nt,
+                [
+                    self.insert(Default::default()),
+                    self.insert(Default::default()),
+                ],
+            );
         }
         // Then fill it in
-        for loc in &appear_at_start {
-            let mut unchanged = Slab::new();
-            self.rules[*loc as usize].rhs.retain(|_, rhs| {
-                if rhs
-                    .first()
-                    .is_some_and(|rhs| starts_with_pair_1.contains(rhs))
-                {
-                    true
-                } else {
-                    unchanged.insert(rhs.clone());
-                    false
-                }
-            });
-            let common = self.insert(unchanged);
-            let old_rule = &mut self.rules[*loc as usize];
-            _ = old_rule
-                .rhs
-                .insert(vec![Symbol::NonTerminal(common)].into());
-            let mut merged = old_rule.clone();
-            for (_, rhs) in &mut merged.rhs {
-                if rhs
-                    .first()
-                    .is_some_and(|rhs| starts_with_pair_1.contains(rhs))
-                {
+        for (loc, [new_loc, common]) in &merged_appear_at_start {
+            self.split_nt(
+                loc,
+                new_loc,
+                common,
+                |rhs| {
+                    rhs.first()
+                        .is_some_and(|rhs| starts_with_pair_1.contains(rhs))
+                },
+                |rhs| {
                     let mut new_rhs = rhs.to_vec();
                     let tok = new_rhs[0].clone();
-                    new_rhs[0] = match tok {
-                        Symbol::Terminal(_) => Symbol::Terminal(merge.new_token),
-                        Symbol::NonTerminal(nt) => Symbol::NonTerminal(merged_appear_at_start[&nt]),
-                        other => other,
+                    match tok {
+                        Symbol::NonTerminal(nt) => {
+                            new_rhs[0] = Symbol::NonTerminal(merged_appear_at_start[&nt][0])
+                        }
+                        _ => {
+                            if new_rhs.len() > 1 {
+                                new_rhs.remove(0);
+                            } else {
+                                new_rhs[0] = Symbol::Epsilon
+                            }
+                        }
                     };
-                    *rhs = new_rhs.into();
-                }
-            }
+                    new_rhs
+                },
+            );
         }
+
+        let appear_adjacent =
+            self.find_merge_canidates(merge, &starts_with_pair_1, &ends_with_pair_0);
 
         // Then substitute the new token in all locations where the pair appears
         for loc in appear_adjacent {
-            let rule = &mut self.rules[loc.rule as usize];
-            let rhs = &mut rule.rhs[loc.index as usize];
             let mut new_rhs = Vec::new();
+            println!("loc: {loc:?}");
+            println!(
+                "self.rules[loc.rule as usize]: {:?}",
+                self.rules[loc.rule as usize].rhs.iter().collect::<Vec<_>>()
+            );
+            println!(
+                "rewriting rule from {:?}",
+                self.rules[loc.rule as usize].rhs[loc.index as usize]
+            );
             let mut i = 0;
-            while i < rhs.len() - 1 {
-                let first = &rhs[i];
-                let second = &rhs[i + 1];
-                if ends_with_pair_0.contains(first) && starts_with_pair_1.contains(second) {
-                    let new_first = if let Symbol::NonTerminal(nt) = first {
-                        Symbol::NonTerminal(merged_appear_at_end[&nt])
+            while i < self.rules[loc.rule as usize].rhs[loc.index as usize].len() {
+                let first = self.rules[loc.rule as usize].rhs[loc.index as usize][i].clone();
+                if i + 1 < self.rules[loc.rule as usize].rhs[loc.index as usize].len() {
+                    let second =
+                        self.rules[loc.rule as usize].rhs[loc.index as usize][i + 1].clone();
+                    if ends_with_pair_0.contains(&first) && starts_with_pair_1.contains(&second) {
+                        self.remove_reference(&first, loc);
+                        self.remove_reference(&second, loc);
+                        let maybe_merge = self.insert(Default::default());
+                        let maybe_merge_symbol = Symbol::NonTerminal(maybe_merge);
+                        self.add_reference(&maybe_merge_symbol, loc);
+                        new_rhs.push(maybe_merge_symbol);
+
+                        let mut do_merge_rhs = Vec::new();
+                        let mut dont_merge_rhs = FxHashSet::default();
+                        if let Symbol::NonTerminal(nt) = first {
+                            let [first_merged, first_common] = merged_appear_at_end[&nt];
+                            do_merge_rhs.push(Symbol::NonTerminal(first_merged));
+                            if !self.rules[first_common as usize].rhs.is_empty() {
+                                dont_merge_rhs.insert(
+                                    vec![Symbol::NonTerminal(first_common), second.clone()].into(),
+                                );
+                            }
+                        } else {
+                            do_merge_rhs.push(Symbol::Terminal(merge.new_token));
+                        }
+                        if let Symbol::NonTerminal(nt) = second {
+                            let [second_merged, second_common] = merged_appear_at_start[&nt];
+                            do_merge_rhs.push(Symbol::NonTerminal(second_merged));
+                            if !self.rules[second_common as usize].rhs.is_empty() {
+                                dont_merge_rhs.insert(
+                                    vec![first.clone(), Symbol::NonTerminal(second_common)].into(),
+                                );
+                            }
+                        }
+                        self.push_rhs(maybe_merge, do_merge_rhs.into());
+                        for dont_merge_rhs in dont_merge_rhs {
+                            self.push_rhs(maybe_merge, dont_merge_rhs);
+                        }
+                        i += 2;
                     } else {
-                        Symbol::Terminal(merge.new_token)
-                    };
-                    new_rhs.push(new_first);
-                    if let Symbol::NonTerminal(nt) = second {
-                        new_rhs.push(Symbol::NonTerminal(merged_appear_at_start[&nt]));
+                        new_rhs.push(first.clone());
+                        i += 1;
                     }
-                    i += 2;
                 } else {
                     new_rhs.push(first.clone());
                     i += 1;
                 }
             }
-            *rhs = new_rhs.into();
+            println!("rewriting rule to {:?}", new_rhs);
+            self.rules[loc.rule as usize].rhs[loc.index as usize] = new_rhs.into();
+            self.verify_integrity("after rewriting rule in shortcut_merge");
         }
 
         true
@@ -471,7 +653,7 @@ impl SlabGrammar {
     }
 
     pub fn retain(&mut self, mut f: impl FnMut(u32, &SlabRule) -> bool) {
-        let mut rule_ids = self
+        let rule_ids = self
             .rules
             .iter()
             .map(|(id, _)| id as u32)
@@ -486,170 +668,155 @@ impl SlabGrammar {
     }
 
     pub fn deduplicate_non_terminals(&mut self) -> bool {
-        // // Remove any duplicate non-terminals
-        // let mut rhs_to_lhs: FxHashMap<Slab<Cow<[Symbol<u32>]>>, Vec<u32>> = FxHashMap::default();
-        // for (_, rule) in &self.rules {
-        //     rhs_to_lhs
-        //         .entry(rule.rhs.clone())
-        //         .or_default()
-        //         .push(rule.lhs);
-        // }
+        let mut changed = false;
 
-        // // Keep only the first occurrence of each RHS
-        // let canonical_nt_map: FxHashMap<u32, u32> = rhs_to_lhs
-        //     .iter()
-        //     .flat_map(|(_, lhs_list)| {
-        //         let first_lhs = lhs_list[0];
-        //         lhs_list.iter().map(move |&lhs| (lhs, first_lhs))
-        //     })
-        //     .collect();
+        // Remove any duplicate non-terminals
+        let mut rhs_to_lhs: FxHashMap<Vec<Cow<[Symbol<u32>]>>, Vec<u32>> = FxHashMap::default();
+        for (_, rule) in &self.rules {
+            let mut rhs: Vec<_> = rule.rhs.iter().map(|(_, r)| r.clone()).collect();
+            rhs.sort();
+            rhs_to_lhs.entry(rhs).or_default().push(rule.lhs);
+        }
 
-        // // As we update also recalculate terminal_locations
-        // self.terminal_locations.clear();
+        // Keep only the first occurrence of each RHS
+        let mut non_canonical_nts = Vec::new();
+        let mut canonical_nt_map = FxHashMap::default();
+        for (_, lhs_list) in &rhs_to_lhs {
+            let [first, rest @ ..] = &lhs_list[..] else {
+                continue;
+            };
+            for lhs in lhs_list {
+                canonical_nt_map.insert(lhs, *first);
+            }
+            non_canonical_nts.extend_from_slice(rest);
+        }
 
-        // // Map all rules to their canonical non-terminal
-        // for (rule_id, rule) in self.rules.iter_mut() {
-        //     for (_, rhs) in &mut rule.rhs {
-        //         let mut new_rhs = Vec::with_capacity(rhs.len());
-        //         for (i, symbol) in (*rhs).iter().enumerate() {
-        //             match symbol {
-        //                 Symbol::NonTerminal(nt) => {
-        //                     new_rhs.push(Symbol::NonTerminal(canonical_nt_map[nt]));
-        //                 }
-        //                 Symbol::Terminal(token) => {
-        //                     self.terminal_locations
-        //                         .entry(*token)
-        //                         .or_default()
-        //                         .insert((rule_id as u32, i));
-        //                     new_rhs.push(Symbol::Terminal(*token));
-        //                 }
-        //                 Symbol::Epsilon => {
-        //                     new_rhs.push(Symbol::Epsilon);
-        //                 }
-        //             }
-        //         }
-        //         *rhs = new_rhs.into();
-        //     }
-        // }
+        // Map all rules to their canonical non-terminal
+        for rule_id in non_canonical_nts {
+            let referenced_in = self.rules[rule_id as usize]
+                .used_in
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>();
+            for loc in referenced_in {
+                let used_in_rule = &self.rules[loc.rule as usize];
+                let mut rhs = used_in_rule.rhs[loc.index as usize].to_vec();
+                for symbol in &mut rhs {
+                    if let Symbol::NonTerminal(nt) = symbol {
+                        if *nt == rule_id {
+                            self.remove_reference(&Symbol::NonTerminal(*nt), loc);
+                            *nt = canonical_nt_map[&rule_id];
+                            self.add_reference(&Symbol::NonTerminal(*nt), loc);
+                            changed = true;
+                        }
+                    }
+                }
+                self.rules[loc.rule as usize].rhs[loc.index as usize] = rhs.into();
+            }
+            self.remove(rule_id);
+        }
 
-        // let mut changed = false;
-        // // Remove any non-canonical non-terminals
-        // self.rules.retain(|id, _| {
-        //     let id = id as u32;
-        //     let canonical_lhs = canonical_nt_map[&id];
-        //     let retain = canonical_lhs == id;
-        //     changed |= !retain;
-        //     retain
-        // });
-        // changed
-        todo!()
+        changed
     }
 
-    fn inline_single_use_non_terminals(&mut self) -> bool {
-        // let mut changed = true;
-        // let mut changed_overall = false;
-        // while changed {
-        //     changed = false;
-        //     let mut non_terminal_uses: FxHashMap<u32, Vec<(u32, usize)>> = FxHashMap::default();
-        //     for (_, rule) in &self.rules {
-        //         if rule.lhs == self.start {
-        //             continue;
-        //         }
-        //         for (i, rhs) in rule.rhs.iter().enumerate() {
-        //             for symbol in rhs.iter() {
-        //                 if let Symbol::NonTerminal(nt) = symbol {
-        //                     non_terminal_uses
-        //                         .entry(*nt)
-        //                         .or_default()
-        //                         .push((rule.lhs, i));
-        //                 }
-        //             }
-        //         }
-        //     }
+    pub fn inline_single_use_non_terminals(&mut self) -> bool {
+        let mut changed = false;
+        let mut to_be_inlined = FxHashSet::default();
+        for (_, rule) in &self.rules {
+            if rule.used_in.len() == 1 && rule.rhs.len() == 1 {
+                to_be_inlined.insert(rule.lhs);
+                changed = true;
+            }
+        }
+        while let Some(pos) = to_be_inlined
+            .iter()
+            .find(|pos| {
+                !self.rules[**pos as usize].rhs.iter().any(|(_, r)| {
+                    !r.iter().any(
+                        |s| matches!(s, Symbol::NonTerminal(nt) if !to_be_inlined.contains(nt) || *nt == **pos),
+                    )
+                })
+            }) {
+            let rule =self.rules[*pos as usize].clone();
+            to_be_inlined.remove(&rule.lhs);
 
-        //     // Inline any non-terminals that are only used once
-        //     for (nt, uses) in &non_terminal_uses {
-        //         let &[(parent, index)] = uses.as_slice() else {
-        //             continue;
-        //         };
-        //         let rhs = &self.rules[*nt as usize].rhs;
-        //         let [rhs] = rhs.as_slice() else {
-        //             continue;
-        //         };
-        //         if rhs.contains(&Symbol::NonTerminal(*nt)) {
-        //             // If the non-terminal contains itself, we cannot inline it
-        //             continue;
-        //         }
-        //         let rule = self.rules.remove(*nt as usize);
-        //         let rhs = &rule.rhs[0];
-        //         let mut new_rhs = Vec::new();
-        //         let old_rhs = &mut self.rules[parent as usize].rhs[index];
-        //         for symbol in &**old_rhs {
-        //             match symbol {
-        //                 Symbol::NonTerminal(n) if *n == *nt => {
-        //                     new_rhs.extend(rhs.iter().cloned());
-        //                 }
-        //                 _ => {
-        //                     new_rhs.push(symbol.clone());
-        //                 }
-        //             }
-        //         }
-        //         *old_rhs = new_rhs.into();
-        //         changed = true;
-        //         changed_overall |= true;
-        //         break;
-        //     }
-        // }
-        // changed_overall
-        todo!()
+
+            let (loc, _) = rule.used_in.iter().next().unwrap();
+            let (_, rule_rhs) = rule.rhs.iter().next().unwrap();
+            let used_in_rule = &self.rules[loc.rule as usize];
+            let rhs = &used_in_rule.rhs[loc.index as usize];
+            let mut new_rhs = Vec::new();
+            for symbol in &**rhs {
+                if let Symbol::NonTerminal(nt) = symbol {
+                    if *nt == rule.lhs {
+                        new_rhs.extend(rule_rhs.iter().cloned());
+                        continue;
+                    }
+                }
+                new_rhs.push(symbol.clone());
+            }
+            self.remove_reference(&Symbol::NonTerminal(rule.lhs), *loc);
+            for symbol in rule_rhs.iter() {
+                self.add_reference(symbol, *loc);
+            }
+            self.rules[loc.rule as usize].rhs[loc.index as usize] = new_rhs.into();
+            self.remove(rule.lhs);
+        }
+        changed
     }
 
-    fn inline_simple(&mut self) -> bool {
-        // let mut changed = false;
-        // let mut nt_to_token: FxHashMap<u32, Symbol<u32>> = FxHashMap::default();
-        // self.rules.retain(|_, rule| {
-        //     if let [rhs] = rule.rhs.as_slice() {
-        //         match rhs.as_ref() {
-        //             [symbol] => {
-        //                 nt_to_token.insert(rule.lhs, symbol.clone());
-        //                 return false;
-        //             }
-        //             _ => {}
-        //         }
-        //     }
-        //     true
-        // });
+    pub fn inline_simple(&mut self) -> bool {
+        let mut changed = false;
+        let mut nt_to_remove = FxHashSet::default();
+        let start = self.start;
+        for (_, rule) in &self.rules {
+            if rule.rhs.len() == 1 && rule.lhs != start {
+                let (_, rhs) = rule.rhs.iter().next().unwrap();
+                if rhs.len() == 1 {
+                    nt_to_remove.insert(rule.lhs);
+                }
+            }
+        }
 
-        // // Update all rules to replace the non-terminal with the terminal
-        // for (_, rule) in self.rules.iter_mut() {
-        //     for (_, rhs) in &mut rule.rhs {
-        //         let mut new_rhs = Vec::new();
-        //         for symbol in rhs.iter() {
-        //             if let Symbol::NonTerminal(n) = symbol {
-        //                 if let Some(symbol) = nt_to_token.get(n) {
-        //                     let mut symbol = symbol.clone();
-        //                     while let Symbol::NonTerminal(nt) = symbol {
-        //                         if let Some(next) = nt_to_token.get(&nt) {
-        //                             symbol = next.clone();
-        //                         } else {
-        //                             break;
-        //                         }
-        //                     }
-        //                     if symbol != Symbol::Epsilon {
-        //                         new_rhs.push(symbol.clone());
-        //                     }
-        //                     changed = true;
-        //                     continue;
-        //                 }
-        //             }
-        //             new_rhs.push(symbol.clone());
-        //         }
-        //         *rhs = new_rhs.into();
-        //     }
-        // }
+        // Update all rules to replace the non-terminal with the terminal
+        while let Some(nt) = nt_to_remove.iter().copied().find(|pos| {
+            !self.rules[*pos as usize].rhs.iter().any(|(_, r)| {
+                !r.iter().any(
+                    |s| matches!(s, Symbol::NonTerminal(nt) if !nt_to_remove.contains(nt) || *nt == *pos),
+                )
+            })
+        }) {
+            let rule = &self.rules[nt as usize];
+            let (_, rhs) = rule.rhs.iter().next().unwrap();
+            let symbol = if let [symbol] = rhs.as_ref() {
+                symbol.clone()
+            } else {
+                continue;
+            };
+            let locations = rule.used_in.keys().cloned().collect::<Vec<_>>();
+            nt_to_remove.remove(&rule.lhs);
+            for loc in locations {
+                let used_in_rule = &self.rules[loc.rule as usize];
+                let rhs = &used_in_rule.rhs[loc.index as usize];
+                let mut new_rhs = Vec::new();
+                for s in &**rhs {
+                    if let Symbol::NonTerminal(nt2) = s {
+                        if *nt2 == nt {
+                            new_rhs.push(symbol.clone());
+                            continue;
+                        }
+                    }
+                    new_rhs.push(s.clone());
+                }
+                self.remove_reference(&Symbol::NonTerminal(nt), loc);
+                self.add_reference(&symbol, loc);
+                self.rules[loc.rule as usize].rhs[loc.index as usize] = new_rhs.into();
+            }
+            self.remove(nt);
+            changed = true;
+        }
 
-        // changed
-        todo!()
+        changed
     }
 
     pub fn inline_optimize(&mut self) {
@@ -678,7 +845,11 @@ impl SlabGrammar {
         }
     }
 
-    fn verify_integrity(&self, msg: &str) {
+    pub fn verify_integrity(&self, msg: &str) {
+        if cfg!(not(debug_assertions)) {
+            return;
+        }
+
         // Verify that all non-terminals exist in the rules
         for (lhs, rules) in &self.rules {
             assert_eq!(
@@ -696,6 +867,81 @@ impl SlabGrammar {
                     }
                 }
             }
+        }
+        self.verify_referenc_integrity(msg)
+    }
+
+    fn verify_referenc_integrity(&self, msg: &str) {
+        let correct_terminal_locations: FxHashMap<u32, FxHashMap<UsedLocation, usize>> = self
+            .rules
+            .iter()
+            .flat_map(|(_, rule)| {
+                rule.rhs.iter().flat_map(move |(i, rhs)| {
+                    rhs.iter().filter_map(move |symbol| {
+                        if let Symbol::Terminal(token) = symbol {
+                            Some((
+                                (
+                                    *token,
+                                    UsedLocation {
+                                        rule: rule.lhs,
+                                        index: i as u32,
+                                    },
+                                ),
+                                1,
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+                })
+            })
+            .fold(FxHashMap::default(), |mut acc, (key, count)| {
+                *acc.entry(key.0).or_default().entry(key.1).or_default() += count;
+                acc
+            });
+        assert_eq!(
+            self.terminal_locations, correct_terminal_locations,
+            "Terminal locations do not match the rules {msg}"
+        );
+
+        let correct_non_terminal_locations: FxHashMap<u32, FxHashMap<UsedLocation, usize>> = self
+            .rules
+            .iter()
+            .flat_map(|(_, rule)| {
+                rule.rhs.iter().flat_map(move |(i, rhs)| {
+                    rhs.iter().filter_map(move |symbol| {
+                        if let Symbol::NonTerminal(nt) = symbol {
+                            Some((
+                                (
+                                    *nt,
+                                    UsedLocation {
+                                        rule: rule.lhs,
+                                        index: i as u32,
+                                    },
+                                ),
+                                1,
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+                })
+            })
+            .fold(FxHashMap::default(), |mut acc, (key, count)| {
+                *acc.entry(key.0).or_default().entry(key.1).or_default() += count;
+                acc
+            });
+
+        for (nt, rule) in &self.rules {
+            assert_eq!(
+                rule.used_in,
+                correct_non_terminal_locations
+                    .get(&(nt as u32))
+                    .cloned()
+                    .unwrap_or_default(),
+                "Non-terminal locations do not match the rules for non-terminal {} {msg}",
+                nt
+            );
         }
     }
 }
