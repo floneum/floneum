@@ -5236,7 +5236,7 @@ dependencies = [
 [[package]]
 name = "naga"
 version = "26.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#e120bd709f5b3c25863f86707168554bc88efbc6"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#46e64b7f1e0a5888b465fd20400e4996cadf6743"
 dependencies = [
  "arrayvec",
  "bit-set 0.8.0",
@@ -9510,7 +9510,7 @@ checksum = "a751b3277700db47d3e574514de2eced5e54dc8a5436a3bf7a0b248b2cee16f3"
 [[package]]
 name = "wgpu"
 version = "26.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#e120bd709f5b3c25863f86707168554bc88efbc6"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#46e64b7f1e0a5888b465fd20400e4996cadf6743"
 dependencies = [
  "arrayvec",
  "bitflags 2.9.3",
@@ -9538,7 +9538,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core"
 version = "26.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#e120bd709f5b3c25863f86707168554bc88efbc6"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#46e64b7f1e0a5888b465fd20400e4996cadf6743"
 dependencies = [
  "arrayvec",
  "bit-set 0.8.0",
@@ -9569,7 +9569,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-apple"
 version = "26.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#e120bd709f5b3c25863f86707168554bc88efbc6"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#46e64b7f1e0a5888b465fd20400e4996cadf6743"
 dependencies = [
  "wgpu-hal",
 ]
@@ -9577,7 +9577,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-emscripten"
 version = "26.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#e120bd709f5b3c25863f86707168554bc88efbc6"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#46e64b7f1e0a5888b465fd20400e4996cadf6743"
 dependencies = [
  "wgpu-hal",
 ]
@@ -9585,7 +9585,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-windows-linux-android"
 version = "26.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#e120bd709f5b3c25863f86707168554bc88efbc6"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#46e64b7f1e0a5888b465fd20400e4996cadf6743"
 dependencies = [
  "wgpu-hal",
 ]
@@ -9593,7 +9593,7 @@ dependencies = [
 [[package]]
 name = "wgpu-hal"
 version = "26.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#e120bd709f5b3c25863f86707168554bc88efbc6"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#46e64b7f1e0a5888b465fd20400e4996cadf6743"
 dependencies = [
  "android_system_properties",
  "arrayvec",
@@ -9640,7 +9640,7 @@ dependencies = [
 [[package]]
 name = "wgpu-types"
 version = "26.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#e120bd709f5b3c25863f86707168554bc88efbc6"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#46e64b7f1e0a5888b465fd20400e4996cadf6743"
 dependencies = [
  "bitflags 2.9.3",
  "bytemuck",

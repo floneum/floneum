@@ -565,8 +565,9 @@ impl GenericKernel {
 
     fn kernel(&self, f: &mut String) -> std::fmt::Result {
         writeln!(f, "enable f16;")?;
-        // #[cfg(target_arch = "wasm32")]
-        // writeln!(f, "enable subgroups;")?;
+
+        #[cfg(target_arch = "wasm32")]
+        writeln!(f, "enable subgroups;")?;
 
         self.declare_quantized_types(f)?;
 

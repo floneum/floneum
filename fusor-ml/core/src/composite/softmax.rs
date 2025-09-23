@@ -273,7 +273,6 @@ impl SoftmaxOperation {
         writeln!(&mut kernel_body, "workgroupBarrier();").unwrap();
 
         // Then if this is the first subgroup, do one final shuffle down reduction
-        writeln!(&mut kernel_body, "if {subgroup_id} == 0u {{").unwrap();
         // Copy over the best value from each subgroup from the workgroup shared memory to the merged variable
         writeln!(
             &mut kernel_body,
@@ -316,6 +315,7 @@ impl SoftmaxOperation {
         }
 
         // Write the output to the output tensor if this is the first thread in the workgroup
+        writeln!(&mut kernel_body, "if {subgroup_id} == 0u {{").unwrap();
         writeln!(&mut kernel_body, "if {workgroup_local_index} == 0u {{").unwrap();
         writeln!(&mut kernel_body, "{global_m_final} = m_lane;").unwrap();
         writeln!(&mut kernel_body, "{global_d_final} = d_lane;").unwrap();
