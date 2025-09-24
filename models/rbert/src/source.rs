@@ -135,6 +135,7 @@ impl BertSource {
 
     /// Create a new [`BertSource`] with the [snowflake-arctic-embed-xs](https://huggingface.co/Snowflake/snowflake-arctic-embed-xs) model
     pub fn snowflake_arctic_embed_extra_small() -> Self {
+        // https://huggingface.co/ChristianAzinn/snowflake-arctic-embed-xs-gguf/blob/main/snowflake-arctic-embed-xs--Q4_K_M.GGUF
         Self::default()
             .with_config(FileSource::huggingface(
                 "Snowflake/snowflake-arctic-embed-xs".to_string(),
@@ -147,9 +148,9 @@ impl BertSource {
                 "tokenizer.json".to_string(),
             ))
             .with_model(FileSource::huggingface(
-                "Snowflake/snowflake-arctic-embed-xs".to_string(),
+                "ChristianAzinn/snowflake-arctic-embed-xs-gguf".to_string(),
                 "main".to_string(),
-                "model.safetensors".to_string(),
+                "snowflake-arctic-embed-xs--Q4_K_M.GGUF".to_string(),
             ))
             .with_search_embedding_prefix(SNOWFLAKE_EMBEDDING_PREFIX.to_string())
     }
