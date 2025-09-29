@@ -215,39 +215,39 @@ impl GenericKernel {
         global
     }
 
-    pub(crate) fn subgroup_size(&mut self) -> String {
+    pub(crate) fn subgroup_size(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::SubgroupSize;
-        "subgroup_size".to_string()
+        "subgroup_size"
     }
 
-    pub(crate) fn global_id(&mut self) -> String {
+    pub(crate) fn global_id(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::GlobalId;
-        "global_id".to_string()
+        "global_id"
     }
 
-    pub(crate) fn subgroup_local_index(&mut self) -> String {
+    pub(crate) fn subgroup_local_index(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::SubgroupLocalIndex;
-        "subgroup_local_id".to_string()
+        "subgroup_local_id"
     }
 
-    pub(crate) fn subgroup_index(&mut self) -> String {
+    pub(crate) fn subgroup_index(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::SubgroupIndex;
-        "subgroup_id".to_string()
+        "subgroup_id"
     }
 
-    pub(crate) fn workgroup_local_index(&mut self) -> String {
+    pub(crate) fn workgroup_local_index(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::WorkgroupLocalIndex;
-        "workgroup_local_id".to_string()
+        "workgroup_local_id"
     }
 
-    pub(crate) fn subgroups_per_workgroup(&mut self) -> String {
+    pub(crate) fn subgroups_per_workgroup(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::SubgroupsPerWorkgroup;
-        "subgroups_per_workgroup".to_string()
+        "subgroups_per_workgroup"
     }
 
-    pub(crate) fn workgroup_index(&mut self) -> String {
+    pub(crate) fn workgroup_index(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::WorkgroupIndex;
-        "workgroup_index".to_string()
+        "workgroup_index"
     }
 
     pub(crate) fn bind_group_layout(&self, device: &crate::Device) -> BindGroupLayout {
@@ -403,7 +403,7 @@ impl GenericKernel {
         &self,
         device: &crate::Device,
         bind_group_layout: &BindGroupLayout,
-        inputs: Vec<KernelInputValue>,
+        inputs: &[KernelInputValue],
     ) -> wgpu::BindGroup {
         assert_eq!(self.inputs.len(), inputs.len(), "Input count mismatch");
 
@@ -514,7 +514,7 @@ impl GenericKernel {
     pub(crate) fn run(
         &self,
         device: &Device,
-        inputs: Vec<KernelInputValue>,
+        inputs: &[KernelInputValue],
         command_encoder: &mut CommandEncoder,
         workgroup_dispatch_size: [u32; 3],
     ) {

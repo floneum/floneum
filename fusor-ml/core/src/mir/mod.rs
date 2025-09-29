@@ -1,3 +1,5 @@
+pub(crate) mod dispatch_visit;
+pub(crate) mod expression;
 pub(crate) mod function;
 pub(crate) mod globals;
 pub(crate) mod inputs;

@@ -82,15 +82,15 @@ impl<'a> Resolver<'a> {
             } else {
                 let kernel = std::mem::take(&mut kernel);
                 let inputs = std::mem::take(&mut inputs);
-                let all_input_values = std::mem::take(&mut all_input_values);
-                let pending_operations = std::mem::take(&mut pending_operations);
                 self.flush_operations(
                     kernel,
-                    pending_operations,
+                    &pending_operations,
                     inputs,
-                    all_input_values,
+                    &all_input_values,
                     old_best,
                 );
+                pending_operations.clear();
+                all_input_values.clear();
                 current_constraints = constraint;
             }
             // Map layout isn't really a kernel. Resolve it immediately
@@ -120,9 +120,9 @@ impl<'a> Resolver<'a> {
             });
             self.flush_operations(
                 kernel,
-                pending_operations,
+                &pending_operations,
                 inputs,
-                all_input_values,
+                &all_input_values,
                 old_best,
             );
         }
@@ -196,13 +196,13 @@ impl<'a> Resolver<'a> {
     fn flush_operations(
         &mut self,
         mut kernel: GenericKernel,
-        queued_operations: Vec<(AnyComputeKey, Arc<dyn Operation>)>,
+        queued_operations: &[(AnyComputeKey, Arc<dyn Operation>)],
         inputs: Vec<Vec<MirValue>>,
-        all_input_values: Vec<KernelInputValue>,
+        all_input_values: &[KernelInputValue],
         workgroup_shape: workgroup_shape::WorkgroupShape,
     ) {
         let mut max_dispatch_size = [0; 3];
-        for ((key, operation), inputs) in queued_operations.into_iter().zip(inputs) {
+        for ((key, operation), inputs) in queued_operations.iter().zip(inputs) {
             // Map layout isn't really a kernel. Skip it
             if matches!(key, AnyComputeKey::MapLayout(_)) {
                 continue;
@@ -222,7 +222,7 @@ impl<'a> Resolver<'a> {
             kernel.push_body("}");
             // Check if that makes any of this nodes dependents dead
             let mut dependencies = Vec::new();
-            visit_dependencies(&self.graph.nodes, key, |dependent_key| {
+            visit_dependencies(&self.graph.nodes, *key, |dependent_key| {
                 dependencies.push(dependent_key);
             });
             for dependency in dependencies {
