@@ -414,14 +414,6 @@ impl LazyTensorData {
     pub fn graphvis(&self) -> Graph {
         self.graph.graphvis(self.key)
     }
-
-    pub fn shape(&self) -> &[usize] {
-        self.info.shape()
-    }
-
-    pub fn datatype(&self) -> DataTypeEnum {
-        self.info.datatype()
-    }
 }
 
 #[derive(Clone, Debug)]
