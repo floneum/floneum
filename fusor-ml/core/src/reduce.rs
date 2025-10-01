@@ -116,38 +116,34 @@ impl ReduceOperation {
         let subgroups_per_workgroup = kernel.subgroups_per_workgroup();
         let subgroup_size = kernel.subgroup_size();
 
-        let mut kernel_body = String::new();
         // Each workgroup group works on a single column in the input tensor. This code calculates the
         // start offset of the input and output tensors for each thread group.
+        let linearized_workgroup = workgroup_shape.linearized_workgroup_index(kernel);
         writeln!(
-            &mut kernel_body,
+            kernel,
             "var workgroup_index_remainder = {};",
-            workgroup_shape.linearized_workgroup_index(kernel)
+            linearized_workgroup
         )
         .unwrap();
         for i in (0..output_rank).rev() {
             let out_shape_i = output_tensor.shape_binding(i);
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "let index_{i} = workgroup_index_remainder % {out_shape_i};",
             )
             .unwrap();
-            writeln!(
-                &mut kernel_body,
-                "workgroup_index_remainder /= {out_shape_i};",
-            )
-            .unwrap();
+            writeln!(kernel, "workgroup_index_remainder /= {out_shape_i};",).unwrap();
         }
-        writeln!(&mut kernel_body, "var in_start_offset = ",).unwrap();
-        input_tensor.strided_index(&mut kernel_body, (0..).map(|i| format!("index_{i}")));
-        writeln!(&mut kernel_body, ";").unwrap();
-        writeln!(&mut kernel_body, "var out_start_offset = ",).unwrap();
-        output_tensor.strided_index(&mut kernel_body, (0..).map(|i| format!("index_{i}")));
-        writeln!(&mut kernel_body, ";").unwrap();
-        writeln!(&mut kernel_body).unwrap();
+        writeln!(kernel, "var in_start_offset = ",).unwrap();
+        input_tensor.strided_index(kernel, (0..).map(|i| format!("index_{i}")));
+        writeln!(kernel, ";").unwrap();
+        writeln!(kernel, "var out_start_offset = ",).unwrap();
+        output_tensor.strided_index(kernel, (0..).map(|i| format!("index_{i}")));
+        writeln!(kernel, ";").unwrap();
+        writeln!(kernel).unwrap();
 
         writeln!(
-            &mut kernel_body,
+            kernel,
             "var merged = {dtype}({});",
             self.function.initial_value
         )
@@ -156,49 +152,49 @@ impl ReduceOperation {
         // First merge values on each thread individually. We divide the column allocated to the thread group into equal sized buckets
         // Round up
         writeln!(
-            &mut kernel_body,
+            kernel,
             "let bucket_size = ({reduce_size} + {blocksize}u - 1) / {blocksize}u;"
         )
         .unwrap();
         // Then loop over this thread's portion of the column and merge the values
         writeln!(
-            &mut kernel_body,
+            kernel,
             "let base_axis_index = {workgroup_local_index} * bucket_size;"
         )
         .unwrap();
         writeln!(
-            &mut kernel_body,
+            kernel,
             "let end_axis_index = min({workgroup_local_index} * bucket_size + bucket_size, {reduce_size});"
         )
         .unwrap();
-        writeln!(&mut kernel_body, "var index = base_axis_index;").unwrap();
+        writeln!(kernel, "var index = base_axis_index;").unwrap();
 
         // Process elements in groups of 4 with optimized tree reduction if this is a large tensor
         if large_reduction {
-            writeln!(&mut kernel_body, "while (index + 4u <= end_axis_index) {{").unwrap();
+            writeln!(kernel, "while (index + 4u <= end_axis_index) {{").unwrap();
             // Load the chunk of 4 elements at once
-            write!(&mut kernel_body, "let data = vec4<{dtype}>(").unwrap();
+            write!(kernel, "let data = vec4<{dtype}>(").unwrap();
             for i in 0..4 {
                 if i > 0 {
-                    write!(&mut kernel_body, ", ").unwrap();
+                    write!(kernel, ", ").unwrap();
                 }
                 write!(
-                    &mut kernel_body,
+                    kernel,
                     "{input_tensor}[in_start_offset + (index + {i}u) * {reduce_stride}]"
                 )
                 .unwrap();
             }
-            writeln!(&mut kernel_body, ");").unwrap();
+            writeln!(kernel, ");").unwrap();
 
             // Apply pre-element-wise functions to the data
             let components = ["data.x", "data.y", "data.z", "data.w"];
-            write!(&mut kernel_body, "let after_element_wise = vec4<{dtype}>(").unwrap();
+            write!(kernel, "let after_element_wise = vec4<{dtype}>(").unwrap();
             for (i, component) in components.iter().enumerate() {
                 if i > 0 {
-                    write!(&mut kernel_body, ", ").unwrap();
+                    write!(kernel, ", ").unwrap();
                 }
                 write!(
-                    &mut kernel_body,
+                    kernel,
                     "{}",
                     pre_element_wise
                         .iter()
@@ -206,11 +202,11 @@ impl ReduceOperation {
                 )
                 .unwrap();
             }
-            writeln!(&mut kernel_body, ");").unwrap();
+            writeln!(kernel, ");").unwrap();
 
             // Optimized tree reduction for vec4
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "let vec4_reduced = {};",
                 reduce.call(vec![
                     reduce.call(vec![
@@ -225,27 +221,27 @@ impl ReduceOperation {
             )
             .unwrap();
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "merged = {};",
                 reduce.call(vec!["vec4_reduced".to_string(), "merged".to_string()])
             )
             .unwrap();
-            writeln!(&mut kernel_body, "index += 4u;").unwrap();
-            writeln!(&mut kernel_body, "}}").unwrap();
-            writeln!(&mut kernel_body).unwrap();
+            writeln!(kernel, "index += 4u;").unwrap();
+            writeln!(kernel, "}}").unwrap();
+            writeln!(kernel).unwrap();
         }
 
         // Merge the < 4 remaining elements if the bucket size is not a multiple of 4
-        writeln!(&mut kernel_body, "while (index < end_axis_index) {{").unwrap();
+        writeln!(kernel, "while (index < end_axis_index) {{").unwrap();
         // Load a single element
         writeln!(
-            &mut kernel_body,
+            kernel,
             "let data = {input_tensor}[in_start_offset + index * {reduce_stride}];"
         )
         .unwrap();
         // Apply the pre-element-wise functions to the data
         writeln!(
-            &mut kernel_body,
+            kernel,
             "let after_element_wise = {};",
             pre_element_wise
                 .iter()
@@ -254,13 +250,13 @@ impl ReduceOperation {
         .unwrap();
         // Merge the result into the merged variable
         writeln!(
-            &mut kernel_body,
+            kernel,
             "merged = {}; ",
             reduce.call(vec!["after_element_wise".to_string(), "merged".to_string()])
         )
         .unwrap();
-        writeln!(&mut kernel_body, "index += 1u;").unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
+        writeln!(kernel, "index += 1u;").unwrap();
+        writeln!(kernel, "}}").unwrap();
 
         let limits = device.limits();
         let max_subgroup_size = limits.max_subgroup_size;
@@ -268,91 +264,76 @@ impl ReduceOperation {
         // Optimized subgroup reduction with unrolled shuffle operations
         let mut offset = max_subgroup_size;
         while offset > 1 {
-            writeln!(&mut kernel_body, "if {subgroup_size} >= {offset}u {{").unwrap();
+            writeln!(kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
             offset /= 2;
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "let neighbor = subgroupShuffleDown(merged, {offset}u);"
             )
             .unwrap();
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "merged = {};",
                 reduce.call(vec!["neighbor".to_string(), "merged".to_string()])
             )
             .unwrap();
-            writeln!(&mut kernel_body, "}}").unwrap();
+            writeln!(kernel, "}}").unwrap();
         }
 
         // Write the output to the workgroup memory if this is the first thread in the subgroup
-        writeln!(&mut kernel_body, "if {subgroup_local_id} == 0u {{").unwrap();
-        writeln!(&mut kernel_body, "{local_data}[{subgroup_id}] = merged;").unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
+        writeln!(kernel, "if {subgroup_local_id} == 0u {{").unwrap();
+        writeln!(kernel, "{local_data}[{subgroup_id}] = merged;").unwrap();
+        writeln!(kernel, "}}").unwrap();
 
         // Wait until all threads have written to the workgroup shared memory
-        writeln!(&mut kernel_body, "workgroupBarrier();").unwrap();
+        writeln!(kernel, "workgroupBarrier();").unwrap();
 
         // Then if this is the first subgroup, do one final shuffle down reduction
         // Copy over the best value from each subgroup from the workgroup shared memory to the merged variable
         writeln!(
-            &mut kernel_body,
+            kernel,
             "if {subgroup_local_id} < {subgroups_per_workgroup} {{"
         )
         .unwrap();
-        writeln!(
-            &mut kernel_body,
-            "merged = {local_data}[{subgroup_local_id}];"
-        )
-        .unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
-        writeln!(&mut kernel_body, "else {{").unwrap();
-        writeln!(
-            &mut kernel_body,
-            "merged = {dtype}({});",
-            self.function.initial_value,
-        )
-        .unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
+        writeln!(kernel, "merged = {local_data}[{subgroup_local_id}];").unwrap();
+        writeln!(kernel, "}}").unwrap();
+        writeln!(kernel, "else {{").unwrap();
+        writeln!(kernel, "merged = {dtype}({});", self.function.initial_value,).unwrap();
+        writeln!(kernel, "}}").unwrap();
 
         // Final unrolled subgroup reduction
         offset = max_subgroup_size;
         while offset > 1 {
-            writeln!(&mut kernel_body, "if {subgroup_size} >= {offset}u {{").unwrap();
+            writeln!(kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
             offset /= 2;
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "let neighbor = subgroupShuffleDown(merged, {offset}u);"
             )
             .unwrap();
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "merged = {};",
                 reduce.call(vec!["neighbor".to_string(), "merged".to_string()])
             )
             .unwrap();
-            writeln!(&mut kernel_body, "}}").unwrap();
+            writeln!(kernel, "}}").unwrap();
         }
 
-        writeln!(&mut kernel_body, "if {subgroup_id} == 0u {{").unwrap();
+        writeln!(kernel, "if {subgroup_id} == 0u {{").unwrap();
         // Write the output to the output tensor if this is the first thread in the workgroup
-        writeln!(&mut kernel_body, "if {workgroup_local_index} == 0u {{").unwrap();
+        writeln!(kernel, "if {workgroup_local_index} == 0u {{").unwrap();
         writeln!(
-            &mut kernel_body,
+            kernel,
             "let data = {};",
             post_element_wise
                 .iter()
                 .fold("merged".to_string(), |acc, f| f.call(vec![acc]))
         )
         .unwrap();
-        writeln!(
-            &mut kernel_body,
-            "{output_tensor}[out_start_offset] = data;"
-        )
-        .unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
-
-        kernel.push_body(&kernel_body);
+        writeln!(kernel, "{output_tensor}[out_start_offset] = data;").unwrap();
+        writeln!(kernel, "}}").unwrap();
+        writeln!(kernel, "}}").unwrap();
     }
 }
 

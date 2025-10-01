@@ -29,11 +29,11 @@ impl TensorInput {
         format!("{}.shape_{}", self.info_binding(), rank)
     }
 
-    pub(crate) fn check_bounds(
+    pub(crate) fn check_bounds<W: Write>(
         &self,
-        write: &mut String,
+        write: &mut W,
         indexes: impl IntoIterator<Item = String>,
-        in_bounds: impl FnOnce(&mut String),
+        in_bounds: impl FnOnce(&mut W),
     ) {
         write!(write, "if true ").unwrap();
         for (i, index) in indexes.into_iter().enumerate().take(self.rank as usize) {
@@ -47,17 +47,20 @@ impl TensorInput {
 
     pub(crate) fn strided_index(
         &self,
-        write: &mut String,
+        write: &mut impl Write,
         indexes: impl IntoIterator<Item = String>,
     ) {
         let offset = self.offset_binding();
-        write!(write, "{offset} + ").unwrap();
+        write!(write, "{offset}").unwrap();
+        if self.rank > 0 {
+            write!(write, " + ").unwrap();
+        }
         for (i, index) in indexes.into_iter().enumerate().take(self.rank as usize) {
             let stride = self.stride_binding(i as u32);
-            write!(write, "({index})*{stride} + ").unwrap();
-        }
-        for _ in 0..3 {
-            write.pop();
+            write!(write, "({index})*{stride}").unwrap();
+            if i < (self.rank - 1) as usize {
+                write!(write, " + ").unwrap();
+            }
         }
     }
 

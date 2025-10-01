@@ -14,7 +14,7 @@ pub(crate) const SGEMM_VECTOR_SIZE: u32 = 4; // This is the size of the chunk we
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn general_sgemm(
     op: &QMatMulOperation,
-    generic_kernel: &mut GenericKernel,
+    kernel: &mut GenericKernel,
     _: &WorkgroupShape,
     input_a: &TensorInput,
     input_b: &QMatrixInput,
@@ -23,52 +23,42 @@ pub(crate) fn general_sgemm(
     m_size: &str,
     k_size: &str,
 ) {
-    let global_id = generic_kernel.global_id();
+    let global_id = kernel.global_id();
     let elements_per_block = op.elements_per_block();
     let dtype = op.input_datatype;
 
-    let mut kernel = String::new();
-
-    writeln!(&mut kernel, "let x = {global_id}.x;").unwrap();
-    writeln!(&mut kernel, "let y = {global_id}.y;").unwrap();
+    writeln!(kernel, "let x = {global_id}.x;").unwrap();
+    writeln!(kernel, "let y = {global_id}.y;").unwrap();
 
     // Handle batch dimensions
-    writeln!(&mut kernel, "var block_batch = {global_id}.z;").unwrap();
+    writeln!(kernel, "var block_batch = {global_id}.z;").unwrap();
 
     // Decompose the batch index for higher-dimensional tensors
     for dim in (0..input_a.rank()).rev().skip(2) {
         let shape = input_a.shape_binding(dim);
-        writeln!(
-            &mut kernel,
-            "let block_batch_{dim} = block_batch % {shape};"
-        )
-        .unwrap();
-        writeln!(&mut kernel, "block_batch = block_batch / {shape};").unwrap();
+        writeln!(kernel, "let block_batch_{dim} = block_batch % {shape};").unwrap();
+        writeln!(kernel, "block_batch = block_batch / {shape};").unwrap();
     }
 
-    writeln!(&mut kernel, "var acc = 0.0;").unwrap();
+    writeln!(kernel, "var acc = 0.0;").unwrap();
 
     writeln!(
-        &mut kernel,
+        kernel,
         "let k_block_size = ({k_size} + {elements_per_block} - 1u) / {elements_per_block};"
     )
     .unwrap();
-    writeln!(&mut kernel, "var a_index_offset = 0u;").unwrap();
+    writeln!(kernel, "var a_index_offset = 0u;").unwrap();
 
     // Calculate one block sized group
-    writeln!(&mut kernel, "if x < {n_size} && y < {m_size} {{").unwrap();
+    writeln!(kernel, "if x < {n_size} && y < {m_size} {{").unwrap();
 
-    writeln!(
-        &mut kernel,
-        "for (var k = 0u; k < k_block_size; k += 1u) {{"
-    )
-    .unwrap();
+    writeln!(kernel, "for (var k = 0u; k < k_block_size; k += 1u) {{").unwrap();
 
     // Pack the individual dequantized values into vectors
-    writeln!(&mut kernel, "let chunk = {input_b}[k + x * k_block_size];").unwrap();
+    writeln!(kernel, "let chunk = {input_b}[k + x * k_block_size];").unwrap();
 
     dequantize_vec4_block(
-        &mut kernel,
+        kernel,
         op.matrix.datatype,
         "chunk".to_string(),
         DataTypeEnum::F32,
@@ -103,15 +93,15 @@ pub(crate) fn general_sgemm(
         },
     );
 
-    writeln!(&mut kernel, "a_index_offset += {elements_per_block};").unwrap();
+    writeln!(kernel, "a_index_offset += {elements_per_block};").unwrap();
 
-    writeln!(&mut kernel, "}}").unwrap();
+    writeln!(kernel, "}}").unwrap();
 
-    writeln!(&mut kernel, "}}").unwrap();
+    writeln!(kernel, "}}").unwrap();
 
     // Then write the result
-    writeln!(&mut kernel, "if x < {n_size} && y < {m_size} {{").unwrap();
-    write!(&mut kernel, "let output_index = ").unwrap();
+    writeln!(kernel, "if x < {n_size} && y < {m_size} {{").unwrap();
+    write!(kernel, "let output_index = ").unwrap();
     let mut output_indices = vec![];
     // Add batch indices first
     for dim in (0..output.rank()).rev().skip(2) {
@@ -120,10 +110,8 @@ pub(crate) fn general_sgemm(
     // Then add M and N indices
     output_indices.push("y".to_string());
     output_indices.push("x".to_string());
-    output.strided_index(&mut kernel, output_indices);
-    writeln!(&mut kernel, ";").unwrap();
-    writeln!(&mut kernel, "{output}[output_index] = acc;").unwrap();
-    writeln!(&mut kernel, "}}").unwrap();
-
-    generic_kernel.push_body(&kernel);
+    output.strided_index(kernel, output_indices);
+    writeln!(kernel, ";").unwrap();
+    writeln!(kernel, "{output}[output_index] = acc;").unwrap();
+    writeln!(kernel, "}}").unwrap();
 }

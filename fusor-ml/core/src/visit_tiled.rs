@@ -131,8 +131,7 @@ pub(crate) fn build_visit_tiled_kernel(
     modify_data: impl FnMut(&mut GenericKernel, &[String], &[MaybeQTensorInput], &[String]) -> String,
     kernel: &mut GenericKernel,
 ) {
-    let kernel_text = build_tiled_map_kernel(shape, tile_size, &datatypes, kernel, modify_data);
-    kernel.push_body(&kernel_text);
+    build_tiled_map_kernel(shape, tile_size, &datatypes, kernel, modify_data);
 }
 
 fn build_tiled_map_kernel(
@@ -146,8 +145,7 @@ fn build_tiled_map_kernel(
         &[MaybeQTensorInput],
         &[String],
     ) -> String,
-) -> String {
-    let mut kernel_body = String::new();
+) {
     let global_id = kernel.global_id();
     let rank = shape.len() as u32;
     let tensors = datatypes
@@ -217,11 +215,11 @@ fn build_tiled_map_kernel(
             }
         }
     } else {
-        writeln!(&mut kernel_body, "var remaining_z = {global_id}.z;").unwrap();
+        writeln!(kernel, "var remaining_z = {global_id}.z;").unwrap();
         for index in (0..rank).skip(2) {
             let size = first.shape_binding(index);
-            writeln!(&mut kernel_body, "let z_{index} = remaining_z % {size};").unwrap();
-            writeln!(&mut kernel_body, "remaining_z = remaining_z / {size};").unwrap();
+            writeln!(kernel, "let z_{index} = remaining_z % {size};").unwrap();
+            writeln!(kernel, "remaining_z = remaining_z / {size};").unwrap();
             global_indexes.push(format!("z_{index}"));
         }
     }
@@ -233,64 +231,56 @@ fn build_tiled_map_kernel(
             } else {
                 scaled_tile_size
             };
-            writeln!(
-                &mut kernel_body,
-                "let tile_index_{i} = {index} * {chunk_size};"
-            )
-            .unwrap();
+            writeln!(kernel, "let tile_index_{i} = {index} * {chunk_size};").unwrap();
         }
-        writeln!(&mut kernel_body, "\n").unwrap();
+        writeln!(kernel, "\n").unwrap();
 
         for i in 0..rank - 1 {
-            writeln!(&mut kernel_body, "for (var local_index_{i} = 0u; local_index_{i} < {scaled_tile_size}; local_index_{i}++) {{").unwrap();
+            writeln!(kernel, "for (var local_index_{i} = 0u; local_index_{i} < {scaled_tile_size}; local_index_{i}++) {{").unwrap();
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "let merged_index_{i} = tile_index_{i} + local_index_{i};"
             )
             .unwrap();
         }
 
-        write!(&mut kernel_body, "let chunk_index = ").unwrap();
+        write!(kernel, "let chunk_index = ").unwrap();
         quantized_input.strided_index(
-            &mut kernel_body,
+            kernel,
             (0..rank - 1)
                 .map(|i| format!("merged_index_{i}"))
                 .chain(std::iter::once(format!("tile_index_{}", rank - 1))),
         );
-        writeln!(&mut kernel_body, ";").unwrap();
-        writeln!(
-            &mut kernel_body,
-            "let chunk = {quantized_input}[chunk_index];"
-        )
-        .unwrap();
+        writeln!(kernel, ";").unwrap();
+        writeln!(kernel, "let chunk = {quantized_input}[chunk_index];").unwrap();
 
         dequantize_block(
-            &mut kernel_body,
+            kernel,
             *quantized_type,
             "chunk".to_string(),
             DataTypeEnum::F32,
-            |i, data, kernel_body| {
+            |i, data, kernel| {
                 writeln!(
-                    kernel_body,
+                    kernel,
                     "let merged_index_{} = tile_index_{} + {i};",
                     rank - 1,
                     rank - 1,
                 )
                 .unwrap();
                 first_tensor_input(&tensors).check_bounds(
-                    kernel_body,
+                    kernel,
                     (0..rank).rev().map(|i| format!("merged_index_{i}")),
-                    |kernel_body| {
+                    |kernel| {
                         let mut values = Vec::new();
                         for (index, tensor) in tensors.iter().enumerate() {
                             match tensor {
                                 MaybeQTensorInput::Tensor(tensor) => {
-                                    writeln!(kernel_body, "let index_{index} = ",).unwrap();
+                                    writeln!(kernel, "let index_{index} = ",).unwrap();
                                     tensor.strided_index(
-                                        kernel_body,
+                                        kernel,
                                         (0..).map(|i| format!("merged_index_{i}")),
                                     );
-                                    writeln!(kernel_body, ";").unwrap();
+                                    writeln!(kernel, ";").unwrap();
                                     values.push(format!("{tensor}[index_{index}]"));
                                 }
                                 MaybeQTensorInput::QTensor(_) => {
@@ -303,14 +293,14 @@ fn build_tiled_map_kernel(
                             .collect::<Vec<_>>();
 
                         let modify_data = modify_data(kernel, &indexes, &tensors, &values);
-                        writeln!(kernel_body, "{modify_data}").unwrap();
+                        writeln!(kernel, "{modify_data}").unwrap();
                     },
                 );
             },
         );
 
         for _ in 0..rank - 1 {
-            writeln!(&mut kernel_body, "}}").unwrap();
+            writeln!(kernel, "}}").unwrap();
         }
     } else {
         let subgroup_size = kernel.subgroup_size();
@@ -318,55 +308,52 @@ fn build_tiled_map_kernel(
         for (i, index) in global_indexes.iter().enumerate() {
             if i == 0 {
                 writeln!(
-                    &mut kernel_body,
+                    kernel,
                     "let tile_index_{i} = {subgroup_local_id} + (({index} / {subgroup_size}) * {subgroup_size}) * {scaled_tile_size};"
                 )
                 .unwrap();
             } else {
-                writeln!(
-                    &mut kernel_body,
-                    "let tile_index_{i} = {index} * {scaled_tile_size};"
-                )
-                .unwrap();
+                writeln!(kernel, "let tile_index_{i} = {index} * {scaled_tile_size};").unwrap();
             }
         }
-        writeln!(&mut kernel_body, "\n").unwrap();
+        writeln!(kernel, "\n").unwrap();
 
         for (i, shape) in shape.iter().enumerate() {
             if *shape > 1 {
                 let local_tile_size = scaled_tile_size.min(*shape as _);
-                writeln!(&mut kernel_body, "for (var local_index_{i} = 0u; local_index_{i} < {local_tile_size}; local_index_{i}++) {{").unwrap();
+                writeln!(kernel, "for (var local_index_{i} = 0u; local_index_{i} < {local_tile_size}; local_index_{i}++) {{").unwrap();
                 if i == 0 {
                     writeln!(
-                        &mut kernel_body,
+                        kernel,
                         "let merged_index_{i} = tile_index_{i} + local_index_{i} * {subgroup_size};"
                     )
                     .unwrap();
                 } else {
                     writeln!(
-                        &mut kernel_body,
+                        kernel,
                         "let merged_index_{i} = tile_index_{i} + local_index_{i};"
                     )
                     .unwrap();
                 }
             } else {
-                writeln!(&mut kernel_body, "let merged_index_{i} = tile_index_{i};").unwrap();
+                writeln!(kernel, "let merged_index_{i} = tile_index_{i};").unwrap();
             }
         }
 
         first_tensor_input(&tensors).check_bounds(
-            &mut kernel_body,
+            kernel,
             (0..).map(|i| format!("merged_index_{i}")),
-            |kernel_body| {
+            |kernel| {
                 for (index, tensor) in tensors.iter().enumerate() {
-                    writeln!(kernel_body, "let index_{index} = ",).unwrap();
+                    writeln!(kernel, "let index_{index} = ",).unwrap();
                     match tensor {
-                        MaybeQTensorInput::Tensor(tensor) => tensor
-                            .strided_index(kernel_body, (0..).map(|i| format!("merged_index_{i}"))),
+                        MaybeQTensorInput::Tensor(tensor) => {
+                            tensor.strided_index(kernel, (0..).map(|i| format!("merged_index_{i}")))
+                        }
                         MaybeQTensorInput::QTensor(_) => unreachable!(),
                     }
 
-                    writeln!(kernel_body, ";").unwrap();
+                    writeln!(kernel, ";").unwrap();
                 }
                 let indexes = (0..datatypes.len())
                     .map(|i| format!("index_{i}"))
@@ -378,18 +365,16 @@ fn build_tiled_map_kernel(
                     .collect::<Vec<_>>();
 
                 let modify_data = modify_data(kernel, &indexes, &tensors, &values);
-                writeln!(kernel_body, "{modify_data}").unwrap();
+                writeln!(kernel, "{modify_data}").unwrap();
             },
         );
 
         for shape in shape {
             if *shape > 1 {
-                writeln!(&mut kernel_body, "}}").unwrap();
+                writeln!(kernel, "}}").unwrap();
             }
         }
     }
-
-    kernel_body
 }
 
 fn scaled_tile_size(shape: &[usize], tile_size: u32) -> u32 {

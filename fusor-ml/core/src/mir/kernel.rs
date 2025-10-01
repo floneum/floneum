@@ -80,10 +80,6 @@ impl GenericKernel {
         &mut self.name
     }
 
-    pub(crate) fn push_body(&mut self, body: &str) {
-        self.body.push_str(body);
-    }
-
     pub(crate) fn set_workgroup_size(&mut self, workgroup_size: impl Into<WorkgroupShape>) {
         let workgroup_size = workgroup_size.into().shape();
         assert!(
@@ -672,5 +668,21 @@ impl GenericKernel {
         writeln!(f, "}}")?;
 
         Ok(())
+    }
+}
+
+impl Write for GenericKernel {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        self.body.push_str(s);
+        Ok(())
+    }
+
+    fn write_char(&mut self, c: char) -> std::fmt::Result {
+        self.body.push(c);
+        Ok(())
+    }
+
+    fn write_fmt(&mut self, args: std::fmt::Arguments) -> std::fmt::Result {
+        self.body.write_fmt(args)
     }
 }

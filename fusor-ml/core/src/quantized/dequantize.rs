@@ -82,24 +82,22 @@ impl Operation for DequantizeOperation {
         _: &crate::compute_graph::ComputeGraphInner,
         _: &crate::mir::workgroup_shape::WorkgroupShape,
         _: &[MirValue],
-        generic_kernel: &mut GenericKernel,
+        kernel: &mut GenericKernel,
     ) {
-        let mut kernel = String::new();
-
         let datatype = self.datatype;
         let rank = self.matrix.shape.len() as u32;
 
-        let input = generic_kernel.add_q_matrix_input(rank, self.matrix.datatype);
-        let output = generic_kernel.add_tensor_input(rank, true, datatype);
+        let input = kernel.add_q_matrix_input(rank, self.matrix.datatype);
+        let output = kernel.add_tensor_input(rank, true, datatype);
 
-        let post_element_wise = self.post_dequantize.add_functions(generic_kernel);
+        let post_element_wise = self.post_dequantize.add_functions(kernel);
         let process_output = |input: &str| {
             post_element_wise
                 .iter()
                 .fold(input.to_string(), |acc, f| f.call(vec![acc]))
         };
 
-        let global_id = generic_kernel.global_id();
+        let global_id = kernel.global_id();
         let elements_per_block = self.elements_per_block();
 
         for (dim, axis) in ["x", "y", "z"]
@@ -107,16 +105,16 @@ impl Operation for DequantizeOperation {
             .enumerate()
             .take(self.matrix.shape.len())
         {
-            writeln!(&mut kernel, "let index_{dim} = {global_id}.{axis};").unwrap();
+            writeln!(kernel, "let index_{dim} = {global_id}.{axis};").unwrap();
         }
 
-        write!(&mut kernel, "let chunk_index = ").unwrap();
-        input.strided_index(&mut kernel, (0..).map(|i| format!("index_{i}")));
-        writeln!(&mut kernel, ";").unwrap();
-        writeln!(&mut kernel, "let chunk = {input}[chunk_index];").unwrap();
+        write!(kernel, "let chunk_index = ").unwrap();
+        input.strided_index(kernel, (0..).map(|i| format!("index_{i}")));
+        writeln!(kernel, ";").unwrap();
+        writeln!(kernel, "let chunk = {input}[chunk_index];").unwrap();
 
         dequantize_block(
-            &mut kernel,
+            kernel,
             self.matrix.datatype,
             "chunk".to_string(),
             datatype,
@@ -145,8 +143,6 @@ impl Operation for DequantizeOperation {
                 });
             },
         );
-
-        generic_kernel.push_body(&kernel);
     }
 
     fn name(&self) -> String {

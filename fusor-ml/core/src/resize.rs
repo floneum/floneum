@@ -44,44 +44,38 @@ impl ResizeOperation {
         tile_size: u32,
         kernel: &mut GenericKernel,
     ) {
-        let mut kernel_body = String::new();
         let global_id = kernel.global_id();
         let input = kernel.add_tensor_input(input_rank, true, datatype);
         let output = kernel.add_tensor_input(self.new_shape.len() as u32, true, datatype);
 
         for local_index in 0..tile_size {
-            writeln!(&mut kernel_body, "{{").unwrap();
+            writeln!(kernel, "{{").unwrap();
             for (prefix, tensor) in [("input", &input), ("output", &output)] {
                 writeln!(
-                    &mut kernel_body,
+                    kernel,
                     "var {prefix}_remaining_index = {global_id}.x * {tile_size} + {local_index};"
                 )
                 .unwrap();
                 for i in (0..tensor.rank()).rev() {
                     let shape_i = tensor.shape_binding(i);
                     writeln!(
-                        &mut kernel_body,
+                        kernel,
                         "let {prefix}_index_{i} = {prefix}_remaining_index % {shape_i};",
                     )
                     .unwrap();
-                    writeln!(&mut kernel_body, "{prefix}_remaining_index /= {shape_i};",).unwrap();
+                    writeln!(kernel, "{prefix}_remaining_index /= {shape_i};",).unwrap();
                 }
             }
-            write!(kernel_body, "let input_index = ").unwrap();
-            input.strided_index(&mut kernel_body, (0..).map(|i| format!("input_index_{i}")));
-            writeln!(kernel_body, ";").unwrap();
-            write!(kernel_body, "let output_index = ").unwrap();
-            output.strided_index(&mut kernel_body, (0..).map(|i| format!("output_index_{i}")));
-            writeln!(kernel_body, ";").unwrap();
-            writeln!(
-                kernel_body,
-                "{output}[output_index] = {input}[input_index];"
-            )
-            .unwrap();
+            write!(kernel, "let input_index = ").unwrap();
+            input.strided_index(kernel, (0..).map(|i| format!("input_index_{i}")));
+            writeln!(kernel, ";").unwrap();
+            write!(kernel, "let output_index = ").unwrap();
+            output.strided_index(kernel, (0..).map(|i| format!("output_index_{i}")));
+            writeln!(kernel, ";").unwrap();
+            writeln!(kernel, "{output}[output_index] = {input}[input_index];").unwrap();
 
-            writeln!(&mut kernel_body, "}}").unwrap();
+            writeln!(kernel, "}}").unwrap();
         }
-        kernel.push_body(&kernel_body);
     }
 }
 

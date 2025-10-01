@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::sync::Arc;
 
 use rustc_hash::FxHashSet;
@@ -212,14 +213,14 @@ impl<'a> Resolver<'a> {
             for (new, max) in dispatch_size.iter().zip(max_dispatch_size.iter_mut()) {
                 *max = (*max).max(*new);
             }
-            kernel.push_body("{");
+            writeln!(&mut kernel, "{{ // start {}", operation.name()).unwrap();
             operation.build_kernel(self.graph, &workgroup_shape, &inputs, &mut kernel);
             let name = kernel.name_mut();
             if !name.is_empty() {
                 *name += "->";
             }
             *name += &operation.name();
-            kernel.push_body("}");
+            writeln!(&mut kernel, "}} // end {}", operation.name()).unwrap();
             // Check if that makes any of this nodes dependents dead
             let mut dependencies = Vec::new();
             visit_dependencies(&self.graph.nodes, *key, |dependent_key| {
