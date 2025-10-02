@@ -203,6 +203,30 @@ pub(crate) fn dequantize_vec4_block<W: Write>(
     }
 }
 
+pub(crate) fn dequantize_mat4x4_block<W: Write>(
+    kernel: &mut W,
+    ty: GgmlType,
+    index: &str,
+    chunk: String,
+    datatype: DataTypeEnum,
+    process_element: impl FnOnce(String, &mut W),
+) -> bool {
+    match ty {
+        GgmlType::Q6K => {
+            BlockQ6K::dequantize_4x4_block(index, chunk, datatype, process_element, kernel);
+            true
+        }
+        _ => false,
+    }
+}
+
+pub(crate) fn dequantize_mat4x4_block_count(ty: GgmlType) -> usize {
+    match ty {
+        GgmlType::Q6K => BlockQ6K::MATRIX_BLOCKS,
+        _ => 0,
+    }
+}
+
 trait WgslQuantizedType: GgufBlock {
     const GGML_TYPE: GgmlType;
 
@@ -251,6 +275,18 @@ trait WgslQuantizedType: GgufBlock {
 
             process_element(i.to_string(), format!("dequantized_vec_{i}"), code);
         }
+    }
+
+    const MATRIX_BLOCKS: usize = 0;
+
+    fn dequantize_4x4_block<W: Write>(
+        index: &str,
+        chunk: String,
+        datatype: DataTypeEnum,
+        process_element: impl FnOnce(String, &mut W),
+        code: &mut W,
+    ) {
+        todo!()
     }
 
     // This is used in the fuzzing test
@@ -1211,121 +1247,141 @@ impl WgslQuantizedType for BlockQ6K {
         mut process_element: impl FnMut(String, String, &mut W),
         code: &mut W,
     ) {
-        writeln!(code, "let scale = {datatype}({chunk}.scale);").unwrap();
-
-        writeln!(
+        _ = writeln!(
             code,
             "for (var raw_chunk_index = 0u; raw_chunk_index < 16u; raw_chunk_index += 1u) {{",
-        )
-        .unwrap();
-        {
-            writeln!(code, "let low_index = (raw_chunk_index / 8u) * 16u + ((raw_chunk_index / 2u) & 1u) * 8u + (raw_chunk_index & 1u) * 4u;").unwrap();
-            writeln!(
-                code,
-                "let high_index = (raw_chunk_index / 8u) * 8u + (raw_chunk_index & 1u) * 4u;"
-            )
-            .unwrap();
-            writeln!(
-                code,
-                "let scale_index = (raw_chunk_index % 2u) + (raw_chunk_index / 2u) * 2u;"
-            )
-            .unwrap();
-            writeln!(
-                code,
-                "let chunk_index = (raw_chunk_index / 2u) & {FOURTH_TWO_BITS}u;"
-            )
-            .unwrap();
-
-            writeln!(
-                code,
-                "let chunk_raw_scale = {datatype}({});",
-                index_signed_bytes(format!("{chunk}.scales"), "scale_index")
-            )
-            .unwrap();
-            writeln!(code, "let high_mask = select(select({FOURTH_TWO_BITS}u, {THIRD_TWO_BITS}u, chunk_index > 0u), select({SECOND_TWO_BITS}u, {FIRST_TWO_BITS}u, chunk_index > 2u), chunk_index > 1u);").unwrap();
-            writeln!(
-                code,
-                "let low_mask = select({SECOND_HALF_BITS}u, {FIRST_HALF_BITS}u, chunk_index > 1u);"
-            )
-            .unwrap();
-            let shift_4 = shift_right_scale(4);
-            writeln!(code, "let coefficient = select({datatype}(1.0), {datatype}({shift_4}), chunk_index > 1u);").unwrap();
-
-            writeln!(
-                code,
-                "let chunk_midpoint = scale * chunk_raw_scale * {datatype}({CENTER_SIX_BIT});"
-            )
-            .unwrap();
-            writeln!(
-                code,
-                "let chunk_scale = scale * chunk_raw_scale * coefficient;"
-            )
-            .unwrap();
-
-            writeln!(
-                code,
-                "for (var vec4_index = 0u; vec4_index < 4u; vec4_index += 1u) {{"
-            )
-            .unwrap();
-            {
-                writeln!(
-                    code,
-                    "let low_chunk = unpack4xU8({chunk}.data_low_bits[low_index + vec4_index]);",
-                )
-                .unwrap();
-                writeln!(
-                    code,
-                    "let high_chunk = unpack4xU8({chunk}.data_high_bits[high_index + vec4_index]);",
-                )
-                .unwrap();
-
-                for offset in 0..4 {
-                    writeln!(
-                        code,
-                        "let low_byte_{offset} = low_chunk[{offset}] & low_mask;",
-                    )
-                    .unwrap();
-                    writeln!(
-                        code,
-                        "let high_byte_{offset} = high_chunk[{offset}] & high_mask;",
-                    )
-                    .unwrap();
-
-                    writeln!(
-                        code,
-                        "let merged_{offset} = {datatype}(low_byte_{offset} | select(high_byte_{offset} << 4, high_byte_{offset} << 2, (chunk_index & 1u) == 1u));",
-                    )
-                    .unwrap();
-
-                    writeln!(
-                        code,
-                        "let scaled_{offset} = {datatype}(chunk_scale * merged_{offset} - chunk_midpoint);"
-                    )
-                    .unwrap();
-                }
-                // Group the results into a vec4
-                write!(code, "let scaled = vec4<{datatype}>(").unwrap();
-                for offset in 0..4 {
-                    if offset > 0 {
-                        write!(code, ", ").unwrap();
-                    }
-                    write!(code, "scaled_{offset}").unwrap();
-                }
-                writeln!(code, ");").unwrap();
+        );
+        _ = write_q6_k_dequant(code, datatype, &chunk, "raw_chunk_index", |chunk, code| {
+            for offset in 0..4 {
                 process_element(
-                    "raw_chunk_index * 4u + vec4_index".to_string(),
-                    "scaled".to_string(),
+                    format!("raw_chunk_index * 4u + {offset}"),
+                    format!("{chunk}[{offset}]"),
                     code,
                 );
             }
-            writeln!(code, "}}").unwrap();
-        }
-        writeln!(code, "}}").unwrap();
+        });
+        _ = writeln!(code, "}}");
+    }
+
+    const MATRIX_BLOCKS: usize = 16;
+
+    fn dequantize_4x4_block<W: Write>(
+        index: &str,
+        chunk: String,
+        datatype: DataTypeEnum,
+        process_element: impl FnOnce(String, &mut W),
+        code: &mut W,
+    ) {
+        _ = write_q6_k_dequant(code, datatype, &chunk, index, process_element);
     }
 
     fn write_type<W: Write>(f: &mut W) -> std::fmt::Result {
         write_q6_k_type(f)
     }
+}
+
+fn write_q6_k_dequant<W: Write>(
+    code: &mut W,
+    datatype: DataTypeEnum,
+    chunk: &str,
+    index: &str,
+    process_element: impl FnOnce(String, &mut W),
+) -> std::fmt::Result {
+    _ = writeln!(code, "let scale = {datatype}({chunk}.scale);");
+    writeln!(
+        code,
+        "let low_index = ({index} / 8u) * 16u + (({index} / 2u) & 1u) * 8u + ({index} & 1u) * 4u;"
+    )?;
+    writeln!(
+        code,
+        "let high_index = ({index} / 8u) * 8u + ({index} & 1u) * 4u;"
+    )?;
+    writeln!(
+        code,
+        "let scale_index = ({index} % 2u) + ({index} / 2u) * 2u;"
+    )?;
+    writeln!(
+        code,
+        "let chunk_index = ({index} / 2u) & {FOURTH_TWO_BITS}u;"
+    )?;
+
+    writeln!(
+        code,
+        "let chunk_raw_scale = {datatype}({});",
+        index_signed_bytes(format!("{chunk}.scales"), "scale_index")
+    )?;
+    writeln!(
+        code,
+        "let high_mask = select(select({FOURTH_TWO_BITS}u, {THIRD_TWO_BITS}u, chunk_index > 0u), select({SECOND_TWO_BITS}u, {FIRST_TWO_BITS}u, chunk_index > 2u), chunk_index > 1u);"
+    )?;
+    writeln!(
+        code,
+        "let low_mask = select({SECOND_HALF_BITS}u, {FIRST_HALF_BITS}u, chunk_index > 1u);"
+    )?;
+    let shift_4 = shift_right_scale(4);
+    writeln!(
+        code,
+        "let coefficient = select({datatype}(1.0), {datatype}({shift_4}), chunk_index > 1u);"
+    )?;
+
+    writeln!(
+        code,
+        "let chunk_midpoint = scale * chunk_raw_scale * {datatype}({CENTER_SIX_BIT});"
+    )?;
+    writeln!(
+        code,
+        "let chunk_scale = scale * chunk_raw_scale * coefficient;"
+    )?;
+
+    for vec4_index in 0..4 {
+        writeln!(
+            code,
+            "let low_chunk_{vec4_index} = unpack4xU8({chunk}.data_low_bits[low_index + {vec4_index}]);",
+        )?;
+        writeln!(
+            code,
+            "let high_chunk_{vec4_index} = unpack4xU8({chunk}.data_high_bits[high_index + {vec4_index}]);",
+        )?;
+
+        for offset in 0..4 {
+            writeln!(
+                code,
+                "let low_byte_{vec4_index}_{offset} = low_chunk_{vec4_index}[{offset}] & low_mask;",
+            )?;
+            writeln!(
+                code,
+                "let high_byte_{vec4_index}_{offset} = high_chunk_{vec4_index}[{offset}] & high_mask;",
+            )?;
+
+            writeln!(
+                code,
+                "let merged_{vec4_index}_{offset} = {datatype}(low_byte_{vec4_index}_{offset} | select(high_byte_{vec4_index}_{offset} << 4, high_byte_{vec4_index}_{offset} << 2, (chunk_index & 1u) == 1u));",
+            )?;
+
+            writeln!(
+                code,
+                "let scaled_{vec4_index}_{offset} = {datatype}(merged_{vec4_index}_{offset});"
+            )?;
+        }
+    }
+    // Group the results into a mat4x4
+    write!(code, "let scaled = mat4x4<{datatype}>(")?;
+    for row in 0..4 {
+        if row > 0 {
+            writeln!(code, ", ")?;
+        }
+        write!(code, "vec4(")?;
+        for col in 0..4 {
+            if col > 0 {
+                write!(code, ", ")?;
+            }
+            write!(code, "scaled_{row}_{col}")?;
+        }
+        write!(code, ") * chunk_scale - chunk_midpoint")?;
+    }
+    writeln!(code, ");")?;
+    process_element("scaled".to_string(), code);
+    Ok(())
 }
 
 #[cfg(test)]

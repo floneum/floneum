@@ -1,3 +1,5 @@
+use fusor_gguf::GgmlType;
+
 use crate::{
     Device, QMatrix,
     mir::{
@@ -5,9 +7,16 @@ use crate::{
         kernel::GenericKernel,
         workgroup_shape::{Constraint, WorkgroupShape},
     },
-    quantized::matmul::{QMatMulOperation, sgemm::general::general_sgemm},
+    quantized::matmul::{
+        QMatMulOperation,
+        sgemm::{
+            chunked::{SGEMM_SUBGROUP_THERADS_PER_BLOCK, chunked_sgemm},
+            general::general_sgemm,
+        },
+    },
 };
 
+mod chunked;
 mod general;
 
 #[allow(clippy::too_many_arguments)]
@@ -24,28 +33,48 @@ pub(crate) fn sgemm(
     k_size: &str,
     _: &crate::compute_graph::ComputeGraphInner,
 ) {
-    general_sgemm(
-        op,
-        generic_kernel,
-        workgroup_size,
-        input_a,
-        input_b,
-        output,
-        _n_size,
-        _m_size,
-        k_size,
-    )
+    match input_b.datatype {
+        GgmlType::Q6K => {
+            chunked_sgemm(
+                op,
+                generic_kernel,
+                workgroup_size,
+                input_a,
+                input_b,
+                output,
+                _n_size,
+                _m_size,
+                k_size,
+            );
+        }
+        _ => general_sgemm(
+            op,
+            generic_kernel,
+            workgroup_size,
+            input_a,
+            input_b,
+            output,
+            _n_size,
+            _m_size,
+            k_size,
+        ),
+    }
 }
 
 pub(crate) fn dispatch_size(
     workgroup_shape: &WorkgroupShape,
-    _matrix: &QMatrix,
+    matrix: &QMatrix,
     n: u32,
     m: u32,
     batch_size: u32,
 ) -> [u32; 3] {
     [
-        n.div_ceil(workgroup_shape.x()),
+        n.div_ceil(workgroup_shape.x())
+            * if matches!(matrix.datatype, GgmlType::Q6K) {
+                SGEMM_SUBGROUP_THERADS_PER_BLOCK
+            } else {
+                1
+            },
         m.div_ceil(workgroup_shape.y()),
         batch_size.div_ceil(workgroup_shape.z()),
     ]

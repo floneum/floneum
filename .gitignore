@@ -13,4 +13,5 @@ debug.log
 workflow.json
 tokenizer.json
 *.cpp
+*.wgsl
 out.txt
