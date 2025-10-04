@@ -48,7 +48,8 @@ impl QMatMulOperation {
         // For 2D: [M, K], check in_shape[0]
         // For 3D: [batch, M, K], check in_shape[1]
         let m_dim_idx = self.in_shape.len() - 2;
-        self.in_shape[m_dim_idx] == 1 && self.in_shape.iter().rev().skip(2).product::<usize>() == 1
+        self.in_shape[m_dim_idx] == 1
+            && self.in_shape.iter().take(m_dim_idx).product::<usize>() == 1
     }
 
     fn m_size(&self) -> u32 {

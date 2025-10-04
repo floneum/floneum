@@ -68,22 +68,31 @@ pub(crate) fn dispatch_size(
     m: u32,
     batch_size: u32,
 ) -> [u32; 3] {
-    [
-        n.div_ceil(workgroup_shape.x())
-            * if matches!(matrix.datatype, GgmlType::Q6K) {
-                SGEMM_SUBGROUP_THERADS_PER_BLOCK
-            } else {
-                1
-            },
-        m.div_ceil(workgroup_shape.y()),
-        batch_size.div_ceil(workgroup_shape.z()),
-    ]
+    match matrix.datatype() {
+        GgmlType::Q6K => [
+            m.div_ceil(workgroup_shape.y() * 4),
+            n.div_ceil(workgroup_shape.x() * 4),
+            batch_size.div_ceil(workgroup_shape.z()),
+        ],
+        _ => [
+            n.div_ceil(workgroup_shape.x()),
+            m.div_ceil(workgroup_shape.y()),
+            batch_size.div_ceil(workgroup_shape.z()),
+        ],
+    }
 }
 
 pub(crate) fn workgroup_shape_constraints(
     matrix: &QMatrix,
     _device: &Device,
 ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
+    if matrix.datatype() == GgmlType::Q6K {
+        let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
+        constraints.add_constraint(0, Constraint::equals(4));
+        constraints.add_constraint(1, Constraint::equals(4));
+        constraints.add_constraint(2, Constraint::equals(1));
+        return constraints;
+    }
     let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
     let second_dim = matrix.shape()[1];
     let second_dim_block_width = second_dim.div_ceil(matrix.datatype().block_size());
