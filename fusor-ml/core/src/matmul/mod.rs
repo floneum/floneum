@@ -219,9 +219,9 @@ impl Operation for MatMulOperation {
                 );
 
                 // Get dimension bindings
-                let k_size = input_a.shape_binding(self.rank() - 1);
-                let m_size = input_a.shape_binding(self.rank() - 2);
-                let n_size = input_b.shape_binding(self.rank() - 1);
+                let k_size = input_a.shape_binding(self.rank() - 1).to_string();
+                let m_size = input_a.shape_binding(self.rank() - 2).to_string();
+                let n_size = input_b.shape_binding(self.rank() - 1).to_string();
 
                 sgemv::sgemv(
                     self,
