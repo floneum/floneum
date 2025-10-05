@@ -243,6 +243,7 @@ impl Embedder for DynEmbedder {
 
 struct AnyEmbedder<E: Embedder + WasmNotSendSync + 'static>(E);
 
+/// An error type that is only `Send` or `Sync` outside of wasm.
 pub trait WasmNotSendSyncError: std::error::Error + WasmNotSendSync {}
 impl<T: std::error::Error + WasmNotSendSync> WasmNotSendSyncError for T {}
 impl<T: std::error::Error + WasmNotSendSync + 'static> From<T> for Box<dyn WasmNotSendSyncError> {

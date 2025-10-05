@@ -1,12 +1,6 @@
 use httpdate::parse_http_date;
 use kalosm_model_types::{FileLoadingProgress, FileSource};
-use reqwest::{
-    header::{HeaderValue, CONTENT_LENGTH, LAST_MODIFIED, RANGE},
-    IntoUrl,
-};
-use reqwest::{Response, StatusCode};
 use std::path::PathBuf;
-use std::str::FromStr;
 
 #[cfg(feature = "tokio")]
 use tokio::fs::{File, OpenOptions};
@@ -27,7 +21,7 @@ pub enum CacheError {
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
     #[error("Unexpected status code: {0}")]
-    UnexpectedStatusCode(StatusCode),
+    UnexpectedStatusCode(reqwest::StatusCode),
 }
 
 #[derive(Debug, Clone)]
@@ -155,7 +149,7 @@ impl Cache {
                     if let Some(last_updated) = response
                         .as_ref()
                         .ok()
-                        .and_then(|response| response.headers().get(LAST_MODIFIED))
+                        .and_then(|response| response.headers().get(reqwest::header::LAST_MODIFIED))
                         .and_then(|last_updated| last_updated.to_str().ok())
                         .and_then(|s| parse_http_date(s).ok())
                     {
@@ -210,14 +204,18 @@ impl Default for Cache {
 }
 
 #[cfg(feature = "tokio")]
-async fn download_into<U: IntoUrl>(
+async fn download_into<U: reqwest::IntoUrl>(
     url: U,
     file: &PathBuf,
-    head: Response,
+    head: reqwest::Response,
     client: reqwest::Client,
     token: Option<String>,
     mut progress: impl FnMut(FileLoadingProgress),
 ) -> Result<(), CacheError> {
+    use reqwest::header::{HeaderValue, CONTENT_LENGTH, RANGE};
+    use reqwest::StatusCode;
+    use std::str::FromStr;
+
     let length = head
         .headers()
         .get(CONTENT_LENGTH)
