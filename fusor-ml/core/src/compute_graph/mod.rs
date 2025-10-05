@@ -486,6 +486,7 @@ impl ComputeGraphNodes {
         self.tensor.extend(other.tensor.drain());
         self.q_mat_mul.extend(other.q_mat_mul.drain());
         self.dequantize.extend(other.dequantize.drain());
+        self.custom.extend(other.custom.drain());
     }
 }
 
@@ -526,7 +527,7 @@ impl ComputeGraphInner {
     fn remove_reference(&mut self, key: AnyComputeKey) {
         if let Some(count) = self.dependency_map.reference_count.get_mut(&key) {
             *count -= 1;
-            // Remove the node if it is is dead
+            // Remove the node if it is dead
             self.check_life(key);
         }
     }

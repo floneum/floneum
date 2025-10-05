@@ -229,7 +229,7 @@ impl<'a> Resolver<'a> {
             } else {
                 writeln!(&mut kernel, "}}").unwrap();
             }
-            // Check if that makes any of this nodes dependents dead
+            // Check if that makes any of this node's dependencies dead
             let mut dependencies = Vec::new();
             visit_dependencies(&self.graph.nodes, *key, |dependent_key| {
                 dependencies.push(dependent_key);
