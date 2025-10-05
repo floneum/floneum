@@ -72,6 +72,22 @@ impl GenericKernel {
         }
     }
 
+    pub(crate) fn clear(&mut self) {
+        self.workgroup_size = [1, 1, 1];
+        self.inputs.clear();
+        self.max_binding = 0;
+        self.registered_bindings.clear();
+        self.functions.clear();
+        self.max_function_id = 0;
+        self.globals.clear();
+        self.max_global_id = 0;
+        self.enabled_builtins.clear();
+        self.quantized_type_definitions.clear();
+        self.kernel = OnceLock::new();
+        self.body.clear();
+        self.name.clear();
+    }
+
     pub(crate) fn pre_register_binding(&mut self, binding: u32) {
         self.registered_bindings.push(binding);
     }

@@ -81,17 +81,17 @@ impl<'a> Resolver<'a> {
             if extend {
                 current_constraints = new_merged;
             } else {
-                let kernel = std::mem::take(&mut kernel);
-                let inputs = std::mem::take(&mut inputs);
                 self.flush_operations(
-                    kernel,
+                    &mut kernel,
                     &pending_operations,
-                    inputs,
+                    &inputs,
                     &all_input_values,
                     old_best,
                 );
                 pending_operations.clear();
                 all_input_values.clear();
+                inputs.clear();
+                kernel.clear();
                 current_constraints = constraint;
             }
             // Map layout isn't really a kernel. Resolve it immediately
@@ -120,9 +120,9 @@ impl<'a> Resolver<'a> {
                 )
             });
             self.flush_operations(
-                kernel,
+                &mut kernel,
                 &pending_operations,
-                inputs,
+                &inputs,
                 &all_input_values,
                 old_best,
             );
@@ -196,9 +196,9 @@ impl<'a> Resolver<'a> {
 
     fn flush_operations(
         &mut self,
-        mut kernel: GenericKernel,
+        mut kernel: &mut GenericKernel,
         queued_operations: &[(AnyComputeKey, Arc<dyn Operation>)],
-        inputs: Vec<Vec<MirValue>>,
+        inputs: &[Vec<MirValue>],
         all_input_values: &[KernelInputValue],
         workgroup_shape: workgroup_shape::WorkgroupShape,
     ) {
@@ -209,18 +209,26 @@ impl<'a> Resolver<'a> {
                 continue;
             }
 
-            let dispatch_size = operation.dispatch_size(&workgroup_shape, &inputs);
+            let dispatch_size = operation.dispatch_size(&workgroup_shape, inputs);
             for (new, max) in dispatch_size.iter().zip(max_dispatch_size.iter_mut()) {
                 *max = (*max).max(*new);
             }
-            writeln!(&mut kernel, "{{ // start {}", operation.name()).unwrap();
-            operation.build_kernel(self.graph, &workgroup_shape, &inputs, &mut kernel);
+            if cfg!(debug_assertions) {
+                writeln!(&mut kernel, "{{ // start {}", operation.name()).unwrap();
+            } else {
+                writeln!(&mut kernel, "{{").unwrap();
+            }
+            operation.build_kernel(self.graph, &workgroup_shape, inputs, &mut kernel);
             let name = kernel.name_mut();
             if !name.is_empty() {
                 *name += "->";
             }
             *name += &operation.name();
-            writeln!(&mut kernel, "}} // end {}", operation.name()).unwrap();
+            if cfg!(debug_assertions) {
+                writeln!(&mut kernel, "}} // end {}", operation.name()).unwrap();
+            } else {
+                writeln!(&mut kernel, "}}").unwrap();
+            }
             // Check if that makes any of this nodes dependents dead
             let mut dependencies = Vec::new();
             visit_dependencies(&self.graph.nodes, *key, |dependent_key| {
