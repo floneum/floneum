@@ -25,7 +25,7 @@ pub(crate) const SGEMM_INPUT_N_ELEMENTS: u32 = 16;
 pub(crate) fn chunked_sgemm(
     op: &QMatMulOperation,
     kernel: &mut GenericKernel,
-    workgroup_shape: &WorkgroupShape,
+    _: &WorkgroupShape,
     input_a: &TensorInput,
     input_b: &QMatrixInput,
     output: &TensorInput,
@@ -111,10 +111,12 @@ pub(crate) fn chunked_sgemm(
     // Calculate one block sized group
     writeln!(
         kernel,
-        "for (var k = pair_local_index; k < k_chunk_size; k += {SGEMM_SUBGROUP_THERADS_PER_BLOCK}u) {{"
+        "for (var k_start = 0u; k_start < k_chunk_size; k_start += {SGEMM_SUBGROUP_THERADS_PER_BLOCK}u) {{"
     )
     .unwrap();
     {
+        // This is seperated from k_start above to avoid divergance checks within each subgroup
+        writeln!(kernel, "let k = k_start + pair_local_index;").unwrap();
         writeln!(
             kernel,
             "for (var i = 0u; i < {}u; i += 1u) {{",

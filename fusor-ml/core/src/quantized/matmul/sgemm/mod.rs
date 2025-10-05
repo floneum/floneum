@@ -9,10 +9,7 @@ use crate::{
     },
     quantized::matmul::{
         QMatMulOperation,
-        sgemm::{
-            chunked::{SGEMM_SUBGROUP_THERADS_PER_BLOCK, chunked_sgemm},
-            general::general_sgemm,
-        },
+        sgemm::{chunked::chunked_sgemm, general::general_sgemm},
     },
 };
 

@@ -280,11 +280,11 @@ trait WgslQuantizedType: GgufBlock {
     const MATRIX_BLOCKS: usize = 0;
 
     fn dequantize_4x4_block<W: Write>(
-        index: &str,
-        chunk: String,
-        datatype: DataTypeEnum,
-        process_element: impl FnOnce(String, &mut W),
-        code: &mut W,
+        _index: &str,
+        _chunk: String,
+        _datatype: DataTypeEnum,
+        _process_element: impl FnOnce(String, &mut W),
+        _code: &mut W,
     ) {
         todo!()
     }

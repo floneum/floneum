@@ -713,9 +713,9 @@ impl Operation for QMatMulOperation {
         let output = generic_kernel.add_tensor_input(rank, true, datatype);
 
         // For batched operations, we need to get the correct dimension indices
-        let k_size = input_a.shape_binding(rank - 1); // Last dimension is K
-        let m_size = input_a.shape_binding(rank - 2); // Second-to-last dimension is M
-        let n_size = input_b.shape_binding(0);
+        let k_size = input_a.shape_binding(rank - 1).to_string(); // Last dimension is K
+        let m_size = input_a.shape_binding(rank - 2).to_string(); // Second-to-last dimension is M
+        let n_size = input_b.shape_binding(0).to_string();
 
         // Check if this is a sgemv or sgemm operation
         let algo = if self.sgemv() {

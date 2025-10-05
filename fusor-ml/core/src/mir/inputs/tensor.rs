@@ -13,26 +13,26 @@ impl TensorInput {
         self.info_binding
     }
 
-    fn info_binding(&self) -> String {
-        format!("i_{}", self.get_info_binding())
+    fn info_binding(&self) -> impl Display {
+        format_args!("i_{}", self.get_info_binding())
     }
 
-    pub(crate) fn offset_binding(&self) -> String {
-        format!("{}.offset", self.info_binding())
+    pub(crate) fn offset_binding(&self) -> impl Display {
+        format_args!("{}.offset", self.info_binding())
     }
 
-    pub(crate) fn stride_binding(&self, rank: u32) -> String {
-        format!("{}.stride_{}", self.info_binding(), rank)
+    pub(crate) fn stride_binding(&self, rank: u32) -> impl Display {
+        format_args!("{}.stride_{}", self.info_binding(), rank)
     }
 
-    pub(crate) fn shape_binding(&self, rank: u32) -> String {
-        format!("{}.shape_{}", self.info_binding(), rank)
+    pub(crate) fn shape_binding(&self, rank: u32) -> impl Display {
+        format_args!("{}.shape_{}", self.info_binding(), rank)
     }
 
-    pub(crate) fn check_bounds<W: Write, O>(
+    pub(crate) fn check_bounds<W: Write, O, D: Display>(
         &self,
         write: &mut W,
-        indexes: impl IntoIterator<Item = String>,
+        indexes: impl IntoIterator<Item = D>,
         in_bounds: impl FnOnce(&mut W) -> O,
     ) -> O {
         write!(write, "if true ").unwrap();
@@ -46,10 +46,10 @@ impl TensorInput {
         out
     }
 
-    pub(crate) fn strided_index(
+    pub(crate) fn strided_index<D: Display>(
         &self,
         write: &mut impl Write,
-        indexes: impl IntoIterator<Item = String>,
+        indexes: impl IntoIterator<Item = D>,
     ) {
         let offset = self.offset_binding();
         write!(write, "{offset}").unwrap();
