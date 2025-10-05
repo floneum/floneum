@@ -61,7 +61,7 @@ impl<'a> VarBuilder<'a> {
         })?;
 
         let q_matrix = QMatrix::read(
-            &device,
+            device,
             q_matrix_metadata,
             &mut self.reader,
             self.metadata.tensor_data_offset,

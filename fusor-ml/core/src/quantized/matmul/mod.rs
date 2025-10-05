@@ -672,12 +672,12 @@ impl Operation for QMatMulOperation {
             .skip(2)
             .map(|x| *x as u32)
             .product();
-        let dispatch = if self.sgemv() {
+
+        if self.sgemv() {
             sgemv::dispatch_size(&self.matrix, n, m, batch_size)
         } else {
             sgemm::dispatch_size(workgroup_shape, &self.matrix, n, m, batch_size)
-        };
-        dispatch
+        }
     }
 
     fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {

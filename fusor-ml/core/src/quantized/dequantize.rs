@@ -170,7 +170,7 @@ impl QMatrix {
             let layout = Layout::contiguous(&self.shape);
             let datatype = T::WGSL_TYPE;
             return Tensor::from_parts(LazyTensorData::new(TensorData::new_from_parts(
-                &device, buffer, layout, datatype,
+                device, buffer, layout, datatype,
             )));
         }
 

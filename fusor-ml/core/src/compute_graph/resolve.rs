@@ -218,7 +218,7 @@ impl<'a> Resolver<'a> {
             } else {
                 writeln!(&mut kernel, "{{").unwrap();
             }
-            operation.build_kernel(self.graph, &workgroup_shape, inputs, &mut kernel);
+            operation.build_kernel(self.graph, &workgroup_shape, inputs, kernel);
             let name = kernel.name_mut();
             if !name.is_empty() {
                 *name += "->";

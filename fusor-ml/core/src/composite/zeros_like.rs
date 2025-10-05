@@ -3,7 +3,7 @@ use crate::{DataType, Tensor};
 impl<const R: usize, D: DataType> Tensor<R, D> {
     /// Create a tensor filled with zeros that has the same shape as this tensor
     pub fn zeros_like(&self) -> Self {
-        Self::splat(self.device(), D::zero(), self.shape().clone())
+        Self::splat(self.device(), D::zero(), *self.shape())
     }
 }
 

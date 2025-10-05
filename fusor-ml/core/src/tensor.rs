@@ -595,7 +595,7 @@ pub trait IntoTensor<const R: usize, D> {
     fn into_tensor(self, device: &Device) -> Tensor<R, D>;
 }
 
-impl<'a, D: DataType> IntoTensor<0, D> for () {
+impl<D: DataType> IntoTensor<0, D> for () {
     fn into_tensor(self, device: &Device) -> Tensor<0, D> {
         let iter = std::iter::empty();
         Tensor::new_inner(device, iter, [])

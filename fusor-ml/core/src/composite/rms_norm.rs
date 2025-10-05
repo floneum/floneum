@@ -31,9 +31,9 @@ impl<const N: usize, T> Tensor<N, T> {
         let norm_x = f32_self.sqr().sum_keepdim(N - 1) / hidden_size as f32;
 
         let x_normed = f32_self.div_(&(norm_x + eps).sqrt());
-        let product = x_normed.cast::<T>().mul_(&weight);
+        let product = x_normed.cast::<T>().mul_(weight);
         if let Some(bias) = bias {
-            product.add_(&bias)
+            product.add_(bias)
         } else {
             product
         }

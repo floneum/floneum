@@ -252,7 +252,7 @@ pub(crate) fn chunked_sgemm(
     }
     writeln!(kernel, "}}").unwrap();
 
-    write_acc_back(kernel, output, &global_id).unwrap();
+    write_acc_back(kernel, output, global_id).unwrap();
 }
 
 fn write_acc_back(

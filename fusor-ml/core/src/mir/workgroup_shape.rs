@@ -162,9 +162,10 @@ fn test_all_possible_workgroup_shapes() {
 
 #[cfg(test)]
 fn test_limits() -> wgpu::Limits {
-    let mut limits = wgpu::Limits::default();
-    limits.max_subgroup_size = 64;
-    limits
+    wgpu::Limits {
+        max_subgroup_size: 64,
+        ..Default::default()
+    }
 }
 
 #[test]

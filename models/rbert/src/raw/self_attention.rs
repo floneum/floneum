@@ -41,8 +41,8 @@ impl BertSelfAttention {
             self.num_attention_heads,
             self.attention_head_size,
         ];
-        let xs = xs.reshape(new_x_shape).transpose(1, 2);
-        xs
+
+        xs.reshape(new_x_shape).transpose(1, 2)
     }
 
     pub(crate) fn forward(
