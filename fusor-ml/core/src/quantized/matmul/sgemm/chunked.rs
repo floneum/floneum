@@ -288,7 +288,7 @@ fn write_acc_back(
             writeln!(kernel, "{output}[output_index] = acc[y_offset][x_offset];")?;
             writeln!(kernel, "}}")?;
             writeln!(kernel, "}}")?;
-            Ok(())
+            std::fmt::Result::Ok(())
         },
     )?;
     Ok(())
