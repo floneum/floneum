@@ -504,80 +504,6 @@ impl WgslQuantizedType for BlockQ5_0 {
 
     const MATRIX_BLOCKS: usize = 2;
 
-    fn dequantize_4x4_block<W: Write>(
-        index: &str,
-        chunk: String,
-        datatype: DataTypeEnum,
-        process_element: impl FnOnce(String, &mut W),
-        code: &mut W,
-    ) {
-        const CENTER: u8 = center_of_bit_space(5);
-        const FIFTH_BIT: u8 = 0x10;
-
-        writeln!(code, "let scale = {datatype}({chunk}.scale);").unwrap();
-        writeln!(code, "const CENTER = {datatype}({CENTER});").unwrap();
-        writeln!(code, "let high_bits = {chunk}.data_high_bits[0];").unwrap();
-
-        // index = 0 means low nibbles (first 16 elements)
-        // index = 1 means high nibbles (second 16 elements)
-        writeln!(code, "let is_high_half = {index} == 1u;").unwrap();
-
-        // Load 16 bytes (4 u32s) which contain our 16 elements
-        for i in 0..4 {
-            writeln!(
-                code,
-                "let low_weight_chunk_{i} = {chunk}.data_low_bits[{i}];"
-            )
-            .unwrap();
-            writeln!(
-                code,
-                "let low_weight_chunk_bytes_{i} = unpack4xU8(low_weight_chunk_{i});"
-            )
-            .unwrap();
-            for j in 0..4 {
-                let bit_index = i * 4 + j;
-                writeln!(code, "let byte_{i}_{j} = low_weight_chunk_bytes_{i}[{j}];").unwrap();
-                writeln!(
-                    code,
-                    "let low_data_{i}_{j} = (byte_{i}_{j} & 0x0F) | (((high_bits >> {bit_index}) << 4) & {FIFTH_BIT});"
-                ).unwrap();
-                writeln!(
-                    code,
-                    "let high_data_{i}_{j} = (byte_{i}_{j} >> 4) | ((high_bits >> ({bit_index} + 12)) & {FIFTH_BIT});"
-                ).unwrap();
-                writeln!(
-                    code,
-                    "let data_{i}_{j} = select(low_data_{i}_{j}, high_data_{i}_{j}, is_high_half);"
-                )
-                .unwrap();
-                writeln!(
-                    code,
-                    "let scaled_{i}_{j} = ({datatype}(data_{i}_{j}) - CENTER) * scale;"
-                )
-                .unwrap();
-            }
-        }
-
-        // Group the results into a mat4x4
-        write!(code, "let result = mat4x4<{datatype}>(").unwrap();
-        for row in 0..4 {
-            if row > 0 {
-                writeln!(code, ", ").unwrap();
-            }
-            write!(code, "vec4(").unwrap();
-            for col in 0..4 {
-                if col > 0 {
-                    write!(code, ", ").unwrap();
-                }
-                write!(code, "scaled_{row}_{col}").unwrap();
-            }
-            write!(code, ")").unwrap();
-        }
-        writeln!(code, ");").unwrap();
-
-        process_element("result".to_string(), code);
-    }
-
     fn dequantize_block<W: Write>(
         chunk: String,
         datatype: DataTypeEnum,
@@ -682,6 +608,83 @@ impl WgslQuantizedType for BlockQ5_0 {
         }
     }
 
+    fn dequantize_4x4_block<W: Write>(
+        index: &str,
+        chunk: String,
+        datatype: DataTypeEnum,
+        process_element: impl FnOnce(String, &mut W),
+        code: &mut W,
+    ) {
+        const CENTER: u8 = center_of_bit_space(5);
+        const FIFTH_BIT: u8 = 0x10;
+
+        writeln!(code, "let scale = {datatype}({chunk}.scale);").unwrap();
+        writeln!(code, "const CENTER = {datatype}({CENTER});").unwrap();
+        writeln!(code, "let high_bits = {chunk}.data_high_bits[0];").unwrap();
+
+        // index = 0 means low nibbles (first 16 elements)
+        // index = 1 means high nibbles (second 16 elements)
+        writeln!(code, "let is_high_half = {index} == 1u;").unwrap();
+
+        // Load 16 bytes (4 u32s) which contain our 16 elements
+        for i in 0..4 {
+            writeln!(code, "let low_data_{i} = ").unwrap();
+            for j in 0..4 {
+                if j > 0 {
+                    write!(code, " | ").unwrap();
+                }
+                let bit_index = i * 4 + j;
+                write!(
+                    code,
+                    "(((high_bits >> {bit_index}) << 4) & {FIFTH_BIT}) << {}",
+                    j * 8
+                )
+                .unwrap();
+            }
+            writeln!(code, ";").unwrap();
+            writeln!(code, "let high_data_{i} = ").unwrap();
+            for j in 0..4 {
+                if j > 0 {
+                    write!(code, " | ").unwrap();
+                }
+                let bit_index = i * 4 + j;
+                write!(
+                    code,
+                    "((high_bits >> ({bit_index} + 12)) & {FIFTH_BIT}) << {}",
+                    j * 8
+                )
+                .unwrap();
+            }
+            writeln!(code, ";").unwrap();
+            const FIRST_4_MASK: u32 = 0x0F0F_0F0F;
+            const LAST_4_MASK: u32 = 0xF0F0_F0F0;
+            writeln!(code, "let raw_low_bits_{i} = {chunk}.data_low_bits[{i}];").unwrap();
+            writeln!(code, "let low_bits_{i} = select(raw_low_bits_{i} & {FIRST_4_MASK}, (raw_low_bits_{i} & {LAST_4_MASK}) >> 4, is_high_half);").unwrap();
+            writeln!(
+                code,
+                "let high_bits_{i} = select(low_data_{i}, high_data_{i}, is_high_half);"
+            )
+            .unwrap();
+            writeln!(code, "let bits_{i} = low_bits_{i} | high_bits_{i};").unwrap();
+        }
+
+        // Group the results into a mat4x4
+        write!(code, "let result = mat4x4<{datatype}>(").unwrap();
+        for i in 0..4 {
+            if i > 0 {
+                writeln!(code, ", ").unwrap();
+            }
+            writeln!(
+                code,
+                "(vec4<{datatype}>(unpack4xU8(bits_{i})) - CENTER) * scale"
+            )
+            .unwrap();
+        }
+        writeln!(code, ");").unwrap();
+
+        process_element("result".to_string(), code);
+    }
+
     fn write_type<W: Write>(f: &mut W) -> std::fmt::Result {
         write_q5_0_type(f)
     }
@@ -691,61 +694,6 @@ impl WgslQuantizedType for BlockQ8_0 {
     const GGML_TYPE: GgmlType = GgmlType::Q8_0;
 
     const MATRIX_BLOCKS: usize = 2;
-
-    fn dequantize_4x4_block<W: Write>(
-        index: &str,
-        chunk: String,
-        datatype: DataTypeEnum,
-        process_element: impl FnOnce(String, &mut W),
-        code: &mut W,
-    ) {
-        writeln!(code, "let scale = {datatype}({chunk}.scale);").unwrap();
-
-        // index = 0 means first 16 elements (u32s 0-3)
-        // index = 1 means second 16 elements (u32s 4-7)
-        writeln!(code, "let base_index = {index} * 4u;").unwrap();
-
-        // Load 16 bytes (4 u32s) which contain our 16 elements
-        for i in 0..4 {
-            writeln!(
-                code,
-                "let weight_chunk_{i} = {chunk}.data[base_index + {i}u];"
-            )
-            .unwrap();
-            writeln!(
-                code,
-                "let weight_chunk_bytes_{i} = unpack4xI8(weight_chunk_{i});"
-            )
-            .unwrap();
-            for j in 0..4 {
-                writeln!(code, "let data_{i}_{j} = weight_chunk_bytes_{i}[{j}];").unwrap();
-                writeln!(
-                    code,
-                    "let scaled_{i}_{j} = {datatype}(data_{i}_{j}) * scale;"
-                )
-                .unwrap();
-            }
-        }
-
-        // Group the results into a mat4x4
-        write!(code, "let result = mat4x4<{datatype}>(").unwrap();
-        for row in 0..4 {
-            if row > 0 {
-                writeln!(code, ", ").unwrap();
-            }
-            write!(code, "vec4(").unwrap();
-            for col in 0..4 {
-                if col > 0 {
-                    write!(code, ", ").unwrap();
-                }
-                write!(code, "scaled_{row}_{col}").unwrap();
-            }
-            write!(code, ")").unwrap();
-        }
-        writeln!(code, ");").unwrap();
-
-        process_element("result".to_string(), code);
-    }
 
     fn dequantize_block<W: Write>(
         chunk: String,
@@ -828,6 +776,37 @@ impl WgslQuantizedType for BlockQ8_0 {
         .unwrap();
             process_element(i.to_string(), format!("weight_chunk_bytes_{i}"), code);
         }
+    }
+
+    fn dequantize_4x4_block<W: Write>(
+        index: &str,
+        chunk: String,
+        datatype: DataTypeEnum,
+        process_element: impl FnOnce(String, &mut W),
+        code: &mut W,
+    ) {
+        writeln!(code, "let scale = {datatype}({chunk}.scale);").unwrap();
+
+        // index = 0 means first 16 elements (u32s 0-3)
+        // index = 1 means second 16 elements (u32s 4-7)
+        writeln!(code, "let base_index = {index} * 4u;").unwrap();
+
+        // Load 16 bytes (4 u32s) which contain our 16 elements
+        // Group the results into a mat4x4
+        write!(code, "let result = mat4x4<{datatype}>(").unwrap();
+        for i in 0..4 {
+            if i > 0 {
+                writeln!(code, ", ").unwrap();
+            }
+            write!(
+                code,
+                "vec4<{datatype}>(unpack4xI8({chunk}.data[base_index + {i}u])) * scale"
+            )
+            .unwrap();
+        }
+        writeln!(code, ");").unwrap();
+
+        process_element("result".to_string(), code);
     }
 
     fn write_type<W: Write>(f: &mut W) -> std::fmt::Result {
@@ -1329,40 +1308,20 @@ impl WgslQuantizedType for BlockQ4K {
         )
         .unwrap();
 
-        // Load 16 elements (4 u32s, each with 4 bytes)
         writeln!(code, "let is_high = sub_chunk >= 2u;").unwrap();
-        for i in 0..4 {
-            writeln!(
-                code,
-                "let weight_chunk_{i} = {chunk}.data[weight_base + {i}u];"
-            )
-            .unwrap();
-            writeln!(
-                code,
-                "let weight_vec_{i} = vec4<{datatype}>(unpack4xU8(weight_chunk_{i} & select({LOW_FOUR_BITS}u, {HIGH_FOUR_BITS}u, is_high)));"
-            )
-            .unwrap();
-            for j in 0..4 {
-                writeln!(
-                    code,
-                    "let scaled_{i}_{j} = weight_vec_{i}[{j}] * scale - offset;"
-                )
-                .unwrap();
-            }
-        }
 
+        // Load 16 elements (4 u32s, each with 4 bytes)
         // Group the results into a mat4x4
         write!(code, "let result = mat4x4<{datatype}>(").unwrap();
-        for row in 0..4 {
-            if row > 0 {
+        for i in 0..4 {
+            if i > 0 {
                 writeln!(code, ", ").unwrap();
             }
-            for col in 0..4 {
-                if col > 0 {
-                    write!(code, ", ").unwrap();
-                }
-                write!(code, "scaled_{row}_{col}").unwrap();
-            }
+            writeln!(
+                code,
+                "vec4<{datatype}>(unpack4xU8({chunk}.data[weight_base + {i}u] & select({LOW_FOUR_BITS}u, {HIGH_FOUR_BITS}u, is_high))) * scale - offset"
+            )
+            .unwrap();
         }
         writeln!(code, ");").unwrap();
 
