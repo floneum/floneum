@@ -305,9 +305,7 @@ trait WgslQuantizedType: GgufBlock {
         _datatype: DataTypeEnum,
         _process_element: impl FnOnce(String, &mut W),
         _code: &mut W,
-    ) {
-        todo!()
-    }
+    );
 
     // This is used in the fuzzing test
     #[allow(unused)]
@@ -849,146 +847,6 @@ impl WgslQuantizedType for BlockQ4K {
 
     const MATRIX_BLOCKS: usize = 16;
 
-    fn dequantize_4x4_block<W: Write>(
-        index: &str,
-        chunk: String,
-        datatype: DataTypeEnum,
-        process_element: impl FnOnce(String, &mut W),
-        code: &mut W,
-    ) {
-        writeln!(code, "let super_block_scale = {datatype}({chunk}.scale);").unwrap();
-        writeln!(code, "let super_block_min = {datatype}({chunk}.min);").unwrap();
-
-        writeln!(code, "let first_four_bytes = {chunk}.scales[0];").unwrap();
-        writeln!(code, "let middle_four_bytes = {chunk}.scales[1];").unwrap();
-        writeln!(code, "let last_four_bytes = {chunk}.scales[2];").unwrap();
-
-        writeln!(
-            code,
-            "let first_scales = first_four_bytes & {SIX_BITS_MASK};"
-        )
-        .unwrap();
-        writeln!(
-            code,
-            "let first_offsets = middle_four_bytes & {SIX_BITS_MASK};"
-        )
-        .unwrap();
-
-        writeln!(
-            code,
-            "let msb_scales = (first_four_bytes & {MSB_TWO_BITS_MASK}) >> 2;"
-        )
-        .unwrap();
-        writeln!(
-            code,
-            "let lsb_scales = last_four_bytes & {MSB_SCALES_MASK};"
-        )
-        .unwrap();
-        writeln!(code, "let second_scales = msb_scales | lsb_scales;").unwrap();
-        writeln!(
-            code,
-            "let msb_offsets = (middle_four_bytes & {MSB_TWO_BITS_MASK}) >> 2;"
-        )
-        .unwrap();
-        writeln!(
-            code,
-            "let lsb_offsets = (last_four_bytes & {MSB_OFFSET_MASK}) >> 4;"
-        )
-        .unwrap();
-        writeln!(code, "let second_offsets = msb_offsets | lsb_offsets;").unwrap();
-
-        // Determine which of the 4 64-element groups this index belongs to
-        writeln!(code, "let scale_group = {index} / 4u;").unwrap();
-        writeln!(code, "let sub_chunk = {index} % 4u;").unwrap();
-
-        // Select the appropriate scales and offsets
-        writeln!(
-            code,
-            "let scales_u32 = select(first_scales, second_scales, scale_group >= 2u);"
-        )
-        .unwrap();
-        writeln!(
-            code,
-            "let offsets_u32 = select(first_offsets, second_offsets, scale_group >= 2u);"
-        )
-        .unwrap();
-        writeln!(code, "let scale_component_idx = scale_group % 2u;").unwrap();
-
-        writeln!(
-            code,
-            "let scales_vec = vec4<{datatype}>(unpack4xU8(scales_u32)) * super_block_scale;"
-        )
-        .unwrap();
-        writeln!(code, "let low_scales = scales_vec.xz;").unwrap();
-        writeln!(
-            code,
-            "let high_scales = scales_vec.yw * {};",
-            shift_right_scale(4)
-        )
-        .unwrap();
-        writeln!(
-            code,
-            "let offsets_vec = vec4<{datatype}>(unpack4xU8(offsets_u32)) * super_block_min;"
-        )
-        .unwrap();
-        writeln!(code, "let low_offsets = offsets_vec.xz;").unwrap();
-        writeln!(code, "let high_offsets = offsets_vec.yw;").unwrap();
-
-        // Get the scale and offset for this specific chunk
-        writeln!(code, "let scale = select(low_scales[scale_component_idx], high_scales[scale_component_idx], sub_chunk >= 2u);").unwrap();
-        writeln!(code, "let offset = select(low_offsets[scale_component_idx], high_offsets[scale_component_idx], sub_chunk >= 2u);").unwrap();
-
-        // Calculate the weight base index
-        writeln!(
-            code,
-            "let weight_base = (scale_group * 8u) + ((sub_chunk & 1u) * 4u);"
-        )
-        .unwrap();
-
-        // Load 16 elements (4 u32s, each with 4 bytes)
-        writeln!(code, "let is_high = sub_chunk >= 2u;").unwrap();
-        for i in 0..4 {
-            writeln!(
-                code,
-                "let weight_chunk_{i} = {chunk}.data[weight_base + {i}u];"
-            )
-            .unwrap();
-            writeln!(code, "let weight_chunk_low_{i} = vec4<{datatype}>(unpack4xU8(weight_chunk_{i} & {LOW_FOUR_BITS}));").unwrap();
-            writeln!(code, "let weight_chunk_high_{i} = vec4<{datatype}>(unpack4xU8(weight_chunk_{i} & {HIGH_FOUR_BITS}));").unwrap();
-            writeln!(
-                code,
-                "let weight_vec_{i} = select(weight_chunk_low_{i}, weight_chunk_high_{i}, is_high);"
-            )
-            .unwrap();
-            for j in 0..4 {
-                writeln!(
-                    code,
-                    "let scaled_{i}_{j} = weight_vec_{i}[{j}] * scale - offset;"
-                )
-                .unwrap();
-            }
-        }
-
-        // Group the results into a mat4x4
-        write!(code, "let result = mat4x4<{datatype}>(").unwrap();
-        for row in 0..4 {
-            if row > 0 {
-                writeln!(code, ", ").unwrap();
-            }
-            write!(code, "vec4(").unwrap();
-            for col in 0..4 {
-                if col > 0 {
-                    write!(code, ", ").unwrap();
-                }
-                write!(code, "scaled_{row}_{col}").unwrap();
-            }
-            write!(code, ")").unwrap();
-        }
-        writeln!(code, ");").unwrap();
-
-        process_element("result".to_string(), code);
-    }
-
     fn dequantize_block<W: Write>(
         chunk: String,
         datatype: DataTypeEnum,
@@ -1373,6 +1231,142 @@ impl WgslQuantizedType for BlockQ4K {
 
         run_chunk("first_scales", "first_offsets");
         run_chunk("second_scales", "second_offsets");
+    }
+
+    fn dequantize_4x4_block<W: Write>(
+        index: &str,
+        chunk: String,
+        datatype: DataTypeEnum,
+        process_element: impl FnOnce(String, &mut W),
+        code: &mut W,
+    ) {
+        writeln!(code, "let super_block_scale = {datatype}({chunk}.scale);").unwrap();
+        writeln!(code, "let super_block_min = {datatype}({chunk}.min);").unwrap();
+
+        // Determine which of the 4 64-element groups this index belongs to
+        writeln!(code, "let scale_group = {index} / 4u;").unwrap();
+        writeln!(code, "let sub_chunk = {index} % 4u;").unwrap();
+
+        // Select the appropriate scales and offsets
+        {
+            writeln!(code, "let first_four_bytes = {chunk}.scales[0];").unwrap();
+            writeln!(code, "let middle_four_bytes = {chunk}.scales[1];").unwrap();
+            writeln!(code, "let last_four_bytes = {chunk}.scales[2];").unwrap();
+
+            writeln!(
+                code,
+                "let first_scales = first_four_bytes & {SIX_BITS_MASK};"
+            )
+            .unwrap();
+            writeln!(
+                code,
+                "let first_offsets = middle_four_bytes & {SIX_BITS_MASK};"
+            )
+            .unwrap();
+
+            writeln!(
+                code,
+                "let msb_scales = (first_four_bytes & {MSB_TWO_BITS_MASK}) >> 2;"
+            )
+            .unwrap();
+            writeln!(
+                code,
+                "let lsb_scales = last_four_bytes & {MSB_SCALES_MASK};"
+            )
+            .unwrap();
+            writeln!(code, "let second_scales = msb_scales | lsb_scales;").unwrap();
+            writeln!(
+                code,
+                "let msb_offsets = (middle_four_bytes & {MSB_TWO_BITS_MASK}) >> 2;"
+            )
+            .unwrap();
+            writeln!(
+                code,
+                "let lsb_offsets = (last_four_bytes & {MSB_OFFSET_MASK}) >> 4;"
+            )
+            .unwrap();
+            writeln!(code, "let second_offsets = msb_offsets | lsb_offsets;").unwrap();
+            writeln!(
+                code,
+                "let scales_u32 = select(first_scales, second_scales, scale_group >= 2u);"
+            )
+            .unwrap();
+            writeln!(
+                code,
+                "let offsets_u32 = select(first_offsets, second_offsets, scale_group >= 2u);"
+            )
+            .unwrap();
+        }
+        writeln!(code, "let scale_component_idx = scale_group % 2u;").unwrap();
+
+        writeln!(
+            code,
+            "let scales_vec = vec4<{datatype}>(unpack4xU8(scales_u32)) * super_block_scale;"
+        )
+        .unwrap();
+        writeln!(
+            code,
+            "let offsets_vec = vec4<{datatype}>(unpack4xU8(offsets_u32)) * super_block_min;"
+        )
+        .unwrap();
+
+        writeln!(
+            code,
+            "let scale = scales_vec[sub_chunk / 2 + (scale_group % 2)*2] * select(1.0, {}, sub_chunk >= 2u);",
+            shift_right_scale(4)
+        )
+        .unwrap();
+        writeln!(
+            code,
+            "let offset = offsets_vec[sub_chunk / 2 + (scale_group % 2)*2];",
+        )
+        .unwrap();
+
+        // Calculate the weight base index
+        writeln!(
+            code,
+            "let weight_base = (scale_group * 8u) + ((sub_chunk & 1u) * 4u);"
+        )
+        .unwrap();
+
+        // Load 16 elements (4 u32s, each with 4 bytes)
+        writeln!(code, "let is_high = sub_chunk >= 2u;").unwrap();
+        for i in 0..4 {
+            writeln!(
+                code,
+                "let weight_chunk_{i} = {chunk}.data[weight_base + {i}u];"
+            )
+            .unwrap();
+            writeln!(
+                code,
+                "let weight_vec_{i} = vec4<{datatype}>(unpack4xU8(weight_chunk_{i} & select({LOW_FOUR_BITS}u, {HIGH_FOUR_BITS}u, is_high)));"
+            )
+            .unwrap();
+            for j in 0..4 {
+                writeln!(
+                    code,
+                    "let scaled_{i}_{j} = weight_vec_{i}[{j}] * scale - offset;"
+                )
+                .unwrap();
+            }
+        }
+
+        // Group the results into a mat4x4
+        write!(code, "let result = mat4x4<{datatype}>(").unwrap();
+        for row in 0..4 {
+            if row > 0 {
+                writeln!(code, ", ").unwrap();
+            }
+            for col in 0..4 {
+                if col > 0 {
+                    write!(code, ", ").unwrap();
+                }
+                write!(code, "scaled_{row}_{col}").unwrap();
+            }
+        }
+        writeln!(code, ");").unwrap();
+
+        process_element("result".to_string(), code);
     }
 
     fn write_type<W: Write>(f: &mut W) -> std::fmt::Result {
