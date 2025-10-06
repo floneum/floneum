@@ -325,72 +325,6 @@ impl WgslQuantizedType for BlockQ4_0 {
 
     const MATRIX_BLOCKS: usize = 2;
 
-    fn dequantize_4x4_block<W: Write>(
-        index: &str,
-        chunk: String,
-        datatype: DataTypeEnum,
-        process_element: impl FnOnce(String, &mut W),
-        code: &mut W,
-    ) {
-        const CENTER: u8 = center_of_bit_space(4);
-        const RIGHT_SHIFT_4_SCALE: f32 = shift_right_scale(4);
-
-        writeln!(code, "let scale = {datatype}({chunk}.scale);").unwrap();
-        writeln!(
-            code,
-            "const SHIFT_SCALES = vec2({datatype}(1.0), {datatype}({RIGHT_SHIFT_4_SCALE}));"
-        )
-        .unwrap();
-        writeln!(code, "const CENTER = {datatype}({CENTER});").unwrap();
-
-        // index = 0 means low nibbles (first 16 elements)
-        // index = 1 means high nibbles (second 16 elements)
-        writeln!(code, "let shift_select = select(0u, 1u, {index} == 1u);").unwrap();
-
-        // Load 16 bytes (4 u32s) which contain our 16 elements
-        for i in 0..4 {
-            writeln!(code, "let weight_chunk_{i} = {chunk}.data[{i}];").unwrap();
-            writeln!(
-                code,
-                "let weight_chunk_bytes_{i} = unpack4xU8(weight_chunk_{i});"
-            )
-            .unwrap();
-            for j in 0..4 {
-                writeln!(code, "let byte_{i}_{j} = weight_chunk_bytes_{i}[{j}];").unwrap();
-                writeln!(
-                    code,
-                    "let data_{i}_{j} = vec2(byte_{i}_{j} & 0x0F, byte_{i}_{j} & 0xF0);"
-                )
-                .unwrap();
-                writeln!(code, "let data_float_{i}_{j} = ((vec2<{datatype}>(data_{i}_{j}) * SHIFT_SCALES) - CENTER) * scale;").unwrap();
-                writeln!(
-                    code,
-                    "let scaled_{i}_{j} = data_float_{i}_{j}[shift_select];"
-                )
-                .unwrap();
-            }
-        }
-
-        // Group the results into a mat4x4
-        write!(code, "let result = mat4x4<{datatype}>(").unwrap();
-        for row in 0..4 {
-            if row > 0 {
-                writeln!(code, ", ").unwrap();
-            }
-            write!(code, "vec4(").unwrap();
-            for col in 0..4 {
-                if col > 0 {
-                    write!(code, ", ").unwrap();
-                }
-                write!(code, "scaled_{row}_{col}").unwrap();
-            }
-            write!(code, ")").unwrap();
-        }
-        writeln!(code, ");").unwrap();
-
-        process_element("result".to_string(), code);
-    }
-
     fn dequantize_block<W: Write>(
         chunk: String,
         datatype: DataTypeEnum,
@@ -492,6 +426,48 @@ impl WgslQuantizedType for BlockQ4_0 {
                 output_index += 1;
             }
         }
+    }
+
+    fn dequantize_4x4_block<W: Write>(
+        index: &str,
+        chunk: String,
+        datatype: DataTypeEnum,
+        process_element: impl FnOnce(String, &mut W),
+        code: &mut W,
+    ) {
+        const CENTER: u8 = center_of_bit_space(4);
+        const RIGHT_SHIFT_4_SCALE: f32 = shift_right_scale(4);
+
+        writeln!(code, "const CENTER = {datatype}({CENTER});").unwrap();
+
+        writeln!(
+            code,
+            "let shift_scale = select({datatype}(1.0), {datatype}({RIGHT_SHIFT_4_SCALE}), {index} == 1u);"
+        )
+        .unwrap();
+        writeln!(code, "let scale = {datatype}({chunk}.scale);").unwrap();
+        writeln!(
+            code,
+            "let mask = select(0x0F0F0F0F, 0xF0F0F0F0u, {index} == 1u);"
+        )
+        .unwrap();
+
+        // Load 16 bytes (4 u32s) which contain our 16 elements
+        // Group the results into a mat4x4
+        write!(code, "let result = mat4x4<{datatype}>(").unwrap();
+        for i in 0..4 {
+            if i > 0 {
+                writeln!(code, ", ").unwrap();
+            }
+            write!(
+                code,
+                "(vec4<{datatype}>(unpack4xU8({chunk}.data[{i}] & mask)) * shift_scale - CENTER) * scale"
+            )
+            .unwrap();
+        }
+        writeln!(code, ");").unwrap();
+
+        process_element("result".to_string(), code);
     }
 
     fn write_type<W: Write>(f: &mut W) -> std::fmt::Result {
