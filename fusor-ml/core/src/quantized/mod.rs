@@ -1319,7 +1319,7 @@ const FIRST_HALF_BITS: u8 = 0b11110000;
 const SECOND_HALF_BITS: u8 = 0b00001111;
 
 fn index_signed_bytes(u32_array: impl Display, byte_index: impl Display) -> String {
-    format!("unpack4xI8({u32_array}[({byte_index}) / 4u])[({byte_index}) % 4]")
+    format!("extractBits(i32({u32_array}[({byte_index}) / 4u]), (({byte_index}) % 4) * 8, 8)")
 }
 
 impl WgslQuantizedType for BlockQ6K {
