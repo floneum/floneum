@@ -212,6 +212,22 @@ pub(crate) fn dequantize_mat4x4_block<W: Write>(
     process_element: impl FnOnce(String, &mut W),
 ) -> bool {
     match ty {
+        GgmlType::Q4_0 => {
+            BlockQ4_0::dequantize_4x4_block(index, chunk, datatype, process_element, kernel);
+            true
+        }
+        GgmlType::Q5_0 => {
+            BlockQ5_0::dequantize_4x4_block(index, chunk, datatype, process_element, kernel);
+            true
+        }
+        GgmlType::Q8_0 => {
+            BlockQ8_0::dequantize_4x4_block(index, chunk, datatype, process_element, kernel);
+            true
+        }
+        GgmlType::Q4K => {
+            BlockQ4K::dequantize_4x4_block(index, chunk, datatype, process_element, kernel);
+            true
+        }
         GgmlType::Q6K => {
             BlockQ6K::dequantize_4x4_block(index, chunk, datatype, process_element, kernel);
             true
@@ -222,6 +238,10 @@ pub(crate) fn dequantize_mat4x4_block<W: Write>(
 
 pub(crate) fn dequantize_mat4x4_block_count(ty: GgmlType) -> usize {
     match ty {
+        GgmlType::Q4_0 => BlockQ4_0::MATRIX_BLOCKS,
+        GgmlType::Q5_0 => BlockQ5_0::MATRIX_BLOCKS,
+        GgmlType::Q8_0 => BlockQ8_0::MATRIX_BLOCKS,
+        GgmlType::Q4K => BlockQ4K::MATRIX_BLOCKS,
         GgmlType::Q6K => BlockQ6K::MATRIX_BLOCKS,
         _ => 0,
     }
@@ -304,6 +324,74 @@ pub(crate) const fn shift_right_scale(shift_bits: u8) -> f32 {
 
 impl WgslQuantizedType for BlockQ4_0 {
     const GGML_TYPE: GgmlType = GgmlType::Q4_0;
+
+    const MATRIX_BLOCKS: usize = 2;
+
+    fn dequantize_4x4_block<W: Write>(
+        index: &str,
+        chunk: String,
+        datatype: DataTypeEnum,
+        process_element: impl FnOnce(String, &mut W),
+        code: &mut W,
+    ) {
+        const CENTER: u8 = center_of_bit_space(4);
+        const RIGHT_SHIFT_4_SCALE: f32 = shift_right_scale(4);
+
+        writeln!(code, "let scale = {datatype}({chunk}.scale);").unwrap();
+        writeln!(
+            code,
+            "const SHIFT_SCALES = vec2({datatype}(1.0), {datatype}({RIGHT_SHIFT_4_SCALE}));"
+        )
+        .unwrap();
+        writeln!(code, "const CENTER = {datatype}({CENTER});").unwrap();
+
+        // index = 0 means low nibbles (first 16 elements)
+        // index = 1 means high nibbles (second 16 elements)
+        writeln!(code, "let shift_select = select(0u, 1u, {index} == 1u);").unwrap();
+
+        // Load 16 bytes (4 u32s) which contain our 16 elements
+        for i in 0..4 {
+            writeln!(code, "let weight_chunk_{i} = {chunk}.data[{i}];").unwrap();
+            writeln!(
+                code,
+                "let weight_chunk_bytes_{i} = unpack4xU8(weight_chunk_{i});"
+            )
+            .unwrap();
+            for j in 0..4 {
+                writeln!(code, "let byte_{i}_{j} = weight_chunk_bytes_{i}[{j}];").unwrap();
+                writeln!(
+                    code,
+                    "let data_{i}_{j} = vec2(byte_{i}_{j} & 0x0F, byte_{i}_{j} & 0xF0);"
+                )
+                .unwrap();
+                writeln!(code, "let data_float_{i}_{j} = ((vec2<{datatype}>(data_{i}_{j}) * SHIFT_SCALES) - CENTER) * scale;").unwrap();
+                writeln!(
+                    code,
+                    "let scaled_{i}_{j} = data_float_{i}_{j}[shift_select];"
+                )
+                .unwrap();
+            }
+        }
+
+        // Group the results into a mat4x4
+        write!(code, "let result = mat4x4<{datatype}>(").unwrap();
+        for row in 0..4 {
+            if row > 0 {
+                writeln!(code, ", ").unwrap();
+            }
+            write!(code, "vec4(").unwrap();
+            for col in 0..4 {
+                if col > 0 {
+                    write!(code, ", ").unwrap();
+                }
+                write!(code, "scaled_{row}_{col}").unwrap();
+            }
+            write!(code, ")").unwrap();
+        }
+        writeln!(code, ");").unwrap();
+
+        process_element("result".to_string(), code);
+    }
 
     fn dequantize_block<W: Write>(
         chunk: String,
@@ -415,6 +503,82 @@ impl WgslQuantizedType for BlockQ4_0 {
 
 impl WgslQuantizedType for BlockQ5_0 {
     const GGML_TYPE: GgmlType = GgmlType::Q5_0;
+
+    const MATRIX_BLOCKS: usize = 2;
+
+    fn dequantize_4x4_block<W: Write>(
+        index: &str,
+        chunk: String,
+        datatype: DataTypeEnum,
+        process_element: impl FnOnce(String, &mut W),
+        code: &mut W,
+    ) {
+        const CENTER: u8 = center_of_bit_space(5);
+        const FIFTH_BIT: u8 = 0x10;
+
+        writeln!(code, "let scale = {datatype}({chunk}.scale);").unwrap();
+        writeln!(code, "const CENTER = {datatype}({CENTER});").unwrap();
+        writeln!(code, "let high_bits = {chunk}.data_high_bits[0];").unwrap();
+
+        // index = 0 means low nibbles (first 16 elements)
+        // index = 1 means high nibbles (second 16 elements)
+        writeln!(code, "let is_high_half = {index} == 1u;").unwrap();
+
+        // Load 16 bytes (4 u32s) which contain our 16 elements
+        for i in 0..4 {
+            writeln!(
+                code,
+                "let low_weight_chunk_{i} = {chunk}.data_low_bits[{i}];"
+            )
+            .unwrap();
+            writeln!(
+                code,
+                "let low_weight_chunk_bytes_{i} = unpack4xU8(low_weight_chunk_{i});"
+            )
+            .unwrap();
+            for j in 0..4 {
+                let bit_index = i * 4 + j;
+                writeln!(code, "let byte_{i}_{j} = low_weight_chunk_bytes_{i}[{j}];").unwrap();
+                writeln!(
+                    code,
+                    "let low_data_{i}_{j} = (byte_{i}_{j} & 0x0F) | (((high_bits >> {bit_index}) << 4) & {FIFTH_BIT});"
+                ).unwrap();
+                writeln!(
+                    code,
+                    "let high_data_{i}_{j} = (byte_{i}_{j} >> 4) | ((high_bits >> ({bit_index} + 12)) & {FIFTH_BIT});"
+                ).unwrap();
+                writeln!(
+                    code,
+                    "let data_{i}_{j} = select(low_data_{i}_{j}, high_data_{i}_{j}, is_high_half);"
+                )
+                .unwrap();
+                writeln!(
+                    code,
+                    "let scaled_{i}_{j} = ({datatype}(data_{i}_{j}) - CENTER) * scale;"
+                )
+                .unwrap();
+            }
+        }
+
+        // Group the results into a mat4x4
+        write!(code, "let result = mat4x4<{datatype}>(").unwrap();
+        for row in 0..4 {
+            if row > 0 {
+                writeln!(code, ", ").unwrap();
+            }
+            write!(code, "vec4(").unwrap();
+            for col in 0..4 {
+                if col > 0 {
+                    write!(code, ", ").unwrap();
+                }
+                write!(code, "scaled_{row}_{col}").unwrap();
+            }
+            write!(code, ")").unwrap();
+        }
+        writeln!(code, ");").unwrap();
+
+        process_element("result".to_string(), code);
+    }
 
     fn dequantize_block<W: Write>(
         chunk: String,
@@ -528,6 +692,63 @@ impl WgslQuantizedType for BlockQ5_0 {
 impl WgslQuantizedType for BlockQ8_0 {
     const GGML_TYPE: GgmlType = GgmlType::Q8_0;
 
+    const MATRIX_BLOCKS: usize = 2;
+
+    fn dequantize_4x4_block<W: Write>(
+        index: &str,
+        chunk: String,
+        datatype: DataTypeEnum,
+        process_element: impl FnOnce(String, &mut W),
+        code: &mut W,
+    ) {
+        writeln!(code, "let scale = {datatype}({chunk}.scale);").unwrap();
+
+        // index = 0 means first 16 elements (u32s 0-3)
+        // index = 1 means second 16 elements (u32s 4-7)
+        writeln!(code, "let base_index = {index} * 4u;").unwrap();
+
+        // Load 16 bytes (4 u32s) which contain our 16 elements
+        for i in 0..4 {
+            writeln!(
+                code,
+                "let weight_chunk_{i} = {chunk}.data[base_index + {i}u];"
+            )
+            .unwrap();
+            writeln!(
+                code,
+                "let weight_chunk_bytes_{i} = unpack4xI8(weight_chunk_{i});"
+            )
+            .unwrap();
+            for j in 0..4 {
+                writeln!(code, "let data_{i}_{j} = weight_chunk_bytes_{i}[{j}];").unwrap();
+                writeln!(
+                    code,
+                    "let scaled_{i}_{j} = {datatype}(data_{i}_{j}) * scale;"
+                )
+                .unwrap();
+            }
+        }
+
+        // Group the results into a mat4x4
+        write!(code, "let result = mat4x4<{datatype}>(").unwrap();
+        for row in 0..4 {
+            if row > 0 {
+                writeln!(code, ", ").unwrap();
+            }
+            write!(code, "vec4(").unwrap();
+            for col in 0..4 {
+                if col > 0 {
+                    write!(code, ", ").unwrap();
+                }
+                write!(code, "scaled_{row}_{col}").unwrap();
+            }
+            write!(code, ")").unwrap();
+        }
+        writeln!(code, ");").unwrap();
+
+        process_element("result".to_string(), code);
+    }
+
     fn dequantize_block<W: Write>(
         chunk: String,
         datatype: DataTypeEnum,
@@ -625,6 +846,148 @@ const MSB_OFFSET_MASK: u32 = HIGH_FOUR_BITS;
 
 impl WgslQuantizedType for BlockQ4K {
     const GGML_TYPE: GgmlType = GgmlType::Q4K;
+
+    const MATRIX_BLOCKS: usize = 16;
+
+    fn dequantize_4x4_block<W: Write>(
+        index: &str,
+        chunk: String,
+        datatype: DataTypeEnum,
+        process_element: impl FnOnce(String, &mut W),
+        code: &mut W,
+    ) {
+        writeln!(code, "let super_block_scale = {datatype}({chunk}.scale);").unwrap();
+        writeln!(code, "let super_block_min = {datatype}({chunk}.min);").unwrap();
+
+        writeln!(code, "let first_four_bytes = {chunk}.scales[0];").unwrap();
+        writeln!(code, "let middle_four_bytes = {chunk}.scales[1];").unwrap();
+        writeln!(code, "let last_four_bytes = {chunk}.scales[2];").unwrap();
+
+        writeln!(
+            code,
+            "let first_scales = first_four_bytes & {SIX_BITS_MASK};"
+        )
+        .unwrap();
+        writeln!(
+            code,
+            "let first_offsets = middle_four_bytes & {SIX_BITS_MASK};"
+        )
+        .unwrap();
+
+        writeln!(
+            code,
+            "let msb_scales = (first_four_bytes & {MSB_TWO_BITS_MASK}) >> 2;"
+        )
+        .unwrap();
+        writeln!(
+            code,
+            "let lsb_scales = last_four_bytes & {MSB_SCALES_MASK};"
+        )
+        .unwrap();
+        writeln!(code, "let second_scales = msb_scales | lsb_scales;").unwrap();
+        writeln!(
+            code,
+            "let msb_offsets = (middle_four_bytes & {MSB_TWO_BITS_MASK}) >> 2;"
+        )
+        .unwrap();
+        writeln!(
+            code,
+            "let lsb_offsets = (last_four_bytes & {MSB_OFFSET_MASK}) >> 4;"
+        )
+        .unwrap();
+        writeln!(code, "let second_offsets = msb_offsets | lsb_offsets;").unwrap();
+
+        // Determine which of the 4 64-element groups this index belongs to
+        writeln!(code, "let scale_group = {index} / 4u;").unwrap();
+        writeln!(code, "let sub_chunk = {index} % 4u;").unwrap();
+
+        // Select the appropriate scales and offsets
+        writeln!(
+            code,
+            "let scales_u32 = select(first_scales, second_scales, scale_group >= 2u);"
+        )
+        .unwrap();
+        writeln!(
+            code,
+            "let offsets_u32 = select(first_offsets, second_offsets, scale_group >= 2u);"
+        )
+        .unwrap();
+        writeln!(code, "let scale_component_idx = scale_group % 2u;").unwrap();
+
+        writeln!(
+            code,
+            "let scales_vec = vec4<{datatype}>(unpack4xU8(scales_u32)) * super_block_scale;"
+        )
+        .unwrap();
+        writeln!(code, "let low_scales = scales_vec.xz;").unwrap();
+        writeln!(
+            code,
+            "let high_scales = scales_vec.yw * {};",
+            shift_right_scale(4)
+        )
+        .unwrap();
+        writeln!(
+            code,
+            "let offsets_vec = vec4<{datatype}>(unpack4xU8(offsets_u32)) * super_block_min;"
+        )
+        .unwrap();
+        writeln!(code, "let low_offsets = offsets_vec.xz;").unwrap();
+        writeln!(code, "let high_offsets = offsets_vec.yw;").unwrap();
+
+        // Get the scale and offset for this specific chunk
+        writeln!(code, "let scale = select(low_scales[scale_component_idx], high_scales[scale_component_idx], sub_chunk >= 2u);").unwrap();
+        writeln!(code, "let offset = select(low_offsets[scale_component_idx], high_offsets[scale_component_idx], sub_chunk >= 2u);").unwrap();
+
+        // Calculate the weight base index
+        writeln!(
+            code,
+            "let weight_base = (scale_group * 8u) + ((sub_chunk & 1u) * 4u);"
+        )
+        .unwrap();
+
+        // Load 16 elements (4 u32s, each with 4 bytes)
+        writeln!(code, "let is_high = sub_chunk >= 2u;").unwrap();
+        for i in 0..4 {
+            writeln!(
+                code,
+                "let weight_chunk_{i} = {chunk}.data[weight_base + {i}u];"
+            )
+            .unwrap();
+            writeln!(code, "let weight_chunk_low_{i} = vec4<{datatype}>(unpack4xU8(weight_chunk_{i} & {LOW_FOUR_BITS}));").unwrap();
+            writeln!(code, "let weight_chunk_high_{i} = vec4<{datatype}>(unpack4xU8(weight_chunk_{i} & {HIGH_FOUR_BITS}));").unwrap();
+            writeln!(
+                code,
+                "let weight_vec_{i} = select(weight_chunk_low_{i}, weight_chunk_high_{i}, is_high);"
+            )
+            .unwrap();
+            for j in 0..4 {
+                writeln!(
+                    code,
+                    "let scaled_{i}_{j} = weight_vec_{i}[{j}] * scale - offset;"
+                )
+                .unwrap();
+            }
+        }
+
+        // Group the results into a mat4x4
+        write!(code, "let result = mat4x4<{datatype}>(").unwrap();
+        for row in 0..4 {
+            if row > 0 {
+                writeln!(code, ", ").unwrap();
+            }
+            write!(code, "vec4(").unwrap();
+            for col in 0..4 {
+                if col > 0 {
+                    write!(code, ", ").unwrap();
+                }
+                write!(code, "scaled_{row}_{col}").unwrap();
+            }
+            write!(code, ")").unwrap();
+        }
+        writeln!(code, ");").unwrap();
+
+        process_element("result".to_string(), code);
+    }
 
     fn dequantize_block<W: Write>(
         chunk: String,
@@ -1431,6 +1794,8 @@ where
     test_fuzz_de_quantize_block_inner::<B, f32>(false, true).await;
     println!("testing f32 unrolled...");
     test_fuzz_de_quantize_block_inner::<B, f32>(true, false).await;
+    println!("testing f32 mat4x4...");
+    test_fuzz_de_quantize_mat4x4_inner::<B, f32>().await;
 
     async fn test_fuzz_de_quantize_block_inner<
         B: WgslQuantizedType + PartialEq + std::fmt::Debug,
@@ -1494,6 +1859,207 @@ where
         writeln!(&mut kernel, "fn main() {{").unwrap();
         writeln!(&mut kernel, "{kernel_body}").unwrap();
         writeln!(&mut kernel, "}}").unwrap();
+        let bind_group_layout =
+            device
+                .wgpu_device()
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: None,
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: false },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                    ],
+                });
+        let compute_pipeline_layout =
+            device
+                .wgpu_device()
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: None,
+                    bind_group_layouts: &[&bind_group_layout],
+                    push_constant_ranges: &[],
+                });
+        let module = device.create_shader_module(kernel);
+        let pipeline =
+            device
+                .wgpu_device()
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: None,
+                    layout: Some(&compute_pipeline_layout),
+                    module: &module,
+                    entry_point: Some("main"),
+                    cache: None,
+                    compilation_options: wgpu::PipelineCompilationOptions {
+                        zero_initialize_workgroup_memory: false,
+                        ..Default::default()
+                    },
+                });
+        for _ in 0..200 {
+            let block_bytes: B::AsBytes = rand::random();
+            let block = bytemuck::pod_read_unaligned::<B>(block_bytes.as_ref());
+            if !block.finite() {
+                continue;
+            }
+            let block_wgsl = block.into_wgsl_bytes();
+            assert_eq!(block, B::from_wgsl_bytes(block_wgsl));
+            let output =
+                device
+                    .wgpu_device()
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: None,
+                        contents: bytemuck::cast_slice(&vec![T::zero(); B::BLOCK_SIZE]),
+                        usage: wgpu::BufferUsages::STORAGE
+                            | wgpu::BufferUsages::COPY_DST
+                            | wgpu::BufferUsages::COPY_SRC,
+                    });
+            let bind_group = device
+                .wgpu_device()
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: None,
+                    layout: &bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                                buffer: &device.wgpu_device().create_buffer_init(
+                                    &wgpu::util::BufferInitDescriptor {
+                                        label: None,
+                                        contents: block_wgsl.as_ref(),
+                                        usage: wgpu::BufferUsages::STORAGE
+                                            | wgpu::BufferUsages::COPY_SRC,
+                                    },
+                                ),
+                                offset: 0,
+                                size: None,
+                            }),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                                buffer: &output,
+                                offset: 0,
+                                size: None,
+                            }),
+                        },
+                    ],
+                });
+
+            let mut encoder = device
+                .wgpu_device()
+                .create_command_encoder(&Default::default());
+            {
+                let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: None,
+                    timestamp_writes: None,
+                });
+                cpass.set_pipeline(&pipeline);
+                cpass.set_bind_group(0, &bind_group, &[]);
+                let [workgroup_size_x, workgroup_size_y, workgroup_size_z] = [1, 1, 1];
+                cpass.dispatch_workgroups(workgroup_size_x, workgroup_size_y, workgroup_size_z);
+            }
+            device.wgpu_queue().submit(Some(encoder.finish()));
+
+            let (sender, receiver) = futures_channel::oneshot::channel();
+            DownloadBuffer::read_buffer(
+                device.wgpu_device(),
+                device.wgpu_queue(),
+                &output.slice(..),
+                move |result| {
+                    _ = sender.send(result);
+                },
+            );
+            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
+            let output = receiver
+                .await
+                .map_err(|_| wgpu::BufferAsyncError)
+                .unwrap()
+                .unwrap();
+
+            let ouptut_as_floats = bytemuck::cast_slice::<_, T>(&output);
+            let expected_result = block
+                .dequantize()
+                .as_ref()
+                .iter()
+                .map(|x| T::from_f32(*x))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                ouptut_as_floats, expected_result,
+                "Block: {block:?}, Output: {ouptut_as_floats:?}, Expected: {expected_result:?}, kernel: {kernel_body}"
+            );
+        }
+    }
+
+    async fn test_fuzz_de_quantize_mat4x4_inner<
+        B: WgslQuantizedType + PartialEq + std::fmt::Debug,
+        T: FloatDataType,
+    >()
+    where
+        rand::distr::StandardUniform:
+            rand::prelude::Distribution<<B as fusor_gguf::GgufBlock>::AsBytes>,
+    {
+        let dtype = T::WGSL_TYPE;
+        let device = crate::Device::new().await.unwrap();
+        let mut kernel_body = String::new();
+
+        // Dequantize each mat4x4 block and write it to output
+        for i in 0..B::MATRIX_BLOCKS {
+            // Wrap each block in its own scope to avoid variable name conflicts
+            writeln!(&mut kernel_body, "{{").unwrap();
+            B::dequantize_4x4_block(
+                &format!("{i}u"),
+                "block".to_string(),
+                dtype,
+                |mat, code| {
+                    // Extract each element from the mat4x4 and write to output
+                    // mat4x4 in WGSL is column-major, so mat[col][row] accesses column col, row row
+                    for col in 0..4 {
+                        for row in 0..4 {
+                            let idx = i * 16 + col * 4 + row;
+                            writeln!(code, "output[{idx}] = {mat}[{col}][{row}];").unwrap();
+                        }
+                    }
+                },
+                &mut kernel_body,
+            );
+            writeln!(&mut kernel_body, "}}").unwrap();
+        }
+
+        let mut kernel = String::new();
+        writeln!(&mut kernel, "enable f16;").unwrap();
+        B::write_type(&mut kernel).unwrap();
+        writeln!(
+            &mut kernel,
+            "@group(0) @binding(0) var<storage, read> block: {};",
+            B::GGML_TYPE
+        )
+        .unwrap();
+        writeln!(
+            &mut kernel,
+            "@group(0) @binding(1) var<storage, read_write> output: array<{dtype}, {}>;",
+            B::BLOCK_SIZE
+        )
+        .unwrap();
+        writeln!(&mut kernel, "@compute @workgroup_size(1, 1, 1)").unwrap();
+        writeln!(&mut kernel, "fn main() {{").unwrap();
+        writeln!(&mut kernel, "{kernel_body}").unwrap();
+        writeln!(&mut kernel, "}}").unwrap();
+
         let bind_group_layout =
             device
                 .wgpu_device()
