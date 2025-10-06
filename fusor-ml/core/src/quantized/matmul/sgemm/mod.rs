@@ -1,7 +1,5 @@
-use fusor_gguf::GgmlType;
-
 use crate::{
-    Device, QMatrix,
+    Device, QMatrix, dequantize_mat4x4_block_count,
     mir::{
         inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
@@ -30,21 +28,9 @@ pub(crate) fn sgemm(
     k_size: &str,
     _: &crate::compute_graph::ComputeGraphInner,
 ) {
-    match input_b.datatype {
-        GgmlType::Q6K => {
-            chunked_sgemm(
-                op,
-                generic_kernel,
-                workgroup_size,
-                input_a,
-                input_b,
-                output,
-                _n_size,
-                _m_size,
-                k_size,
-            );
-        }
-        _ => general_sgemm(
+    // Use chunked sgemm for all types that support mat4x4 dequantization
+    if dequantize_mat4x4_block_count(input_b.datatype) > 0 {
+        chunked_sgemm(
             op,
             generic_kernel,
             workgroup_size,
@@ -54,7 +40,19 @@ pub(crate) fn sgemm(
             _n_size,
             _m_size,
             k_size,
-        ),
+        );
+    } else {
+        general_sgemm(
+            op,
+            generic_kernel,
+            workgroup_size,
+            input_a,
+            input_b,
+            output,
+            _n_size,
+            _m_size,
+            k_size,
+        );
     }
 }
 
@@ -65,17 +63,19 @@ pub(crate) fn dispatch_size(
     m: u32,
     batch_size: u32,
 ) -> [u32; 3] {
-    match matrix.datatype() {
-        GgmlType::Q6K => [
+    // Use chunked dispatch size for all types that support mat4x4 dequantization
+    if dequantize_mat4x4_block_count(matrix.datatype()) > 0 {
+        [
             m.div_ceil(workgroup_shape.y() * 4),
             n.div_ceil(workgroup_shape.x() * 4),
             batch_size.div_ceil(workgroup_shape.z()),
-        ],
-        _ => [
+        ]
+    } else {
+        [
             n.div_ceil(workgroup_shape.x()),
             m.div_ceil(workgroup_shape.y()),
             batch_size.div_ceil(workgroup_shape.z()),
-        ],
+        ]
     }
 }
 
@@ -83,7 +83,8 @@ pub(crate) fn workgroup_shape_constraints(
     matrix: &QMatrix,
     _device: &Device,
 ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
-    if matrix.datatype() == GgmlType::Q6K {
+    // Use chunked workgroup constraints for all types that support mat4x4 dequantization
+    if dequantize_mat4x4_block_count(matrix.datatype()) > 0 {
         let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
         constraints.add_constraint(0, Constraint::equals(4));
         constraints.add_constraint(1, Constraint::equals(4));
