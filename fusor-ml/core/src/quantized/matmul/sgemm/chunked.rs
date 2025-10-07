@@ -42,7 +42,7 @@ impl ChunkedSgemmConfig {
     }
 
     /// Validate configuration parameters
-    pub fn validate(&self, elements_per_block: u32, sub_chunks: usize) -> Result<(), String> {
+    pub fn validate(&self, elements_per_block: u32, _: usize) -> Result<(), String> {
         let input_k_elements = self.input_k_elements();
 
         // Check that input_k_elements is a multiple of matrix_size
