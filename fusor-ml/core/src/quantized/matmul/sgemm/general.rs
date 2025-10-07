@@ -3,29 +3,54 @@ use crate::{
     mir::{
         inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
-        workgroup_shape::WorkgroupShape,
     },
     quantized::matmul::QMatMulOperation,
 };
 use std::fmt::Write;
 
-pub(crate) const SGEMM_VECTOR_SIZE: u32 = 4; // This is the size of the chunk we will dot at a time
+/// Configuration for general SGEMM algorithm
+#[derive(Debug, Clone, Copy)]
+pub struct GeneralSgemmConfig {
+    /// Size of the vector to dot at a time
+    pub vector_size: u32,
+}
+
+impl GeneralSgemmConfig {
+    /// Default configuration
+    pub const fn default() -> Self {
+        Self { vector_size: 4 }
+    }
+
+    /// Validate configuration parameters
+    pub fn validate(&self) -> Result<(), String> {
+        if self.vector_size == 0 {
+            return Err("vector_size must be greater than 0".to_string());
+        }
+        Ok(())
+    }
+}
+
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn general_sgemm(
+pub fn general_sgemm_with_config(
     op: &QMatMulOperation,
     kernel: &mut GenericKernel,
-    _: &WorkgroupShape,
     input_a: &TensorInput,
     input_b: &QMatrixInput,
     output: &TensorInput,
     n_size: &str,
     m_size: &str,
     k_size: &str,
+    config: GeneralSgemmConfig,
 ) {
     let global_id = kernel.global_id();
     let elements_per_block = op.elements_per_block();
     let dtype = op.input_datatype;
+
+    // Validate configuration
+    config.validate().unwrap();
+
+    let sgemm_vector_size = config.vector_size;
 
     writeln!(kernel, "let x = {global_id}.x;").unwrap();
     writeln!(kernel, "let y = {global_id}.y;").unwrap();
@@ -66,11 +91,11 @@ pub(crate) fn general_sgemm(
             writeln!(code, "{{",).unwrap();
             writeln!(
                 code,
-                "let a_index_local_offset = a_index_offset + ({index})*{SGEMM_VECTOR_SIZE};"
+                "let a_index_local_offset = a_index_offset + ({index})*{sgemm_vector_size};"
             )
             .unwrap();
-            write!(code, "let a_values = vec{SGEMM_VECTOR_SIZE}<{dtype}>(",).unwrap();
-            for local in 0..SGEMM_VECTOR_SIZE {
+            write!(code, "let a_values = vec{sgemm_vector_size}<{dtype}>(",).unwrap();
+            for local in 0..sgemm_vector_size {
                 if local > 0 {
                     write!(code, ", ").unwrap();
                 }

@@ -5,20 +5,20 @@ use crate::{
         kernel::GenericKernel,
         workgroup_shape::{Constraint, WorkgroupShape},
     },
-    quantized::matmul::{
-        QMatMulOperation,
-        sgemm::{chunked::chunked_sgemm, general::general_sgemm},
-    },
+    quantized::matmul::QMatMulOperation,
 };
 
 mod chunked;
 mod general;
 
+pub use chunked::{ChunkedSgemmConfig, chunked_sgemm_with_config};
+pub use general::{GeneralSgemmConfig, general_sgemm_with_config};
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn sgemm(
     op: &QMatMulOperation,
     generic_kernel: &mut GenericKernel,
-    workgroup_size: &WorkgroupShape,
+    _workgroup_size: &WorkgroupShape,
     input_a: &TensorInput,
     input_b: &QMatrixInput,
     output: &TensorInput,
@@ -30,28 +30,28 @@ pub(crate) fn sgemm(
 ) {
     // Use chunked sgemm for all types that support mat4x4 dequantization
     if dequantize_mat4x4_block_count(input_b.datatype) > 0 {
-        chunked_sgemm(
+        let config = op.chunked_config.unwrap_or(ChunkedSgemmConfig::default());
+        chunked_sgemm_with_config(
             op,
             generic_kernel,
-            workgroup_size,
             input_a,
             input_b,
             output,
-            _n_size,
-            _m_size,
             k_size,
+            config,
         );
     } else {
-        general_sgemm(
+        let config = op.general_config.unwrap_or(GeneralSgemmConfig::default());
+        general_sgemm_with_config(
             op,
             generic_kernel,
-            workgroup_size,
             input_a,
             input_b,
             output,
             _n_size,
             _m_size,
             k_size,
+            config,
         );
     }
 }
