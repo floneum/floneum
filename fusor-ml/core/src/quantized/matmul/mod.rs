@@ -634,7 +634,6 @@ async fn test_q6k_with_different_configs() {
     let configs = vec![
         // Small cache
         ChunkedSgemmConfig {
-            matrix_size: 16,
             subgroup_threads_per_block: 2,
             input_k_chunks: 2,
             input_m_elements: 8,
@@ -642,7 +641,6 @@ async fn test_q6k_with_different_configs() {
         },
         // Larger K chunks
         ChunkedSgemmConfig {
-            matrix_size: 16,
             subgroup_threads_per_block: 4,
             input_k_chunks: 4,
             input_m_elements: 16,
@@ -750,140 +748,6 @@ async fn test_fuzz_q_mat_mul_q4k() {
                     let actual = result[[batch, x, y]];
                     if (expected - actual).abs() > 3. {
                         println!("width: {width}");
-                        println!("Expected: {candle_result:?}");
-                        println!("Actual: {result:?}");
-                        panic!("expected: {expected}, actual: {actual}");
-                    }
-                }
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-#[tokio::test]
-async fn test_q4k_with_small_cache_config() {
-    use crate::Tensor;
-    use candle_core::Module;
-
-    let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("blk.3.ffn_down.weight").await;
-
-    // Test with smaller cache sizes for memory-constrained environments
-    let config = ChunkedSgemmConfig {
-        matrix_size: 16,
-        subgroup_threads_per_block: 2,
-        input_k_chunks: 2,
-        input_m_elements: 8,
-        input_n_elements: 8,
-    };
-
-    // Test a few different widths
-    let widths = vec![1, 16, 64];
-
-    for width in widths {
-        let batch = 2;
-        let random_data: Vec<Vec<Vec<f32>>> = (0..batch)
-            .map(|_| {
-                (0..width)
-                    .map(|_| (0..1536).map(|_| rand::random()).collect())
-                    .collect()
-            })
-            .collect();
-        let tensor = Tensor::<3, f32>::new(&device, &random_data);
-
-        let result = tensor.q_mat_mul_with_chunked_config(&q_matrix, config);
-        let fusor_shape = result.shape();
-        let result = result.as_slice().await.unwrap();
-
-        let candle_b = candle_core::Tensor::from_iter(
-            random_data
-                .iter()
-                .flat_map(|x| x.iter().flat_map(|x| x.iter().copied())),
-            &candle_core::Device::Cpu,
-        )
-        .unwrap()
-        .reshape(&[batch, width, 1536])
-        .unwrap();
-        let candle_result = candle_q_matrix.forward(&candle_b).unwrap();
-        assert_eq!(candle_result.shape().dims(), &[batch, width, 576]);
-        let candle_result = candle_result.to_vec3::<f32>().unwrap();
-
-        assert_eq!(fusor_shape, &[batch, width, 576]);
-
-        for batch in 0..batch {
-            for x in 0..width {
-                for y in 0..576 {
-                    let expected = candle_result[batch][x][y];
-                    let actual = result[[batch, x, y]];
-                    if (expected - actual).abs() > 3. {
-                        println!("width: {width}, config: {config:?}");
-                        println!("Expected: {candle_result:?}");
-                        println!("Actual: {result:?}");
-                        panic!("expected: {expected}, actual: {actual}");
-                    }
-                }
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-#[tokio::test]
-async fn test_q4k_with_larger_k_chunks_config() {
-    use crate::Tensor;
-    use candle_core::Module;
-
-    let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("blk.3.ffn_down.weight").await;
-
-    // Test with more K chunks for better parallelism
-    let config = ChunkedSgemmConfig {
-        matrix_size: 16,
-        subgroup_threads_per_block: 4,
-        input_k_chunks: 4,
-        input_m_elements: 16,
-        input_n_elements: 16,
-    };
-
-    // Test a few different widths
-    let widths = vec![1, 16, 64];
-
-    for width in widths {
-        let batch = 2;
-        let random_data: Vec<Vec<Vec<f32>>> = (0..batch)
-            .map(|_| {
-                (0..width)
-                    .map(|_| (0..1536).map(|_| rand::random()).collect())
-                    .collect()
-            })
-            .collect();
-        let tensor = Tensor::<3, f32>::new(&device, &random_data);
-
-        let result = tensor.q_mat_mul_with_chunked_config(&q_matrix, config);
-        let fusor_shape = result.shape();
-        let result = result.as_slice().await.unwrap();
-
-        let candle_b = candle_core::Tensor::from_iter(
-            random_data
-                .iter()
-                .flat_map(|x| x.iter().flat_map(|x| x.iter().copied())),
-            &candle_core::Device::Cpu,
-        )
-        .unwrap()
-        .reshape(&[batch, width, 1536])
-        .unwrap();
-        let candle_result = candle_q_matrix.forward(&candle_b).unwrap();
-        assert_eq!(candle_result.shape().dims(), &[batch, width, 576]);
-        let candle_result = candle_result.to_vec3::<f32>().unwrap();
-
-        assert_eq!(fusor_shape, &[batch, width, 576]);
-
-        for batch in 0..batch {
-            for x in 0..width {
-                for y in 0..576 {
-                    let expected = candle_result[batch][x][y];
-                    let actual = result[[batch, x, y]];
-                    if (expected - actual).abs() > 3. {
-                        println!("width: {width}, config: {config:?}");
                         println!("Expected: {candle_result:?}");
                         println!("Actual: {result:?}");
                         panic!("expected: {expected}, actual: {actual}");

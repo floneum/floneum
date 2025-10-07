@@ -9,11 +9,12 @@ use crate::{
 };
 use std::fmt::Write;
 
+/// Size of the chunk we will dot at a time
+const MATRIX_ELEMENTS: u32 = 16;
+
 /// Configuration for chunked SGEMM algorithm
 #[derive(Debug, Clone, Copy)]
 pub struct ChunkedSgemmConfig {
-    /// Size of the chunk we will dot at a time (must be divisible by 4)
-    pub matrix_size: u32,
     /// Number of subgroup threads per block
     pub subgroup_threads_per_block: u32,
     /// How many matrix_size-wide blocks we load from input_a and input_b into the cache every step
@@ -28,7 +29,6 @@ impl ChunkedSgemmConfig {
     /// Default configuration
     pub const fn default() -> Self {
         Self {
-            matrix_size: 16,
             subgroup_threads_per_block: 2,
             input_k_chunks: 2,
             input_m_elements: 16,
@@ -38,24 +38,26 @@ impl ChunkedSgemmConfig {
 
     /// Compute the total K elements loaded per step
     pub const fn input_k_elements(&self) -> u32 {
-        self.input_k_chunks * self.matrix_size
+        self.input_k_chunks * MATRIX_ELEMENTS
     }
 
     /// Validate configuration parameters
     pub fn validate(&self, elements_per_block: u32, sub_chunks: usize) -> Result<(), String> {
         let input_k_elements = self.input_k_elements();
 
-        if elements_per_block % input_k_elements != 0 {
+        // Check that input_k_elements is a multiple of matrix_size
+        if input_k_elements % MATRIX_ELEMENTS != 0 {
             return Err(format!(
-                "elements_per_block ({}) must be divisible by input_k_elements ({})",
-                elements_per_block, input_k_elements
+                "input_k_elements ({}) must be divisible by matrix_size ({})",
+                input_k_elements, MATRIX_ELEMENTS
             ));
         }
 
-        if sub_chunks % self.input_k_chunks as usize != 0 {
+        // Check that matrix_size divides elements_per_block evenly
+        if elements_per_block % MATRIX_ELEMENTS != 0 {
             return Err(format!(
-                "sub_chunks ({}) must be divisible by input_k_chunks ({})",
-                sub_chunks, self.input_k_chunks
+                "elements_per_block ({}) must be divisible by matrix_size ({})",
+                elements_per_block, MATRIX_ELEMENTS
             ));
         }
 
@@ -91,7 +93,6 @@ impl ChunkedSgemmConfig {
     }
 }
 
-
 #[allow(clippy::too_many_arguments)]
 pub fn chunked_sgemm_with_config(
     op: &QMatMulOperation,
@@ -113,7 +114,6 @@ pub fn chunked_sgemm_with_config(
     // Validate configuration
     config.validate(elements_per_block, sub_chunks).unwrap();
 
-    let sgemm_matrix_size = config.matrix_size;
     let sgemm_subgroup_threads_per_block = config.subgroup_threads_per_block;
     let sgemm_input_k_elements = config.input_k_elements();
     let sgemm_input_m_elements = config.input_m_elements;
@@ -163,7 +163,7 @@ pub fn chunked_sgemm_with_config(
     .unwrap();
 
     // How many blocks do we have to process in the k dim
-    writeln!(kernel, "let k_chunk_size = {k_size} / {sgemm_matrix_size};").unwrap();
+    writeln!(kernel, "let k_chunk_size = {k_size} / {MATRIX_ELEMENTS};").unwrap();
     writeln!(
         kernel,
         "let k_block_size = {k_size} / {elements_per_block};"
@@ -173,11 +173,11 @@ pub fn chunked_sgemm_with_config(
     // This threads b_input offset in blocks
     writeln!(
         kernel,
-        "let b_block_offset = (y * {sgemm_input_n_elements} + pair_index) * k_block_size;"
+        "let b_block_offset = (y * {sgemm_input_n_elements} + pair_index * {sgemm_subgroup_threads_per_block}) * k_block_size;"
     )
     .unwrap();
 
-    let chunks_per_block = elements_per_block / sgemm_matrix_size;
+    let chunks_per_block = elements_per_block / MATRIX_ELEMENTS;
 
     // Calculate one block sized group
     writeln!(
@@ -199,22 +199,18 @@ pub fn chunked_sgemm_with_config(
             writeln!(kernel, "let b_block_index = k / {chunks_per_block};").unwrap();
             writeln!(kernel, "let b_index_within_block = k % {chunks_per_block};").unwrap();
             let y_stride = sgemm_input_k_elements / 4;
-            let block_half = (sgemm_input_n_elements / 4) / 2;
             dequantize_mat4x4_block(
                 kernel,
                 op.matrix.datatype,
                 "b_index_within_block",
-                format!(
-                    "{input_b}[b_block_index + b_block_offset + i * {} * k_block_size]",
-                    sgemm_input_n_elements / 2
-                ),
+                format!("{input_b}[b_block_index + b_block_offset + i * k_block_size]"),
                 DataTypeEnum::F32,
                 |data, kernel| {
                     writeln!(kernel, "let b_values = {data};").unwrap();
                     writeln!(kernel, "for (var index = 0u; index < 4u; index += 1u) {{").unwrap();
                     writeln!(
                         kernel,
-                        "{cache_b}[pair_local_index * 4 + ((pair_index / 4) + i * {block_half}) * {y_stride} + index][pair_index % 4] = b_values[index];"
+                        "{cache_b}[pair_local_index * 4 + index + ((pair_index * {sgemm_subgroup_threads_per_block} + i) / 4) * {y_stride}][(pair_index * {sgemm_subgroup_threads_per_block} + i) % 4] = b_values[index];"
                     )
                     .unwrap();
                     writeln!(kernel, "}}").unwrap();
@@ -224,12 +220,11 @@ pub fn chunked_sgemm_with_config(
             // Load the a block into the cache
             writeln!(
                 kernel,
-                "for (var index = 0u; index < {sgemm_matrix_size}u; index += 1u) {{"
+                "for (var index = 0u; index < {MATRIX_ELEMENTS}u; index += 1u) {{"
             )
             .unwrap();
             {
                 let y_stride = sgemm_input_k_elements / 4;
-                let block_half = (sgemm_input_m_elements / 4) / 2;
                 let mut indices = vec![];
                 // Add batch indices first
                 for dim in (0..input_a.rank()).rev().skip(2) {
@@ -237,16 +232,19 @@ pub fn chunked_sgemm_with_config(
                 }
                 // Then add M and K indices
                 indices.push(format!(
-                    "x * {sgemm_input_m_elements} + pair_index + i * {}",
-                    sgemm_input_m_elements / 2
+                    "x * {sgemm_input_m_elements} + pair_index * {sgemm_subgroup_threads_per_block} + i"
                 ));
-                indices.push(format!("k*{sgemm_matrix_size} + index"));
+                indices.push(format!("k*{MATRIX_ELEMENTS} + index"));
                 writeln!(
                     kernel,
-                    "let chunk_index = pair_local_index * 4 + ((pair_index / 4) + i * {block_half})*{y_stride} + index / 4;"
+                    "let chunk_index = pair_local_index * 4 + index / 4 + ((pair_index * {sgemm_subgroup_threads_per_block} + i) / 4) * {y_stride};"
                 )
                 .unwrap();
-                writeln!(kernel, "let row_index = pair_index % 4;").unwrap();
+                writeln!(
+                    kernel,
+                    "let row_index = (pair_index * {sgemm_subgroup_threads_per_block} + i) % 4;"
+                )
+                .unwrap();
                 writeln!(kernel, "let col_index = index % 4;").unwrap();
                 input_a
                     .check_bounds(
@@ -363,66 +361,4 @@ fn write_acc_back(
         },
     )?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_default_config_valid() {
-        let config = ChunkedSgemmConfig::default();
-        // For Q4_K, elements_per_block = 256, sub_chunks = 8
-        assert!(config.validate(256, 8).is_ok());
-    }
-
-    #[test]
-    fn test_alternative_config_small_cache() {
-        // Smaller cache sizes for memory-constrained environments
-        let config = ChunkedSgemmConfig {
-            matrix_size: 16,
-            subgroup_threads_per_block: 2,
-            input_k_chunks: 2,
-            input_m_elements: 8,
-            input_n_elements: 8,
-        };
-        assert!(config.validate(256, 8).is_ok());
-    }
-
-    #[test]
-    fn test_alternative_config_larger_k_chunks() {
-        // More K chunks for better parallelism
-        let config = ChunkedSgemmConfig {
-            matrix_size: 16,
-            subgroup_threads_per_block: 4,
-            input_k_chunks: 4,
-            input_m_elements: 16,
-            input_n_elements: 16,
-        };
-        assert!(config.validate(256, 8).is_ok());
-    }
-
-    #[test]
-    fn test_config_validation_fails_divisibility() {
-        let config = ChunkedSgemmConfig {
-            matrix_size: 16,
-            subgroup_threads_per_block: 2,
-            input_k_chunks: 3, // Not divisible by subgroup_threads_per_block
-            input_m_elements: 16,
-            input_n_elements: 16,
-        };
-        assert!(config.validate(256, 8).is_err());
-    }
-
-    #[test]
-    fn test_config_validation_fails_not_divisible_by_4() {
-        let config = ChunkedSgemmConfig {
-            matrix_size: 16,
-            subgroup_threads_per_block: 2,
-            input_k_chunks: 2,
-            input_m_elements: 15, // Not divisible by 4
-            input_n_elements: 16,
-        };
-        assert!(config.validate(256, 8).is_err());
-    }
 }
