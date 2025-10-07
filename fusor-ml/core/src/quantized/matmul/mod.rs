@@ -62,17 +62,11 @@ impl QMatMulOperation {
     }
 
     fn sgemv(&self) -> bool {
-        // For batched operations, check the second-to-last dimension (M dimension)
-        // For 2D: [M, K], check in_shape[0]
-        // For 3D: [batch, M, K], check in_shape[1]
         let m_dim_idx = self.in_shape.len() - 2;
-        self.in_shape[m_dim_idx] == 1
-            && self.in_shape.iter().take(m_dim_idx).product::<usize>() == 1
+        dbg!(dbg!(&self.in_shape)[m_dim_idx] == 1)
     }
 
     fn m_size(&self) -> u32 {
-        // For batched operations, the M size is the second-to-last dimension
-        // Don't multiply by batch size - that's handled in dispatch
         let m_dim_idx = self.in_shape.len() - 2;
         self.in_shape[m_dim_idx] as u32
     }
