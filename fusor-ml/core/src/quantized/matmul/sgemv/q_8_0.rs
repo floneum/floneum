@@ -60,10 +60,9 @@ pub(crate) fn q_8_0_sgemv(
 
     writeln!(kernel, "let lane_index = thread_local_id * {STEP_SIZE};").unwrap();
 
-    writeln!(kernel, "let batch_offset = batch_idx * {k_size};").unwrap();
     writeln!(
         kernel,
-        "var y_offset = batch_offset + thread_id * {elements_per_block} + lane_index;"
+        "var y_offset = thread_id * {elements_per_block} + lane_index;"
     )
     .unwrap();
 
@@ -87,7 +86,9 @@ pub(crate) fn q_8_0_sgemv(
         for j in 0..STEP_SIZE {
             writeln!(kernel, "{{").unwrap();
 
-            writeln!(kernel, "cached_a_values[{j}] = {input_a}[y_offset + {j}];").unwrap();
+            write!(kernel, "cached_a_values[{j}] = {input_a}[").unwrap();
+            input_a.strided_index(kernel, vec!["batch_idx".to_string(), "0".to_string(), format!("y_offset + {j}")]);
+            writeln!(kernel, "];").unwrap();
 
             writeln!(kernel, "}}").unwrap();
         }

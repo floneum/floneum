@@ -46,7 +46,6 @@ pub(crate) fn q_n_sgemv(
 
     // In index of the single element in the vector we are multiplying against
     writeln!(kernel, "let workgroup_offset = {workgroup_index}.x;").unwrap();
-    writeln!(kernel, "let batch_offset = batch_idx * {k_size};").unwrap();
     writeln!(
         kernel,
         "let row = ({SUBGROUP_COUNT} * workgroup_offset + {subgroup_index}) * {Q_N_SGEMV_CHUNK_SIZE};"
@@ -82,37 +81,45 @@ pub(crate) fn q_n_sgemv(
         writeln!(kernel, "var vector_sum = vec2f();").unwrap();
         writeln!(kernel, "for (var j = 0u; j < 8; j += 2u) {{").unwrap();
         {
+            // Load a_val_0 = input_a[batch_idx, 0, j + y_offset + 0]
+            write!(kernel, "let a_val_0 = {input_a}[").unwrap();
+            input_a.strided_index(kernel, vec!["batch_idx".to_string(), "0".to_string(), "j + y_offset + 0".to_string()]);
+            writeln!(kernel, "];").unwrap();
+
+            // Load a_val_1 = input_a[batch_idx, 0, j + y_offset + 1]
+            write!(kernel, "let a_val_1 = {input_a}[").unwrap();
+            input_a.strided_index(kernel, vec!["batch_idx".to_string(), "0".to_string(), "j + y_offset + 1".to_string()]);
+            writeln!(kernel, "];").unwrap();
+
+            // Load a_val_16 = input_a[batch_idx, 0, j + y_offset + 16]
+            write!(kernel, "let a_val_16 = {input_a}[").unwrap();
+            input_a.strided_index(kernel, vec!["batch_idx".to_string(), "0".to_string(), "j + y_offset + 16".to_string()]);
+            writeln!(kernel, "];").unwrap();
+
+            // Load a_val_17 = input_a[batch_idx, 0, j + y_offset + 17]
+            write!(kernel, "let a_val_17 = {input_a}[").unwrap();
+            input_a.strided_index(kernel, vec!["batch_idx".to_string(), "0".to_string(), "j + y_offset + 17".to_string()]);
+            writeln!(kernel, "];").unwrap();
+
+            writeln!(kernel, "vector_sum[0] += a_val_0 + a_val_1;").unwrap();
+            writeln!(kernel, "cached_a_values[j + 0] = a_val_0;").unwrap();
             writeln!(
                 kernel,
-                "vector_sum[0] += {input_a}[batch_offset + j + y_offset + 0] + {input_a}[batch_offset + j + y_offset + 1];"
-            )
-            .unwrap();
-            writeln!(
-                kernel,
-                "cached_a_values[j + 0] = {input_a}[batch_offset + j + y_offset + 0];"
-            )
-            .unwrap();
-            writeln!(
-                kernel,
-                "cached_a_values[j + 1] = {input_a}[batch_offset + j + y_offset + 1] * {};",
+                "cached_a_values[j + 1] = a_val_1 * {};",
                 shift_right_scale(8)
             )
             .unwrap();
 
+            writeln!(kernel, "vector_sum[1] += a_val_16 + a_val_17;").unwrap();
             writeln!(
                 kernel,
-                "vector_sum[1] += {input_a}[batch_offset + j + y_offset + 16] + {input_a}[batch_offset + j + y_offset + 17];"
-            )
-            .unwrap();
-            writeln!(
-                kernel,
-                "cached_a_values[j + 8] = {input_a}[batch_offset + j + y_offset + 16] * {};",
+                "cached_a_values[j + 8] = a_val_16 * {};",
                 shift_right_scale(4)
             )
             .unwrap();
             writeln!(
                 kernel,
-                "cached_a_values[j + 9] = {input_a}[batch_offset + j + y_offset + 17] * {};",
+                "cached_a_values[j + 9] = a_val_17 * {};",
                 shift_right_scale(12)
             )
             .unwrap();

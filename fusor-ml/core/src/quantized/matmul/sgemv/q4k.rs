@@ -62,8 +62,7 @@ pub(crate) fn q4k_sgemv(
     writeln!(kernel, "let half_subgroup_local_id = thread_local_id & 3;").unwrap();
 
     writeln!(kernel, "let block_offset = row * k_block_size;").unwrap();
-    writeln!(kernel, "let batch_offset = batch_idx * {k_size};").unwrap();
-    writeln!(kernel, "var vector_offset = batch_offset + thread_id * {elements_per_block} + half_subgroup_id * 64 + half_subgroup_local_id * 8;").unwrap();
+    writeln!(kernel, "var vector_offset = thread_id * {elements_per_block} + half_subgroup_id * 64 + half_subgroup_local_id * 8;").unwrap();
 
     let sum_storage_type = maybe_vec_storage_type(Q4K_SGEMV_CHUNK_SIZE, dtype);
     writeln!(kernel, "var sum = {sum_storage_type}();",).unwrap();
@@ -83,11 +82,24 @@ pub(crate) fn q4k_sgemv(
 
         // First load the values of a into the cache
         for j in 0..8 {
-            writeln!(
-                kernel,
-                "let vec_{j} = vec4({input_a}[vector_offset + {j} + 0], {input_a}[vector_offset + {j} + 32], {input_a}[vector_offset + {j} + 128], {input_a}[vector_offset + {j} + 160]);"
-            )
-            .unwrap();
+            // Load all 4 values using strided indexing
+            write!(kernel, "let a_val_{j}_0 = {input_a}[").unwrap();
+            input_a.strided_index(kernel, vec!["batch_idx".to_string(), "0".to_string(), format!("vector_offset + {j} + 0")]);
+            writeln!(kernel, "];").unwrap();
+
+            write!(kernel, "let a_val_{j}_1 = {input_a}[").unwrap();
+            input_a.strided_index(kernel, vec!["batch_idx".to_string(), "0".to_string(), format!("vector_offset + {j} + 32")]);
+            writeln!(kernel, "];").unwrap();
+
+            write!(kernel, "let a_val_{j}_2 = {input_a}[").unwrap();
+            input_a.strided_index(kernel, vec!["batch_idx".to_string(), "0".to_string(), format!("vector_offset + {j} + 128")]);
+            writeln!(kernel, "];").unwrap();
+
+            write!(kernel, "let a_val_{j}_3 = {input_a}[").unwrap();
+            input_a.strided_index(kernel, vec!["batch_idx".to_string(), "0".to_string(), format!("vector_offset + {j} + 160")]);
+            writeln!(kernel, "];").unwrap();
+
+            writeln!(kernel, "let vec_{j} = vec4(a_val_{j}_0, a_val_{j}_1, a_val_{j}_2, a_val_{j}_3);").unwrap();
             writeln!(kernel, "vector_sum += vec_{j};").unwrap();
             writeln!(kernel, "cached_a_low_values[{j} + 0] = vec_{j}.x;").unwrap();
             writeln!(kernel, "cached_a_low_values[{j} + 8] = vec_{j}.y;").unwrap();

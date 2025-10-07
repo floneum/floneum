@@ -101,14 +101,15 @@ pub(crate) fn q6k_sgemv(
     .unwrap();
     {
         // First load the values of a into cached_a_values
-        writeln!(kernel, "let batch_offset = batch_idx * {k_size};").unwrap();
         writeln!(
             kernel,
-            "let vector_offset = batch_offset + i * {elements_per_block} + y_offset;"
+            "let vector_offset = i * {elements_per_block} + y_offset;"
         )
         .unwrap();
         let load_value = |kernel: &mut GenericKernel, j: &str, offset: u32| {
-            write!(kernel, "{input_a}[{j} + vector_offset + {}]", offset * 32).unwrap();
+            write!(kernel, "{input_a}[").unwrap();
+            input_a.strided_index(kernel, vec!["batch_idx".to_string(), "0".to_string(), format!("{j} + vector_offset + {}", offset * 32)]);
+            write!(kernel, "]").unwrap();
         };
         if PRELOAD {
             writeln!(kernel, "for (var j = 0u; j < 4; j += 1u) {{").unwrap();

@@ -63,7 +63,7 @@ impl QMatMulOperation {
 
     fn sgemv(&self) -> bool {
         let m_dim_idx = self.in_shape.len() - 2;
-        dbg!(dbg!(&self.in_shape)[m_dim_idx] == 1)
+        self.in_shape[m_dim_idx] == 1
     }
 
     fn m_size(&self) -> u32 {
