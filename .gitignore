@@ -15,3 +15,4 @@ tokenizer.json
 *.cpp
 *.wgsl
 out.txt
+todo.md
