@@ -44,7 +44,7 @@ pub(crate) fn q4k_sgemv(
     // Find the reduce size in blocks rounded up
     writeln!(
         kernel,
-        "let k_block_size = ({k_size} + {elements_per_block} - 1) / {elements_per_block};"
+        "let k_block_size = {k_size} / {elements_per_block};"
     )
     .unwrap();
 
@@ -84,22 +84,54 @@ pub(crate) fn q4k_sgemv(
         for j in 0..8 {
             // Load all 4 values using strided indexing
             write!(kernel, "let a_val_{j}_0 = {input_a}[").unwrap();
-            input_a.strided_index(kernel, vec!["batch_idx".to_string(), "0".to_string(), format!("vector_offset + {j} + 0")]);
+            input_a.strided_index(
+                kernel,
+                vec![
+                    "batch_idx".to_string(),
+                    "0".to_string(),
+                    format!("vector_offset + {j} + 0"),
+                ],
+            );
             writeln!(kernel, "];").unwrap();
 
             write!(kernel, "let a_val_{j}_1 = {input_a}[").unwrap();
-            input_a.strided_index(kernel, vec!["batch_idx".to_string(), "0".to_string(), format!("vector_offset + {j} + 32")]);
+            input_a.strided_index(
+                kernel,
+                vec![
+                    "batch_idx".to_string(),
+                    "0".to_string(),
+                    format!("vector_offset + {j} + 32"),
+                ],
+            );
             writeln!(kernel, "];").unwrap();
 
             write!(kernel, "let a_val_{j}_2 = {input_a}[").unwrap();
-            input_a.strided_index(kernel, vec!["batch_idx".to_string(), "0".to_string(), format!("vector_offset + {j} + 128")]);
+            input_a.strided_index(
+                kernel,
+                vec![
+                    "batch_idx".to_string(),
+                    "0".to_string(),
+                    format!("vector_offset + {j} + 128"),
+                ],
+            );
             writeln!(kernel, "];").unwrap();
 
             write!(kernel, "let a_val_{j}_3 = {input_a}[").unwrap();
-            input_a.strided_index(kernel, vec!["batch_idx".to_string(), "0".to_string(), format!("vector_offset + {j} + 160")]);
+            input_a.strided_index(
+                kernel,
+                vec![
+                    "batch_idx".to_string(),
+                    "0".to_string(),
+                    format!("vector_offset + {j} + 160"),
+                ],
+            );
             writeln!(kernel, "];").unwrap();
 
-            writeln!(kernel, "let vec_{j} = vec4(a_val_{j}_0, a_val_{j}_1, a_val_{j}_2, a_val_{j}_3);").unwrap();
+            writeln!(
+                kernel,
+                "let vec_{j} = vec4(a_val_{j}_0, a_val_{j}_1, a_val_{j}_2, a_val_{j}_3);"
+            )
+            .unwrap();
             writeln!(kernel, "vector_sum += vec_{j};").unwrap();
             writeln!(kernel, "cached_a_low_values[{j} + 0] = vec_{j}.x;").unwrap();
             writeln!(kernel, "cached_a_low_values[{j} + 8] = vec_{j}.y;").unwrap();

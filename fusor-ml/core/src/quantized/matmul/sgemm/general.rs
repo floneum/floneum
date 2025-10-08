@@ -30,7 +30,6 @@ impl GeneralSgemmConfig {
     }
 }
 
-
 #[allow(clippy::too_many_arguments)]
 pub fn general_sgemm_with_config(
     op: &QMatMulOperation,

@@ -46,7 +46,7 @@ impl ChunkedSgemmConfig {
         let input_k_elements = self.input_k_elements();
 
         // Check that input_k_elements is a multiple of matrix_size
-        if input_k_elements % MATRIX_ELEMENTS != 0 {
+        if !input_k_elements.is_multiple_of(MATRIX_ELEMENTS) {
             return Err(format!(
                 "input_k_elements ({}) must be divisible by matrix_size ({})",
                 input_k_elements, MATRIX_ELEMENTS
@@ -54,35 +54,35 @@ impl ChunkedSgemmConfig {
         }
 
         // Check that matrix_size divides elements_per_block evenly
-        if elements_per_block % MATRIX_ELEMENTS != 0 {
+        if !elements_per_block.is_multiple_of(MATRIX_ELEMENTS) {
             return Err(format!(
                 "elements_per_block ({}) must be divisible by matrix_size ({})",
                 elements_per_block, MATRIX_ELEMENTS
             ));
         }
 
-        if self.input_k_chunks % self.subgroup_threads_per_block != 0 {
+        if !self.input_k_chunks.is_multiple_of(self.subgroup_threads_per_block) {
             return Err(format!(
                 "input_k_chunks ({}) must be divisible by subgroup_threads_per_block ({})",
                 self.input_k_chunks, self.subgroup_threads_per_block
             ));
         }
 
-        if self.input_m_elements % 4 != 0 {
+        if !self.input_m_elements.is_multiple_of(4) {
             return Err(format!(
                 "input_m_elements ({}) must be divisible by 4",
                 self.input_m_elements
             ));
         }
 
-        if self.input_n_elements % 4 != 0 {
+        if !self.input_n_elements.is_multiple_of(4) {
             return Err(format!(
                 "input_n_elements ({}) must be divisible by 4",
                 self.input_n_elements
             ));
         }
 
-        if input_k_elements % 4 != 0 {
+        if !input_k_elements.is_multiple_of(4) {
             return Err(format!(
                 "input_k_elements ({}) must be divisible by 4",
                 input_k_elements

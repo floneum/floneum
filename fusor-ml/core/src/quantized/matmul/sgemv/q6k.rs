@@ -108,7 +108,14 @@ pub(crate) fn q6k_sgemv(
         .unwrap();
         let load_value = |kernel: &mut GenericKernel, j: &str, offset: u32| {
             write!(kernel, "{input_a}[").unwrap();
-            input_a.strided_index(kernel, vec!["batch_idx".to_string(), "0".to_string(), format!("{j} + vector_offset + {}", offset * 32)]);
+            input_a.strided_index(
+                kernel,
+                vec![
+                    "batch_idx".to_string(),
+                    "0".to_string(),
+                    format!("{j} + vector_offset + {}", offset * 32),
+                ],
+            );
             write!(kernel, "]").unwrap();
         };
         if PRELOAD {

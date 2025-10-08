@@ -83,22 +83,50 @@ pub(crate) fn q_n_sgemv(
         {
             // Load a_val_0 = input_a[batch_idx, 0, j + y_offset + 0]
             write!(kernel, "let a_val_0 = {input_a}[").unwrap();
-            input_a.strided_index(kernel, vec!["batch_idx".to_string(), "0".to_string(), "j + y_offset + 0".to_string()]);
+            input_a.strided_index(
+                kernel,
+                vec![
+                    "batch_idx".to_string(),
+                    "0".to_string(),
+                    "j + y_offset + 0".to_string(),
+                ],
+            );
             writeln!(kernel, "];").unwrap();
 
             // Load a_val_1 = input_a[batch_idx, 0, j + y_offset + 1]
             write!(kernel, "let a_val_1 = {input_a}[").unwrap();
-            input_a.strided_index(kernel, vec!["batch_idx".to_string(), "0".to_string(), "j + y_offset + 1".to_string()]);
+            input_a.strided_index(
+                kernel,
+                vec![
+                    "batch_idx".to_string(),
+                    "0".to_string(),
+                    "j + y_offset + 1".to_string(),
+                ],
+            );
             writeln!(kernel, "];").unwrap();
 
             // Load a_val_16 = input_a[batch_idx, 0, j + y_offset + 16]
             write!(kernel, "let a_val_16 = {input_a}[").unwrap();
-            input_a.strided_index(kernel, vec!["batch_idx".to_string(), "0".to_string(), "j + y_offset + 16".to_string()]);
+            input_a.strided_index(
+                kernel,
+                vec![
+                    "batch_idx".to_string(),
+                    "0".to_string(),
+                    "j + y_offset + 16".to_string(),
+                ],
+            );
             writeln!(kernel, "];").unwrap();
 
             // Load a_val_17 = input_a[batch_idx, 0, j + y_offset + 17]
             write!(kernel, "let a_val_17 = {input_a}[").unwrap();
-            input_a.strided_index(kernel, vec!["batch_idx".to_string(), "0".to_string(), "j + y_offset + 17".to_string()]);
+            input_a.strided_index(
+                kernel,
+                vec![
+                    "batch_idx".to_string(),
+                    "0".to_string(),
+                    "j + y_offset + 17".to_string(),
+                ],
+            );
             writeln!(kernel, "];").unwrap();
 
             writeln!(kernel, "vector_sum[0] += a_val_0 + a_val_1;").unwrap();

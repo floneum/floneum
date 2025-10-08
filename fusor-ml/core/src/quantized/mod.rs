@@ -275,7 +275,7 @@ trait WgslQuantizedType: GgufBlock {
             "for (var raw_chunk_index = 0u; raw_chunk_index < {}u; raw_chunk_index += 1u) {{",
             Self::MATRIX_BLOCKS
         );
-        _ = Self::dequantize_4x4_block(
+        Self::dequantize_4x4_block(
             "raw_chunk_index",
             chunk,
             datatype,
@@ -289,7 +289,7 @@ trait WgslQuantizedType: GgufBlock {
                 }
             },
             code,
-        );
+        );;
         _ = writeln!(code, "}}");
     }
 

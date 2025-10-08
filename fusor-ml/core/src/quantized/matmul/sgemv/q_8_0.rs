@@ -87,7 +87,14 @@ pub(crate) fn q_8_0_sgemv(
             writeln!(kernel, "{{").unwrap();
 
             write!(kernel, "cached_a_values[{j}] = {input_a}[").unwrap();
-            input_a.strided_index(kernel, vec!["batch_idx".to_string(), "0".to_string(), format!("y_offset + {j}")]);
+            input_a.strided_index(
+                kernel,
+                vec![
+                    "batch_idx".to_string(),
+                    "0".to_string(),
+                    format!("y_offset + {j}"),
+                ],
+            );
             writeln!(kernel, "];").unwrap();
 
             writeln!(kernel, "}}").unwrap();
