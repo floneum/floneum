@@ -61,7 +61,10 @@ impl ChunkedSgemmConfig {
             ));
         }
 
-        if !self.input_k_chunks.is_multiple_of(self.subgroup_threads_per_block) {
+        if !self
+            .input_k_chunks
+            .is_multiple_of(self.subgroup_threads_per_block)
+        {
             return Err(format!(
                 "input_k_chunks ({}) must be divisible by subgroup_threads_per_block ({})",
                 self.input_k_chunks, self.subgroup_threads_per_block
