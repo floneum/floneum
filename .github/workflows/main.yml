@@ -51,7 +51,7 @@ jobs:
   check:
     if: github.event.pull_request.draft == false
     name: Check
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -64,7 +64,7 @@ jobs:
   test:
     if: github.event.pull_request.draft == false
     name: Test Suite
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -81,7 +81,7 @@ jobs:
   doc:
     if: github.event.pull_request.draft == false
     name: Docs
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -93,7 +93,7 @@ jobs:
   fmt:
     if: github.event.pull_request.draft == false
     name: Rustfmt
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -104,7 +104,7 @@ jobs:
   clippy:
     if: github.event.pull_request.draft == false
     name: Clippy
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
