@@ -25,7 +25,7 @@ impl QMatrixInput {
 
     pub(crate) fn strided_index(
         &self,
-        write: &mut String,
+        write: &mut impl std::fmt::Write,
         indexes: impl IntoIterator<Item = String>,
     ) {
         let mut strides = Vec::new();
@@ -41,10 +41,10 @@ impl QMatrixInput {
         }
         for (i, index) in indexes.into_iter().enumerate().take(self.rank as usize) {
             let stride = &strides[strides.len() - i - 1];
-            write!(write, "({index})*{stride} + ").unwrap();
-        }
-        for _ in 0..3 {
-            write.pop();
+            write!(write, "({index})*{stride}").unwrap();
+            if i < (self.rank - 1) as usize {
+                write!(write, " + ").unwrap();
+            }
         }
     }
 

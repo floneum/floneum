@@ -15,7 +15,7 @@ use crate::{
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn sgemv(
     op: &MatMulOperation,
-    generic_kernel: &mut GenericKernel,
+    kernel: &mut GenericKernel,
     workgroup_size: &WorkgroupShape,
     input_a: &TensorInput,
     input_b: &TensorInput,
@@ -29,8 +29,8 @@ pub(crate) fn sgemv(
 ) {
     let blocksize = workgroup_size.x();
     let dtype = op.datatype;
-    let workgroup_index = generic_kernel.workgroup_index();
-    let workgroup_local_index = generic_kernel.workgroup_local_index();
+    let workgroup_index = kernel.workgroup_index();
+    let workgroup_local_index = kernel.workgroup_local_index();
 
     let chunk_size = params.chunk_size;
     let vector_size = params.vector_size;
@@ -38,14 +38,14 @@ pub(crate) fn sgemv(
     // We don't need to synchronize between the whole workgroup if there is only one subgroup
     let subgroup_size = graph.device.limits().max_subgroup_size;
     let workgroup_sync_data = (blocksize > subgroup_size).then(|| {
-        let local_data = generic_kernel.add_global_array(
+        let local_data = kernel.add_global_array(
             KernelGlobalSpace::Workgroup,
             maybe_vec_storage_type_enum(chunk_size, dtype),
             blocksize.to_string(),
         );
-        let subgroup_id = generic_kernel.subgroup_index();
-        let subgroup_local_id = generic_kernel.subgroup_local_index();
-        let subgroups_per_workgroup = generic_kernel.subgroups_per_workgroup();
+        let subgroup_id = kernel.subgroup_index();
+        let subgroup_local_id = kernel.subgroup_local_index();
+        let subgroups_per_workgroup = kernel.subgroups_per_workgroup();
         (
             local_data,
             subgroup_id,
@@ -54,71 +54,65 @@ pub(crate) fn sgemv(
         )
     });
 
-    let mut kernel = String::new();
-
     // Handle batch dimensions
-    writeln!(&mut kernel, "var block_batch = {workgroup_index}.z;").unwrap();
+    writeln!(kernel, "var block_batch = {workgroup_index}.z;").unwrap();
 
     // Decompose the batch index for higher-dimensional tensors
     for dim in (0..op.rank()).rev().skip(2) {
         let shape = input_a.shape_binding(dim);
-        writeln!(
-            &mut kernel,
-            "let block_batch_{dim} = block_batch % {shape};"
-        )
-        .unwrap();
-        writeln!(&mut kernel, "block_batch /= {shape};").unwrap();
+        writeln!(kernel, "let block_batch_{dim} = block_batch % {shape};").unwrap();
+        writeln!(kernel, "block_batch /= {shape};").unwrap();
     }
 
     // Find the batch offset for a, b and output
     for (name, tensor) in [("a", input_a), ("b", input_b), ("c", output)] {
-        writeln!(&mut kernel, "let {name}_start_index = ").unwrap();
+        writeln!(kernel, "let {name}_start_index = ").unwrap();
         let offset = tensor.offset_binding();
-        write!(&mut kernel, "{offset}").unwrap();
+        write!(kernel, "{offset}").unwrap();
         for dim in (0..op.rank()).rev().skip(2) {
             let stride = tensor.stride_binding(dim);
-            write!(&mut kernel, " + block_batch_{dim}*{stride}").unwrap();
+            write!(kernel, " + block_batch_{dim}*{stride}").unwrap();
         }
-        writeln!(&mut kernel, ";").unwrap();
+        writeln!(kernel, ";").unwrap();
     }
 
     // In index of the single element in the vector we are multiplying against
-    writeln!(&mut kernel, "let workgroup_offset = {workgroup_index}.x;").unwrap();
+    writeln!(kernel, "let workgroup_offset = {workgroup_index}.x;").unwrap();
 
     let storage_type = maybe_vec_storage_type(chunk_size, dtype);
 
-    writeln!(&mut kernel, "var acc = {storage_type}();").unwrap();
+    writeln!(kernel, "var acc = {storage_type}();").unwrap();
 
     // Find this threads position in the workgroup
-    writeln!(&mut kernel, "var index = {workgroup_local_index};").unwrap();
+    writeln!(kernel, "var index = {workgroup_local_index};").unwrap();
 
     let vec_storage = maybe_vec_storage_type(vector_size, dtype);
 
     // Loop over all of the vector chunks this thread is responsible for
-    writeln!(&mut kernel, "while (index < {k_size}) {{").unwrap();
+    writeln!(kernel, "while (index < {k_size}) {{").unwrap();
     {
         // Load vector elements into b_reg from input_b. This will be reused for each offset in the chunk
         for i in 0..vector_size {
             writeln!(
-                &mut kernel,
+                kernel,
                 "let input_b_{i}_index = index + {i} * {vector_size};"
             )
             .unwrap();
             let b_row_stride = input_b.stride_binding(op.rank() - 2);
-            writeln!(&mut kernel, "let input_b_{i} = select({dtype}(0.0), {input_b}[b_start_index + input_b_{i}_index * {b_row_stride} + 0], input_b_{i}_index < {k_size});").unwrap();
+            writeln!(kernel, "let input_b_{i} = select({dtype}(0.0), {input_b}[b_start_index + input_b_{i}_index * {b_row_stride} + 0], input_b_{i}_index < {k_size});").unwrap();
         }
-        write!(&mut kernel, "let reg_b = {vec_storage}(").unwrap();
+        write!(kernel, "let reg_b = {vec_storage}(").unwrap();
         for i in 0..vector_size {
             if i > 0 {
-                write!(&mut kernel, ", ").unwrap();
+                write!(kernel, ", ").unwrap();
             }
-            write!(&mut kernel, "input_b_{i}").unwrap();
+            write!(kernel, "input_b_{i}").unwrap();
         }
-        writeln!(&mut kernel, ");").unwrap();
+        writeln!(kernel, ");").unwrap();
 
         if chunk_size > 1 {
             writeln!(
-                &mut kernel,
+                kernel,
                 "for (var offset = 0u; offset < {chunk_size}; offset += 1u) {{"
             )
             .unwrap();
@@ -131,37 +125,37 @@ pub(crate) fn sgemv(
 
         // Load matrix row elements into a_reg from input_a
         for i in 0..vector_size {
-            writeln!(&mut kernel, "let input_a_{i}_index = index + {i};").unwrap();
+            writeln!(kernel, "let input_a_{i}_index = index + {i};").unwrap();
             let a_row_stride = input_a.stride_binding(op.rank() - 2);
-            writeln!(&mut kernel, "let input_a_{i} = select({dtype}(0.0), {input_a}[a_start_index + {row_index} * {a_row_stride} + input_a_{i}_index], input_a_{i}_index < {k_size});").unwrap();
+            writeln!(kernel, "let input_a_{i} = select({dtype}(0.0), {input_a}[a_start_index + {row_index} * {a_row_stride} + input_a_{i}_index], input_a_{i}_index < {k_size});").unwrap();
         }
         // Then pack them into a vector and write to the cache
-        write!(&mut kernel, "let reg_a = {vec_storage}(").unwrap();
+        write!(kernel, "let reg_a = {vec_storage}(").unwrap();
         for i in 0..vector_size {
             if i > 0 {
-                write!(&mut kernel, ", ").unwrap();
+                write!(kernel, ", ").unwrap();
             }
-            write!(&mut kernel, "input_a_{i}").unwrap();
+            write!(kernel, "input_a_{i}").unwrap();
         }
-        writeln!(&mut kernel, ");").unwrap();
+        writeln!(kernel, ");").unwrap();
 
         // Compute dot product between the registers
         let acc_indexed = maybe_vec_storage_index(chunk_size, "acc", "offset");
         let dot = maybe_vec_dot(vector_size, "reg_a", "reg_b");
-        writeln!(&mut kernel, "{acc_indexed} += {dot};").unwrap();
+        writeln!(kernel, "{acc_indexed} += {dot};").unwrap();
 
         if chunk_size > 1 {
-            writeln!(&mut kernel, "}}").unwrap();
+            writeln!(kernel, "}}").unwrap();
         }
 
-        writeln!(&mut kernel, "index += {blocksize}u * {vector_size}u;").unwrap();
+        writeln!(kernel, "index += {blocksize}u * {vector_size}u;").unwrap();
     }
 
-    writeln!(&mut kernel, "}}").unwrap();
+    writeln!(kernel, "}}").unwrap();
 
     // Get the sum among all threads in the subgroup
     writeln!(
-        &mut kernel,
+        kernel,
         "acc = {};",
         maybe_vec_storage_subgroup_add(chunk_size, "acc")
     )
@@ -171,36 +165,36 @@ pub(crate) fn sgemv(
         workgroup_sync_data
     {
         // Write the output to the workgroup memory if this is the first thread in the subgroup
-        writeln!(&mut kernel, "if {subgroup_local_id} == 0u {{").unwrap();
+        writeln!(kernel, "if {subgroup_local_id} == 0u {{").unwrap();
         {
-            writeln!(&mut kernel, "{local_data}[{subgroup_id}] = acc;").unwrap();
+            writeln!(kernel, "{local_data}[{subgroup_id}] = acc;").unwrap();
         }
-        writeln!(&mut kernel, "}}").unwrap();
+        writeln!(kernel, "}}").unwrap();
 
         // Wait until all threads have written to the workgroup shared memory
-        writeln!(&mut kernel, "workgroupBarrier();").unwrap();
+        writeln!(kernel, "workgroupBarrier();").unwrap();
 
         // Then if this is the first subgroup, do one final shuffle down reduction
-        writeln!(&mut kernel, "if {subgroup_id} != 0u {{ return; }}").unwrap();
+        writeln!(kernel, "if {subgroup_id} != 0u {{ return; }}").unwrap();
         // Copy over the final value from each subgroup from the workgroup shared memory to the acc variable
         writeln!(
-            &mut kernel,
+            kernel,
             "if {subgroup_local_id} < {subgroups_per_workgroup} {{"
         )
         .unwrap();
         {
-            writeln!(&mut kernel, "acc = {local_data}[{subgroup_local_id}];").unwrap();
+            writeln!(kernel, "acc = {local_data}[{subgroup_local_id}];").unwrap();
         }
-        writeln!(&mut kernel, "}}").unwrap();
-        writeln!(&mut kernel, "else {{").unwrap();
+        writeln!(kernel, "}}").unwrap();
+        writeln!(kernel, "else {{").unwrap();
         {
-            writeln!(&mut kernel, "acc = {storage_type}();").unwrap();
+            writeln!(kernel, "acc = {storage_type}();").unwrap();
         }
-        writeln!(&mut kernel, "}}").unwrap();
+        writeln!(kernel, "}}").unwrap();
 
         // Finally get the final sum across all threads in the workgroup
         writeln!(
-            &mut kernel,
+            kernel,
             "acc = {};",
             maybe_vec_storage_subgroup_add(chunk_size, "acc",)
         )
@@ -208,44 +202,38 @@ pub(crate) fn sgemv(
     }
 
     // If this is not the first simd thread in the workgroup, we can return early
-    writeln!(
-        &mut kernel,
-        "if {workgroup_local_index} != 0u {{ return; }}"
-    )
-    .unwrap();
+    writeln!(kernel, "if {workgroup_local_index} != 0u {{ return; }}").unwrap();
 
     // Write the output to the output tensor if this is the first thread in the workgroup
     if chunk_size > 1 {
         writeln!(
-            &mut kernel,
+            kernel,
             "for (var offset = 0u; offset < {chunk_size}; offset += 1u) {{"
         )
         .unwrap();
     }
     {
         if chunk_size > 1 {
-            writeln!(&mut kernel, "let output_index = workgroup_offset + offset;").unwrap();
+            writeln!(kernel, "let output_index = workgroup_offset + offset;").unwrap();
         } else {
-            writeln!(&mut kernel, "let output_index = workgroup_offset;").unwrap();
+            writeln!(kernel, "let output_index = workgroup_offset;").unwrap();
         }
         let c_row_stride = output.stride_binding(op.rank() - 2);
         write!(
-            &mut kernel,
+            kernel,
             "{output}[c_start_index + output_index * {c_row_stride} + 0"
         )
         .unwrap();
         writeln!(
-            &mut kernel,
+            kernel,
             "] = {};",
             maybe_vec_storage_index(chunk_size, "acc", "offset")
         )
         .unwrap();
     }
     if chunk_size > 1 {
-        writeln!(&mut kernel, "}}").unwrap();
+        writeln!(kernel, "}}").unwrap();
     }
-
-    generic_kernel.push_body(&kernel);
 }
 
 pub(crate) fn dispatch_size(

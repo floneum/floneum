@@ -93,14 +93,9 @@ pub(crate) struct WorkgroupShapeConstraints {
 }
 
 impl WorkgroupShapeConstraints {
+    #[track_caller]
     pub(crate) fn new() -> Self {
         Self::default()
-    }
-
-    pub(crate) fn clear(&mut self) {
-        for constraints in &mut self.shape {
-            constraints.clear();
-        }
     }
 
     pub(crate) fn add_constraint(&mut self, dimension: usize, constraint: Constraint) {
@@ -136,7 +131,7 @@ impl WorkgroupShapeConstraints {
             self.possible().min_by_key(|shape| {
                 let linearized = shape.linearized();
                 (linearized as i64)
-                    + if linearized % limits.max_subgroup_size == 0 {
+                    + if shape.x() % limits.max_subgroup_size == 0 {
                         0
                     } else {
                         1024
@@ -167,9 +162,10 @@ fn test_all_possible_workgroup_shapes() {
 
 #[cfg(test)]
 fn test_limits() -> wgpu::Limits {
-    let mut limits = wgpu::Limits::default();
-    limits.max_subgroup_size = 64;
-    limits
+    wgpu::Limits {
+        max_subgroup_size: 64,
+        ..Default::default()
+    }
 }
 
 #[test]
@@ -186,8 +182,8 @@ fn test_workgroup_shape_constraints() {
     }
 
     let valid_shape = constraints.solve(&test_limits());
-    assert_eq!(valid_shape.unwrap().shape, [4, 1, 16]);
-    assert_eq!(valid_shape.unwrap().linearized(), 64);
+    assert_eq!(valid_shape.unwrap().shape, [4, 1, 1]);
+    assert_eq!(valid_shape.unwrap().linearized(), 4);
 }
 
 #[test]
@@ -210,8 +206,8 @@ fn test_many_workgroup_shape_constraints() {
     }
 
     let valid_shape = merged.solve(&test_limits());
-    assert_eq!(valid_shape.unwrap().shape, [4, 2, 8]);
-    assert_eq!(valid_shape.unwrap().linearized(), 64);
+    assert_eq!(valid_shape.unwrap().shape, [4, 2, 1]);
+    assert_eq!(valid_shape.unwrap().linearized(), 8);
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]

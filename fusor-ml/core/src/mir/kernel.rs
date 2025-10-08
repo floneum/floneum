@@ -72,16 +72,28 @@ impl GenericKernel {
         }
     }
 
+    pub(crate) fn clear(&mut self) {
+        self.workgroup_size = [1, 1, 1];
+        self.inputs.clear();
+        self.max_binding = 0;
+        self.registered_bindings.clear();
+        self.functions.clear();
+        self.max_function_id = 0;
+        self.globals.clear();
+        self.max_global_id = 0;
+        self.enabled_builtins.clear();
+        self.quantized_type_definitions.clear();
+        self.kernel = OnceLock::new();
+        self.body.clear();
+        self.name.clear();
+    }
+
     pub(crate) fn pre_register_binding(&mut self, binding: u32) {
         self.registered_bindings.push(binding);
     }
 
     pub(crate) fn name_mut(&mut self) -> &mut String {
         &mut self.name
-    }
-
-    pub(crate) fn push_body(&mut self, body: &str) {
-        self.body.push_str(body);
     }
 
     pub(crate) fn set_workgroup_size(&mut self, workgroup_size: impl Into<WorkgroupShape>) {
@@ -215,39 +227,39 @@ impl GenericKernel {
         global
     }
 
-    pub(crate) fn subgroup_size(&mut self) -> String {
+    pub(crate) fn subgroup_size(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::SubgroupSize;
-        "subgroup_size".to_string()
+        "subgroup_size"
     }
 
-    pub(crate) fn global_id(&mut self) -> String {
+    pub(crate) fn global_id(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::GlobalId;
-        "global_id".to_string()
+        "global_id"
     }
 
-    pub(crate) fn subgroup_local_index(&mut self) -> String {
+    pub(crate) fn subgroup_local_index(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::SubgroupLocalIndex;
-        "subgroup_local_id".to_string()
+        "subgroup_local_id"
     }
 
-    pub(crate) fn subgroup_index(&mut self) -> String {
+    pub(crate) fn subgroup_index(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::SubgroupIndex;
-        "subgroup_id".to_string()
+        "subgroup_id"
     }
 
-    pub(crate) fn workgroup_local_index(&mut self) -> String {
+    pub(crate) fn workgroup_local_index(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::WorkgroupLocalIndex;
-        "workgroup_local_id".to_string()
+        "workgroup_local_id"
     }
 
-    pub(crate) fn subgroups_per_workgroup(&mut self) -> String {
+    pub(crate) fn subgroups_per_workgroup(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::SubgroupsPerWorkgroup;
-        "subgroups_per_workgroup".to_string()
+        "subgroups_per_workgroup"
     }
 
-    pub(crate) fn workgroup_index(&mut self) -> String {
+    pub(crate) fn workgroup_index(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::WorkgroupIndex;
-        "workgroup_index".to_string()
+        "workgroup_index"
     }
 
     pub(crate) fn bind_group_layout(&self, device: &crate::Device) -> BindGroupLayout {
@@ -403,7 +415,7 @@ impl GenericKernel {
         &self,
         device: &crate::Device,
         bind_group_layout: &BindGroupLayout,
-        inputs: Vec<KernelInputValue>,
+        inputs: &[KernelInputValue],
     ) -> wgpu::BindGroup {
         assert_eq!(self.inputs.len(), inputs.len(), "Input count mismatch");
 
@@ -514,7 +526,7 @@ impl GenericKernel {
     pub(crate) fn run(
         &self,
         device: &Device,
-        inputs: Vec<KernelInputValue>,
+        inputs: &[KernelInputValue],
         command_encoder: &mut CommandEncoder,
         workgroup_dispatch_size: [u32; 3],
     ) {
@@ -565,6 +577,9 @@ impl GenericKernel {
 
     fn kernel(&self, f: &mut String) -> std::fmt::Result {
         writeln!(f, "enable f16;")?;
+
+        #[cfg(target_arch = "wasm32")]
+        writeln!(f, "enable subgroups;")?;
 
         self.declare_quantized_types(f)?;
 
@@ -669,5 +684,21 @@ impl GenericKernel {
         writeln!(f, "}}")?;
 
         Ok(())
+    }
+}
+
+impl Write for GenericKernel {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        self.body.push_str(s);
+        Ok(())
+    }
+
+    fn write_char(&mut self, c: char) -> std::fmt::Result {
+        self.body.push(c);
+        Ok(())
+    }
+
+    fn write_fmt(&mut self, args: std::fmt::Arguments) -> std::fmt::Result {
+        self.body.write_fmt(args)
     }
 }

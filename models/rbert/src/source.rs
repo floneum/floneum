@@ -71,6 +71,7 @@ impl BertSource {
 
     /// Create a new [`BertSource`] with the BGE base english preset
     pub fn bge_base_en() -> Self {
+        // https://huggingface.co/CompendiumLabs/bge-base-en-v1.5-gguf/blob/main/bge-base-en-v1.5-q4_k_m.gguf
         Self::default()
             .with_model(FileSource::huggingface(
                 "BAAI/bge-base-en-v1.5".to_string(),
@@ -91,6 +92,7 @@ impl BertSource {
 
     /// Create a new [`BertSource`] with the BGE small english preset
     pub fn bge_small_en() -> Self {
+        // https://huggingface.co/CompendiumLabs/bge-small-en-v1.5-gguf/blob/main/bge-small-en-v1.5-q4_k_m.gguf
         Self {
             config: FileSource::huggingface(
                 "BAAI/bge-small-en-v1.5".to_string(),
@@ -103,9 +105,9 @@ impl BertSource {
                 "tokenizer.json".to_string(),
             ),
             model: FileSource::huggingface(
-                "BAAI/bge-small-en-v1.5".to_string(),
+                "CompendiumLabs/bge-small-en-v1.5-gguf".to_string(),
                 "main".to_string(),
-                "model.safetensors".to_string(),
+                "bge-small-en-v1.5-q4_k_m.gguf".to_string(),
             ),
             search_embedding_prefix: None,
         }
@@ -133,6 +135,7 @@ impl BertSource {
 
     /// Create a new [`BertSource`] with the [snowflake-arctic-embed-xs](https://huggingface.co/Snowflake/snowflake-arctic-embed-xs) model
     pub fn snowflake_arctic_embed_extra_small() -> Self {
+        // https://huggingface.co/ChristianAzinn/snowflake-arctic-embed-xs-gguf/blob/main/snowflake-arctic-embed-xs--Q4_K_M.GGUF
         Self::default()
             .with_config(FileSource::huggingface(
                 "Snowflake/snowflake-arctic-embed-xs".to_string(),
@@ -145,9 +148,9 @@ impl BertSource {
                 "tokenizer.json".to_string(),
             ))
             .with_model(FileSource::huggingface(
-                "Snowflake/snowflake-arctic-embed-xs".to_string(),
+                "ChristianAzinn/snowflake-arctic-embed-xs-gguf".to_string(),
                 "main".to_string(),
-                "model.safetensors".to_string(),
+                "snowflake-arctic-embed-xs--Q4_K_M.GGUF".to_string(),
             ))
             .with_search_embedding_prefix(SNOWFLAKE_EMBEDDING_PREFIX.to_string())
     }

@@ -1,6 +1,6 @@
 use futures_util::Future;
 
-use crate::{Embedder, EmbedderExt, Embedding};
+use crate::{Embedder, EmbedderExt, Embedding, WasmNotSend};
 
 /// Convert a type into an embedding with an embedding model.
 pub trait IntoEmbedding {
@@ -8,13 +8,13 @@ pub trait IntoEmbedding {
     fn into_embedding<E: Embedder>(
         self,
         embedder: &E,
-    ) -> impl Future<Output = Result<Embedding, E::Error>> + Send;
+    ) -> impl Future<Output = Result<Embedding, E::Error>> + WasmNotSend;
 
     /// Convert the type into a query embedding with the given embedding model.
     fn into_query_embedding<E: Embedder>(
         self,
         embedder: &E,
-    ) -> impl Future<Output = Result<Embedding, E::Error>> + Send;
+    ) -> impl Future<Output = Result<Embedding, E::Error>> + WasmNotSend;
 }
 
 /// Convert any type that implements [`ToString`] into an embedding with an embedding model.

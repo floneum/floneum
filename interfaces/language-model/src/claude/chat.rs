@@ -296,24 +296,6 @@ enum AnthropicCompatibleChatResponseContentBlockDeltaMessage {
     Unknown,
 }
 
-#[derive(Serialize, Deserialize)]
-enum FinishReason {
-    #[serde(rename = "content_filter")]
-    ContentFilter,
-    #[serde(rename = "function_call")]
-    FunctionCall,
-    #[serde(rename = "length")]
-    MaxTokens,
-    #[serde(rename = "stop")]
-    Stop,
-}
-
-#[derive(Serialize, Deserialize)]
-struct AnthropicCompatibleChatResponseChoiceMessage {
-    content: Option<String>,
-    refusal: Option<String>,
-}
-
 impl ChatModel<GenerationParameters> for AnthropicCompatibleChatModel {
     fn add_messages_with_callback<'a>(
         &'a self,

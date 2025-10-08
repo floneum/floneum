@@ -30,7 +30,7 @@ llm-samplers.workspace = true
 kalosm-sample.workspace = true
 kalosm-language-model = { workspace = true, features = ["sample"] }
 kalosm-model-types.workspace = true
-kalosm-common = { workspace = true, features = ["candle"] }
+kalosm-common = { workspace = true, features = ["candle", "tokio"] }
 thiserror.workspace = true
 safetensors = "0.4.5"
 minijinja = { version = "2.5.0", features = ["json", "loader"] }

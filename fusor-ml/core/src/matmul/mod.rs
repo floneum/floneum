@@ -219,9 +219,9 @@ impl Operation for MatMulOperation {
                 );
 
                 // Get dimension bindings
-                let k_size = input_a.shape_binding(self.rank() - 1);
-                let m_size = input_a.shape_binding(self.rank() - 2);
-                let n_size = input_b.shape_binding(self.rank() - 1);
+                let k_size = input_a.shape_binding(self.rank() - 1).to_string();
+                let m_size = input_a.shape_binding(self.rank() - 2).to_string();
+                let n_size = input_b.shape_binding(self.rank() - 1).to_string();
 
                 sgemv::sgemv(
                     self,
@@ -428,7 +428,10 @@ async fn test_matmul_fused() {
 #[cfg(test)]
 #[tokio::test]
 async fn test_transposed_matmul() {
+    use candle_core::IndexOp;
+
     let device = Device::new().await.unwrap();
+    let candle_device = candle_core::Device::Cpu;
 
     let data_a = [[1.], [3.]];
     let data_b = [[1., 2.]];
@@ -439,6 +442,39 @@ async fn test_transposed_matmul() {
     println!("{as_slice:?}");
 
     assert_eq!(as_slice[[0, 0]], 7.);
+
+    let data_a = [[[[1., 2.], [3., 4.]], [[5., 6.], [7., 8.]]]];
+    let data_b = [[[[9., 10.], [11., 12.]], [[13., 14.], [15., 16.]]]];
+    let tensor_a = Tensor::new(&device, &data_a).transpose(1, 2);
+    let tensor_b = Tensor::new(&device, &data_b).transpose(1, 2).t();
+    let candle_tensor_a = candle_core::Tensor::new(&data_a, &candle_device)
+        .unwrap()
+        .transpose(1, 2)
+        .unwrap();
+    let candle_tensor_b = candle_core::Tensor::new(&data_b, &candle_device)
+        .unwrap()
+        .transpose(1, 2)
+        .unwrap()
+        .t()
+        .unwrap();
+    let tensor = tensor_a.mat_mul(&tensor_b);
+    let candle_tensor = candle_tensor_a.matmul(&candle_tensor_b).unwrap();
+    let candle_as_slice = candle_tensor
+        .i((0, .., .., ..))
+        .unwrap()
+        .to_vec3::<f32>()
+        .unwrap();
+    let as_slice = tensor.as_slice().await.unwrap();
+    println!("fusor: {as_slice:?}");
+    println!("candle: {candle_as_slice:?}");
+
+    for z in 0..2 {
+        for y in 0..2 {
+            for x in 0..2 {
+                assert_eq!(as_slice[[0, z, y, x]], candle_as_slice[z][y][x]);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -552,28 +588,37 @@ async fn fuzz_batched_matmul() {
     let device = Device::new().await.unwrap();
 
     let min_batch_size = 2;
-    let max_batch_size = 20;
+    let max_batch_size = 4;
     let min_size = 1;
     let max_size = 512;
     let iterations = if cfg!(debug_assertions) { 10 } else { 100 };
 
     for _ in 0..iterations {
-        let batch_size = rand::rng().random_range(min_batch_size..max_batch_size);
+        let batch_size_1 = rand::rng().random_range(min_batch_size..max_batch_size);
+        let batch_size_2 = rand::rng().random_range(min_batch_size..max_batch_size);
         let size1 = rand::rng().random_range(min_size..max_size);
         let size2 = rand::rng().random_range(min_size..max_size);
         let size3 = rand::rng().random_range(min_size..max_size);
 
-        let data_a: Vec<Vec<Vec<f32>>> = (0..batch_size)
+        let data_a: Vec<Vec<Vec<Vec<f32>>>> = (0..batch_size_1)
             .map(|_| {
-                (0..size1)
-                    .map(|_| (0..size2).map(|_| rand::random()).collect())
+                (0..batch_size_2)
+                    .map(|_| {
+                        (0..size1)
+                            .map(|_| (0..size2).map(|_| rand::random()).collect())
+                            .collect()
+                    })
                     .collect()
             })
             .collect();
-        let data_b: Vec<Vec<Vec<f32>>> = (0..batch_size)
+        let data_b: Vec<Vec<Vec<Vec<f32>>>> = (0..batch_size_1)
             .map(|_| {
-                (0..size2)
-                    .map(|_| (0..size3).map(|_| rand::random()).collect())
+                (0..batch_size_2)
+                    .map(|_| {
+                        (0..size2)
+                            .map(|_| (0..size3).map(|_| rand::random()).collect())
+                            .collect()
+                    })
                     .collect()
             })
             .collect();
@@ -581,49 +626,67 @@ async fn fuzz_batched_matmul() {
         let tensor_a = Tensor::new(&device, &data_a);
         let tensor_b = Tensor::new(&device, &data_b);
 
-        let ndarray_a = (0..batch_size)
-            .map(|i| {
-                let mut array = ndarray::Array2::zeros((size1, size2));
-                for j in 0..size1 {
-                    for k in 0..size2 {
-                        array[[j, k]] = data_a[i][j][k];
-                    }
-                }
-                array
+        let ndarray_a = (0..batch_size_1)
+            .map(|i_1| {
+                (0..batch_size_2)
+                    .map(|i_2| {
+                        let mut array = ndarray::Array2::zeros((size1, size2));
+                        for j in 0..size1 {
+                            for k in 0..size2 {
+                                array[[j, k]] = data_a[i_1][i_2][j][k];
+                            }
+                        }
+                        array
+                    })
+                    .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
 
-        let ndarray_b = (0..batch_size)
-            .map(|i| {
-                let mut array = ndarray::Array2::zeros((size2, size3));
-                for j in 0..size2 {
-                    for k in 0..size3 {
-                        array[[j, k]] = data_b[i][j][k];
-                    }
-                }
-                array
+        let ndarray_b = (0..batch_size_1)
+            .map(|i_1| {
+                (0..batch_size_2)
+                    .map(|i_2| {
+                        let mut array = ndarray::Array2::zeros((size2, size3));
+                        for j in 0..size2 {
+                            for k in 0..size3 {
+                                array[[j, k]] = data_b[i_1][i_2][j][k];
+                            }
+                        }
+                        array
+                    })
+                    .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
         let dot = ndarray_a
             .iter()
             .zip(ndarray_b.iter())
-            .map(|(a, b)| a.dot(b))
+            .map(|(a, b)| {
+                a.iter()
+                    .zip(b.iter())
+                    .map(|(a, b)| a.dot(b))
+                    .collect::<Vec<_>>()
+            })
             .collect::<Vec<_>>();
 
         let tensor = tensor_a.mat_mul(&tensor_b);
         let as_slice = tensor.as_slice().await.unwrap();
-        for batch in 0..batch_size {
-            for i in 0..size1 {
-                for j in 0..size3 {
-                    if (as_slice[[batch, i, j]] - dot[batch][[i, j]]).abs() > 0.001 {
-                        println!(
-                            "Mismatch at ({}, {}): {} != {}",
-                            i,
-                            j,
-                            as_slice[[batch, i, j]],
-                            dot[batch][[i, j]]
-                        );
-                        panic!("fuzz failed with size ({size1}x{size2})*({size2}x{size3})");
+        for batch_1 in 0..batch_size_1 {
+            for batch_2 in 0..batch_size_2 {
+                for i in 0..size1 {
+                    for j in 0..size3 {
+                        if (as_slice[[batch_1, batch_2, i, j]] - dot[batch_1][batch_2][[i, j]])
+                            .abs()
+                            > 0.001
+                        {
+                            println!(
+                                "Mismatch at ({}, {}): {} != {}",
+                                i,
+                                j,
+                                as_slice[[batch_1, batch_2, i, j]],
+                                dot[batch_1][batch_2][[i, j]]
+                            );
+                            panic!("fuzz failed with size ({size1}x{size2})*({size2}x{size3})");
+                        }
                     }
                 }
             }

@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    ElementWiseFunction, ElementWiseFunctions, Tensor,
+    ElementWiseFunction, ElementWiseFunctions, MaxRank, Tensor,
     compute_graph::{AnyComputeKey, ComputeGraphInner},
     layout::TILE_SIZE,
     mir::{function::Function, kernel::GenericKernel, operation::Operation},
@@ -255,9 +255,9 @@ impl Operation for PairWiseOperation {
 
 #[derive(Clone, Debug)]
 pub struct PairWiseFunction {
-    name: Option<String>,
-    operation: String,
-    datatype: DataTypeEnum,
+    pub(crate) name: Option<String>,
+    pub(crate) operation: String,
+    pub(crate) datatype: DataTypeEnum,
 }
 
 impl PairWiseFunction {
@@ -305,6 +305,15 @@ impl<const R: usize, T: DataType> Add<&Tensor<R, T>> for &Tensor<R, T> {
             rhs,
             PairWiseFunction::new("let output = a + b;".to_string(), T::WGSL_TYPE).with_name("add"),
         )
+    }
+}
+
+impl<const R: usize, T: DataType> Tensor<R, T> {
+    pub fn add_<const R2: usize, const R3: usize>(&self, second: &Tensor<R2, T>) -> Tensor<R3, T>
+    where
+        (Tensor<R, T>, Tensor<R2, T>): MaxRank<R3, T>,
+    {
+        Self::broadcast_then_elementwise_op(self, second, |a, b| a + b)
     }
 }
 
@@ -478,6 +487,15 @@ impl<const R: usize, T: DataType> Sub<&Tensor<R, T>> for &Tensor<R, T> {
     }
 }
 
+impl<const R: usize, T: DataType> Tensor<R, T> {
+    pub fn sub_<const R2: usize, const R3: usize>(&self, second: &Tensor<R2, T>) -> Tensor<R3, T>
+    where
+        (Tensor<R, T>, Tensor<R2, T>): MaxRank<R3, T>,
+    {
+        Self::broadcast_then_elementwise_op(self, second, |a, b| a - b)
+    }
+}
+
 #[cfg(test)]
 #[tokio::test]
 async fn test_pair_wise_sub() {
@@ -518,6 +536,15 @@ impl<const R: usize, T: DataType> Mul<&Tensor<R, T>> for &Tensor<R, T> {
             rhs,
             PairWiseFunction::new("let output = a * b;".to_string(), T::WGSL_TYPE).with_name("mul"),
         )
+    }
+}
+
+impl<const R: usize, T: DataType> Tensor<R, T> {
+    pub fn mul_<const R2: usize, const R3: usize>(&self, second: &Tensor<R2, T>) -> Tensor<R3, T>
+    where
+        (Tensor<R, T>, Tensor<R2, T>): MaxRank<R3, T>,
+    {
+        Self::broadcast_then_elementwise_op(self, second, |a, b| a * b)
     }
 }
 
@@ -564,6 +591,15 @@ impl<const R: usize, T: DataType> Div<&Tensor<R, T>> for &Tensor<R, T> {
     }
 }
 
+impl<const R: usize, T: DataType> Tensor<R, T> {
+    pub fn div_<const R2: usize, const R3: usize>(&self, second: &Tensor<R2, T>) -> Tensor<R3, T>
+    where
+        (Tensor<R, T>, Tensor<R2, T>): MaxRank<R3, T>,
+    {
+        Self::broadcast_then_elementwise_op(self, second, |a, b| a / b)
+    }
+}
+
 #[cfg(test)]
 #[tokio::test]
 async fn test_pair_wise_div() {
@@ -595,6 +631,15 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
             PairWiseFunction::new("let output = pow(a, b);".to_string(), T::WGSL_TYPE)
                 .with_name("pow"),
         )
+    }
+}
+
+impl<const R: usize, T: DataType> Tensor<R, T> {
+    pub fn pow_<const R2: usize, const R3: usize>(&self, second: &Tensor<R2, T>) -> Tensor<R3, T>
+    where
+        (Tensor<R, T>, Tensor<R2, T>): MaxRank<R3, T>,
+    {
+        Self::broadcast_then_elementwise_op(self, second, |a, b| a.pow(&b))
     }
 }
 

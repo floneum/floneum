@@ -1,7 +1,7 @@
 use std::fmt::{Display, Write};
 
 use crate::{
-    ElementWiseFunctions,
+    ElementWiseFunctions, LastRank, LastRankInner, NextRankInner,
     mir::{
         globals::KernelGlobalSpace,
         operation::Operation,
@@ -116,38 +116,34 @@ impl ReduceOperation {
         let subgroups_per_workgroup = kernel.subgroups_per_workgroup();
         let subgroup_size = kernel.subgroup_size();
 
-        let mut kernel_body = String::new();
         // Each workgroup group works on a single column in the input tensor. This code calculates the
         // start offset of the input and output tensors for each thread group.
+        let linearized_workgroup = workgroup_shape.linearized_workgroup_index(kernel);
         writeln!(
-            &mut kernel_body,
+            kernel,
             "var workgroup_index_remainder = {};",
-            workgroup_shape.linearized_workgroup_index(kernel)
+            linearized_workgroup
         )
         .unwrap();
         for i in (0..output_rank).rev() {
             let out_shape_i = output_tensor.shape_binding(i);
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "let index_{i} = workgroup_index_remainder % {out_shape_i};",
             )
             .unwrap();
-            writeln!(
-                &mut kernel_body,
-                "workgroup_index_remainder /= {out_shape_i};",
-            )
-            .unwrap();
+            writeln!(kernel, "workgroup_index_remainder /= {out_shape_i};",).unwrap();
         }
-        writeln!(&mut kernel_body, "var in_start_offset = ",).unwrap();
-        input_tensor.strided_index(&mut kernel_body, (0..).map(|i| format!("index_{i}")));
-        writeln!(&mut kernel_body, ";").unwrap();
-        writeln!(&mut kernel_body, "var out_start_offset = ",).unwrap();
-        output_tensor.strided_index(&mut kernel_body, (0..).map(|i| format!("index_{i}")));
-        writeln!(&mut kernel_body, ";").unwrap();
-        writeln!(&mut kernel_body).unwrap();
+        writeln!(kernel, "var in_start_offset = ",).unwrap();
+        input_tensor.strided_index(kernel, (0..).map(|i| format!("index_{i}")));
+        writeln!(kernel, ";").unwrap();
+        writeln!(kernel, "var out_start_offset = ",).unwrap();
+        output_tensor.strided_index(kernel, (0..).map(|i| format!("index_{i}")));
+        writeln!(kernel, ";").unwrap();
+        writeln!(kernel).unwrap();
 
         writeln!(
-            &mut kernel_body,
+            kernel,
             "var merged = {dtype}({});",
             self.function.initial_value
         )
@@ -156,49 +152,49 @@ impl ReduceOperation {
         // First merge values on each thread individually. We divide the column allocated to the thread group into equal sized buckets
         // Round up
         writeln!(
-            &mut kernel_body,
+            kernel,
             "let bucket_size = ({reduce_size} + {blocksize}u - 1) / {blocksize}u;"
         )
         .unwrap();
         // Then loop over this thread's portion of the column and merge the values
         writeln!(
-            &mut kernel_body,
+            kernel,
             "let base_axis_index = {workgroup_local_index} * bucket_size;"
         )
         .unwrap();
         writeln!(
-            &mut kernel_body,
+            kernel,
             "let end_axis_index = min({workgroup_local_index} * bucket_size + bucket_size, {reduce_size});"
         )
         .unwrap();
-        writeln!(&mut kernel_body, "var index = base_axis_index;").unwrap();
+        writeln!(kernel, "var index = base_axis_index;").unwrap();
 
         // Process elements in groups of 4 with optimized tree reduction if this is a large tensor
         if large_reduction {
-            writeln!(&mut kernel_body, "while (index + 4u <= end_axis_index) {{").unwrap();
+            writeln!(kernel, "while (index + 4u <= end_axis_index) {{").unwrap();
             // Load the chunk of 4 elements at once
-            write!(&mut kernel_body, "let data = vec4<{dtype}>(").unwrap();
+            write!(kernel, "let data = vec4<{dtype}>(").unwrap();
             for i in 0..4 {
                 if i > 0 {
-                    write!(&mut kernel_body, ", ").unwrap();
+                    write!(kernel, ", ").unwrap();
                 }
                 write!(
-                    &mut kernel_body,
+                    kernel,
                     "{input_tensor}[in_start_offset + (index + {i}u) * {reduce_stride}]"
                 )
                 .unwrap();
             }
-            writeln!(&mut kernel_body, ");").unwrap();
+            writeln!(kernel, ");").unwrap();
 
             // Apply pre-element-wise functions to the data
             let components = ["data.x", "data.y", "data.z", "data.w"];
-            write!(&mut kernel_body, "let after_element_wise = vec4<{dtype}>(").unwrap();
+            write!(kernel, "let after_element_wise = vec4<{dtype}>(").unwrap();
             for (i, component) in components.iter().enumerate() {
                 if i > 0 {
-                    write!(&mut kernel_body, ", ").unwrap();
+                    write!(kernel, ", ").unwrap();
                 }
                 write!(
-                    &mut kernel_body,
+                    kernel,
                     "{}",
                     pre_element_wise
                         .iter()
@@ -206,11 +202,11 @@ impl ReduceOperation {
                 )
                 .unwrap();
             }
-            writeln!(&mut kernel_body, ");").unwrap();
+            writeln!(kernel, ");").unwrap();
 
             // Optimized tree reduction for vec4
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "let vec4_reduced = {};",
                 reduce.call(vec![
                     reduce.call(vec![
@@ -225,27 +221,27 @@ impl ReduceOperation {
             )
             .unwrap();
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "merged = {};",
                 reduce.call(vec!["vec4_reduced".to_string(), "merged".to_string()])
             )
             .unwrap();
-            writeln!(&mut kernel_body, "index += 4u;").unwrap();
-            writeln!(&mut kernel_body, "}}").unwrap();
-            writeln!(&mut kernel_body).unwrap();
+            writeln!(kernel, "index += 4u;").unwrap();
+            writeln!(kernel, "}}").unwrap();
+            writeln!(kernel).unwrap();
         }
 
         // Merge the < 4 remaining elements if the bucket size is not a multiple of 4
-        writeln!(&mut kernel_body, "while (index < end_axis_index) {{").unwrap();
+        writeln!(kernel, "while (index < end_axis_index) {{").unwrap();
         // Load a single element
         writeln!(
-            &mut kernel_body,
+            kernel,
             "let data = {input_tensor}[in_start_offset + index * {reduce_stride}];"
         )
         .unwrap();
         // Apply the pre-element-wise functions to the data
         writeln!(
-            &mut kernel_body,
+            kernel,
             "let after_element_wise = {};",
             pre_element_wise
                 .iter()
@@ -254,13 +250,13 @@ impl ReduceOperation {
         .unwrap();
         // Merge the result into the merged variable
         writeln!(
-            &mut kernel_body,
+            kernel,
             "merged = {}; ",
             reduce.call(vec!["after_element_wise".to_string(), "merged".to_string()])
         )
         .unwrap();
-        writeln!(&mut kernel_body, "index += 1u;").unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
+        writeln!(kernel, "index += 1u;").unwrap();
+        writeln!(kernel, "}}").unwrap();
 
         let limits = device.limits();
         let max_subgroup_size = limits.max_subgroup_size;
@@ -268,91 +264,76 @@ impl ReduceOperation {
         // Optimized subgroup reduction with unrolled shuffle operations
         let mut offset = max_subgroup_size;
         while offset > 1 {
-            writeln!(&mut kernel_body, "if {subgroup_size} >= {offset}u {{").unwrap();
+            writeln!(kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
             offset /= 2;
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "let neighbor = subgroupShuffleDown(merged, {offset}u);"
             )
             .unwrap();
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "merged = {};",
                 reduce.call(vec!["neighbor".to_string(), "merged".to_string()])
             )
             .unwrap();
-            writeln!(&mut kernel_body, "}}").unwrap();
+            writeln!(kernel, "}}").unwrap();
         }
 
         // Write the output to the workgroup memory if this is the first thread in the subgroup
-        writeln!(&mut kernel_body, "if {subgroup_local_id} == 0u {{").unwrap();
-        writeln!(&mut kernel_body, "{local_data}[{subgroup_id}] = merged;").unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
+        writeln!(kernel, "if {subgroup_local_id} == 0u {{").unwrap();
+        writeln!(kernel, "{local_data}[{subgroup_id}] = merged;").unwrap();
+        writeln!(kernel, "}}").unwrap();
 
         // Wait until all threads have written to the workgroup shared memory
-        writeln!(&mut kernel_body, "workgroupBarrier();").unwrap();
+        writeln!(kernel, "workgroupBarrier();").unwrap();
 
         // Then if this is the first subgroup, do one final shuffle down reduction
-        writeln!(&mut kernel_body, "if {subgroup_id} == 0u {{").unwrap();
         // Copy over the best value from each subgroup from the workgroup shared memory to the merged variable
         writeln!(
-            &mut kernel_body,
+            kernel,
             "if {subgroup_local_id} < {subgroups_per_workgroup} {{"
         )
         .unwrap();
-        writeln!(
-            &mut kernel_body,
-            "merged = {local_data}[{subgroup_local_id}];"
-        )
-        .unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
-        writeln!(&mut kernel_body, "else {{").unwrap();
-        writeln!(
-            &mut kernel_body,
-            "merged = {dtype}({});",
-            self.function.initial_value,
-        )
-        .unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
+        writeln!(kernel, "merged = {local_data}[{subgroup_local_id}];").unwrap();
+        writeln!(kernel, "}}").unwrap();
+        writeln!(kernel, "else {{").unwrap();
+        writeln!(kernel, "merged = {dtype}({});", self.function.initial_value,).unwrap();
+        writeln!(kernel, "}}").unwrap();
 
         // Final unrolled subgroup reduction
         offset = max_subgroup_size;
         while offset > 1 {
-            writeln!(&mut kernel_body, "if {subgroup_size} >= {offset}u {{").unwrap();
+            writeln!(kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
             offset /= 2;
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "let neighbor = subgroupShuffleDown(merged, {offset}u);"
             )
             .unwrap();
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "merged = {};",
                 reduce.call(vec!["neighbor".to_string(), "merged".to_string()])
             )
             .unwrap();
-            writeln!(&mut kernel_body, "}}").unwrap();
+            writeln!(kernel, "}}").unwrap();
         }
 
+        writeln!(kernel, "if {subgroup_id} == 0u {{").unwrap();
         // Write the output to the output tensor if this is the first thread in the workgroup
-        writeln!(&mut kernel_body, "if {workgroup_local_index} == 0u {{").unwrap();
+        writeln!(kernel, "if {workgroup_local_index} == 0u {{").unwrap();
         writeln!(
-            &mut kernel_body,
+            kernel,
             "let data = {};",
             post_element_wise
                 .iter()
                 .fold("merged".to_string(), |acc, f| f.call(vec![acc]))
         )
         .unwrap();
-        writeln!(
-            &mut kernel_body,
-            "{output_tensor}[out_start_offset] = data;"
-        )
-        .unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
-
-        kernel.push_body(&kernel_body);
+        writeln!(kernel, "{output_tensor}[out_start_offset] = data;").unwrap();
+        writeln!(kernel, "}}").unwrap();
+        writeln!(kernel, "}}").unwrap();
     }
 }
 
@@ -457,10 +438,10 @@ impl Operation for ReduceOperation {
 
 #[derive(Clone, Debug)]
 pub struct ReduceFunction {
-    name: Option<String>,
-    operation: String,
-    initial_value: String,
-    datatype: DataTypeEnum,
+    pub(crate) name: Option<String>,
+    pub(crate) operation: String,
+    pub(crate) initial_value: String,
+    pub(crate) datatype: DataTypeEnum,
 }
 
 impl ReduceFunction {
@@ -487,55 +468,26 @@ impl ReduceFunction {
     }
 }
 
-macro_rules! impl_reduce {
-    ($R:expr, $T:ident, $f_untyped:ident, $f:ident, $($arg:ident: $arg_type:ty),*) => {
-        impl<D: DataType> $T for Tensor<$R, D> {
-            type Output = Tensor<{ $R - 1 }, D>;
+impl<const N: usize, D: DataType> Tensor<N, D> {
+    pub fn sum<const O: usize>(&self, dim: usize) -> Tensor<O, D>
+    where
+        Self: LastRank<O, D>,
+    {
+        self.reduce(sum_fn::<D>(), dim)
+    }
 
-            fn $f(&self $(, $arg: $arg_type)*) -> Self::Output {
-                $f_untyped(self $(, $arg)*)
-            }
-        }
-    };
+    pub fn sum_keepdim<const O: usize>(&self, dim: usize) -> Self
+    where
+        Self: LastRank<O, D>,
+        <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
+    {
+        self.sum(dim).unsqueeze(dim)
+    }
 }
 
-pub trait Sum {
-    type Output;
-
-    fn sum(&self, dim: usize) -> Self::Output;
+fn sum_fn<D: DataType>() -> ReduceFunction {
+    ReduceFunction::new("let output = a + b;".to_string(), "0.0", D::WGSL_TYPE).with_name("sum")
 }
-
-fn unchecked_sum<const R1: usize, const R2: usize, D: DataType>(
-    tensor: &Tensor<R1, D>,
-    dim: usize,
-) -> Tensor<R2, D> {
-    tensor.reduce(
-        ReduceFunction::new("let output = a + b;".to_string(), "0.0", D::WGSL_TYPE)
-            .with_name("sum"),
-        dim,
-    )
-}
-
-impl_reduce!(1, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(2, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(3, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(4, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(5, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(6, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(7, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(8, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(9, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(10, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(11, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(12, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(13, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(14, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(15, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(16, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(17, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(18, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(19, Sum, unchecked_sum, sum, dim: usize);
-impl_reduce!(20, Sum, unchecked_sum, sum, dim: usize);
 
 #[cfg(test)]
 #[tokio::test]
@@ -645,6 +597,32 @@ async fn test_reduce_sliced_sum() {
 
 #[cfg(test)]
 #[tokio::test]
+async fn test_reduce_transposed_sum() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 3., 5.], [2., 4., 6.]];
+    let tensor = Tensor::new(&device, &data).t();
+
+    let output = tensor.sum(0);
+
+    let output = output.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert_eq!(output[[0]], 9.);
+    assert_eq!(output[[1]], 12.);
+
+    let output = tensor.sum(1);
+
+    let output = output.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert_eq!(output[[0]], 3.);
+    assert_eq!(output[[1]], 7.);
+    assert_eq!(output[[2]], 11.);
+}
+
+#[cfg(test)]
+#[tokio::test]
 async fn test_reduce_const_add_then_sum_fused() {
     use crate::Device;
 
@@ -698,47 +676,31 @@ async fn test_reduce_const_sum_then_add_fused() {
     assert_eq!(output[[2]], 1. + 11.);
 }
 
-fn unchecked_max<const R1: usize, const R2: usize, D: DataType>(
-    tensor: &Tensor<R1, D>,
-    dim: usize,
-) -> Tensor<R2, D> {
-    tensor.reduce(
-        ReduceFunction::new(
-            "let output = max(a, b);".to_string(),
-            "-3.40282e+38",
-            D::WGSL_TYPE,
-        )
-        .with_name("max"),
-        dim,
+impl<const N: usize, D: DataType> Tensor<N, D> {
+    pub fn max<const O: usize>(&self, dim: usize) -> Tensor<O, D>
+    where
+        Self: LastRank<O, D>,
+    {
+        self.reduce(max_fn::<D>(), dim)
+    }
+
+    pub fn max_keepdim<const O: usize>(&self, dim: usize) -> Self
+    where
+        Self: LastRank<O, D>,
+        <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
+    {
+        self.max(dim).unsqueeze(dim)
+    }
+}
+
+fn max_fn<D: DataType>() -> ReduceFunction {
+    ReduceFunction::new(
+        "let output = max(a, b);".to_string(),
+        "-3.40282e+38",
+        D::WGSL_TYPE,
     )
+    .with_name("max")
 }
-
-pub trait Max {
-    type Output;
-
-    fn max(&self, dim: usize) -> Self::Output;
-}
-
-impl_reduce!(1, Max, unchecked_max, max, dim: usize);
-impl_reduce!(2, Max, unchecked_max, max, dim: usize);
-impl_reduce!(3, Max, unchecked_max, max, dim: usize);
-impl_reduce!(4, Max, unchecked_max, max, dim: usize);
-impl_reduce!(5, Max, unchecked_max, max, dim: usize);
-impl_reduce!(6, Max, unchecked_max, max, dim: usize);
-impl_reduce!(7, Max, unchecked_max, max, dim: usize);
-impl_reduce!(8, Max, unchecked_max, max, dim: usize);
-impl_reduce!(9, Max, unchecked_max, max, dim: usize);
-impl_reduce!(10, Max, unchecked_max, max, dim: usize);
-impl_reduce!(11, Max, unchecked_max, max, dim: usize);
-impl_reduce!(12, Max, unchecked_max, max, dim: usize);
-impl_reduce!(13, Max, unchecked_max, max, dim: usize);
-impl_reduce!(14, Max, unchecked_max, max, dim: usize);
-impl_reduce!(15, Max, unchecked_max, max, dim: usize);
-impl_reduce!(16, Max, unchecked_max, max, dim: usize);
-impl_reduce!(17, Max, unchecked_max, max, dim: usize);
-impl_reduce!(18, Max, unchecked_max, max, dim: usize);
-impl_reduce!(19, Max, unchecked_max, max, dim: usize);
-impl_reduce!(20, Max, unchecked_max, max, dim: usize);
 
 #[cfg(test)]
 #[tokio::test]
@@ -766,47 +728,31 @@ async fn test_reduce_max() {
     assert_eq!(output[[2]], 6.);
 }
 
-fn unchecked_min<const R1: usize, const R2: usize, D: DataType>(
-    tensor: &Tensor<R1, D>,
-    dim: usize,
-) -> Tensor<R2, D> {
-    tensor.reduce(
-        ReduceFunction::new(
-            "let output = min(a, b);".to_string(),
-            "3.40282e+38",
-            D::WGSL_TYPE,
-        )
-        .with_name("min"),
-        dim,
+fn min_fn<D: DataType>() -> ReduceFunction {
+    ReduceFunction::new(
+        "let output = min(a, b);".to_string(),
+        "3.40282e+38",
+        D::WGSL_TYPE,
     )
+    .with_name("min")
 }
 
-pub trait Min {
-    type Output;
+impl<const N: usize, D: DataType> Tensor<N, D> {
+    pub fn min<const O: usize>(&self, dim: usize) -> Tensor<O, D>
+    where
+        Self: LastRank<O, D>,
+    {
+        self.reduce(min_fn::<D>(), dim)
+    }
 
-    fn min(&self, dim: usize) -> Self::Output;
+    pub fn min_keepdim<const O: usize>(&self, dim: usize) -> Self
+    where
+        Self: LastRank<O, D>,
+        <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
+    {
+        self.min(dim).unsqueeze(dim)
+    }
 }
-
-impl_reduce!(1, Min, unchecked_min, min, dim: usize);
-impl_reduce!(2, Min, unchecked_min, min, dim: usize);
-impl_reduce!(3, Min, unchecked_min, min, dim: usize);
-impl_reduce!(4, Min, unchecked_min, min, dim: usize);
-impl_reduce!(5, Min, unchecked_min, min, dim: usize);
-impl_reduce!(6, Min, unchecked_min, min, dim: usize);
-impl_reduce!(7, Min, unchecked_min, min, dim: usize);
-impl_reduce!(8, Min, unchecked_min, min, dim: usize);
-impl_reduce!(9, Min, unchecked_min, min, dim: usize);
-impl_reduce!(10, Min, unchecked_min, min, dim: usize);
-impl_reduce!(11, Min, unchecked_min, min, dim: usize);
-impl_reduce!(12, Min, unchecked_min, min, dim: usize);
-impl_reduce!(13, Min, unchecked_min, min, dim: usize);
-impl_reduce!(14, Min, unchecked_min, min, dim: usize);
-impl_reduce!(15, Min, unchecked_min, min, dim: usize);
-impl_reduce!(16, Min, unchecked_min, min, dim: usize);
-impl_reduce!(17, Min, unchecked_min, min, dim: usize);
-impl_reduce!(18, Min, unchecked_min, min, dim: usize);
-impl_reduce!(19, Min, unchecked_min, min, dim: usize);
-impl_reduce!(20, Min, unchecked_min, min, dim: usize);
 
 #[cfg(test)]
 #[tokio::test]
@@ -834,43 +780,26 @@ async fn test_reduce_min() {
     assert_eq!(output[[2]], 5.);
 }
 
-fn unchecked_product<const R1: usize, const R2: usize, D: DataType>(
-    tensor: &Tensor<R1, D>,
-    dim: usize,
-) -> Tensor<R2, D> {
-    tensor.reduce(
-        ReduceFunction::new("let output = a * b;".to_string(), "1.0", D::WGSL_TYPE)
-            .with_name("product"),
-        dim,
-    )
+fn product_fn<D: DataType>() -> ReduceFunction {
+    ReduceFunction::new("let output = a * b;".to_string(), "1.0", D::WGSL_TYPE).with_name("product")
 }
 
-pub trait Product {
-    type Output;
+impl<const N: usize, D: DataType> Tensor<N, D> {
+    pub fn product<const O: usize>(&self, dim: usize) -> Tensor<O, D>
+    where
+        Self: LastRank<O, D>,
+    {
+        self.reduce(product_fn::<D>(), dim)
+    }
 
-    fn product(&self, dim: usize) -> Self::Output;
+    pub fn product_keepdim<const O: usize>(&self, dim: usize) -> Self
+    where
+        Self: LastRank<O, D>,
+        <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
+    {
+        self.product(dim).unsqueeze(dim)
+    }
 }
-
-impl_reduce!(1, Product, unchecked_product, product, dim: usize);
-impl_reduce!(2, Product, unchecked_product, product, dim: usize);
-impl_reduce!(3, Product, unchecked_product, product, dim: usize);
-impl_reduce!(4, Product, unchecked_product, product, dim: usize);
-impl_reduce!(5, Product, unchecked_product, product, dim: usize);
-impl_reduce!(6, Product, unchecked_product, product, dim: usize);
-impl_reduce!(7, Product, unchecked_product, product, dim: usize);
-impl_reduce!(8, Product, unchecked_product, product, dim: usize);
-impl_reduce!(9, Product, unchecked_product, product, dim: usize);
-impl_reduce!(10, Product, unchecked_product, product, dim: usize);
-impl_reduce!(11, Product, unchecked_product, product, dim: usize);
-impl_reduce!(12, Product, unchecked_product, product, dim: usize);
-impl_reduce!(13, Product, unchecked_product, product, dim: usize);
-impl_reduce!(14, Product, unchecked_product, product, dim: usize);
-impl_reduce!(15, Product, unchecked_product, product, dim: usize);
-impl_reduce!(16, Product, unchecked_product, product, dim: usize);
-impl_reduce!(17, Product, unchecked_product, product, dim: usize);
-impl_reduce!(18, Product, unchecked_product, product, dim: usize);
-impl_reduce!(19, Product, unchecked_product, product, dim: usize);
-impl_reduce!(20, Product, unchecked_product, product, dim: usize);
 
 #[cfg(test)]
 #[tokio::test]

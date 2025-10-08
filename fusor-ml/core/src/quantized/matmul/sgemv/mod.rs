@@ -106,20 +106,20 @@ pub(crate) fn sgemv(
     }
 }
 
-pub(crate) fn dispatch_size(matrix: &QMatrix, n: u32, _m: u32) -> [u32; 3] {
+pub(crate) fn dispatch_size(matrix: &QMatrix, n: u32, _m: u32, batch_size: u32) -> [u32; 3] {
     if matrix.datatype == GgmlType::Q6K {
-        return [n.div_ceil(Q6K_SGEMV_CHUNK_SIZE * 2), 1, 1];
+        return [n.div_ceil(Q6K_SGEMV_CHUNK_SIZE * 2), 1, batch_size];
     }
     if matrix.datatype == GgmlType::Q4K {
-        return [n.div_ceil(Q4K_SGEMV_CHUNK_SIZE * 2), 1, 1];
+        return [n.div_ceil(Q4K_SGEMV_CHUNK_SIZE * 2), 1, batch_size];
     }
     if matches!(matrix.datatype, GgmlType::Q4_0 | GgmlType::Q5_0) {
-        return [n.div_ceil(Q_N_SGEMV_CHUNK_SIZE * 2), 1, 1];
+        return [n.div_ceil(Q_N_SGEMV_CHUNK_SIZE * 2), 1, batch_size];
     }
     if matches!(matrix.datatype, GgmlType::Q8_0) {
-        return [n.div_ceil(Q_8_0_SGEMV_CHUNK_SIZE * 2), 1, 1];
+        return [n.div_ceil(Q_8_0_SGEMV_CHUNK_SIZE * 2), 1, batch_size];
     }
-    [n.div_ceil(SGEMV_CHUNK_SIZE * 2), 1, 1]
+    [n.div_ceil(SGEMV_CHUNK_SIZE * 2), 1, batch_size]
 }
 
 pub(crate) fn workgroup_shape_constraints(

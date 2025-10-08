@@ -3,9 +3,10 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 /// A future that is boxed and pinned.
-pub(crate) type BoxedFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+pub(crate) type BoxedFuture<'a, T> = Pin<Box<dyn FutureWasmNotSend<Output = T> + 'a>>;
 
 use crate::embedding::Embedding;
+use crate::{FutureWasmNotSend, WasmNotSend, WasmNotSendSync};
 
 /// A model that can be used to embed text. This trait is generic over the vector space that the model uses to help keep track of what embeddings came from which model.
 ///
@@ -31,15 +32,15 @@ use crate::embedding::Embedding;
 ///     println!("embeddings {:?}", embeddings);
 /// }
 /// ```
-pub trait Embedder: Send + Sync + 'static {
+pub trait Embedder: WasmNotSendSync + 'static {
     /// The error type that can occur when embedding a string.
-    type Error: Send + Sync + 'static;
+    type Error: WasmNotSendSync + 'static;
 
     /// Embed some text into a vector space.
     fn embed_string(
         &self,
         input: String,
-    ) -> impl Future<Output = Result<Embedding, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Embedding, Self::Error>> + WasmNotSend {
         self.embed_for(EmbeddingInput {
             text: input,
             variant: EmbeddingVariant::Document,
@@ -50,7 +51,7 @@ pub trait Embedder: Send + Sync + 'static {
     fn embed_vec(
         &self,
         inputs: Vec<String>,
-    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + WasmNotSend {
         async move {
             let mut embeddings = Vec::with_capacity(inputs.len());
             for input in inputs {
@@ -64,13 +65,13 @@ pub trait Embedder: Send + Sync + 'static {
     fn embed_for(
         &self,
         input: EmbeddingInput,
-    ) -> impl Future<Output = Result<Embedding, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Embedding, Self::Error>> + WasmNotSend;
 
     /// Embed a [`Vec<String>`] into a vector space. Returns a list of embeddings in the same order as the inputs.
     fn embed_vec_for(
         &self,
         inputs: Vec<EmbeddingInput>,
-    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + WasmNotSend {
         async move {
             let mut embeddings = Vec::with_capacity(inputs.len());
             for input in inputs {
@@ -87,28 +88,28 @@ impl<E: Embedder> Embedder for Arc<E> {
     fn embed_for(
         &self,
         input: EmbeddingInput,
-    ) -> impl Future<Output = Result<Embedding, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Embedding, Self::Error>> + WasmNotSend {
         E::embed_for(self, input)
     }
 
     fn embed_string(
         &self,
         input: String,
-    ) -> impl Future<Output = Result<Embedding, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Embedding, Self::Error>> + WasmNotSend {
         E::embed_string(self, input)
     }
 
     fn embed_vec(
         &self,
         inputs: Vec<String>,
-    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + WasmNotSend {
         E::embed_vec(self, inputs)
     }
 
     fn embed_vec_for(
         &self,
         inputs: Vec<EmbeddingInput>,
-    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + WasmNotSend {
         E::embed_vec_for(self, inputs)
     }
 }
@@ -165,7 +166,7 @@ pub trait EmbedderExt: Embedder {
     fn embed(
         &self,
         input: impl ToString,
-    ) -> impl Future<Output = Result<Embedding, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Embedding, Self::Error>> + WasmNotSend {
         self.embed_string(input.to_string())
     }
 
@@ -173,7 +174,7 @@ pub trait EmbedderExt: Embedder {
     fn embed_query(
         &self,
         input: impl ToString,
-    ) -> impl Future<Output = Result<Embedding, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Embedding, Self::Error>> + WasmNotSend {
         self.embed_for(EmbeddingInput {
             text: input.to_string(),
             variant: EmbeddingVariant::Query,
@@ -184,7 +185,7 @@ pub trait EmbedderExt: Embedder {
     fn embed_batch(
         &self,
         inputs: impl IntoIterator<Item = impl ToString>,
-    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + WasmNotSend {
         let inputs = inputs
             .into_iter()
             .map(|s| s.to_string())
@@ -196,7 +197,7 @@ pub trait EmbedderExt: Embedder {
     fn embed_batch_for(
         &self,
         inputs: impl IntoIterator<Item = EmbeddingInput>,
-    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + WasmNotSend {
         self.embed_vec_for(inputs.into_iter().collect())
     }
 }
@@ -205,74 +206,83 @@ impl<E: Embedder> EmbedderExt for E {}
 
 /// A trait object for an embedder.
 pub struct DynEmbedder {
-    embedder: Box<dyn BoxedEmbedder + Send + Sync>,
+    embedder: Box<dyn BoxedEmbedder>,
 }
 
 impl Embedder for DynEmbedder {
-    type Error = Box<dyn std::error::Error + Send + Sync>;
+    type Error = Box<dyn WasmNotSendSyncError>;
 
     fn embed_string(
         &self,
         input: String,
-    ) -> impl Future<Output = Result<Embedding, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Embedding, Self::Error>> + WasmNotSend {
         self.embedder.embed_string_boxed(input)
     }
 
     fn embed_vec(
         &self,
         inputs: Vec<String>,
-    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + WasmNotSend {
         self.embedder.embed_vec_boxed(inputs)
     }
 
     fn embed_for(
         &self,
         input: EmbeddingInput,
-    ) -> impl Future<Output = Result<Embedding, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Embedding, Self::Error>> + WasmNotSend {
         self.embedder.embed_for_boxed(input)
     }
 
     fn embed_vec_for(
         &self,
         inputs: Vec<EmbeddingInput>,
-    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + WasmNotSend {
         self.embedder.embed_vec_for_boxed(inputs)
     }
 }
 
-struct AnyEmbedder<E: Embedder + Send + Sync + 'static>(E);
+struct AnyEmbedder<E: Embedder + WasmNotSendSync + 'static>(E);
+
+/// An error type that is only `Send` or `Sync` outside of wasm.
+pub trait WasmNotSendSyncError: std::error::Error + WasmNotSendSync {}
+impl<T: std::error::Error + WasmNotSendSync> WasmNotSendSyncError for T {}
+impl<T: std::error::Error + WasmNotSendSync + 'static> From<T> for Box<dyn WasmNotSendSyncError> {
+    fn from(value: T) -> Self {
+        Box::new(value)
+    }
+}
 
 #[allow(clippy::type_complexity)]
-trait BoxedEmbedder {
+trait BoxedEmbedder: WasmNotSendSync {
     fn embed_string_boxed(
         &self,
         input: String,
-    ) -> BoxedFuture<'_, Result<Embedding, Box<dyn std::error::Error + Send + Sync>>>;
+    ) -> BoxedFuture<'_, Result<Embedding, Box<dyn WasmNotSendSyncError>>>;
 
     fn embed_vec_boxed(
         &self,
         inputs: Vec<String>,
-    ) -> BoxedFuture<'_, Result<Vec<Embedding>, Box<dyn std::error::Error + Send + Sync>>>;
+    ) -> BoxedFuture<'_, Result<Vec<Embedding>, Box<dyn WasmNotSendSyncError>>>;
 
     fn embed_for_boxed(
         &self,
         input: EmbeddingInput,
-    ) -> BoxedFuture<'_, Result<Embedding, Box<dyn std::error::Error + Send + Sync>>>;
+    ) -> BoxedFuture<'_, Result<Embedding, Box<dyn WasmNotSendSyncError>>>;
 
     fn embed_vec_for_boxed(
         &self,
         inputs: Vec<EmbeddingInput>,
-    ) -> BoxedFuture<'_, Result<Vec<Embedding>, Box<dyn std::error::Error + Send + Sync>>>;
+    ) -> BoxedFuture<'_, Result<Vec<Embedding>, Box<dyn WasmNotSendSyncError>>>;
 }
 
-impl<E: Embedder + Send + Sync + 'static> BoxedEmbedder for AnyEmbedder<E>
+impl<E: Embedder + WasmNotSendSync + 'static> BoxedEmbedder for AnyEmbedder<E>
 where
     E::Error: std::error::Error,
 {
     fn embed_string_boxed(
         &self,
         input: String,
-    ) -> BoxedFuture<'_, Result<Embedding, Box<dyn std::error::Error + Send + Sync>>> {
+    ) -> BoxedFuture<'_, Result<Embedding, Box<dyn WasmNotSendSyncError>>> {
         let future = self.0.embed_string(input);
         Box::pin(async move { future.await.map_err(|e| e.into()) })
     }
@@ -280,7 +290,7 @@ where
     fn embed_vec_boxed(
         &self,
         inputs: Vec<String>,
-    ) -> BoxedFuture<'_, Result<Vec<Embedding>, Box<dyn std::error::Error + Send + Sync>>> {
+    ) -> BoxedFuture<'_, Result<Vec<Embedding>, Box<dyn WasmNotSendSyncError>>> {
         let future = self.0.embed_vec(inputs);
         Box::pin(async move {
             future
@@ -293,7 +303,7 @@ where
     fn embed_for_boxed(
         &self,
         input: EmbeddingInput,
-    ) -> BoxedFuture<'_, Result<Embedding, Box<dyn std::error::Error + Send + Sync>>> {
+    ) -> BoxedFuture<'_, Result<Embedding, Box<dyn WasmNotSendSyncError>>> {
         let future = self.0.embed_for(input);
         Box::pin(async move { future.await.map_err(|e| e.into()) })
     }
@@ -301,7 +311,7 @@ where
     fn embed_vec_for_boxed(
         &self,
         inputs: Vec<EmbeddingInput>,
-    ) -> BoxedFuture<'_, Result<Vec<Embedding>, Box<dyn std::error::Error + Send + Sync>>> {
+    ) -> BoxedFuture<'_, Result<Vec<Embedding>, Box<dyn WasmNotSendSyncError>>> {
         let future = self.0.embed_vec_for(inputs);
         Box::pin(async move {
             future
