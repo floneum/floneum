@@ -109,7 +109,7 @@ impl DataType for u32 {
 }
 
 #[non_exhaustive]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DataTypeEnum {
     F32,
     F16,
@@ -1002,6 +1002,12 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
     pub(crate) fn graph(&self) -> &ComputeGraph {
         &self.data.graph
     }
+
+    /// Returns a hash of the compute graph. The hash is sensitive to the structure of the
+    /// compute graph
+    pub fn graph_hash(&self) -> u64 {
+        self.data.graph.graph_hash(self.data.key)
+    }
 }
 
 #[cfg(test)]
@@ -1264,4 +1270,66 @@ async fn test_tensor() {
     assert_eq!(as_slice[[1, 1]], 4.);
     assert_eq!(as_slice[[2, 0]], 5.);
     assert_eq!(as_slice[[2, 1]], 6.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_graph_hash() {
+    let device = Device::new().await.unwrap();
+
+    // Create a tensor and use it in different operations
+    let data = [[1., 2.], [3., 4.]];
+    let tensor = Tensor::new(&device, &data);
+
+    // Create two identical computational graphs using the same tensor
+    let result1 = &tensor + &tensor; // Add tensor to itself
+    let result1 = result1 * 2.0; // Multiply by 2
+
+    let result2 = &tensor + &tensor; // Same operations
+    let result2 = result2 * 2.0;
+
+    // The hashes should be the same because the graph structure is identical
+    let hash1 = result1.graph_hash();
+    let hash2 = result2.graph_hash();
+    assert_eq!(hash1, hash2, "Identical graphs should have the same hash");
+
+    // Create a different graph with a different operation
+    let result3 = &tensor * &tensor; // Different operation (multiply instead of add)
+    let result3 = result3 * 2.0;
+    let hash3 = result3.graph_hash();
+    assert_ne!(
+        hash1, hash3,
+        "Different graphs should have different hashes"
+    );
+
+    // Create a graph with different ordering (should have different hash)
+    let result4 = tensor.clone() * 2.0; // Multiply first
+    let result4 = &result4 + &result4; // Then add
+    let hash4 = result4.graph_hash();
+    assert_ne!(
+        hash1, hash4,
+        "Graphs with different operation order should have different hashes"
+    );
+
+    // Test that using a different tensor with the same shape produces the same hash
+    let data2 = [[5., 6.], [7., 8.]]; // Different data, same shape
+    let tensor2 = Tensor::new(&device, &data2);
+    let result5 = &tensor2 + &tensor2;
+    let result5 = result5 * 2.0;
+    let hash5 = result5.graph_hash();
+    assert_eq!(
+        hash1, hash5,
+        "Graphs with different tensors but same shape should have the same hash"
+    );
+
+    // Test that different shapes produce different hashes
+    let data3 = [[1., 2., 3.], [4., 5., 6.]];
+    let tensor3 = Tensor::new(&device, &data3);
+    let result6 = &tensor3 + &tensor3;
+    let result6 = result6 * 2.0;
+    let hash6 = result6.graph_hash();
+    assert_ne!(
+        hash1, hash6,
+        "Graphs with different shapes should have different hashes"
+    );
 }

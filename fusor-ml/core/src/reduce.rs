@@ -438,10 +438,10 @@ impl Operation for ReduceOperation {
 
 #[derive(Clone, Debug)]
 pub struct ReduceFunction {
-    name: Option<String>,
-    operation: String,
-    initial_value: String,
-    datatype: DataTypeEnum,
+    pub(crate) name: Option<String>,
+    pub(crate) operation: String,
+    pub(crate) initial_value: String,
+    pub(crate) datatype: DataTypeEnum,
 }
 
 impl ReduceFunction {

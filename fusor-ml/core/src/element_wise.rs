@@ -262,9 +262,9 @@ impl Operation for ElementWiseOperation {
 
 #[derive(Clone, Debug)]
 pub struct ElementWiseFunction {
-    name: Option<String>,
-    operation: String,
-    datatype: DataTypeEnum,
+    pub(crate) name: Option<String>,
+    pub(crate) operation: String,
+    pub(crate) datatype: DataTypeEnum,
 }
 
 impl ElementWiseFunction {

@@ -255,9 +255,9 @@ impl Operation for PairWiseOperation {
 
 #[derive(Clone, Debug)]
 pub struct PairWiseFunction {
-    name: Option<String>,
-    operation: String,
-    datatype: DataTypeEnum,
+    pub(crate) name: Option<String>,
+    pub(crate) operation: String,
+    pub(crate) datatype: DataTypeEnum,
 }
 
 impl PairWiseFunction {

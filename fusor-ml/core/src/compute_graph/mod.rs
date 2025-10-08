@@ -1,3 +1,5 @@
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Weak, atomic::AtomicUsize};
 
 use arc_swap::{ArcSwap, ArcSwapAny};
@@ -455,6 +457,10 @@ impl ComputeGraph {
             inner.add_reference(key);
         });
     }
+
+    pub(crate) fn graph_hash(&self, key: AnyComputeKey) -> u64 {
+        self.with_mut(|inner| inner.graph_hash(key))
+    }
 }
 
 #[derive(Default)]
@@ -744,5 +750,152 @@ impl ComputeGraphInner {
                 assert!(self.contains_key(dependency));
             });
         }
+    }
+
+    pub(crate) fn graph_hash(&self, key: AnyComputeKey) -> u64 {
+        let mut cache = FxHashMap::default();
+        self.compute_node_hash(key, &mut cache)
+    }
+
+    fn compute_node_hash(
+        &self,
+        key: AnyComputeKey,
+        cache: &mut FxHashMap<AnyComputeKey, u64>,
+    ) -> u64 {
+        if let Some(&hash) = cache.get(&key) {
+            return hash;
+        }
+
+        let mut hasher = DefaultHasher::new();
+
+        let discriminant = std::mem::discriminant(&key);
+        discriminant.hash(&mut hasher);
+        match key {
+            AnyComputeKey::Tensor(tensor_key) => {
+                if let Some(tensor) = self.nodes.tensor.get(&tensor_key) {
+                    tensor.info().datatype().hash(&mut hasher);
+                    tensor.info().shape().hash(&mut hasher);
+                }
+            }
+            AnyComputeKey::ElementWise(ew_key) => {
+                if let Some(op) = self.nodes.element_wise.get(&ew_key) {
+                    let dep_hash = self.compute_node_hash(op.value, cache);
+                    dep_hash.hash(&mut hasher);
+                    op.shape.hash(&mut hasher);
+                    // Hash element-wise functions
+                    for func in op.functions.iter() {
+                        func.datatype.hash(&mut hasher);
+                        func.operation.hash(&mut hasher);
+                        if let Some(name) = &func.name {
+                            name.hash(&mut hasher);
+                        }
+                    }
+                }
+            }
+            AnyComputeKey::PairWise(pw_key) => {
+                if let Some(op) = self.nodes.pair_wise.get(&pw_key) {
+                    let first_hash = self.compute_node_hash(op.first, cache);
+                    let second_hash = self.compute_node_hash(op.second, cache);
+                    first_hash.hash(&mut hasher);
+                    second_hash.hash(&mut hasher);
+                    op.function.datatype.hash(&mut hasher);
+                    op.function.operation.hash(&mut hasher);
+                    if let Some(name) = &op.function.name {
+                        name.hash(&mut hasher);
+                    }
+                }
+            }
+            AnyComputeKey::MatMul(mm_key) => {
+                if let Some(op) = self.nodes.mat_mul.get(&mm_key) {
+                    let first_hash = self.compute_node_hash(op.first, cache);
+                    let second_hash = self.compute_node_hash(op.second, cache);
+                    first_hash.hash(&mut hasher);
+                    second_hash.hash(&mut hasher);
+                    op.datatype.hash(&mut hasher);
+                    op.first_shape.hash(&mut hasher);
+                    op.second_shape.hash(&mut hasher);
+                    op.out_shape.hash(&mut hasher);
+                }
+            }
+            AnyComputeKey::QMatMul(qmm_key) => {
+                if let Some(op) = self.nodes.q_mat_mul.get(&qmm_key) {
+                    let input_hash = self.compute_node_hash(op.input, cache);
+                    input_hash.hash(&mut hasher);
+                    op.input_datatype.hash(&mut hasher);
+                    op.in_shape.hash(&mut hasher);
+                    op.out_shape.hash(&mut hasher);
+                    // Hash quantized matrix properties
+                    op.matrix.shape().hash(&mut hasher);
+                    op.matrix.datatype().hash(&mut hasher);
+                }
+            }
+            AnyComputeKey::Reduce(reduce_key) => {
+                if let Some(op) = self.nodes.reduce.get(&reduce_key) {
+                    let dep_hash = self.compute_node_hash(op.value, cache);
+                    dep_hash.hash(&mut hasher);
+                    op.axis.hash(&mut hasher);
+                    op.shape.hash(&mut hasher);
+                    op.function.datatype.hash(&mut hasher);
+                    op.function.operation.hash(&mut hasher);
+                    op.function.initial_value.hash(&mut hasher);
+                    if let Some(name) = &op.function.name {
+                        name.hash(&mut hasher);
+                    }
+                }
+            }
+            AnyComputeKey::MapLayout(ml_key) => {
+                if let Some(op) = self.nodes.map_layout.get(&ml_key) {
+                    let dep_hash = self.compute_node_hash(op.input, cache);
+                    dep_hash.hash(&mut hasher);
+                }
+            }
+            AnyComputeKey::Resize(resize_key) => {
+                if let Some(op) = self.nodes.resize.get(&resize_key) {
+                    let dep_hash = self.compute_node_hash(op.input, cache);
+                    dep_hash.hash(&mut hasher);
+                    op.current_shape.hash(&mut hasher);
+                    op.new_shape.hash(&mut hasher);
+                    op.fill_shape.hash(&mut hasher);
+                }
+            }
+            AnyComputeKey::SliceAssign(sa_key) => {
+                if let Some(op) = self.nodes.slice_assign.get(&sa_key) {
+                    let input_hash = self.compute_node_hash(op.input, cache);
+                    let value_hash = self.compute_node_hash(op.value, cache);
+                    input_hash.hash(&mut hasher);
+                    value_hash.hash(&mut hasher);
+                    for slice in op.slices.iter() {
+                        slice.start.hash(&mut hasher);
+                        slice.end.hash(&mut hasher);
+                    }
+                }
+            }
+            AnyComputeKey::IndexSelect(is_key) => {
+                if let Some(op) = self.nodes.index_select.get(&is_key) {
+                    let input_hash = self.compute_node_hash(op.input, cache);
+                    let indexes_hash = self.compute_node_hash(op.indexes, cache);
+                    input_hash.hash(&mut hasher);
+                    indexes_hash.hash(&mut hasher);
+                    op.datatype.hash(&mut hasher);
+                    op.dimension.hash(&mut hasher);
+                    op.value_shape.hash(&mut hasher);
+                    op.indexes_shape.hash(&mut hasher);
+                }
+            }
+            AnyComputeKey::Dequantize(dq_key) => {
+                if let Some(op) = self.nodes.dequantize.get(&dq_key) {
+                    op.datatype.hash(&mut hasher);
+                    op.matrix.shape().hash(&mut hasher);
+                    op.matrix.datatype().hash(&mut hasher);
+                }
+            }
+            AnyComputeKey::Custom(_) => {
+                // Custom operations don't have a stable hash representation
+            }
+        }
+
+        let hash = hasher.finish();
+        cache.insert(key, hash);
+        hash
     }
 }
