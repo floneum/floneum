@@ -1,7 +1,7 @@
 use crate::{DataType, Tensor, TensorSlice};
 
 impl<D: DataType> Tensor<2, D> {
-    /// Convert a 2D tensor to a Vec<Vec<D>>
+    /// Convert a 2D tensor to a `Vec<Vec<D>>`
     pub async fn to_vec2(&self) -> crate::Result<Vec<Vec<D>>, crate::Error> {
         let slice = self.as_slice().await?;
         Ok(slice.to_vec2())
@@ -9,7 +9,7 @@ impl<D: DataType> Tensor<2, D> {
 }
 
 impl<D: DataType> Tensor<3, D> {
-    /// Convert a 3D tensor to a Vec<Vec<Vec<D>>>
+    /// Convert a 3D tensor to a `Vec<Vec<Vec<D>>>`
     pub async fn to_vec3(&self) -> crate::Result<Vec<Vec<Vec<D>>>, crate::Error> {
         let slice = self.as_slice().await?;
         Ok(slice.to_vec3())
@@ -17,7 +17,7 @@ impl<D: DataType> Tensor<3, D> {
 }
 
 impl<D: DataType> TensorSlice<2, D> {
-    /// Convert a 2D tensor slice to a Vec<Vec<D>>
+    /// Convert a 2D tensor slice to a `Vec<Vec<D>>`
     pub fn to_vec2(&self) -> Vec<Vec<D>> {
         let shape = self.shape();
         let rows = shape[0];
@@ -36,7 +36,7 @@ impl<D: DataType> TensorSlice<2, D> {
 }
 
 impl<D: DataType> TensorSlice<3, D> {
-    /// Convert a 3D tensor slice to a Vec<Vec<Vec<D>>>
+    /// Convert a 3D tensor slice to a `Vec<Vec<Vec<D>>>`
     pub fn to_vec3(&self) -> Vec<Vec<Vec<D>>> {
         let shape = self.shape();
         let dim0 = shape[0];
