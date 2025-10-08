@@ -1,8 +1,9 @@
 use std::fmt::Write;
 
 use crate::{
-    DataTypeEnum, SmallerRank, TILE_SIZE, Tensor, TensorData,
+    DataTypeEnum, Layout, SmallerRank, TILE_SIZE, Tensor, TensorData,
     compute_graph::AnyComputeKey,
+    map_layout::MapLayoutOperation,
     mir::{
         kernel::GenericKernel,
         operation::Operation,
@@ -37,6 +38,31 @@ impl ResizeOperation {
 }
 
 impl ResizeOperation {
+    pub(crate) fn lower(
+        &self,
+        graph: &crate::compute_graph::ComputeGraphInner,
+    ) -> Option<MapLayoutOperation> {
+        if self.fill_shape != self.new_shape
+            || self.current_shape.iter().product::<usize>()
+                != self.new_shape.iter().product::<usize>()
+        {
+            return None;
+        }
+
+        let input = graph.cached_results.get(&self.input)?;
+        let input_layout = input.layout();
+        if !input_layout.is_contiguous() {
+            return None;
+        }
+        let new_shape = self.new_shape.clone();
+        let new_strides = Layout::continuous_strides(&new_shape);
+        Some(MapLayoutOperation::new(
+            self.input,
+            move |_| new_shape.clone(),
+            move |_, _| (0, new_strides.clone()),
+        ))
+    }
+
     fn kernel(
         &self,
         input_rank: u32,

@@ -95,11 +95,21 @@ impl<'a> Resolver<'a> {
                 current_constraints = constraint;
             }
             // Map layout isn't really a kernel. Resolve it immediately
-            if let AnyComputeKey::MapLayout(key) = node {
+            let map_layout = if let AnyComputeKey::MapLayout(key) = node {
                 let map_layout = self.graph.nodes.map_layout[&key].clone();
+                Some(map_layout)
+            }
+            // Try to lower the resize immediately
+            else if let AnyComputeKey::Resize(key) = node {
+                let resize = self.graph.nodes.resize[&key].clone();
+                resize.lower(&self.graph)
+            } else {
+                None
+            };
+            if let Some(map_layout) = map_layout {
                 let result = map_layout.run(self.graph);
                 // Cache the result
-                self.graph.cached_results.insert(key.into(), result);
+                self.graph.cached_results.insert(node, result);
             } else {
                 self.push_operation(
                     new_inputs,
@@ -110,7 +120,7 @@ impl<'a> Resolver<'a> {
                     &mut all_input_values,
                     &mut pending_operations,
                 );
-            }
+            };
         }
 
         if !pending_operations.is_empty() {

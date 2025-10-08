@@ -2,16 +2,6 @@ use std::ops::Range;
 
 pub(crate) const TILE_SIZE: u32 = 16;
 
-fn continuous_strides(shape: &[usize]) -> Box<[usize]> {
-    let mut acc = 1;
-    let mut strides = vec![0; shape.len()].into_boxed_slice();
-    for i in (0..shape.len()).rev() {
-        strides[i] = acc;
-        acc *= shape[i];
-    }
-    strides
-}
-
 pub(crate) fn slice_strides(
     slices: &[Range<usize>],
     offset: usize,
@@ -39,7 +29,7 @@ pub struct Layout {
 
 impl Layout {
     pub fn contiguous(shape: &[usize]) -> Self {
-        let strides = continuous_strides(shape);
+        let strides = Self::continuous_strides(shape);
         Self {
             offset: 0,
             shape: shape.into(),
@@ -56,7 +46,7 @@ impl Layout {
     }
 
     pub fn is_contiguous(&self) -> bool {
-        self.offset == 0 && self.strides == continuous_strides(&self.shape)
+        self.offset == 0 && self.strides == Self::continuous_strides(&self.shape)
     }
 
     pub fn slice(&self, slices: &[Range<usize>]) -> Self {
@@ -90,6 +80,16 @@ impl Layout {
 
     pub fn offset(&self) -> usize {
         self.offset
+    }
+
+    pub fn continuous_strides(shape: &[usize]) -> Box<[usize]> {
+        let mut acc = 1;
+        let mut strides = vec![0; shape.len()].into_boxed_slice();
+        for i in (0..shape.len()).rev() {
+            strides[i] = acc;
+            acc *= shape[i];
+        }
+        strides
     }
 }
 
