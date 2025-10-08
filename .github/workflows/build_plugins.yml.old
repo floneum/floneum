@@ -30,7 +30,7 @@ env:
 jobs:
   check:
     name: Build Plugins
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       # Give the default GITHUB_TOKEN write permission to commit and push the
       # added or changed files to the repository.
