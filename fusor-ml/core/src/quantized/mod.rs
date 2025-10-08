@@ -248,6 +248,7 @@ pub(crate) fn dequantize_mat4x4_block_count(ty: GgmlType) -> usize {
 }
 
 trait WgslQuantizedType: GgufBlock {
+    #[allow(unused)]
     const GGML_TYPE: GgmlType;
 
     fn dequantize_block<W: Write>(
@@ -289,7 +290,7 @@ trait WgslQuantizedType: GgufBlock {
                 }
             },
             code,
-        );;
+        );
         _ = writeln!(code, "}}");
     }
 
