@@ -187,7 +187,9 @@ impl Device {
         usage: wgpu::BufferUsages,
     ) -> Option<Arc<wgpu::Buffer>> {
         let mut cache = self.inner.buffer_allocation_cache.write();
-        cache.get_mut(&(size, usage))?.pop()
+        let items = cache.get_mut(&(size, usage))?;
+        let index = items.iter().position(|a| Arc::strong_count(a) == 1);
+        index.map(|i| items.swap_remove(i))
     }
 
     /// Get or create a buffer of the specified size.
