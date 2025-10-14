@@ -1695,7 +1695,9 @@ where
                             resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                                 buffer: &device.create_buffer_init(
                                     block_wgsl.as_ref(),
-                                    wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                                    wgpu::BufferUsages::STORAGE
+                                        | wgpu::BufferUsages::COPY_SRC
+                                        | wgpu::BufferUsages::COPY_DST,
                                 ),
                                 offset: 0,
                                 size: None,
@@ -1888,7 +1890,9 @@ where
                             resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                                 buffer: &device.create_buffer_init(
                                     block_wgsl.as_ref(),
-                                    wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                                    wgpu::BufferUsages::STORAGE
+                                        | wgpu::BufferUsages::COPY_SRC
+                                        | wgpu::BufferUsages::COPY_DST,
                                 ),
                                 offset: 0,
                                 size: None,
