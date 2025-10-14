@@ -1,9 +1,15 @@
-use std::{borrow::Cow, fmt::Debug, num::NonZeroUsize, path::PathBuf, sync::Arc};
+use std::{
+    borrow::Cow,
+    fmt::Debug,
+    num::{NonZeroU64, NonZeroUsize},
+    path::PathBuf,
+    sync::Arc,
+};
 
 use lru::LruCache;
 use parking_lot::RwLock;
-use rustc_hash::FxBuildHasher;
-use wgpu::{BindGroupLayout, PipelineLayout, ShaderModule};
+use rustc_hash::{FxBuildHasher, FxHashMap};
+use wgpu::{BindGroupLayout, BufferUsages, PipelineLayout, ShaderModule};
 
 struct DeviceInner {
     device: wgpu::Device,
@@ -17,6 +23,8 @@ struct DeviceInner {
     shader_module_cache: RwLock<LruCache<String, wgpu::ShaderModule, FxBuildHasher>>,
     compute_pipeline_cache:
         RwLock<LruCache<(PipelineLayout, ShaderModule), wgpu::ComputePipeline, FxBuildHasher>>,
+    // Cache for buffer allocations, keyed by size in bytes
+    buffer_allocation_cache: RwLock<FxHashMap<(u64, BufferUsages), Vec<Arc<wgpu::Buffer>>>>,
 }
 
 impl Debug for DeviceInner {
@@ -84,6 +92,7 @@ impl Device {
                 pipeline_layout_cache,
                 shader_module_cache,
                 compute_pipeline_cache,
+                buffer_allocation_cache: RwLock::new(FxHashMap::default()),
             }),
         };
 
@@ -169,5 +178,61 @@ impl Device {
     ) -> &RwLock<LruCache<(PipelineLayout, ShaderModule), wgpu::ComputePipeline, FxBuildHasher>>
     {
         &self.inner.compute_pipeline_cache
+    }
+
+    /// Try to get a buffer from the allocation cache. Returns None if no buffer of the requested size is available.
+    pub(crate) fn get_cached_buffer(
+        &self,
+        size: u64,
+        usage: wgpu::BufferUsages,
+    ) -> Option<Arc<wgpu::Buffer>> {
+        let mut cache = self.inner.buffer_allocation_cache.write();
+        cache.get_mut(&(size, usage))?.pop()
+    }
+
+    /// Get or create a buffer of the specified size.
+    pub fn create_buffer(&self, size: u64, usage: wgpu::BufferUsages) -> Arc<wgpu::Buffer> {
+        // Try to get a buffer from the cache first
+        self.get_cached_buffer(size, usage).unwrap_or_else(|| {
+            let new_buffer = self.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Tensor Buffer"),
+                size,
+                usage,
+                mapped_at_creation: false,
+            });
+
+            let buffer = Arc::new(new_buffer);
+            self.inner
+                .buffer_allocation_cache
+                .write()
+                .entry((size, usage))
+                .or_default()
+                .push(buffer.clone());
+            buffer
+        })
+    }
+
+    /// Get or create a buffer of the specified size.
+    pub fn create_buffer_init(&self, data: &[u8], usage: wgpu::BufferUsages) -> Arc<wgpu::Buffer> {
+        let buffer = self.create_buffer(data.len() as u64, usage);
+        self.wgpu_queue().write_buffer(&buffer, 0, data);
+        buffer
+    }
+
+    /// Get or create a buffer of the specified size.
+    pub fn create_buffer_init_iter(
+        &self,
+        data: impl IntoIterator<Item = u8>,
+        usage: wgpu::BufferUsages,
+        len: u64,
+    ) -> Arc<wgpu::Buffer> {
+        let mut iter = data.into_iter();
+        let buffer = self.create_buffer(len, usage);
+        if let Some(len) = NonZeroU64::new(buffer.size()) {
+            if let Some(mut write) = self.wgpu_queue().write_buffer_with(&buffer, 0, len) {
+                write.iter_mut().zip(&mut iter).for_each(|(a, b)| *a = b);
+            }
+        }
+        buffer
     }
 }

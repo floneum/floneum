@@ -12,7 +12,6 @@ use std::{
     fmt::{Display, Write},
     sync::Arc,
 };
-use wgpu::util::DeviceExt;
 
 pub(crate) mod dequantize;
 pub(crate) mod matmul;
@@ -94,15 +93,12 @@ impl QMatrix {
             GgmlType::F16 | GgmlType::F32 => bytes.into(),
             _ => todo!(),
         };
-        let buffer = Arc::new(device.wgpu_device().create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("QMatrix Buffer"),
-                contents: &bytes,
-                usage: wgpu::BufferUsages::STORAGE
-                    | wgpu::BufferUsages::COPY_SRC
-                    | wgpu::BufferUsages::COPY_DST,
-            },
-        ));
+        let buffer = device.create_buffer_init(
+            &bytes,
+            wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+        );
 
         Ok(QMatrix {
             device: device.clone(),
@@ -1682,16 +1678,12 @@ where
             }
             let block_wgsl = block.into_wgsl_bytes();
             assert_eq!(block, B::from_wgsl_bytes(block_wgsl));
-            let output =
-                device
-                    .wgpu_device()
-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: None,
-                        contents: bytemuck::cast_slice(&vec![T::zero(); B::BLOCK_SIZE]),
-                        usage: wgpu::BufferUsages::STORAGE
-                            | wgpu::BufferUsages::COPY_DST
-                            | wgpu::BufferUsages::COPY_SRC,
-                    });
+            let output = device.create_buffer_init(
+                bytemuck::cast_slice(&vec![T::zero(); B::BLOCK_SIZE]),
+                wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+            );
             let bind_group = device
                 .wgpu_device()
                 .create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1701,13 +1693,9 @@ where
                         wgpu::BindGroupEntry {
                             binding: 0,
                             resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                                buffer: &device.wgpu_device().create_buffer_init(
-                                    &wgpu::util::BufferInitDescriptor {
-                                        label: None,
-                                        contents: block_wgsl.as_ref(),
-                                        usage: wgpu::BufferUsages::STORAGE
-                                            | wgpu::BufferUsages::COPY_SRC,
-                                    },
+                                buffer: &device.create_buffer_init(
+                                    block_wgsl.as_ref(),
+                                    wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
                                 ),
                                 offset: 0,
                                 size: None,
@@ -1883,16 +1871,12 @@ where
             }
             let block_wgsl = block.into_wgsl_bytes();
             assert_eq!(block, B::from_wgsl_bytes(block_wgsl));
-            let output =
-                device
-                    .wgpu_device()
-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: None,
-                        contents: bytemuck::cast_slice(&vec![T::zero(); B::BLOCK_SIZE]),
-                        usage: wgpu::BufferUsages::STORAGE
-                            | wgpu::BufferUsages::COPY_DST
-                            | wgpu::BufferUsages::COPY_SRC,
-                    });
+            let output = device.create_buffer_init(
+                bytemuck::cast_slice(&vec![T::zero(); B::BLOCK_SIZE]),
+                wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+            );
             let bind_group = device
                 .wgpu_device()
                 .create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1902,13 +1886,9 @@ where
                         wgpu::BindGroupEntry {
                             binding: 0,
                             resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                                buffer: &device.wgpu_device().create_buffer_init(
-                                    &wgpu::util::BufferInitDescriptor {
-                                        label: None,
-                                        contents: block_wgsl.as_ref(),
-                                        usage: wgpu::BufferUsages::STORAGE
-                                            | wgpu::BufferUsages::COPY_SRC,
-                                    },
+                                buffer: &device.create_buffer_init(
+                                    block_wgsl.as_ref(),
+                                    wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
                                 ),
                                 offset: 0,
                                 size: None,

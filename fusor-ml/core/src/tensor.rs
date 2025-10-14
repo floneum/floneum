@@ -1,16 +1,14 @@
 use std::{
     fmt::{Debug, Display},
     marker::PhantomData,
+    num::NonZeroU64,
     ops::{Add, AddAssign, Deref, Div, DivAssign, Index, Mul, MulAssign, Range, Sub, SubAssign},
     sync::Arc,
 };
 
 use bytemuck::{AnyBitPattern, NoUninit};
 use tabbycat::Graph;
-use wgpu::{
-    BufferDescriptor, COPY_BUFFER_ALIGNMENT,
-    util::{DeviceExt, DownloadBuffer},
-};
+use wgpu::{COPY_BUFFER_ALIGNMENT, util::DownloadBuffer};
 
 use crate::{
     Device, ElementWiseOperation, MatMulOperation, MatMulParams, PairWiseFunction,
@@ -456,28 +454,26 @@ impl TensorData {
     pub(crate) fn new_for_shape(device: &Device, shape: &[usize], datatype: DataTypeEnum) -> Self {
         let size =
             padded_tensor_size((datatype.element_size() * shape.iter().product::<usize>()) as u64);
-        let buffer = device.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Tensor Buffer"),
+
+        // Try to get a buffer from the cache first
+        let buffer = device.create_buffer(
             size,
-            usage: wgpu::BufferUsages::STORAGE
+            wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_SRC
                 | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        );
+
         Self::new_from_buffer(device, buffer, shape, datatype)
     }
 
     pub(crate) fn new_splat<D: DataType>(device: &Device, shape: &[usize], data: D) -> Self {
         let datatype = D::WGSL_TYPE;
-        let buffer = device
-            .wgpu_device()
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Splat Tensor Buffer"),
-                contents: bytemuck::bytes_of(&data),
-                usage: wgpu::BufferUsages::STORAGE
-                    | wgpu::BufferUsages::COPY_SRC
-                    | wgpu::BufferUsages::COPY_DST,
-            });
+        let buffer = device.create_buffer_init(
+            bytemuck::bytes_of(&data),
+            wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+        );
         let strides = (0..shape.len()).map(|_| 0).collect();
         let layout = Layout::from_parts(0, shape.into(), strides);
         Self::new_from_parts(device, buffer, layout, datatype)
@@ -493,30 +489,34 @@ impl TensorData {
             element_size: u64,
             shape: &[usize],
             device: &Device,
-        ) -> (wgpu::Buffer, u64) {
+        ) -> (Arc<wgpu::Buffer>, u64) {
             let size = element_size * shape.iter().copied().product::<usize>() as u64;
 
             let padded_size = padded_tensor_size(size);
 
-            let wgt_descriptor = BufferDescriptor {
-                label: Some("Tensor Buffer"),
-                size: padded_size,
-                usage: wgpu::BufferUsages::STORAGE
+            let buffer = device.create_buffer(
+                padded_size,
+                wgpu::BufferUsages::STORAGE
                     | wgpu::BufferUsages::COPY_SRC
                     | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: true,
-            };
-
-            let buffer = device.wgpu_device().create_buffer(&wgt_descriptor);
+            );
             (buffer, size)
         }
         let (buffer, unpadded_size) = create_aligned_buffer(size_of::<D>() as u64, shape, device);
 
-        buffer.slice(..).get_mapped_range_mut()[..unpadded_size as usize]
-            .iter_mut()
-            .zip(data.flat_map(bytemuck::bytes_of))
-            .for_each(|(dst, src)| *dst = *src);
-        buffer.unmap();
+        if let Some(unpadded_size) = NonZeroU64::new(unpadded_size) {
+            let write = device
+                .wgpu_queue()
+                .write_buffer_with(&buffer, 0, unpadded_size);
+            if let Some(mut write) = write {
+                write
+                    .iter_mut()
+                    .zip(data.flat_map(bytemuck::bytes_of))
+                    .for_each(|(dst, src)| *dst = *src);
+            } else {
+                tracing::info!("Falling back to staging buffer for tensor upload");
+            }
+        }
 
         Self::new_from_buffer(device, buffer, shape, D::WGSL_TYPE)
     }

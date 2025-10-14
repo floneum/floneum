@@ -1,8 +1,8 @@
 use enumset::{EnumSet, EnumSetType};
 use fusor_gguf::GgmlType;
 use std::fmt::{Debug, Write};
-use std::sync::OnceLock;
-use wgpu::{BindGroupLayout, CommandEncoder, PipelineCompilationOptions, util::DeviceExt};
+use std::sync::{Arc, OnceLock};
+use wgpu::{BindGroupLayout, CommandEncoder, PipelineCompilationOptions};
 
 use crate::mir::inputs::{
     KernelInputValue, QBufferInput, QInfoInput, TensorBufferInput, TensorInfoInput,
@@ -424,32 +424,25 @@ impl GenericKernel {
         fn create_u32_iter_buffer(
             device: &crate::Device,
             data: impl IntoIterator<Item = u32>,
-        ) -> wgpu::Buffer {
-            device
-                .wgpu_device()
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("u32_iter_buffer"),
-                    contents: bytemuck::cast_slice(&data.into_iter().collect::<Vec<_>>()),
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                })
+            len: u64,
+        ) -> Arc<wgpu::Buffer> {
+            device.create_buffer_init_iter(
+                data.into_iter().flat_map(|x| x.to_ne_bytes()),
+                wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                len * 4,
+            )
         }
         let create_u32_buffer = |device: &crate::Device, data: u32| {
-            device
-                .wgpu_device()
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("u32_buffer"),
-                    contents: bytemuck::bytes_of(&data),
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                })
+            device.create_buffer_init(
+                bytemuck::bytes_of(&data),
+                wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            )
         };
         let create_f32_buffer = |device: &crate::Device, data: f32| {
-            device
-                .wgpu_device()
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("f32_buffer"),
-                    contents: bytemuck::bytes_of(&data),
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                })
+            device.create_buffer_init(
+                bytemuck::bytes_of(&data),
+                wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            )
         };
         for (input, value) in self.inputs.iter().zip(inputs.iter()) {
             match (&input.ty, value) {
@@ -464,7 +457,11 @@ impl GenericKernel {
                     // Tensor info
                     owned_entries.push((
                         matrix_input.info_binding,
-                        create_u32_iter_buffer(device, matrix.iter().map(|x| *x as u32)),
+                        create_u32_iter_buffer(
+                            device,
+                            matrix.iter().map(|x| *x as u32),
+                            matrix.len() as _,
+                        ),
                     ));
                 }
                 (
@@ -494,6 +491,7 @@ impl GenericKernel {
                                     ]
                                 }),
                             ),
+                            (1 + tensor_input.rank * 2) as _,
                         ),
                     ));
                 }

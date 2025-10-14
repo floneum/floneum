@@ -236,18 +236,14 @@ impl Operation for IndexSelectOperation {
         let indexes_shape = indexes.layout().shape();
         let output_shape: Box<[usize]> =
             IndexSelectOperation::calc_output_shape(self.dimension, value_shape, indexes_shape);
-        let output_buf = device.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
-            label: Some(&format!(
-                "IndexSelectOperation output buffer for {}",
-                self.name()
-            )),
-            size: padded_tensor_size(
-                (output_shape.iter().copied().product::<usize>() * value.datatype().element_size())
-                    as u64,
-            ),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
+        let size = padded_tensor_size(
+            (output_shape.iter().copied().product::<usize>() * value.datatype().element_size())
+                as u64,
+        );
+        let output_buf = device.create_buffer(
+            size,
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        );
         let output_tensor =
             TensorData::new_from_buffer(device, output_buf, &output_shape, value.datatype());
         // Make sure the output tensor has the correct shape

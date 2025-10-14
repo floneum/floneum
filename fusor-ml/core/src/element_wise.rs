@@ -1036,6 +1036,43 @@ async fn test_eq_const_cast() {
 }
 
 impl<const R: usize, D: DataType> Tensor<R, D> {
+    pub fn less_appoximate_exp(&self) -> Self {
+        if D::WGSL_TYPE != DataTypeEnum::F32 {
+            return self.exp();
+        }
+        // https://specbranch.com/posts/fast-exp/
+        self.element_wise(ElementWiseOperation::new(
+            self.datatype(),
+            self.key(),
+            ElementWiseFunction::new(
+                "let first_order = i32(input * 12102203.0) + (127 << 23) - 345088;
+                let correction_xi = (first_order & 0x7fffff) | (127 << 23);
+                let correction_x = bitcast<f32>(correction_xi);
+                let output = bitcast<f32>(first_order) * fma(fma(correction_x, 0.22670517861843109130859375, -0.671999752521514892578125), correction_x, 1.469318866729736328125);",
+                D::WGSL_TYPE,
+            )
+            .with_name("less_appoximate_exp"),
+            self.shape().as_slice(),
+        ))
+    }
+
+    pub fn appoximate_exp(&self) -> Self {
+        if D::WGSL_TYPE != DataTypeEnum::F32 {
+            return self.exp();
+        }
+        // https://specbranch.com/posts/fast-exp/
+        self.element_wise(ElementWiseOperation::new(
+            self.datatype(),
+            self.key(),
+            ElementWiseFunction::new(
+                "let output = bitcast<f32>(i32(input * 12102203.0) + (127 << 23) - 545948);",
+                D::WGSL_TYPE,
+            )
+            .with_name("appoximate_exp"),
+            self.shape().as_slice(),
+        ))
+    }
+
     pub fn exp(&self) -> Self {
         self.element_wise(ElementWiseOperation::new(
             self.datatype(),
