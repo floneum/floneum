@@ -122,7 +122,7 @@ impl Operation for ResizeOperation {
         _: &crate::mir::workgroup_shape::WorkgroupShape,
         inputs: &[crate::mir::inputs::MirValue],
     ) -> [u32; 3] {
-        let input = inputs[0].as_tensor().unwrap();
+        let input = inputs[1].as_tensor().unwrap();
         [
             (input.layout().shape().iter().product::<usize>() as u32)
                 .div_ceil(TILE_SIZE * BLOCKSIZE),

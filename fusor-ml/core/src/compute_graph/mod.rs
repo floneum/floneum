@@ -426,6 +426,8 @@ impl ComputeGraph {
             });
         let data = self.with_mut(|inner| Resolver::new(inner, key, &mut encoder).run());
         device.wgpu_queue().submit(Some(encoder.finish()));
+        // Reset the written flag on all buffers
+        device.reset_initialized_buffers();
 
         // Flush the cache to a file
         if let (Some(pipeline_cache), Some(cache_file)) =

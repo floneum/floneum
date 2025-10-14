@@ -11,6 +11,26 @@ use parking_lot::RwLock;
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use wgpu::{BindGroupLayout, BufferUsages, PipelineLayout, ShaderModule};
 
+#[derive(Debug)]
+struct CachedBuffer {
+    writen: bool,
+    buffer: Arc<wgpu::Buffer>,
+}
+
+impl CachedBuffer {
+    fn new(buffer: Arc<wgpu::Buffer>, writen: bool) -> Self {
+        Self { writen, buffer }
+    }
+
+    fn initialized(&self) -> bool {
+        self.writen
+    }
+
+    fn set_initialized(&mut self) {
+        self.writen = true;
+    }
+}
+
 struct DeviceInner {
     device: wgpu::Device,
     adapter: wgpu::Adapter,
@@ -24,7 +44,7 @@ struct DeviceInner {
     compute_pipeline_cache:
         RwLock<LruCache<(PipelineLayout, ShaderModule), wgpu::ComputePipeline, FxBuildHasher>>,
     // Cache for buffer allocations, keyed by size in bytes
-    buffer_allocation_cache: RwLock<FxHashMap<(u64, BufferUsages), Vec<Arc<wgpu::Buffer>>>>,
+    buffer_allocation_cache: RwLock<FxHashMap<(u64, BufferUsages), Vec<CachedBuffer>>>,
 }
 
 impl Debug for DeviceInner {
@@ -180,43 +200,76 @@ impl Device {
         &self.inner.compute_pipeline_cache
     }
 
+    /// Reset the initialized flag on all cached buffers.
+    pub fn reset_initialized_buffers(&self) {
+        let mut cache = self.inner.buffer_allocation_cache.write();
+        for buffers in cache.values_mut() {
+            for buffer in buffers {
+                buffer.writen = false;
+            }
+        }
+    }
+
     /// Try to get a buffer from the allocation cache. Returns None if no buffer of the requested size is available.
     pub(crate) fn get_cached_buffer(
         &self,
         size: u64,
         usage: wgpu::BufferUsages,
+        to_initilize: bool,
     ) -> Option<Arc<wgpu::Buffer>> {
         let mut cache = self.inner.buffer_allocation_cache.write();
         let items = cache.get_mut(&(size, usage))?;
-        let index = items.iter().position(|a| Arc::strong_count(a) == 1);
-        index.map(|i| items.swap_remove(i))
+        items.iter_mut().find_map(|a| {
+            if Arc::strong_count(&a.buffer) == 1 {
+                if to_initilize {
+                    if a.initialized() {
+                        return None;
+                    }
+                    a.set_initialized();
+                }
+                Some(a.buffer.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Get or create a buffer of the specified size for a use
+    fn create_buffer_inner(
+        &self,
+        size: u64,
+        usage: wgpu::BufferUsages,
+        to_initilize: bool,
+    ) -> Arc<wgpu::Buffer> {
+        // Try to get a buffer from the cache first
+        self.get_cached_buffer(size, usage, to_initilize)
+            .unwrap_or_else(|| {
+                let new_buffer = self.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("Tensor Buffer"),
+                    size,
+                    usage,
+                    mapped_at_creation: false,
+                });
+
+                let buffer = Arc::new(new_buffer);
+                self.inner
+                    .buffer_allocation_cache
+                    .write()
+                    .entry((size, usage))
+                    .or_default()
+                    .push(CachedBuffer::new(buffer.clone(), to_initilize));
+                buffer
+            })
     }
 
     /// Get or create a buffer of the specified size.
     pub fn create_buffer(&self, size: u64, usage: wgpu::BufferUsages) -> Arc<wgpu::Buffer> {
-        // Try to get a buffer from the cache first
-        self.get_cached_buffer(size, usage).unwrap_or_else(|| {
-            let new_buffer = self.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Tensor Buffer"),
-                size,
-                usage,
-                mapped_at_creation: false,
-            });
-
-            let buffer = Arc::new(new_buffer);
-            self.inner
-                .buffer_allocation_cache
-                .write()
-                .entry((size, usage))
-                .or_default()
-                .push(buffer.clone());
-            buffer
-        })
+        self.create_buffer_inner(size, usage, false)
     }
 
     /// Get or create a buffer of the specified size.
     pub fn create_buffer_init(&self, data: &[u8], usage: wgpu::BufferUsages) -> Arc<wgpu::Buffer> {
-        let buffer = self.create_buffer(data.len() as u64, usage);
+        let buffer = self.create_buffer_inner(data.len() as u64, usage, true);
         self.wgpu_queue().write_buffer(&buffer, 0, data);
         buffer
     }
@@ -229,11 +282,15 @@ impl Device {
         len: u64,
     ) -> Arc<wgpu::Buffer> {
         let mut iter = data.into_iter();
-        let buffer = self.create_buffer(len, usage);
+        let buffer = self.create_buffer_inner(len, usage, true);
         if let Some(len) = NonZeroU64::new(buffer.size()) {
             if let Some(mut write) = self.wgpu_queue().write_buffer_with(&buffer, 0, len) {
                 write.iter_mut().zip(&mut iter).for_each(|(a, b)| *a = b);
+            } else {
+                panic!("Failed to map buffer for writing");
             }
+        } else {
+            panic!("Failed to map buffer for writing");
         }
         buffer
     }
