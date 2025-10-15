@@ -220,7 +220,7 @@ pub fn chunked_sgemm_with_config(
                     writeln!(kernel, "for (var index = 0u; index < 4u; index += 1u) {{").unwrap();
                     writeln!(
                         kernel,
-                        "{cache_b}[(pair_index_col / 4) * {y_stride} + pair_index_row * 4 + index][pair_index_col % 4] = b_values[index];"
+                        "{cache_b}[(pair_index_col / 4) * {y_stride} + pair_index_row + {sgemm_input_k_chunks} * index][pair_index_col % 4] = b_values[index];"
                     )
                     .unwrap();
                     writeln!(kernel, "}}").unwrap();
@@ -308,10 +308,16 @@ pub fn chunked_sgemm_with_config(
                 sgemm_input_m_elements / 4
             )
             .unwrap();
-            // Load a 4x4 from cache_b
+            // Load a 4x4 from cache_b with coalesced layout
             writeln!(
                 kernel,
-                "let b_values = {cache_b}[n_workgroup_index * {} + index];",
+                "let b_cache_offset = (index / 4u) + {}u * (index % 4u);",
+                sgemm_input_k_chunks
+            )
+            .unwrap();
+            writeln!(
+                kernel,
+                "let b_values = {cache_b}[n_workgroup_index * {} + b_cache_offset];",
                 sgemm_input_k_elements / 4
             )
             .unwrap();
