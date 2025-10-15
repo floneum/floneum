@@ -78,8 +78,8 @@ pub(crate) fn workgroup_shape_constraints(
     // Use chunked workgroup constraints for all types that support mat4x4 dequantization
     if dequantize_mat4x4_block_count(matrix.datatype()) > 0 {
         let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
-        constraints.add_constraint(0, Constraint::equals(4));
-        constraints.add_constraint(1, Constraint::equals(4));
+        constraints.add_constraint(0, Constraint::equals(16));
+        constraints.add_constraint(1, Constraint::equals(16));
         constraints.add_constraint(2, Constraint::equals(1));
         return constraints;
     }

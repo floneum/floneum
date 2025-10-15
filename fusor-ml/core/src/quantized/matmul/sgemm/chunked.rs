@@ -30,9 +30,9 @@ impl ChunkedSgemmConfig {
     pub const fn default() -> Self {
         Self {
             subgroup_threads_per_block: 2,
-            input_k_chunks: 2,
-            input_m_elements: 16,
-            input_n_elements: 16,
+            input_k_chunks: 4,
+            input_m_elements: 4 * 16,
+            input_n_elements: 4 * 16,
         }
     }
 
@@ -118,6 +118,7 @@ pub fn chunked_sgemm_with_config(
     config.validate(elements_per_block, sub_chunks).unwrap();
 
     let sgemm_subgroup_threads_per_block = config.subgroup_threads_per_block;
+    let sgemm_input_k_chunks = config.input_k_chunks;
     let sgemm_input_k_elements = config.input_k_elements();
     let sgemm_input_m_elements = config.input_m_elements;
     let sgemm_input_n_elements = config.input_n_elements;
@@ -164,6 +165,18 @@ pub fn chunked_sgemm_with_config(
         "let pair_local_index = {workgroup_local_index} % {sgemm_subgroup_threads_per_block};"
     )
     .unwrap();
+    let subgroup_threads_per_sgemm_input_k_chunks =
+        sgemm_input_k_chunks / sgemm_subgroup_threads_per_block;
+    writeln!(
+        kernel,
+        "let pair_index_row = pair_local_index + {sgemm_subgroup_threads_per_block} * (pair_index % {subgroup_threads_per_sgemm_input_k_chunks});"
+    )
+    .unwrap();
+    writeln!(
+        kernel,
+        "let pair_index_col = pair_index / {subgroup_threads_per_sgemm_input_k_chunks};"
+    )
+    .unwrap();
 
     // How many blocks do we have to process in the k dim
     writeln!(kernel, "let k_chunk_size = {k_size} / {MATRIX_ELEMENTS};").unwrap();
@@ -176,7 +189,7 @@ pub fn chunked_sgemm_with_config(
     // This threads b_input offset in blocks
     writeln!(
         kernel,
-        "let b_block_offset = (y * {sgemm_input_n_elements} + pair_index * {sgemm_subgroup_threads_per_block}) * k_block_size;"
+        "let b_block_offset = (y * {sgemm_input_n_elements} + pair_index_col) * k_block_size;"
     )
     .unwrap();
 
@@ -185,18 +198,12 @@ pub fn chunked_sgemm_with_config(
     // Calculate one block sized group
     writeln!(
         kernel,
-        "for (var k_start = 0u; k_start < k_chunk_size; k_start += {sgemm_subgroup_threads_per_block}u) {{"
+        "for (var k_start = 0u; k_start < k_chunk_size; k_start += {sgemm_input_k_chunks}u) {{"
     )
     .unwrap();
     {
         // This is seperated from k_start above to avoid divergance checks within each subgroup
-        writeln!(kernel, "let k = k_start + pair_local_index;").unwrap();
-        writeln!(
-            kernel,
-            "for (var i = 0u; i < {}u; i += 1u) {{",
-            sgemm_subgroup_threads_per_block
-        )
-        .unwrap();
+        writeln!(kernel, "let k = k_start + pair_index_row;").unwrap();
         {
             // Load the b block into the cache
             writeln!(kernel, "let b_block_index = k / {chunks_per_block};").unwrap();
@@ -206,14 +213,14 @@ pub fn chunked_sgemm_with_config(
                 kernel,
                 op.matrix.datatype,
                 "b_index_within_block",
-                format!("{input_b}[b_block_index + b_block_offset + i * k_block_size]"),
+                format!("{input_b}[b_block_index + b_block_offset]"),
                 DataTypeEnum::F32,
                 |data, kernel| {
                     writeln!(kernel, "let b_values = {data};").unwrap();
                     writeln!(kernel, "for (var index = 0u; index < 4u; index += 1u) {{").unwrap();
                     writeln!(
                         kernel,
-                        "{cache_b}[pair_local_index * 4 + index + ((pair_index * {sgemm_subgroup_threads_per_block} + i) / 4) * {y_stride}][(pair_index * {sgemm_subgroup_threads_per_block} + i) % 4] = b_values[index];"
+                        "{cache_b}[pair_index_row * 4 + index + (pair_index_col / 4) * {y_stride}][pair_index_col % 4] = b_values[index];"
                     )
                     .unwrap();
                     writeln!(kernel, "}}").unwrap();
@@ -234,21 +241,15 @@ pub fn chunked_sgemm_with_config(
                     indices.push(format!("block_batch_{dim}"));
                 }
                 // Then add M and K indices
-                indices.push(format!(
-                    "x * {sgemm_input_m_elements} + pair_index * {sgemm_subgroup_threads_per_block} + i"
-                ));
+                indices.push(format!("x * {sgemm_input_m_elements} + pair_index_col"));
                 indices.push(format!("k*{MATRIX_ELEMENTS} + index"));
                 writeln!(
                     kernel,
-                    "let chunk_index = pair_local_index * 4 + index / 4 + ((pair_index * {sgemm_subgroup_threads_per_block} + i) / 4) * {y_stride};"
+                    "let chunk_index = pair_index_row * 4 + index / 4 + (pair_index_col / 4) * {y_stride};"
                 )
                 .unwrap();
-                writeln!(
-                    kernel,
-                    "let row_index = (pair_index * {sgemm_subgroup_threads_per_block} + i) % 4;"
-                )
-                .unwrap();
-                writeln!(kernel, "let col_index = index % 4;").unwrap();
+                writeln!(kernel, "let col_index = pair_index_col % 4;").unwrap();
+                writeln!(kernel, "let row_index = index % 4;").unwrap();
                 input_a
                     .check_bounds(
                         kernel,
@@ -256,7 +257,7 @@ pub fn chunked_sgemm_with_config(
                         |kernel: &mut GenericKernel| {
                             write!(
                                 kernel,
-                                "{cache_a}[chunk_index][row_index][col_index] = {input_a}["
+                                "{cache_a}[chunk_index][col_index][row_index] = {input_a}["
                             )?;
                             input_a.strided_index(kernel, indices.iter().cloned());
                             write!(kernel, "];")?;
@@ -268,7 +269,7 @@ pub fn chunked_sgemm_with_config(
                 {
                     writeln!(
                         kernel,
-                        "{cache_a}[chunk_index][row_index][col_index] = 0.0;"
+                        "{cache_a}[chunk_index][col_index][row_index] = 0.0;"
                     )
                     .unwrap();
                 }
@@ -276,7 +277,6 @@ pub fn chunked_sgemm_with_config(
             }
             writeln!(kernel, "}}").unwrap();
         }
-        writeln!(kernel, "}}").unwrap();
 
         // Make sure the caches are ready
         writeln!(kernel, "workgroupBarrier();").unwrap();

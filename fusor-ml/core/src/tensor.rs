@@ -892,33 +892,6 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         Self::from_parts(self.data.q_mat_mul(operation))
     }
 
-    #[cfg(test)]
-    pub(crate) fn add_q_mat_mul_with_chunked_config(
-        &self,
-        other: &QMatrix,
-        config: crate::quantized::matmul::ChunkedSgemmConfig,
-    ) -> Self {
-        let operation =
-            QMatMulOperation::new(self.datatype(), self.shape(), self.data.key, other.clone())
-                .with_chunked_config(config);
-
-        Self::from_parts(self.data.q_mat_mul(operation))
-    }
-
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub(crate) fn add_q_mat_mul_with_general_config(
-        &self,
-        other: &QMatrix,
-        config: crate::quantized::matmul::GeneralSgemmConfig,
-    ) -> Self {
-        let operation =
-            QMatMulOperation::new(self.datatype(), self.shape(), self.data.key, other.clone())
-                .with_general_config(config);
-
-        Self::from_parts(self.data.q_mat_mul(operation))
-    }
-
     pub(crate) fn add_resize<const R2: usize>(&self, op: ResizeOperation) -> Tensor<R2, D> {
         Tensor {
             data: self.data.resize(op),
