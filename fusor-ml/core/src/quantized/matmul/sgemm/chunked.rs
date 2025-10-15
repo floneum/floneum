@@ -123,13 +123,13 @@ pub fn chunked_sgemm_with_config(
     let sgemm_input_m_elements = config.input_m_elements;
     let sgemm_input_n_elements = config.input_n_elements;
 
-    let cache_a_size = (sgemm_input_m_elements / 4) * (sgemm_input_k_elements / 4);
+    let cache_a_size = (sgemm_input_k_elements / 4) * (sgemm_input_m_elements / 4);
     let cache_a = kernel.add_global_array(
         KernelGlobalSpace::Workgroup,
         MatrixType::new(["4".into(), "4".into()], dtype),
         cache_a_size.to_string(),
     );
-    let cache_b_size = (sgemm_input_k_elements / 4) * (sgemm_input_n_elements / 4);
+    let cache_b_size = (sgemm_input_n_elements / 4) * (sgemm_input_k_elements / 4);
     let cache_b = kernel.add_global_array(
         KernelGlobalSpace::Workgroup,
         MatrixType::new(["4".into(), "4".into()], dtype),
@@ -220,7 +220,7 @@ pub fn chunked_sgemm_with_config(
                     writeln!(kernel, "for (var index = 0u; index < 4u; index += 1u) {{").unwrap();
                     writeln!(
                         kernel,
-                        "{cache_b}[pair_index_row * 4 + index + (pair_index_col / 4) * {y_stride}][pair_index_col % 4] = b_values[index];"
+                        "{cache_b}[(pair_index_col / 4) * {y_stride} + pair_index_row * 4 + index][pair_index_col % 4] = b_values[index];"
                     )
                     .unwrap();
                     writeln!(kernel, "}}").unwrap();
@@ -234,7 +234,7 @@ pub fn chunked_sgemm_with_config(
             )
             .unwrap();
             {
-                let y_stride = sgemm_input_k_elements / 4;
+                let y_stride = sgemm_input_m_elements / 4;
                 let mut indices = vec![];
                 // Add batch indices first
                 for dim in (0..input_a.rank()).rev().skip(2) {
@@ -245,7 +245,7 @@ pub fn chunked_sgemm_with_config(
                 indices.push(format!("k*{MATRIX_ELEMENTS} + index"));
                 writeln!(
                     kernel,
-                    "let chunk_index = pair_index_row * 4 + index / 4 + (pair_index_col / 4) * {y_stride};"
+                    "let chunk_index = (pair_index_row * 4 + index / 4) * {y_stride} + pair_index_col / 4;"
                 )
                 .unwrap();
                 writeln!(kernel, "let col_index = pair_index_col % 4;").unwrap();
@@ -284,15 +284,13 @@ pub fn chunked_sgemm_with_config(
         // Now that the items are in cache, do the matrix multiplication
         writeln!(
             kernel,
-            "let n_workgroup_offset = {} * ({workgroup_local_index} / {});",
-            sgemm_input_k_elements / 4,
+            "let n_workgroup_index = {workgroup_local_index} / {};",
             sgemm_input_n_elements / 4
         )
         .unwrap();
         writeln!(
             kernel,
-            "let m_workgroup_offset = {} * ({workgroup_local_index} % {});",
-            sgemm_input_k_elements / 4,
+            "let m_workgroup_index = {workgroup_local_index} % {};",
             sgemm_input_m_elements / 4
         )
         .unwrap();
@@ -306,13 +304,15 @@ pub fn chunked_sgemm_with_config(
             // Load a 4x4 from cache_a
             writeln!(
                 kernel,
-                "let a_values = {cache_a}[index + m_workgroup_offset];"
+                "let a_values = {cache_a}[index * {} + m_workgroup_index];",
+                sgemm_input_m_elements / 4
             )
             .unwrap();
             // Load a 4x4 from cache_b
             writeln!(
                 kernel,
-                "let b_values = {cache_b}[index + n_workgroup_offset];"
+                "let b_values = {cache_b}[n_workgroup_index * {} + index];",
+                sgemm_input_k_elements / 4
             )
             .unwrap();
             writeln!(kernel, "acc = acc + transpose(a_values) * b_values;").unwrap();
