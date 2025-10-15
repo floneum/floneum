@@ -605,7 +605,7 @@ impl WgslQuantizedType for BlockQ5_0 {
                 let bit_index = i * 4 + j;
                 write!(
                     code,
-                    "(((high_bits >> {bit_index}) << 4) & {FIFTH_BIT}) << {}",
+                    "((((high_bits >> {bit_index}) << 4) & {FIFTH_BIT}) << {})",
                     j * 8
                 )
                 .unwrap();
@@ -619,7 +619,7 @@ impl WgslQuantizedType for BlockQ5_0 {
                 let bit_index = i * 4 + j;
                 write!(
                     code,
-                    "((high_bits >> ({bit_index} + 12)) & {FIFTH_BIT}) << {}",
+                    "(((high_bits >> ({bit_index} + 12)) & {FIFTH_BIT}) << {})",
                     j * 8
                 )
                 .unwrap();

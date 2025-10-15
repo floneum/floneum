@@ -528,18 +528,18 @@ impl GenericKernel {
         command_encoder: &mut CommandEncoder,
         workgroup_dispatch_size: [u32; 3],
     ) {
-        let bind_group_layout = self.bind_group_layout(device);
-        let bind_group = self.create_bind_group(device, &bind_group_layout, inputs);
-        let pipeline = self.compute_pipeline(device, &bind_group_layout);
+        let [workgroup_size_x, workgroup_size_y, workgroup_size_z] = workgroup_dispatch_size;
+        if workgroup_size_x * workgroup_size_y * workgroup_size_z > 0 {
+            let bind_group_layout = self.bind_group_layout(device);
+            let bind_group = self.create_bind_group(device, &bind_group_layout, inputs);
+            let pipeline = self.compute_pipeline(device, &bind_group_layout);
 
-        {
             let mut cpass = command_encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some(&self.name),
                 timestamp_writes: None,
             });
             cpass.set_pipeline(&pipeline);
             cpass.set_bind_group(0, &bind_group, &[]);
-            let [workgroup_size_x, workgroup_size_y, workgroup_size_z] = workgroup_dispatch_size;
             cpass.dispatch_workgroups(workgroup_size_x, workgroup_size_y, workgroup_size_z);
         }
     }
