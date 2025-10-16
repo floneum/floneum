@@ -358,12 +358,14 @@ fn write_acc_back(
                 kernel,
                 "{output}[output_index] = acc[tile_m][tile_n][y_offset][x_offset];"
             )?;
-            writeln!(kernel, "}}")?;
-            writeln!(kernel, "}}")?;
-            writeln!(kernel, "}}")?;
-            writeln!(kernel, "}}")?;
             std::fmt::Result::Ok(())
         },
     )?;
+
+    writeln!(kernel, "}}")?;
+    writeln!(kernel, "}}")?;
+    writeln!(kernel, "}}")?;
+    writeln!(kernel, "}}")?;
+
     Ok(())
 }
