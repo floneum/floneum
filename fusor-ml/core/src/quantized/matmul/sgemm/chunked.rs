@@ -33,11 +33,11 @@ impl ChunkedSgemmConfig {
     /// Default configuration
     pub const fn default() -> Self {
         Self {
-            input_k_chunks: 2,
-            input_m_elements: 128,
-            input_n_elements: 128,
-            n_results_per_thread: 2,
-            m_results_per_thread: 2,
+            input_k_chunks: 4,
+            input_m_elements: 64,
+            input_n_elements: 64,
+            n_results_per_thread: 1,
+            m_results_per_thread: 1,
             cache_datatype: DataTypeEnum::F16,
         }
     }
@@ -109,7 +109,7 @@ pub fn chunked_sgemm_with_config(
         writeln!(kernel, "block_batch = block_batch / {shape};").unwrap();
     }
 
-    // Each thread is responsible for a 2x2 grid of 4x4 sub-blocks (8x8 output total)
+    // Each thread is responsible for a grid of 4x4 sub-blocks
     writeln!(kernel, "var acc: array<array<mat4x4<{dtype}>, {sgemm_n_results_per_thread}>, {sgemm_m_results_per_thread}>;").unwrap();
     writeln!(
         kernel,
@@ -229,7 +229,7 @@ pub fn chunked_sgemm_with_config(
                 {
                     writeln!(
                         kernel,
-                        "{cache_a}[chunk_index][col_index][row_index] = 0.0h;"
+                        "{cache_a}[chunk_index][col_index][row_index] = {cache_datatype}(0.0);"
                     )
                     .unwrap();
                 }
@@ -304,22 +304,24 @@ pub fn chunked_sgemm_with_config(
     }
     writeln!(kernel, "}}").unwrap();
 
-    write_acc_back(kernel, output, global_id).unwrap();
+    write_acc_back(kernel, output, global_id, &config).unwrap();
 }
 
 fn write_acc_back(
     kernel: &mut GenericKernel,
     output: &TensorInput,
     global_id: &str,
+    config: &ChunkedSgemmConfig,
 ) -> std::fmt::Result {
-    // Write all 4 tiles (2x2 grid of 4x4 tiles = 8x8 total output per thread)
+    let sgemm_n_results_per_thread = config.n_results_per_thread;
+    let sgemm_m_results_per_thread = config.m_results_per_thread;
     writeln!(
         kernel,
-        "for (var tile_m = 0u; tile_m < 2u; tile_m += 1u) {{"
+        "for (var tile_m = 0u; tile_m < {sgemm_m_results_per_thread}u; tile_m += 1u) {{"
     )?;
     writeln!(
         kernel,
-        "for (var tile_n = 0u; tile_n < 2u; tile_n += 1u) {{"
+        "for (var tile_n = 0u; tile_n < {sgemm_n_results_per_thread}u; tile_n += 1u) {{"
     )?;
     writeln!(
         kernel,
@@ -337,9 +339,14 @@ fn write_acc_back(
         output_indices.push(format!("block_batch_{dim}"));
     }
     // Then add M and N indices
-    // Each thread outputs 8x8, global_id identifies which 8x8 block
-    output_indices.push(format!("{global_id}.x * 8u + tile_m * 4u + x_offset"));
-    output_indices.push(format!("{global_id}.y * 8u + tile_n * 4u + y_offset"));
+    output_indices.push(format!(
+        "{global_id}.x * {}u + tile_m * 4u + x_offset",
+        sgemm_m_results_per_thread * 4
+    ));
+    output_indices.push(format!(
+        "{global_id}.y * {}u + tile_n * 4u + y_offset",
+        sgemm_n_results_per_thread * 4
+    ));
     output.check_bounds(
         kernel,
         output_indices.iter().cloned(),
