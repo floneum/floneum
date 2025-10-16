@@ -15,8 +15,6 @@ const MATRIX_ELEMENTS: u32 = 16;
 /// Configuration for chunked SGEMM algorithm
 #[derive(Debug, Clone, Copy)]
 pub struct ChunkedSgemmConfig {
-    /// Number of subgroup threads per block
-    pub subgroup_threads_per_block: u32,
     /// How many matrix_size-wide blocks we load from input_a and input_b into the cache every step
     pub input_k_chunks: u32,
     /// How deep is the cache for input_a (M dimension, must be divisible by 4)
@@ -35,7 +33,6 @@ impl ChunkedSgemmConfig {
     /// Default configuration
     pub const fn default() -> Self {
         Self {
-            subgroup_threads_per_block: 2,
             input_k_chunks: 2,
             input_m_elements: 128,
             input_n_elements: 128,
@@ -77,7 +74,6 @@ pub fn chunked_sgemm_with_config(
     // Validate configuration
     config.validate(elements_per_block, sub_chunks).unwrap();
 
-    let sgemm_subgroup_threads_per_block = config.subgroup_threads_per_block;
     let sgemm_input_k_chunks = config.input_k_chunks;
     let sgemm_input_k_elements = config.input_k_elements();
     let sgemm_input_m_elements = config.input_m_elements;
@@ -133,24 +129,12 @@ pub fn chunked_sgemm_with_config(
     // collaboratively load one quantized block into shared memory
     writeln!(
         kernel,
-        "let pair_index = {workgroup_local_index} / {sgemm_subgroup_threads_per_block};"
+        "let pair_index_row = {workgroup_local_index} % {sgemm_input_k_chunks};"
     )
     .unwrap();
     writeln!(
         kernel,
-        "let pair_local_index = {workgroup_local_index} % {sgemm_subgroup_threads_per_block};"
-    )
-    .unwrap();
-    let subgroup_threads_per_sgemm_input_k_chunks =
-        sgemm_input_k_chunks / sgemm_subgroup_threads_per_block;
-    writeln!(
-        kernel,
-        "let pair_index_row = pair_local_index + {sgemm_subgroup_threads_per_block} * (pair_index % {subgroup_threads_per_sgemm_input_k_chunks});"
-    )
-    .unwrap();
-    writeln!(
-        kernel,
-        "let pair_index_col = pair_index / {subgroup_threads_per_sgemm_input_k_chunks};"
+        "let pair_index_col = {workgroup_local_index} / {sgemm_input_k_chunks};"
     )
     .unwrap();
 
