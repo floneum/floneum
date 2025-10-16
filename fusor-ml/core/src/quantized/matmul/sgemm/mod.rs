@@ -60,8 +60,8 @@ pub(crate) fn dispatch_size(
     if dequantize_mat4x4_block_count(matrix.datatype()) > 0 {
         let config = op.chunked_config.unwrap_or(ChunkedSgemmConfig::default());
         [
-            m.div_ceil(workgroup_shape.y() * config.m_results_per_thread),
-            n.div_ceil(workgroup_shape.x() * config.n_results_per_thread),
+            m.div_ceil(workgroup_shape.y() * config.m_results_per_thread * 4),
+            n.div_ceil(workgroup_shape.x() * config.n_results_per_thread * 4),
             batch_size.div_ceil(workgroup_shape.z()),
         ]
     } else {
