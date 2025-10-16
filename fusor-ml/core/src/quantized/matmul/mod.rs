@@ -45,18 +45,6 @@ impl QMatMulOperation {
         }
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn with_chunked_config(mut self, config: ChunkedSgemmConfig) -> Self {
-        self.chunked_config = Some(config);
-        self
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn with_general_config(mut self, config: GeneralSgemmConfig) -> Self {
-        self.general_config = Some(config);
-        self
-    }
-
     fn elements_per_block(&self) -> u32 {
         self.matrix.datatype.block_size() as u32
     }
@@ -688,7 +676,7 @@ impl Operation for QMatMulOperation {
         if self.sgemv() {
             sgemv::dispatch_size(&self.matrix, n, m, batch_size)
         } else {
-            sgemm::dispatch_size(workgroup_shape, &self.matrix, n, m, batch_size)
+            sgemm::dispatch_size(self, workgroup_shape, &self.matrix, n, m, batch_size)
         }
     }
 

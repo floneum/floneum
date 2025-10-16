@@ -49,6 +49,7 @@ pub(crate) fn sgemm(
 }
 
 pub(crate) fn dispatch_size(
+    op: &QMatMulOperation,
     workgroup_shape: &WorkgroupShape,
     matrix: &QMatrix,
     n: u32,
@@ -57,9 +58,10 @@ pub(crate) fn dispatch_size(
 ) -> [u32; 3] {
     // Use chunked dispatch size for all types that support mat4x4 dequantization
     if dequantize_mat4x4_block_count(matrix.datatype()) > 0 {
+        let config = op.chunked_config.unwrap_or(ChunkedSgemmConfig::default());
         [
-            m.div_ceil(workgroup_shape.y() * 4),
-            n.div_ceil(workgroup_shape.x() * 4),
+            m.div_ceil(workgroup_shape.y() * config.m_results_per_thread),
+            n.div_ceil(workgroup_shape.x() * config.n_results_per_thread),
             batch_size.div_ceil(workgroup_shape.z()),
         ]
     } else {

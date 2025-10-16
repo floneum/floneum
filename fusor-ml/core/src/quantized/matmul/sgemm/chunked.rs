@@ -23,6 +23,12 @@ pub struct ChunkedSgemmConfig {
     pub input_m_elements: u32,
     /// How deep is the cache for input_b (N dimension, must be divisible by 4)
     pub input_n_elements: u32,
+    /// How many results does each thread compute (in 4x4 blocks)
+    pub n_results_per_thread: u32,
+    /// How many results does each thread compute (in 4x4 blocks)
+    pub m_results_per_thread: u32,
+    /// The datatype the kernel will use for computation (F16 or F32)
+    pub cache_datatype: DataTypeEnum,
 }
 
 impl ChunkedSgemmConfig {
@@ -30,9 +36,12 @@ impl ChunkedSgemmConfig {
     pub const fn default() -> Self {
         Self {
             subgroup_threads_per_block: 2,
-            input_k_chunks: 4,
-            input_m_elements: 4 * 16,
-            input_n_elements: 4 * 16,
+            input_k_chunks: 2,
+            input_m_elements: 128,
+            input_n_elements: 128,
+            n_results_per_thread: 2,
+            m_results_per_thread: 2,
+            cache_datatype: DataTypeEnum::F16,
         }
     }
 
@@ -42,56 +51,7 @@ impl ChunkedSgemmConfig {
     }
 
     /// Validate configuration parameters
-    pub fn validate(&self, elements_per_block: u32, _: usize) -> Result<(), String> {
-        let input_k_elements = self.input_k_elements();
-
-        // Check that input_k_elements is a multiple of matrix_size
-        if !input_k_elements.is_multiple_of(MATRIX_ELEMENTS) {
-            return Err(format!(
-                "input_k_elements ({}) must be divisible by matrix_size ({})",
-                input_k_elements, MATRIX_ELEMENTS
-            ));
-        }
-
-        // Check that matrix_size divides elements_per_block evenly
-        if !elements_per_block.is_multiple_of(MATRIX_ELEMENTS) {
-            return Err(format!(
-                "elements_per_block ({}) must be divisible by matrix_size ({})",
-                elements_per_block, MATRIX_ELEMENTS
-            ));
-        }
-
-        if !self
-            .input_k_chunks
-            .is_multiple_of(self.subgroup_threads_per_block)
-        {
-            return Err(format!(
-                "input_k_chunks ({}) must be divisible by subgroup_threads_per_block ({})",
-                self.input_k_chunks, self.subgroup_threads_per_block
-            ));
-        }
-
-        if !self.input_m_elements.is_multiple_of(4) {
-            return Err(format!(
-                "input_m_elements ({}) must be divisible by 4",
-                self.input_m_elements
-            ));
-        }
-
-        if !self.input_n_elements.is_multiple_of(4) {
-            return Err(format!(
-                "input_n_elements ({}) must be divisible by 4",
-                self.input_n_elements
-            ));
-        }
-
-        if !input_k_elements.is_multiple_of(4) {
-            return Err(format!(
-                "input_k_elements ({}) must be divisible by 4",
-                input_k_elements
-            ));
-        }
-
+    pub fn validate(&self, _: u32, _: usize) -> Result<(), String> {
         Ok(())
     }
 }
@@ -122,17 +82,20 @@ pub fn chunked_sgemm_with_config(
     let sgemm_input_k_elements = config.input_k_elements();
     let sgemm_input_m_elements = config.input_m_elements;
     let sgemm_input_n_elements = config.input_n_elements;
+    let sgemm_n_results_per_thread = config.n_results_per_thread;
+    let sgemm_m_results_per_thread = config.m_results_per_thread;
+    let cache_datatype = config.cache_datatype;
 
     let cache_a_size = (sgemm_input_k_elements / 4) * (sgemm_input_m_elements / 4);
     let cache_a = kernel.add_global_array(
         KernelGlobalSpace::Workgroup,
-        MatrixType::new(["4".into(), "4".into()], dtype),
+        MatrixType::new(["4".into(), "4".into()], cache_datatype),
         cache_a_size.to_string(),
     );
     let cache_b_size = (sgemm_input_n_elements / 4) * (sgemm_input_k_elements / 4);
     let cache_b = kernel.add_global_array(
         KernelGlobalSpace::Workgroup,
-        MatrixType::new(["4".into(), "4".into()], dtype),
+        MatrixType::new(["4".into(), "4".into()], cache_datatype),
         cache_b_size.to_string(),
     );
 
@@ -150,8 +113,21 @@ pub fn chunked_sgemm_with_config(
         writeln!(kernel, "block_batch = block_batch / {shape};").unwrap();
     }
 
-    // Each thread is responsible for a 4x4 sub-block of the workgroup's block
-    writeln!(kernel, "var acc = mat4x4<{dtype}>();").unwrap();
+    // Each thread is responsible for a 2x2 grid of 4x4 sub-blocks (8x8 output total)
+    writeln!(kernel, "var acc: array<array<mat4x4<{dtype}>, {sgemm_n_results_per_thread}>, {sgemm_m_results_per_thread}>;").unwrap();
+    writeln!(
+        kernel,
+        "for (var tile_m = 0u; tile_m < {sgemm_m_results_per_thread}u; tile_m += 1u) {{"
+    )
+    .unwrap();
+    writeln!(
+        kernel,
+        "for (var tile_n = 0u; tile_n < {sgemm_n_results_per_thread}u; tile_n += 1u) {{"
+    )
+    .unwrap();
+    writeln!(kernel, "acc[tile_m][tile_n] = mat4x4<{dtype}>();").unwrap();
+    writeln!(kernel, "}}").unwrap();
+    writeln!(kernel, "}}").unwrap();
 
     // We subdivide the x dimension into pairs of threads in the same subgroup that will
     // collaboratively load one quantized block into shared memory
@@ -214,13 +190,13 @@ pub fn chunked_sgemm_with_config(
                 op.matrix.datatype,
                 "b_index_within_block",
                 format!("{input_b}[b_block_index + b_block_offset]"),
-                DataTypeEnum::F32,
+                dtype,
                 |data, kernel| {
                     writeln!(kernel, "let b_values = {data};").unwrap();
                     writeln!(kernel, "for (var index = 0u; index < 4u; index += 1u) {{").unwrap();
                     writeln!(
                         kernel,
-                        "{cache_b}[(pair_index_col / 4) * {y_stride} + pair_index_row + {sgemm_input_k_chunks} * index][pair_index_col % 4] = b_values[index];"
+                        "{cache_b}[(pair_index_col / 4) * {y_stride} + pair_index_row + {sgemm_input_k_chunks} * index][pair_index_col % 4] = vec4<{cache_datatype}>(b_values[index]);"
                     )
                     .unwrap();
                     writeln!(kernel, "}}").unwrap();
@@ -257,10 +233,10 @@ pub fn chunked_sgemm_with_config(
                         |kernel: &mut GenericKernel| {
                             write!(
                                 kernel,
-                                "{cache_a}[chunk_index][col_index][row_index] = {input_a}["
+                                "{cache_a}[chunk_index][col_index][row_index] = {cache_datatype}({input_a}["
                             )?;
                             input_a.strided_index(kernel, indices.iter().cloned());
-                            write!(kernel, "];")?;
+                            write!(kernel, "]);")?;
                             std::fmt::Result::Ok(())
                         },
                     )
@@ -269,7 +245,7 @@ pub fn chunked_sgemm_with_config(
                 {
                     writeln!(
                         kernel,
-                        "{cache_a}[chunk_index][col_index][row_index] = 0.0;"
+                        "{cache_a}[chunk_index][col_index][row_index] = 0.0h;"
                     )
                     .unwrap();
                 }
@@ -284,14 +260,16 @@ pub fn chunked_sgemm_with_config(
         // Now that the items are in cache, do the matrix multiplication
         writeln!(
             kernel,
-            "let n_workgroup_index = {workgroup_local_index} / {};",
-            sgemm_input_n_elements / 4
+            "let n_workgroup_base = {}u * ({workgroup_local_index} / {}u);",
+            sgemm_n_results_per_thread,
+            sgemm_input_n_elements / (sgemm_n_results_per_thread * 4),
         )
         .unwrap();
         writeln!(
             kernel,
-            "let m_workgroup_index = {workgroup_local_index} % {};",
-            sgemm_input_m_elements / 4
+            "let m_workgroup_base = {}u * ({workgroup_local_index} % {}u);",
+            sgemm_m_results_per_thread,
+            sgemm_input_m_elements / (sgemm_m_results_per_thread * 4),
         )
         .unwrap();
         writeln!(
@@ -301,27 +279,39 @@ pub fn chunked_sgemm_with_config(
         )
         .unwrap();
         {
-            // Load a 4x4 from cache_a
-            writeln!(
-                kernel,
-                "let a_values = {cache_a}[index * {} + m_workgroup_index];",
-                sgemm_input_m_elements / 4
-            )
-            .unwrap();
-            // Load a 4x4 from cache_b with coalesced layout
+            for tile_m in 0..sgemm_m_results_per_thread {
+                writeln!(
+                    kernel,
+                    "var a_values_{tile_m} = mat4x4<{dtype}>({cache_a}[index * {} + m_workgroup_base + {}u]);",
+                    sgemm_input_m_elements / 4,
+                    tile_m
+                )
+                .unwrap();
+            }
+
             writeln!(
                 kernel,
                 "let b_cache_offset = (index / 4u) + {}u * (index % 4u);",
                 sgemm_input_k_chunks
             )
             .unwrap();
-            writeln!(
-                kernel,
-                "let b_values = {cache_b}[n_workgroup_index * {} + b_cache_offset];",
-                sgemm_input_k_elements / 4
-            )
-            .unwrap();
-            writeln!(kernel, "acc = acc + transpose(a_values) * b_values;").unwrap();
+            for tile_n in 0..sgemm_m_results_per_thread {
+                writeln!(kernel, "var b_values_{tile_n} = mat4x4<{dtype}>({cache_b}[(n_workgroup_base + {}u) * {} + b_cache_offset]);",
+                    tile_n,
+                    sgemm_input_k_elements / 4,
+                ).unwrap();
+            }
+
+            // Compute the results
+            for tile_m in 0..sgemm_m_results_per_thread {
+                for tile_n in 0..sgemm_m_results_per_thread {
+                    writeln!(
+                        kernel,
+                        "acc[{tile_m}][{tile_n}] = acc[{tile_m}][{tile_n}] + transpose(a_values_{tile_m}) * b_values_{tile_n};"
+                    )
+                    .unwrap();
+                }
+            }
         }
         writeln!(kernel, "}}").unwrap();
 
@@ -338,6 +328,15 @@ fn write_acc_back(
     output: &TensorInput,
     global_id: &str,
 ) -> std::fmt::Result {
+    // Write all 4 tiles (2x2 grid of 4x4 tiles = 8x8 total output per thread)
+    writeln!(
+        kernel,
+        "for (var tile_m = 0u; tile_m < 2u; tile_m += 1u) {{"
+    )?;
+    writeln!(
+        kernel,
+        "for (var tile_n = 0u; tile_n < 2u; tile_n += 1u) {{"
+    )?;
     writeln!(
         kernel,
         "for (var y_offset = 0u; y_offset < 4u; y_offset += 1u) {{"
@@ -354,8 +353,9 @@ fn write_acc_back(
         output_indices.push(format!("block_batch_{dim}"));
     }
     // Then add M and N indices
-    output_indices.push(format!("{global_id}.x * 4u + x_offset"));
-    output_indices.push(format!("{global_id}.y * 4u + y_offset"));
+    // Each thread outputs 8x8, global_id identifies which 8x8 block
+    output_indices.push(format!("{global_id}.x * 8u + tile_m * 4u + x_offset"));
+    output_indices.push(format!("{global_id}.y * 8u + tile_n * 4u + y_offset"));
     output.check_bounds(
         kernel,
         output_indices.iter().cloned(),
@@ -363,7 +363,12 @@ fn write_acc_back(
             write!(kernel, "let output_index = ")?;
             output.strided_index(kernel, output_indices.iter().cloned());
             writeln!(kernel, ";")?;
-            writeln!(kernel, "{output}[output_index] = acc[y_offset][x_offset];")?;
+            writeln!(
+                kernel,
+                "{output}[output_index] = acc[tile_m][tile_n][y_offset][x_offset];"
+            )?;
+            writeln!(kernel, "}}")?;
+            writeln!(kernel, "}}")?;
             writeln!(kernel, "}}")?;
             writeln!(kernel, "}}")?;
             std::fmt::Result::Ok(())
