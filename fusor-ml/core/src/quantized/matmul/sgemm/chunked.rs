@@ -123,8 +123,8 @@ pub fn chunked_sgemm_with_config(
     writeln!(
         kernel,
         "let {output_offset} = vec2<u32>(x * {}u + subgroup_pos.x * {subgroup_m_results}u + subgroup_local_pos.x * 4, y * {}u + subgroup_pos.y * {subgroup_n_results}u + subgroup_local_pos.y * 4);",
-        sgemm_input_m_elements * workgroup_size.x(),
-        sgemm_input_n_elements * workgroup_size.y(),
+        sgemm_input_m_elements,
+        sgemm_input_n_elements,
     )
     .unwrap();
 
@@ -282,8 +282,8 @@ pub fn chunked_sgemm_with_config(
         {
             // Load this block's value from the shared memory cache for b
             writeln!(kernel,
-                "let cached_b_block = {cache_b}[(subgroup_pos.y * {subgroup_n_size} + subgroup_local_pos.y) * {} + subgroup_n_index * {subgroup_m_size}];",
-                sgemm_input_m_elements / 4
+                "let cached_b_block = {cache_b}[(subgroup_pos.y * {subgroup_n_size} + subgroup_local_pos.y) * {} + subgroup_n_index * {subgroup_m_size} + subgroup_local_pos.x];",
+                sgemm_input_k_elements / 4
             )
             .unwrap();
             // Then we iterate over m blocks within the subgroup
@@ -303,45 +303,41 @@ pub fn chunked_sgemm_with_config(
                 // Load the 4x4 b block this thread caches
                 writeln!(
                     kernel,
-                    "let cached_a_block = {cache_a}[((subgroup_m_index * {subgroup_n_size}) * {} + subgroup_local_pos.x + subgroup_pos.x) * {subgroup_m_size} + subgroup_local_pos.x];",
+                    "let cached_a_block = {cache_a}[(subgroup_m_index * {subgroup_n_size} + subgroup_local_pos.y) * {} + subgroup_local_pos.x + subgroup_pos.x * {subgroup_m_size}];",
                     sgemm_input_m_elements / 4
                 ).unwrap();
                 // Multiply and accumulate within the subgroup cached values
                 writeln!(
                     kernel,
                     "for (var index = 0u; index < {}u; index += 1u) {{",
-                    sgemm_input_k_elements / (subgroup_n_size * 4)
+                    subgroup_n_size
                 )
                 .unwrap();
                 {
                     // First shuffle the b value from the right thread in the subgroup
                     write!(kernel, "let b_value = mat4x4(",).unwrap();
                     for y in 0..4 {
-                        for x in 0..4 {
-                            write!(
+                        write!(
                                 kernel,
-                                "subgroupShuffle(cached_b_block[{y}][{x}], index + subgroup_local_pos.y * {subgroup_m_size}),"
+                                "subgroupShuffle(cached_b_block[{y}], index + subgroup_local_pos.y * {subgroup_m_size}),"
                             )
                             .unwrap();
-                        }
                     }
                     writeln!(kernel, ");").unwrap();
                     // Then shuffle the a value from the right thread in the subgroup
                     write!(kernel, "let a_value = mat4x4(",).unwrap();
                     for y in 0..4 {
-                        for x in 0..4 {
-                            write!(
+                        write!(
                                 kernel,
-                                "subgroupShuffle(cached_a_block[{y}][{x}], subgroup_local_pos.x + index * {subgroup_m_size}),"
+                                "subgroupShuffle(cached_a_block[{y}], subgroup_local_pos.x + index * {subgroup_m_size}),"
                             )
                             .unwrap();
-                        }
                     }
                     writeln!(kernel, ");").unwrap();
 
                     // Compute the results
                     for tile_m in 0..sgemm_m_results_per_thread {
-                        for tile_n in 0..sgemm_m_results_per_thread {
+                        for tile_n in 0..sgemm_n_results_per_thread {
                             writeln!(
                                 kernel,
                                 "acc[{tile_m}][{tile_n}] = acc[{tile_m}][{tile_n}] + transpose(mat4x4<{dtype}>(a_value)) * mat4x4<{dtype}>(b_value);"
