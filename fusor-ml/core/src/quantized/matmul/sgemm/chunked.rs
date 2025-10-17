@@ -234,7 +234,7 @@ pub fn chunked_sgemm_with_config(
                 indices.push(format!("k*{MATRIX_ELEMENTS} + index"));
                 writeln!(
                     kernel,
-                    "let chunk_index = (pair_index_row * 4 + index / 4) * {y_stride} + pair_index_col / 4;"
+                    "let chunk_index = pair_index_row * 4 + index / 4 + (pair_index_col / 4) * {y_stride};"
                 )
                 .unwrap();
                 writeln!(kernel, "let col_index = pair_index_col % 4;").unwrap();
@@ -320,7 +320,7 @@ pub fn chunked_sgemm_with_config(
                         write!(
                             kernel,
                             "subgroupShuffle(cached_b_block[{y}], index + subgroup_m_offset * {} + subgroup_local_pos.y * {subgroup_m_size}),",
-                            subgroup_m_size/2
+                            subgroup_m_size / 2
                         )
                         .unwrap();
                     }
