@@ -277,8 +277,8 @@ pub fn chunked_sgemm_with_config(
         // and add them to the register cache two blocks at time
         writeln!(
             kernel,
-            "for (var subgroup_index = 0u; subgroup_index < {}u; subgroup_index += 1u) {{",
-            sgemm_input_k_elements / (subgroup_n_size * 4)
+            "for (var subgroup_n_index = 0u; subgroup_n_index < {}u; subgroup_n_index += 1u) {{",
+            sgemm_input_k_elements / (subgroup_m_size * 4)
         )
         .unwrap();
         {
@@ -289,19 +289,19 @@ pub fn chunked_sgemm_with_config(
             // )
             // .unwrap();
             // Then we iterate over m blocks within the subgroup
-            // writeln!(
-            //     kernel,
-            //     "for (var subgroup_m_offset = 0u; subgroup_m_offset < {}u; subgroup_m_offset += 1u) {{",
-            //     subgroup_m_size / subgroup_n_size,
-            // )
-            // .unwrap();
+            writeln!(
+                kernel,
+                "for (var subgroup_m_offset = 0u; subgroup_m_offset < {}u; subgroup_m_offset += 1u) {{",
+                subgroup_m_size / subgroup_n_size,
+            )
+            .unwrap();
             {
-                // writeln!(
-                //     kernel,
-                //     "let subgroup_m_index = subgroup_n_index * {}u + subgroup_m_offset;",
-                //     subgroup_m_size / subgroup_n_size,
-                // )
-                // .unwrap();
+                writeln!(
+                    kernel,
+                    "let subgroup_m_index = subgroup_n_index * {}u + subgroup_m_offset;",
+                    subgroup_m_size / subgroup_n_size,
+                )
+                .unwrap();
                 // Load the 4x4 b block this thread caches
                 // writeln!(
                 //     kernel,
@@ -340,14 +340,14 @@ pub fn chunked_sgemm_with_config(
                     // First shuffle the b value from the right thread in the subgroup
                     writeln!(
                         kernel,
-                        "let b_value = {cache_b}[(subgroup_pos.y * {subgroup_n_size} + subgroup_local_pos.y) * {} + subgroup_index * {subgroup_n_size} + index];",
+                        "let b_value = {cache_b}[(subgroup_pos.y * {subgroup_n_size} + subgroup_local_pos.y) * {} + subgroup_m_index * {subgroup_n_size} + index];",
                         sgemm_input_k_elements / 4
                     )
                     .unwrap();
                     // Then shuffle the a value from the right thread in the subgroup
                     writeln!(
                         kernel,
-                        "let a_value = {cache_a}[subgroup_pos.x * {subgroup_m_size} + subgroup_local_pos.x + (subgroup_index * {subgroup_n_size} + index) * {}];",
+                        "let a_value = {cache_a}[subgroup_pos.x * {subgroup_m_size} + subgroup_local_pos.x + (subgroup_m_index * {subgroup_n_size} + index) * {}];",
                         sgemm_input_m_elements / 4
                     )
                     .unwrap();
@@ -365,7 +365,7 @@ pub fn chunked_sgemm_with_config(
                 }
                 writeln!(kernel, "}}").unwrap();
             }
-            // writeln!(kernel, "}}").unwrap();
+            writeln!(kernel, "}}").unwrap();
         }
         writeln!(kernel, "}}").unwrap();
 
