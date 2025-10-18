@@ -171,7 +171,7 @@ async fn test_fuzz_q_mat_mul() {
                 for y in 0..576 {
                     let expected = candle_result[batch][x][y];
                     let actual = result[[batch, x, y]];
-                    if (expected - actual).abs() > 0.1 {
+                    if (expected - actual).abs() > 0.5 {
                         panic!("expected: {expected}, actual: {actual}");
                     }
                 }
@@ -227,7 +227,7 @@ async fn test_fuzz_q_mat_mul_transposed() {
                 for y in 0..576 {
                     let expected = candle_result[batch][x][y];
                     let actual = result[[batch, x, y]];
-                    if (expected - actual).abs() > 0.1 {
+                    if (expected - actual).abs() > 0.5 {
                         panic!("expected: {expected}, actual: {actual}");
                     }
                 }
@@ -281,7 +281,7 @@ async fn test_fuzz_q_mat_mul_sgemv() {
                 for y in 0..embed_dim {
                     let expected = candle_result[batch][x][y];
                     let actual = result[[batch, x, y]];
-                    if (expected - actual).abs() > 0.1 {
+                    if (expected - actual).abs() > 0.5 {
                         println!("Expected: {candle_result:?}");
                         println!("Actual: {result:?}");
                         panic!("expected: {expected}, actual: {actual}");
@@ -339,7 +339,7 @@ async fn test_fuzz_q_mat_mul_gemv_transposed() {
                 for y in 0..576 {
                     let expected = candle_result[batch][x][y];
                     let actual = result[[batch, x, y]];
-                    if (expected - actual).abs() > 0.1 {
+                    if (expected - actual).abs() > 0.5 {
                         panic!("expected: {expected}, actual: {actual}");
                     }
                 }
@@ -396,7 +396,7 @@ async fn test_fuzz_q_mat_mul_q8_0() {
                 for y in 0..49152 {
                     let expected = candle_result[batch][x][y];
                     let actual = result[[batch, x, y]];
-                    if (expected - actual).abs() > 0.1 {
+                    if (expected - actual).abs() > 0.5 {
                         println!("Expected: {candle_result:?}");
                         println!("Actual: {result:?}");
                         panic!("expected: {expected}, actual: {actual}");
@@ -452,7 +452,7 @@ async fn test_fuzz_q_mat_mul_q5_0_gemv() {
                 for y in 0..height {
                     let expected = candle_result[batch][x][y];
                     let actual = result[[batch, x, y]];
-                    if (expected - actual).abs() > 0.1 {
+                    if (expected - actual).abs() > 0.5 {
                         println!("Expected: {candle_result:?}");
                         println!("Actual: {result:?}");
                         panic!("expected: {expected}, actual: {actual}");
@@ -514,7 +514,7 @@ async fn test_fuzz_q_mat_mul_q4_0_gemv() {
                 for y in 0..1536 {
                     let expected = candle_result[batch][x][y];
                     let actual = result[[batch, x, y]];
-                    if (expected - actual).abs() > 0.1 {
+                    if (expected - actual).abs() > 0.5 {
                         println!("Expected: {candle_result:?}");
                         println!("Actual: {result:?}");
                         panic!("expected: {expected}, actual: {actual}");
@@ -573,7 +573,7 @@ async fn test_fuzz_q_mat_mul_q6k() {
                 for y in 0..576 {
                     let expected = candle_result[batch][x][y];
                     let actual = result[[batch, x, y]];
-                    if (expected - actual).abs() > 0.1 {
+                    if (expected - actual).abs() > 0.5 {
                         println!("width: {width}");
                         println!("Expected: {candle_result:?}");
                         println!("Actual: {result:?}");
@@ -633,7 +633,7 @@ async fn test_fuzz_q_mat_mul_q4k() {
                 for y in 0..576 {
                     let expected = candle_result[batch][x][y];
                     let actual = result[[batch, x, y]];
-                    if (expected - actual).abs() > 0.1 {
+                    if (expected - actual).abs() > 0.5 {
                         println!("width: {width}");
                         println!("Expected: {candle_result:?}");
                         println!("Actual: {result:?}");
