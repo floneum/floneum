@@ -108,16 +108,14 @@ pub fn chunked_sgemm_with_config(
     let subgroup_n_results = subgroup_n_size * sgemm_n_results_per_thread * 4;
     let subgroup_blocks_per_m_workgroup = sgemm_input_m_elements / subgroup_m_results;
     // Where is this subgroup in the workgroup grid
-    // let subgroup_index = kernel.subgroup_index();
-    let subgroup_index = "0u";
+    let subgroup_index = kernel.subgroup_index();
     writeln!(
         kernel,
         "let subgroup_pos = vec2({subgroup_index} % {subgroup_blocks_per_m_workgroup}, {subgroup_index} / {subgroup_blocks_per_m_workgroup});"
     )
     .unwrap();
     // Where is this thread in the subgroup
-    // let subgroup_local_index = kernel.subgroup_local_index();
-    let subgroup_local_index = "0u";
+    let subgroup_local_index = kernel.subgroup_local_index();
     writeln!(kernel, "let subgroup_local_pos = vec2({subgroup_local_index} % {subgroup_m_size}, {subgroup_local_index} / {subgroup_m_size});").unwrap();
 
     // Find the output index this thread is responsible for
@@ -193,7 +191,7 @@ pub fn chunked_sgemm_with_config(
     )
     .unwrap();
     {
-        // This is seperated from k_start above to avoid divergance checks within each subgroup
+        // This is seperated from k_start above to avoid divergence checks within each subgroup
         writeln!(kernel, "let k = k_start + pair_index_row;").unwrap();
         {
             // Load the b block into the cache
@@ -283,11 +281,11 @@ pub fn chunked_sgemm_with_config(
         .unwrap();
         {
             // Load this block's value from the shared memory cache for b
-            // writeln!(kernel,
-            //     "let cached_b_block = {cache_b}[(subgroup_pos.y * {subgroup_n_size} + subgroup_local_pos.y) * {} + subgroup_n_index * {subgroup_m_size} + subgroup_local_pos.x];",
-            //     sgemm_input_k_elements / 4
-            // )
-            // .unwrap();
+            writeln!(kernel,
+                "let cached_b_block = {cache_b}[(subgroup_pos.y * {subgroup_n_size} + subgroup_local_pos.y) * {} + subgroup_n_index * {subgroup_m_size} + subgroup_local_pos.x];",
+                sgemm_input_k_elements / 4
+            )
+            .unwrap();
             // Then we iterate over m blocks within the subgroup
             writeln!(
                 kernel,
@@ -303,11 +301,11 @@ pub fn chunked_sgemm_with_config(
                 )
                 .unwrap();
                 // Load the 4x4 b block this thread caches
-                // writeln!(
-                //     kernel,
-                //     "let cached_a_block = {cache_a}[(subgroup_m_index * {subgroup_n_size} + subgroup_local_pos.y) * {} + subgroup_local_pos.x + subgroup_pos.x * {subgroup_m_size}];",
-                //     sgemm_input_m_elements / 4
-                // ).unwrap();
+                writeln!(
+                    kernel,
+                    "let cached_a_block = {cache_a}[(subgroup_m_index * {subgroup_n_size} + subgroup_local_pos.y) * {} + subgroup_pos.x * {subgroup_m_size} + subgroup_local_pos.x];",
+                    sgemm_input_m_elements / 4
+                ).unwrap();
                 // Multiply and accumulate within the subgroup cached values
                 writeln!(
                     kernel,
@@ -316,41 +314,27 @@ pub fn chunked_sgemm_with_config(
                 )
                 .unwrap();
                 {
-                    // // First shuffle the b value from the right thread in the subgroup
-                    // write!(kernel, "let b_value = mat4x4(",).unwrap();
-                    // for y in 0..4 {
-                    //     write!(
-                    //         kernel,
-                    //         "subgroupShuffle(cached_b_block[{y}], index + subgroup_m_offset * {} + subgroup_local_pos.y * {subgroup_m_size}),",
-                    //         subgroup_m_size / 2
-                    //     )
-                    //     .unwrap();
-                    // }
-                    // writeln!(kernel, ");").unwrap();
-                    // // Then shuffle the a value from the right thread in the subgroup
-                    // write!(kernel, "let a_value = mat4x4(",).unwrap();
-                    // for y in 0..4 {
-                    //     write!(
-                    //         kernel,
-                    //         "subgroupShuffle(cached_a_block[{y}], subgroup_local_pos.x + index * {subgroup_m_size}),"
-                    //     )
-                    //     .unwrap();
-                    // }
-                    // writeln!(kernel, ");").unwrap();
                     // First shuffle the b value from the right thread in the subgroup
-                    writeln!(
-                        kernel,
-                        "let b_value = {cache_b}[(subgroup_pos.y * {subgroup_n_size} + subgroup_local_pos.y) * {} + subgroup_m_index * {subgroup_n_size} + index];",
-                        sgemm_input_k_elements / 4
-                    )
-                    .unwrap();
+                    write!(kernel, "let b_value = mat4x4(",).unwrap();
+                    for y in 0..4 {
+                        write!(
+                            kernel,
+                            "subgroupShuffle(cached_b_block[{y}], index + subgroup_m_offset * {} + subgroup_local_pos.y * {subgroup_m_size}),",
+                            subgroup_n_size
+                        )
+                        .unwrap();
+                    }
+                    writeln!(kernel, ");").unwrap();
                     // Then shuffle the a value from the right thread in the subgroup
-                    writeln!(
-                        kernel,
-                        "let a_value = {cache_a}[subgroup_pos.x * {subgroup_m_size} + subgroup_local_pos.x + (subgroup_m_index * {subgroup_n_size} + index) * {}];",
-                        sgemm_input_m_elements / 4
-                    )
-                    .unwrap();
+                    write!(kernel, "let a_value = mat4x4(",).unwrap();
+                    for y in 0..4 {
+                        write!(
+                            kernel,
+                            "subgroupShuffle(cached_a_block[{y}], subgroup_local_pos.x + index * {subgroup_m_size}),"
+                        )
+                        .unwrap();
+                    }
+                    writeln!(kernel, ");").unwrap();
 
                     // Compute the results
                     for tile_m in 0..sgemm_m_results_per_thread {
