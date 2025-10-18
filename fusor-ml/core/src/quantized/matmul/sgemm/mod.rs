@@ -18,7 +18,7 @@ pub use general::{GeneralSgemmConfig, general_sgemm_with_config};
 pub(crate) fn sgemm(
     op: &QMatMulOperation,
     generic_kernel: &mut GenericKernel,
-    workgroup_size: &WorkgroupShape,
+    _: &WorkgroupShape,
     input_a: &TensorInput,
     input_b: &QMatrixInput,
     output: &TensorInput,
@@ -31,16 +31,7 @@ pub(crate) fn sgemm(
     // Use chunked sgemm for all types that support mat4x4 dequantization
     if dequantize_mat4x4_block_count(input_b.datatype) > 0 {
         let config = op.chunked_config.unwrap_or(ChunkedSgemmConfig::default());
-        chunked_sgemm_with_config(
-            op,
-            generic_kernel,
-            input_a,
-            input_b,
-            output,
-            k_size,
-            config,
-            workgroup_size,
-        );
+        chunked_sgemm_with_config(op, generic_kernel, input_a, input_b, output, k_size, config);
     } else {
         let config = op.general_config.unwrap_or(GeneralSgemmConfig::default());
         general_sgemm_with_config(

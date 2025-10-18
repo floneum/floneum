@@ -63,7 +63,6 @@ pub fn chunked_sgemm_with_config(
     output: &TensorInput,
     k_size: &str,
     config: ChunkedSgemmConfig,
-    workgroup_size: &WorkgroupShape,
 ) {
     let workgroup_id = kernel.workgroup_index();
     let workgroup_local_index = kernel.workgroup_local_index();
