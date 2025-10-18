@@ -315,22 +315,27 @@ pub fn chunked_sgemm_with_config(
                 .unwrap();
                 {
                     // First shuffle the b value from the right thread in the subgroup
+                    writeln!(kernel, "let b_value_thread_index = index + subgroup_m_offset * {subgroup_n_size} + subgroup_local_pos.y * {subgroup_m_size};",
+                    ).unwrap();
                     write!(kernel, "let b_value = mat4x4(",).unwrap();
                     for y in 0..4 {
                         write!(
                             kernel,
-                            "subgroupShuffle(cached_b_block[{y}], index + subgroup_m_offset * {} + subgroup_local_pos.y * {subgroup_m_size}),",
-                            subgroup_n_size
+                            "subgroupShuffle(cached_b_block[{y}], b_value_thread_index),"
                         )
                         .unwrap();
                     }
                     writeln!(kernel, ");").unwrap();
                     // Then shuffle the a value from the right thread in the subgroup
+                    writeln!(
+                        kernel,
+                        "let a_value_thread_index = subgroup_local_pos.x + index * {subgroup_m_size};"
+                    ).unwrap();
                     write!(kernel, "let a_value = mat4x4(",).unwrap();
                     for y in 0..4 {
                         write!(
                             kernel,
-                            "subgroupShuffle(cached_a_block[{y}], subgroup_local_pos.x + index * {subgroup_m_size}),"
+                            "subgroupShuffle(cached_a_block[{y}], a_value_thread_index),"
                         )
                         .unwrap();
                     }
