@@ -345,7 +345,7 @@ pub fn chunked_sgemm_with_config(
                         for tile_n in 0..sgemm_n_results_per_thread {
                             writeln!(
                                 kernel,
-                                "acc[{tile_m}][{tile_n}] = acc[{tile_m}][{tile_n}] + transpose(mat4x4<{dtype}>(a_value)) * mat4x4<{dtype}>(b_value);"
+                                "acc[{tile_m}][{tile_n}] = acc[{tile_m}][{tile_n}] + mat4x4<{dtype}>(transpose(a_value) * b_value);"
                             )
                             .unwrap();
                         }
