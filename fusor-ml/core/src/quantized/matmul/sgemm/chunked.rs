@@ -209,7 +209,7 @@ pub fn chunked_sgemm_with_config(
                     writeln!(kernel, "for (var index = 0u; index < 4u; index += 1u) {{").unwrap();
                     writeln!(
                         kernel,
-                        "{cache_b}[(pair_index_col / 4) * {y_stride} + pair_index_row + {sgemm_input_k_chunks} * index][pair_index_col % 4] = vec4<{cache_datatype}>(b_values[index]);"
+                        "{cache_b}[(pair_index_col / 4) * {y_stride} + {sgemm_input_k_chunks} * pair_index_row + index][pair_index_col % 4] = vec4<{cache_datatype}>(b_values[index]);"
                     )
                     .unwrap();
                     writeln!(kernel, "}}").unwrap();
