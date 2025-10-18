@@ -142,19 +142,11 @@ pub fn chunked_sgemm_with_config(
 
     // Each thread is responsible for a grid of 4x4 sub-blocks
     writeln!(kernel, "var acc: array<array<mat4x4<{dtype}>, {sgemm_n_results_per_thread}>, {sgemm_m_results_per_thread}>;").unwrap();
-    writeln!(
-        kernel,
-        "for (var tile_m = 0u; tile_m < {sgemm_m_results_per_thread}u; tile_m += 1u) {{"
-    )
-    .unwrap();
-    writeln!(
-        kernel,
-        "for (var tile_n = 0u; tile_n < {sgemm_n_results_per_thread}u; tile_n += 1u) {{"
-    )
-    .unwrap();
-    writeln!(kernel, "acc[tile_m][tile_n] = mat4x4<{dtype}>();").unwrap();
-    writeln!(kernel, "}}").unwrap();
-    writeln!(kernel, "}}").unwrap();
+    for tile_m in 0..sgemm_m_results_per_thread {
+        for tile_n in 0..sgemm_n_results_per_thread {
+            writeln!(kernel, "acc[{tile_m}][{tile_n}] = mat4x4<{dtype}>();").unwrap();
+        }
+    }
 
     // We subdivide the x dimension into pairs of threads in the same subgroup that will
     // collaboratively load one quantized block into shared memory
@@ -395,51 +387,45 @@ fn write_acc_back(
 ) -> std::fmt::Result {
     let sgemm_n_results_per_thread = config.n_results_per_thread;
     let sgemm_m_results_per_thread = config.m_results_per_thread;
-    writeln!(
-        kernel,
-        "for (var tile_m = 0u; tile_m < {sgemm_m_results_per_thread}u; tile_m += 1u) {{"
-    )?;
-    writeln!(
-        kernel,
-        "for (var tile_n = 0u; tile_n < {sgemm_n_results_per_thread}u; tile_n += 1u) {{"
-    )?;
-    writeln!(
-        kernel,
-        "for (var y_offset = 0u; y_offset < 4u; y_offset += 1u) {{"
-    )?;
-    writeln!(
-        kernel,
-        "for (var x_offset = 0u; x_offset < 4u; x_offset += 1u) {{"
-    )?;
-    // Then write the result
-
-    let mut output_indices = vec![];
-    // Add batch indices first
-    for dim in (0..output.rank()).rev().skip(2) {
-        output_indices.push(format!("block_batch_{dim}"));
-    }
-    // Then add M and N indices
-    output_indices.push(format!("{output_offset}.x + tile_m * 4u + x_offset",));
-    output_indices.push(format!("{output_offset}.y + tile_n * 4u + y_offset",));
-    output.check_bounds(
-        kernel,
-        output_indices.iter().cloned(),
-        |kernel: &mut GenericKernel| {
-            write!(kernel, "let output_index = ")?;
-            output.strided_index(kernel, output_indices.iter().cloned());
-            writeln!(kernel, ";")?;
+    for tile_m in 0..sgemm_m_results_per_thread {
+        for tile_n in 0..sgemm_n_results_per_thread {
             writeln!(
                 kernel,
-                "{output}[output_index] = acc[tile_m][tile_n][y_offset][x_offset];"
+                "for (var y_offset = 0u; y_offset < 4u; y_offset += 1u) {{"
             )?;
-            std::fmt::Result::Ok(())
-        },
-    )?;
+            writeln!(
+                kernel,
+                "for (var x_offset = 0u; x_offset < 4u; x_offset += 1u) {{"
+            )?;
+            // Then write the result
 
-    writeln!(kernel, "}}")?;
-    writeln!(kernel, "}}")?;
-    writeln!(kernel, "}}")?;
-    writeln!(kernel, "}}")?;
+            let mut output_indices = vec![];
+            // Add batch indices first
+            for dim in (0..output.rank()).rev().skip(2) {
+                output_indices.push(format!("block_batch_{dim}"));
+            }
+            // Then add M and N indices
+            output_indices.push(format!("{output_offset}.x + {tile_m} * 4u + x_offset",));
+            output_indices.push(format!("{output_offset}.y + {tile_n} * 4u + y_offset",));
+            output.check_bounds(
+                kernel,
+                output_indices.iter().cloned(),
+                |kernel: &mut GenericKernel| {
+                    write!(kernel, "let output_index = ")?;
+                    output.strided_index(kernel, output_indices.iter().cloned());
+                    writeln!(kernel, ";")?;
+                    writeln!(
+                        kernel,
+                        "{output}[output_index] = acc[{tile_m}][{tile_n}][y_offset][x_offset];"
+                    )?;
+                    std::fmt::Result::Ok(())
+                },
+            )?;
+
+            writeln!(kernel, "}}")?;
+            writeln!(kernel, "}}")?;
+        }
+    }
 
     Ok(())
 }
