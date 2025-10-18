@@ -40,7 +40,7 @@ impl ChunkedSgemmConfig {
             input_n_elements: 64,
             n_results_per_thread: 1,
             m_results_per_thread: 1,
-            cache_datatype: DataTypeEnum::F16,
+            cache_datatype: DataTypeEnum::F32,
             shuffled_loads: false,
         }
     }
