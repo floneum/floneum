@@ -18,7 +18,6 @@ mod intermediate_layer;
 use intermediate_layer::*;
 mod embedding;
 mod layer_norm;
-mod linear;
 
 use fusor_core::{Device, FloatDataType, Result, Tensor, VarBuilder};
 use serde::Deserialize;

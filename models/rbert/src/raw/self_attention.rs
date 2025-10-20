@@ -1,7 +1,6 @@
+use fusor_core::layers::Linear;
 use fusor_core::{Device, VarBuilder};
 use fusor_core::{Result, Tensor};
-
-use crate::raw::linear::Linear;
 
 pub(crate) struct BertSelfAttention {
     query: Linear,

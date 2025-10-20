@@ -1,8 +1,8 @@
+use fusor_core::layers::Linear;
 use fusor_core::{Device, VarBuilder};
 use fusor_core::{Result, Tensor};
 
 use crate::raw::layer_norm::{layer_norm, LayerNorm};
-use crate::raw::linear::Linear;
 
 pub(crate) struct BertSelfOutput {
     dense: Linear,

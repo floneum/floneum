@@ -39,6 +39,7 @@ num-traits = "0.2.19"
 tracing-subscriber = "0.3.19"
 candle-core = { workspace = true }
 candle-nn = { workspace = true }
+candle-transformers = { workspace = true }
 kalosm-common = { workspace = true, features = ["tokio"] }
 kalosm-model-types.workspace = true
 
@@ -51,6 +52,10 @@ harness = false
 
 [[bench]]
 name = "qmatmul"
+harness = false
+
+[[bench]]
+name = "linear"
 harness = false
 
 [[bench]]

@@ -20,6 +20,7 @@ mod compute_graph;
 mod device;
 mod element_wise;
 mod index_select;
+pub mod layers;
 mod layout;
 mod map_layout;
 pub mod matmul;

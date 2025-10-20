@@ -2764,6 +2764,7 @@ dependencies = [
  "bytemuck",
  "candle-core",
  "candle-nn",
+ "candle-transformers",
  "criterion 0.3.6",
  "enumset",
  "env_logger",
