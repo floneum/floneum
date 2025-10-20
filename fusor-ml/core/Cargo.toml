@@ -45,6 +45,8 @@ kalosm-model-types.workspace = true
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 candle-core = { workspace = true, features = ["metal"] }
+candle-nn = { workspace = true, features = ["metal"] }
+candle-transformers = { workspace = true, features = ["metal"] }
 
 [[bench]]
 name = "matmul"
@@ -76,4 +78,8 @@ harness = false
 
 [[bench]]
 name = "softmax"
+harness = false
+
+[[bench]]
+name = "bert_layer"
 harness = false
