@@ -51,7 +51,15 @@ impl QMatMulOperation {
 
     fn sgemv(&self) -> bool {
         let m_dim_idx = self.in_shape.len() - 2;
-        self.in_shape[m_dim_idx] == 1
+        let m = self.in_shape[m_dim_idx];
+        // Use SGEMV for tall and skinny matrices (small M, any K)
+        // SGEMV is more efficient when M is small because:
+        // - Each workgroup processes one M value independently
+        // - Less workgroup synchronization overhead
+        // - Better cache utilization for the K dimension
+        // SGEMM becomes more efficient for larger M where it can use
+        // tile-based processing with 16x16 workgroups
+        m <= 32
     }
 
     fn m_size(&self) -> u32 {

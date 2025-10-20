@@ -26,7 +26,6 @@ pub(crate) fn general_sgemv(
     input_b: &QMatrixInput,
     output: &TensorInput,
     _n_size: &str,
-    // m size is always 1 for sgemv
     _m_size: &str,
     k_size: &str,
     graph: &crate::compute_graph::ComputeGraphInner,
@@ -58,6 +57,8 @@ pub(crate) fn general_sgemv(
 
     // Handle batch dimensions
     writeln!(kernel, "let batch_idx = {global_id}.z;").unwrap();
+    // Handle M dimension - each workgroup handles one M value
+    writeln!(kernel, "let m_idx = {global_id}.y;").unwrap();
 
     // In index of the single element in the vector we are multiplying against
     writeln!(
@@ -104,7 +105,7 @@ pub(crate) fn general_sgemv(
                     kernel,
                     vec![
                         "batch_idx".to_string(),
-                        "0".to_string(),
+                        "m_idx".to_string(),
                         format!("input_a_{i}_index"),
                     ],
                 );
@@ -230,7 +231,7 @@ pub(crate) fn general_sgemv(
             kernel,
             vec![
                 "batch_idx".to_string(),
-                "0".to_string(),
+                "m_idx".to_string(),
                 "output_index".to_string(),
             ],
         );

@@ -24,7 +24,6 @@ pub(crate) fn q_n_sgemv(
     input_b: &QMatrixInput,
     output: &TensorInput,
     _n_size: &str,
-    // m size is always 1 for sgemv
     _m_size: &str,
     k_size: &str,
 ) {
@@ -36,6 +35,8 @@ pub(crate) fn q_n_sgemv(
 
     // Handle batch dimensions
     writeln!(kernel, "let batch_idx = {workgroup_index}.z;").unwrap();
+    // Handle M dimension - each workgroup handles one M value
+    writeln!(kernel, "let m_idx = {workgroup_index}.y;").unwrap();
 
     // Find the reduce size in blocks rounded up
     writeln!(
@@ -81,49 +82,49 @@ pub(crate) fn q_n_sgemv(
         writeln!(kernel, "var vector_sum = vec2f();").unwrap();
         writeln!(kernel, "for (var j = 0u; j < 8; j += 2u) {{").unwrap();
         {
-            // Load a_val_0 = input_a[batch_idx, 0, j + y_offset + 0]
+            // Load a_val_0 = input_a[batch_idx, m_idx, j + y_offset + 0]
             write!(kernel, "let a_val_0 = {input_a}[").unwrap();
             input_a.strided_index(
                 kernel,
                 vec![
                     "batch_idx".to_string(),
-                    "0".to_string(),
+                    "m_idx".to_string(),
                     "j + y_offset + 0".to_string(),
                 ],
             );
             writeln!(kernel, "];").unwrap();
 
-            // Load a_val_1 = input_a[batch_idx, 0, j + y_offset + 1]
+            // Load a_val_1 = input_a[batch_idx, m_idx, j + y_offset + 1]
             write!(kernel, "let a_val_1 = {input_a}[").unwrap();
             input_a.strided_index(
                 kernel,
                 vec![
                     "batch_idx".to_string(),
-                    "0".to_string(),
+                    "m_idx".to_string(),
                     "j + y_offset + 1".to_string(),
                 ],
             );
             writeln!(kernel, "];").unwrap();
 
-            // Load a_val_16 = input_a[batch_idx, 0, j + y_offset + 16]
+            // Load a_val_16 = input_a[batch_idx, m_idx, j + y_offset + 16]
             write!(kernel, "let a_val_16 = {input_a}[").unwrap();
             input_a.strided_index(
                 kernel,
                 vec![
                     "batch_idx".to_string(),
-                    "0".to_string(),
+                    "m_idx".to_string(),
                     "j + y_offset + 16".to_string(),
                 ],
             );
             writeln!(kernel, "];").unwrap();
 
-            // Load a_val_17 = input_a[batch_idx, 0, j + y_offset + 17]
+            // Load a_val_17 = input_a[batch_idx, m_idx, j + y_offset + 17]
             write!(kernel, "let a_val_17 = {input_a}[").unwrap();
             input_a.strided_index(
                 kernel,
                 vec![
                     "batch_idx".to_string(),
-                    "0".to_string(),
+                    "m_idx".to_string(),
                     "j + y_offset + 17".to_string(),
                 ],
             );
@@ -205,7 +206,7 @@ pub(crate) fn q_n_sgemv(
             } else {
                 "row".to_string()
             };
-            let output_indices = vec!["batch_idx".to_string(), "0".to_string(), index];
+            let output_indices = vec!["batch_idx".to_string(), "m_idx".to_string(), index];
             output.strided_index(kernel, output_indices);
             let indexed = maybe_vec_storage_index(Q_N_SGEMV_CHUNK_SIZE, "sum", "offset");
             writeln!(kernel, "] = {indexed};").unwrap();

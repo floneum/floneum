@@ -27,7 +27,6 @@ pub(crate) fn q4k_sgemv(
     input_b: &QMatrixInput,
     output: &TensorInput,
     _n_size: &str,
-    // m size is always 1 for sgemv
     _m_size: &str,
     k_size: &str,
 ) {
@@ -40,6 +39,8 @@ pub(crate) fn q4k_sgemv(
 
     // Handle batch dimensions
     writeln!(kernel, "let batch_idx = {global_id}.z;").unwrap();
+    // Handle M dimension - each workgroup handles one M value
+    writeln!(kernel, "let m_idx = {global_id}.y;").unwrap();
 
     // Find the reduce size in blocks rounded up
     writeln!(
@@ -88,7 +89,7 @@ pub(crate) fn q4k_sgemv(
                 kernel,
                 vec![
                     "batch_idx".to_string(),
-                    "0".to_string(),
+                    "m_idx".to_string(),
                     format!("vector_offset + {j} + 0"),
                 ],
             );
@@ -99,7 +100,7 @@ pub(crate) fn q4k_sgemv(
                 kernel,
                 vec![
                     "batch_idx".to_string(),
-                    "0".to_string(),
+                    "m_idx".to_string(),
                     format!("vector_offset + {j} + 32"),
                 ],
             );
@@ -110,7 +111,7 @@ pub(crate) fn q4k_sgemv(
                 kernel,
                 vec![
                     "batch_idx".to_string(),
-                    "0".to_string(),
+                    "m_idx".to_string(),
                     format!("vector_offset + {j} + 128"),
                 ],
             );
@@ -121,7 +122,7 @@ pub(crate) fn q4k_sgemv(
                 kernel,
                 vec![
                     "batch_idx".to_string(),
-                    "0".to_string(),
+                    "m_idx".to_string(),
                     format!("vector_offset + {j} + 160"),
                 ],
             );
@@ -306,7 +307,7 @@ pub(crate) fn q4k_sgemv(
             // Write the output to the output tensor if this is the first thread in the workgroup
             write!(kernel, "{output}[").unwrap();
             let index = format!("row + {offset}");
-            let output_indices = vec!["batch_idx".to_string(), "0".to_string(), index];
+            let output_indices = vec!["batch_idx".to_string(), "m_idx".to_string(), index];
             output.strided_index(kernel, output_indices);
             let indexed = maybe_vec_storage_index(Q4K_SGEMV_CHUNK_SIZE, "sum", offset);
             writeln!(kernel, "] = {indexed};").unwrap();

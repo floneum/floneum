@@ -22,7 +22,6 @@ pub(crate) fn q6k_sgemv(
     input_b: &QMatrixInput,
     output: &TensorInput,
     _n_size: &str,
-    // m size is always 1 for sgemv
     _m_size: &str,
     k_size: &str,
 ) {
@@ -35,6 +34,8 @@ pub(crate) fn q6k_sgemv(
 
     // Handle batch dimensions
     writeln!(kernel, "let batch_idx = {global_id}.z;").unwrap();
+    // Handle M dimension - each workgroup handles one M value
+    writeln!(kernel, "let m_idx = {global_id}.y;").unwrap();
 
     // Find the reduce size in blocks rounded up
     writeln!(
@@ -112,7 +113,7 @@ pub(crate) fn q6k_sgemv(
                 kernel,
                 vec![
                     "batch_idx".to_string(),
-                    "0".to_string(),
+                    "m_idx".to_string(),
                     format!("{j} + vector_offset + {}", offset * 32),
                 ],
             );
@@ -246,7 +247,7 @@ pub(crate) fn q6k_sgemv(
         } else {
             "row".to_string()
         };
-        let output_indices = vec!["batch_idx".to_string(), "0".to_string(), index];
+        let output_indices = vec!["batch_idx".to_string(), "m_idx".to_string(), index];
         output.strided_index(kernel, output_indices);
         let indexed = maybe_vec_storage_index(Q6K_SGEMV_CHUNK_SIZE, "sum", "offset");
         writeln!(kernel, "] = {indexed};").unwrap();

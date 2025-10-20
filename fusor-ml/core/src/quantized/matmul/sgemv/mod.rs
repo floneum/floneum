@@ -41,7 +41,6 @@ pub(crate) fn sgemv(
     input_b: &QMatrixInput,
     output: &TensorInput,
     _n_size: &str,
-    // m size is always 1 for sgemv
     _m_size: &str,
     k_size: &str,
     graph: &crate::compute_graph::ComputeGraphInner,
@@ -106,20 +105,22 @@ pub(crate) fn sgemv(
     }
 }
 
-pub(crate) fn dispatch_size(matrix: &QMatrix, n: u32, _m: u32, batch_size: u32) -> [u32; 3] {
+pub(crate) fn dispatch_size(matrix: &QMatrix, n: u32, m: u32, batch_size: u32) -> [u32; 3] {
+    // Use Y dimension to handle M (each workgroup handles one M value)
+    // and X dimension for N (output dimension)
     if matrix.datatype == GgmlType::Q6K {
-        return [n.div_ceil(Q6K_SGEMV_CHUNK_SIZE * 2), 1, batch_size];
+        return [n.div_ceil(Q6K_SGEMV_CHUNK_SIZE * 2), m, batch_size];
     }
     if matrix.datatype == GgmlType::Q4K {
-        return [n.div_ceil(Q4K_SGEMV_CHUNK_SIZE * 2), 1, batch_size];
+        return [n.div_ceil(Q4K_SGEMV_CHUNK_SIZE * 2), m, batch_size];
     }
     if matches!(matrix.datatype, GgmlType::Q4_0 | GgmlType::Q5_0) {
-        return [n.div_ceil(Q_N_SGEMV_CHUNK_SIZE * 2), 1, batch_size];
+        return [n.div_ceil(Q_N_SGEMV_CHUNK_SIZE * 2), m, batch_size];
     }
     if matches!(matrix.datatype, GgmlType::Q8_0) {
-        return [n.div_ceil(Q_8_0_SGEMV_CHUNK_SIZE * 2), 1, batch_size];
+        return [n.div_ceil(Q_8_0_SGEMV_CHUNK_SIZE * 2), m, batch_size];
     }
-    [n.div_ceil(SGEMV_CHUNK_SIZE * 2), 1, batch_size]
+    [n.div_ceil(SGEMV_CHUNK_SIZE * 2), m, batch_size]
 }
 
 pub(crate) fn workgroup_shape_constraints(
