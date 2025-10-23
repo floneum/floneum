@@ -102,7 +102,7 @@ impl<'a> Resolver<'a> {
             // Try to lower the resize immediately
             else if let AnyComputeKey::Resize(key) = node {
                 let resize = self.graph.nodes.resize[&key].clone();
-                resize.lower(&self.graph)
+                resize.lower(self.graph)
             } else {
                 None
             };
