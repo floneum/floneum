@@ -23,6 +23,7 @@ thiserror.workspace = true
 parking_lot = "0.12.3"
 tracing = "0.1.41"
 lru = "0.14.0"
+pollster = "0.4.0"
 
 [features]
 extra_assertions = []
@@ -38,11 +39,14 @@ num-traits = "0.2.19"
 tracing-subscriber = "0.3.19"
 candle-core = { workspace = true }
 candle-nn = { workspace = true }
-kalosm-common.workspace = true
+candle-transformers = { workspace = true }
+kalosm-common = { workspace = true, features = ["tokio"] }
 kalosm-model-types.workspace = true
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 candle-core = { workspace = true, features = ["metal"] }
+candle-nn = { workspace = true, features = ["metal"] }
+candle-transformers = { workspace = true, features = ["metal"] }
 
 [[bench]]
 name = "matmul"
@@ -50,6 +54,10 @@ harness = false
 
 [[bench]]
 name = "qmatmul"
+harness = false
+
+[[bench]]
+name = "linear"
 harness = false
 
 [[bench]]
@@ -70,4 +78,8 @@ harness = false
 
 [[bench]]
 name = "softmax"
+harness = false
+
+[[bench]]
+name = "bert_layer"
 harness = false

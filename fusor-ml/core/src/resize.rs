@@ -1,8 +1,9 @@
 use std::fmt::Write;
 
 use crate::{
-    DataTypeEnum, TILE_SIZE, Tensor, TensorData,
+    DataTypeEnum, Layout, SmallerRank, TILE_SIZE, Tensor, TensorData,
     compute_graph::AnyComputeKey,
+    map_layout::MapLayoutOperation,
     mir::{
         kernel::GenericKernel,
         operation::Operation,
@@ -15,14 +16,21 @@ const BLOCKSIZE: u32 = 256;
 #[derive(Debug, Clone)]
 pub(crate) struct ResizeOperation {
     pub(crate) input: AnyComputeKey,
+    pub(crate) current_shape: Box<[usize]>,
     pub(crate) new_shape: Box<[usize]>,
     pub(crate) fill_shape: Box<[usize]>,
 }
 
 impl ResizeOperation {
-    pub fn new(input: AnyComputeKey, new_shape: Box<[usize]>, fill_shape: Box<[usize]>) -> Self {
+    pub fn new(
+        input: AnyComputeKey,
+        current_shape: Box<[usize]>,
+        new_shape: Box<[usize]>,
+        fill_shape: Box<[usize]>,
+    ) -> Self {
         Self {
             input,
+            current_shape,
             new_shape,
             fill_shape,
         }
@@ -30,6 +38,31 @@ impl ResizeOperation {
 }
 
 impl ResizeOperation {
+    pub(crate) fn lower(
+        &self,
+        graph: &crate::compute_graph::ComputeGraphInner,
+    ) -> Option<MapLayoutOperation> {
+        if self.fill_shape != self.new_shape
+            || self.current_shape.iter().product::<usize>()
+                != self.new_shape.iter().product::<usize>()
+        {
+            return None;
+        }
+
+        let input = graph.cached_results.get(&self.input)?;
+        let input_layout = input.layout();
+        if !input_layout.is_contiguous() {
+            return None;
+        }
+        let new_shape = self.new_shape.clone();
+        let new_strides = Layout::continuous_strides(&new_shape);
+        Some(MapLayoutOperation::new(
+            self.input,
+            move |_| new_shape.clone(),
+            move |_, _| (0, new_strides.clone()),
+        ))
+    }
+
     fn kernel(
         &self,
         input_rank: u32,
@@ -37,44 +70,38 @@ impl ResizeOperation {
         tile_size: u32,
         kernel: &mut GenericKernel,
     ) {
-        let mut kernel_body = String::new();
         let global_id = kernel.global_id();
         let input = kernel.add_tensor_input(input_rank, true, datatype);
         let output = kernel.add_tensor_input(self.new_shape.len() as u32, true, datatype);
 
         for local_index in 0..tile_size {
-            writeln!(&mut kernel_body, "{{").unwrap();
+            writeln!(kernel, "{{").unwrap();
             for (prefix, tensor) in [("input", &input), ("output", &output)] {
                 writeln!(
-                    &mut kernel_body,
+                    kernel,
                     "var {prefix}_remaining_index = {global_id}.x * {tile_size} + {local_index};"
                 )
                 .unwrap();
                 for i in (0..tensor.rank()).rev() {
                     let shape_i = tensor.shape_binding(i);
                     writeln!(
-                        &mut kernel_body,
+                        kernel,
                         "let {prefix}_index_{i} = {prefix}_remaining_index % {shape_i};",
                     )
                     .unwrap();
-                    writeln!(&mut kernel_body, "{prefix}_remaining_index /= {shape_i};",).unwrap();
+                    writeln!(kernel, "{prefix}_remaining_index /= {shape_i};",).unwrap();
                 }
             }
-            write!(kernel_body, "let input_index = ").unwrap();
-            input.strided_index(&mut kernel_body, (0..).map(|i| format!("input_index_{i}")));
-            writeln!(kernel_body, ";").unwrap();
-            write!(kernel_body, "let output_index = ").unwrap();
-            output.strided_index(&mut kernel_body, (0..).map(|i| format!("output_index_{i}")));
-            writeln!(kernel_body, ";").unwrap();
-            writeln!(
-                kernel_body,
-                "{output}[output_index] = {input}[input_index];"
-            )
-            .unwrap();
+            write!(kernel, "let input_index = ").unwrap();
+            input.strided_index(kernel, (0..).map(|i| format!("input_index_{i}")));
+            writeln!(kernel, ";").unwrap();
+            write!(kernel, "let output_index = ").unwrap();
+            output.strided_index(kernel, (0..).map(|i| format!("output_index_{i}")));
+            writeln!(kernel, ";").unwrap();
+            writeln!(kernel, "{output}[output_index] = {input}[input_index];").unwrap();
 
-            writeln!(&mut kernel_body, "}}").unwrap();
+            writeln!(kernel, "}}").unwrap();
         }
-        kernel.push_body(&kernel_body);
     }
 }
 
@@ -95,7 +122,7 @@ impl Operation for ResizeOperation {
         _: &crate::mir::workgroup_shape::WorkgroupShape,
         inputs: &[crate::mir::inputs::MirValue],
     ) -> [u32; 3] {
-        let input = inputs[0].as_tensor().unwrap();
+        let input = inputs[1].as_tensor().unwrap();
         [
             (input.layout().shape().iter().product::<usize>() as u32)
                 .div_ceil(TILE_SIZE * BLOCKSIZE),
@@ -150,7 +177,7 @@ impl Operation for ResizeOperation {
     fn name(&self) -> String {
         format!(
             "resize_from_{}_to_{}",
-            self.fill_shape
+            self.current_shape
                 .iter()
                 .map(|x| x.to_string())
                 .collect::<Vec<_>>()
@@ -170,6 +197,7 @@ impl<const R: usize, T: crate::DataType> Tensor<R, T> {
         let input = self.key();
         self.add_resize(ResizeOperation::new(
             input,
+            (*self.shape()).into(),
             new_shape,
             (*self.shape()).into(),
         ))
@@ -188,9 +216,45 @@ impl<const R: usize, T: crate::DataType> Tensor<R, T> {
         let input = self.key();
         self.add_resize(ResizeOperation::new(
             input,
+            (*self.shape()).into(),
             new_shape.clone(),
             new_shape.clone(),
         ))
+    }
+
+    pub fn flatten_last_n<const FROM_END: usize, const O: usize>(&self) -> Tensor<O, T>
+    where
+        Self: SmallerRank<FROM_END, O, T>,
+    {
+        let new_shape = std::array::from_fn(|i| {
+            if i < self.rank() - 1 - FROM_END {
+                self.shape()[i]
+            } else if i == self.rank() - 1 - FROM_END {
+                self.shape()[i..].iter().product()
+            } else {
+                1
+            }
+        });
+        self.reshape(new_shape)
+    }
+
+    pub fn flatten_first_n<const FROM_START: usize, const O: usize>(&self) -> Tensor<O, T>
+    where
+        Self: SmallerRank<FROM_START, O, T>,
+    {
+        let new_shape = std::array::from_fn(|i| {
+            if i == 0 {
+                self.shape()[..=FROM_START].iter().product()
+            } else {
+                self.shape()[i - FROM_START]
+            }
+        });
+        self.reshape(new_shape)
+    }
+
+    pub fn flatten_all(&self) -> Tensor<1, T> {
+        let size = self.shape().iter().product();
+        self.reshape([size])
     }
 }
 
@@ -265,4 +329,64 @@ async fn test_transposed_reshape() {
     assert_eq!(as_slice[[1, 0]], 2.);
     assert_eq!(as_slice[[1, 1]], 4.);
     assert_eq!(as_slice[[1, 2]], 6.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_flatten_last_n() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+    let tensor = tensor.flatten_last_n::<1, _>();
+    let as_slice = tensor.as_slice().await.unwrap();
+    println!("{as_slice:?}");
+    assert_eq!(as_slice[[0]], 1.);
+    assert_eq!(as_slice[[1]], 2.);
+    assert_eq!(as_slice[[2]], 3.);
+    assert_eq!(as_slice[[3]], 4.);
+    assert_eq!(as_slice[[4]], 5.);
+    assert_eq!(as_slice[[5]], 6.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_flatten_first_n() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+    let tensor = tensor.flatten_first_n::<1, _>();
+    let as_slice = tensor.as_slice().await.unwrap();
+    println!("{as_slice:?}");
+    assert_eq!(as_slice[[0]], 1.);
+    assert_eq!(as_slice[[1]], 2.);
+    assert_eq!(as_slice[[2]], 3.);
+    assert_eq!(as_slice[[3]], 4.);
+    assert_eq!(as_slice[[4]], 5.);
+    assert_eq!(as_slice[[5]], 6.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_flatten_all() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+    let tensor = tensor.flatten_all();
+    let as_slice = tensor.as_slice().await.unwrap();
+    println!("{as_slice:?}");
+    assert_eq!(as_slice[[0]], 1.);
+    assert_eq!(as_slice[[1]], 2.);
+    assert_eq!(as_slice[[2]], 3.);
+    assert_eq!(as_slice[[3]], 4.);
+    assert_eq!(as_slice[[4]], 5.);
+    assert_eq!(as_slice[[5]], 6.);
 }

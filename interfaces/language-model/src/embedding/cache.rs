@@ -1,6 +1,6 @@
 use std::{future::Future, hash::BuildHasher, num::NonZeroUsize, sync::Mutex};
 
-use crate::{Embedder, Embedding, EmbeddingInput};
+use crate::{Embedder, Embedding, EmbeddingInput, WasmNotSend};
 
 /// Embedding models can be expensive to run. This struct wraps an embedding model with a cache that stores embeddings that have been computed before.
 ///
@@ -188,7 +188,7 @@ where
     fn embed_for(
         &self,
         input: EmbeddingInput,
-    ) -> impl Future<Output = Result<Embedding, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Embedding, Self::Error>> + WasmNotSend {
         Box::pin(async move {
             {
                 // first check if the embedding is in the cache
@@ -209,7 +209,7 @@ where
     fn embed_vec_for(
         &self,
         inputs: Vec<EmbeddingInput>,
-    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + WasmNotSend {
         Box::pin(async move {
             let mut embeddings = vec![Embedding::from([]); inputs.len()];
             // Find any text with embeddings that are already in the cache and fill in first

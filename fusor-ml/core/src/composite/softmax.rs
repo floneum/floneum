@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    DataType, DataTypeEnum, Layout, Max, Sum, Tensor, TensorData,
+    DataType, DataTypeEnum, LastRank, Layout, Tensor, TensorData,
     compute_graph::AnyComputeKey,
     mir::{
         globals::KernelGlobalSpace,
@@ -15,37 +15,45 @@ use crate::{
     },
 };
 
-impl<const R: usize, const R2: usize, D: DataType> Tensor<R, D>
-where
-    Tensor<R, D>: Max<Output = Tensor<R2, D>>,
-    Tensor<R, D>: Sum<Output = Tensor<R2, D>>,
-{
-    pub fn softmax_slow(&self, dim: usize) -> Self {
+impl<const R: usize, D: DataType> Tensor<R, D> {
+    pub fn softmax_slow<const R2: usize>(&self, dim: usize) -> Self
+    where
+        Tensor<R, D>: LastRank<R2, D>,
+    {
         let size = *self.shape();
         let max = self.max(dim);
-        let normalized = self - &max.broadcast(size);
+        let normalized = self - &max.broadcast_as(size);
         let exp = normalized.exp();
         let sum = exp.sum(dim);
-        exp / sum.broadcast(size)
+        exp / sum.broadcast_as(size)
     }
 
-    pub fn softmax_slow_last_dim(&self) -> Self {
+    pub fn softmax_slow_last_dim<const R2: usize>(&self) -> Self
+    where
+        Tensor<R, D>: LastRank<R2, D>,
+    {
         self.softmax_slow(self.rank() - 1)
     }
 
-    pub fn softmax(&self, axis: usize) -> Self {
+    pub fn softmax<const R2: usize>(&self, axis: usize) -> Self
+    where
+        Tensor<R, D>: LastRank<R2, D>,
+    {
         let operation = SoftmaxOperation::new(self.key(), self.datatype(), axis, self.shape());
         let data = self.data();
 
         Self::from_parts(data.custom(Arc::new(operation)))
     }
 
-    pub fn softmax_last_dim(&self) -> Self {
+    pub fn softmax_last_dim<const R2: usize>(&self) -> Self
+    where
+        Tensor<R, D>: LastRank<R2, D>,
+    {
         self.softmax(self.rank() - 1)
     }
 }
 
-fn online_update(f: &mut String, m: impl Display, d: impl Display, x: impl Display) {
+fn online_update(f: &mut impl Write, m: impl Display, d: impl Display, x: impl Display) {
     writeln!(f, "{{").unwrap();
     writeln!(f, "let original_m = {m};").unwrap();
     writeln!(f, "{m} = max({m}, {x});").unwrap();
@@ -54,7 +62,7 @@ fn online_update(f: &mut String, m: impl Display, d: impl Display, x: impl Displ
 }
 
 fn combine(
-    f: &mut String,
+    f: &mut impl Write,
     m: impl Display,
     d: impl Display,
     m_peer: impl Display,
@@ -136,101 +144,97 @@ impl SoftmaxOperation {
         let subgroups_per_workgroup = kernel.subgroups_per_workgroup();
         let subgroup_size = kernel.subgroup_size();
 
-        let mut kernel_body = String::new();
         // Each workgroup group works on a single column in the input tensor. This code calculates the
         // start offset of the input and output tensors for each thread group.
+        let workgroup_index = workgroup_shape.linearized_workgroup_index(kernel);
         writeln!(
-            &mut kernel_body,
+            kernel,
             "var workgroup_index_remainder = {};",
-            workgroup_shape.linearized_workgroup_index(kernel)
+            workgroup_index
         )
         .unwrap();
         for i in (0..output_rank).rev() {
             let out_shape_i = output_tensor.shape_binding(i);
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "let index_{i} = workgroup_index_remainder % {out_shape_i};",
             )
             .unwrap();
-            writeln!(
-                &mut kernel_body,
-                "workgroup_index_remainder /= {out_shape_i};",
-            )
-            .unwrap();
+            writeln!(kernel, "workgroup_index_remainder /= {out_shape_i};",).unwrap();
         }
-        writeln!(&mut kernel_body, "var in_start_offset = ",).unwrap();
-        input_tensor.strided_index(&mut kernel_body, (0..).map(|i| format!("index_{i}")));
-        writeln!(&mut kernel_body, ";").unwrap();
-        writeln!(&mut kernel_body, "var out_start_offset = ",).unwrap();
-        output_tensor.strided_index(&mut kernel_body, (0..).map(|i| format!("index_{i}")));
-        writeln!(&mut kernel_body, ";").unwrap();
-        writeln!(&mut kernel_body).unwrap();
+        writeln!(kernel, "var in_start_offset = ",).unwrap();
+        input_tensor.strided_index(kernel, (0..).map(|i| format!("index_{i}")));
+        writeln!(kernel, ";").unwrap();
+        writeln!(kernel, "var out_start_offset = ",).unwrap();
+        output_tensor.strided_index(kernel, (0..).map(|i| format!("index_{i}")));
+        writeln!(kernel, ";").unwrap();
+        writeln!(kernel).unwrap();
 
-        writeln!(&mut kernel_body, "var m_lane = {dtype}(-3.40282e+38);").unwrap();
-        writeln!(&mut kernel_body, "var d_lane = {dtype}(0.0);").unwrap();
+        writeln!(kernel, "var m_lane = {dtype}(-3.40282e+38);").unwrap();
+        writeln!(kernel, "var d_lane = {dtype}(0.0);").unwrap();
 
         // First merge values on each thread individually. We divide the column allocated to the thread group into equal sized buckets
         // Round up
         writeln!(
-            &mut kernel_body,
+            kernel,
             "let bucket_size = ({reduce_size} + {blocksize}u - 1) / {blocksize}u;"
         )
         .unwrap();
         // Then loop over this thread's portion of the column and merge the values
         // First load in groups of 4
         writeln!(
-            &mut kernel_body,
+            kernel,
             "let base_axis_index = {workgroup_local_index} * bucket_size;"
         )
         .unwrap();
         writeln!(
-            &mut kernel_body,
+            kernel,
             "let end_axis_index = min({workgroup_local_index} * bucket_size + bucket_size, {reduce_size});"
         )
         .unwrap();
-        writeln!(&mut kernel_body, "var index = base_axis_index;").unwrap();
+        writeln!(kernel, "var index = base_axis_index;").unwrap();
 
         // If this is a large reduction, process elements in groups of 4
         if large_reduction {
-            writeln!(&mut kernel_body, "while (index + 4u <= end_axis_index) {{").unwrap();
+            writeln!(kernel, "while (index + 4u <= end_axis_index) {{").unwrap();
             // Load the chunk of 4 elements at once
-            write!(&mut kernel_body, "let data = vec4<{dtype}>(").unwrap();
+            write!(kernel, "let data = vec4<{dtype}>(").unwrap();
             for i in 0..4 {
                 if i > 0 {
-                    write!(&mut kernel_body, ", ").unwrap();
+                    write!(kernel, ", ").unwrap();
                 }
                 write!(
-                    &mut kernel_body,
+                    kernel,
                     "{input_tensor}[in_start_offset + (index + {i}u) * {reduce_stride}]"
                 )
                 .unwrap();
             }
-            writeln!(&mut kernel_body, ");").unwrap();
+            writeln!(kernel, ");").unwrap();
 
             // Apply reduction to the 4 elements
             let components = ["data.x", "data.y", "data.z", "data.w"];
             for component in components {
-                online_update(&mut kernel_body, "m_lane", "d_lane", component);
+                online_update(kernel, "m_lane", "d_lane", component);
             }
 
-            writeln!(&mut kernel_body, "index += 4u;").unwrap();
-            writeln!(&mut kernel_body, "}}").unwrap();
-            writeln!(&mut kernel_body).unwrap();
+            writeln!(kernel, "index += 4u;").unwrap();
+            writeln!(kernel, "}}").unwrap();
+            writeln!(kernel).unwrap();
         }
 
         // Merge the < 4 remaining elements if the bucket size is not a multiple of 4
-        writeln!(&mut kernel_body, "while (index < end_axis_index) {{").unwrap();
+        writeln!(kernel, "while (index < end_axis_index) {{").unwrap();
         // Load a single element
         writeln!(
-            &mut kernel_body,
+            kernel,
             "let data = {input_tensor}[in_start_offset + index * {reduce_stride}];"
         )
         .unwrap();
         // Apply the online update function to merge the single element
-        online_update(&mut kernel_body, "m_lane", "d_lane", "data");
-        writeln!(&mut kernel_body, "index += 1u;").unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
-        writeln!(&mut kernel_body).unwrap();
+        online_update(kernel, "m_lane", "d_lane", "data");
+        writeln!(kernel, "index += 1u;").unwrap();
+        writeln!(kernel, "}}").unwrap();
+        writeln!(kernel).unwrap();
 
         let limits = device.limits();
         let max_subgroup_size = limits.max_subgroup_size;
@@ -238,140 +242,126 @@ impl SoftmaxOperation {
         // Optimized subgroup reduction with unrolled shuffle operations
         let mut offset = max_subgroup_size;
         while offset > 1 {
-            writeln!(&mut kernel_body, "if {subgroup_size} >= {offset}u {{").unwrap();
+            writeln!(kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
             offset /= 2;
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "let m_peer = subgroupShuffleDown(m_lane, {offset}u);"
             )
             .unwrap();
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "let d_peer = subgroupShuffleDown(d_lane, {offset}u);"
             )
             .unwrap();
-            combine(&mut kernel_body, "m_lane", "d_lane", "m_peer", "d_peer");
-            writeln!(&mut kernel_body, "}}").unwrap();
+            combine(kernel, "m_lane", "d_lane", "m_peer", "d_peer");
+            writeln!(kernel, "}}").unwrap();
         }
-        writeln!(&mut kernel_body).unwrap();
+        writeln!(kernel).unwrap();
 
         // Write the output to the workgroup memory if this is the first thread in the subgroup
-        writeln!(&mut kernel_body, "if {subgroup_local_id} == 0u {{").unwrap();
-        writeln!(&mut kernel_body, "{local_m_data}[{subgroup_id}] = m_lane;").unwrap();
-        writeln!(&mut kernel_body, "{local_d_data}[{subgroup_id}] = d_lane;").unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
+        writeln!(kernel, "if {subgroup_local_id} == 0u {{").unwrap();
+        writeln!(kernel, "{local_m_data}[{subgroup_id}] = m_lane;").unwrap();
+        writeln!(kernel, "{local_d_data}[{subgroup_id}] = d_lane;").unwrap();
+        writeln!(kernel, "}}").unwrap();
 
         // Wait until all threads have written to the workgroup shared memory
-        writeln!(&mut kernel_body, "workgroupBarrier();").unwrap();
+        writeln!(kernel, "workgroupBarrier();").unwrap();
 
         // Then if this is the first subgroup, do one final shuffle down reduction
-        writeln!(&mut kernel_body, "if {subgroup_id} == 0u {{").unwrap();
         // Copy over the best value from each subgroup from the workgroup shared memory to the merged variable
         writeln!(
-            &mut kernel_body,
+            kernel,
             "if {subgroup_local_id} < {subgroups_per_workgroup} {{"
         )
         .unwrap();
-        writeln!(
-            &mut kernel_body,
-            "m_lane = {local_m_data}[{subgroup_local_id}];"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel_body,
-            "d_lane = {local_d_data}[{subgroup_local_id}];"
-        )
-        .unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
-        writeln!(&mut kernel_body, "else {{").unwrap();
-        writeln!(&mut kernel_body, "m_lane = {dtype}(-3.40282e+38);").unwrap();
-        writeln!(&mut kernel_body, "d_lane = {dtype}(0.0);").unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
+        writeln!(kernel, "m_lane = {local_m_data}[{subgroup_local_id}];").unwrap();
+        writeln!(kernel, "d_lane = {local_d_data}[{subgroup_local_id}];").unwrap();
+        writeln!(kernel, "}}").unwrap();
+        writeln!(kernel, "else {{").unwrap();
+        writeln!(kernel, "m_lane = {dtype}(-3.40282e+38);").unwrap();
+        writeln!(kernel, "d_lane = {dtype}(0.0);").unwrap();
+        writeln!(kernel, "}}").unwrap();
 
         // Optimized final subgroup reduction with unrolled operations
         let mut offset = max_subgroup_size;
         while offset > 1 {
-            writeln!(&mut kernel_body, "if {subgroup_size} >= {offset}u {{").unwrap();
+            writeln!(kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
             offset /= 2;
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "let m_peer = subgroupShuffleDown(m_lane, {offset}u);"
             )
             .unwrap();
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "let d_peer = subgroupShuffleDown(d_lane, {offset}u);"
             )
             .unwrap();
-            combine(&mut kernel_body, "m_lane", "d_lane", "m_peer", "d_peer");
-            writeln!(&mut kernel_body, "}}").unwrap();
+            combine(kernel, "m_lane", "d_lane", "m_peer", "d_peer");
+            writeln!(kernel, "}}").unwrap();
         }
 
         // Write the output to the output tensor if this is the first thread in the workgroup
-        writeln!(&mut kernel_body, "if {workgroup_local_index} == 0u {{").unwrap();
-        writeln!(&mut kernel_body, "{global_m_final} = m_lane;").unwrap();
-        writeln!(&mut kernel_body, "{global_d_final} = d_lane;").unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
+        writeln!(kernel, "if {subgroup_id} == 0u {{").unwrap();
+        writeln!(kernel, "if {workgroup_local_index} == 0u {{").unwrap();
+        writeln!(kernel, "{global_m_final} = m_lane;").unwrap();
+        writeln!(kernel, "{global_d_final} = d_lane;").unwrap();
+        writeln!(kernel, "}}").unwrap();
+        writeln!(kernel, "}}").unwrap();
 
-        writeln!(&mut kernel_body, "workgroupBarrier();").unwrap();
+        writeln!(kernel, "workgroupBarrier();").unwrap();
 
         // Finally, write the normalized output to the output tensor
-        writeln!(&mut kernel_body, "let m_all = {global_m_final};").unwrap();
-        writeln!(&mut kernel_body, "let d_all = {global_d_final};").unwrap();
-        writeln!(&mut kernel_body, "var out_index = base_axis_index;").unwrap();
+        writeln!(kernel, "let m_all = {global_m_final};").unwrap();
+        writeln!(kernel, "let d_all = {global_d_final};").unwrap();
+        writeln!(kernel, "var out_index = base_axis_index;").unwrap();
 
         // If this is a large reduction, process elements in groups of 4
         if large_reduction {
-            writeln!(
-                &mut kernel_body,
-                "while (out_index + 4u <= end_axis_index) {{"
-            )
-            .unwrap();
+            writeln!(kernel, "while (out_index + 4u <= end_axis_index) {{").unwrap();
             // Load the chunk of 4 elements at once
-            write!(&mut kernel_body, "let data = vec4<{dtype}>(").unwrap();
+            write!(kernel, "let data = vec4<{dtype}>(").unwrap();
             for i in 0..4 {
                 if i > 0 {
-                    write!(&mut kernel_body, ", ").unwrap();
+                    write!(kernel, ", ").unwrap();
                 }
                 write!(
-                    &mut kernel_body,
+                    kernel,
                     "{input_tensor}[in_start_offset + (out_index + {i}u) * {reduce_stride}]"
                 )
                 .unwrap();
             }
-            writeln!(&mut kernel_body, ");").unwrap();
+            writeln!(kernel, ");").unwrap();
 
             // Apply the softmax function to each component
             let components = ["data.x", "data.y", "data.z", "data.w"];
             for (i, component) in components.iter().enumerate() {
                 writeln!(
-                &mut kernel_body,
+                kernel,
                 "{output_tensor}[out_start_offset + (out_index + {i}u) * {reduce_stride}] = exp({component} - m_all) / d_all;"
             )
             .unwrap();
             }
-            writeln!(&mut kernel_body, "out_index += 4u;").unwrap();
-            writeln!(&mut kernel_body, "}}").unwrap();
-            writeln!(&mut kernel_body).unwrap();
+            writeln!(kernel, "out_index += 4u;").unwrap();
+            writeln!(kernel, "}}").unwrap();
+            writeln!(kernel).unwrap();
         }
 
         // Handle the < 4 remaining elements
-        writeln!(&mut kernel_body, "while (out_index < end_axis_index) {{").unwrap();
+        writeln!(kernel, "while (out_index < end_axis_index) {{").unwrap();
         writeln!(
-            &mut kernel_body,
+            kernel,
             "let data = {input_tensor}[in_start_offset + out_index * {reduce_stride}];"
         )
         .unwrap();
         writeln!(
-            &mut kernel_body,
+            kernel,
             "{output_tensor}[out_start_offset + out_index * {reduce_stride}] = exp(data - m_all) / d_all;"
         )
         .unwrap();
-        writeln!(&mut kernel_body, "out_index += 1u;").unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
-
-        kernel.push_body(&kernel_body);
+        writeln!(kernel, "out_index += 1u;").unwrap();
+        writeln!(kernel, "}}").unwrap();
     }
 }
 

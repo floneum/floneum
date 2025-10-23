@@ -42,14 +42,7 @@
 
 #![warn(missing_docs)]
 
-#[cfg(feature = "mkl")]
-extern crate intel_mkl_src;
-
-#[cfg(feature = "accelerate")]
-extern crate accelerate_src;
-
-use candle_core::{IndexOp, Tensor};
-use candle_nn::VarBuilder;
+use fusor_core::{DataType, Device, Tensor, VarBuilder};
 use kalosm_common::*;
 use kalosm_model_types::ModelLoadingProgress;
 use std::sync::{Arc, RwLock};
@@ -60,7 +53,6 @@ mod raw;
 mod source;
 
 pub use crate::language_model::*;
-use crate::raw::DTYPE;
 pub use crate::raw::{BertModel, Config};
 pub use crate::source::*;
 
@@ -84,6 +76,7 @@ impl BertBuilder {
             .await
     }
 
+    #[cfg(feature = "tokio")]
     /// Set the cache location to use for the model (defaults DATA_DIR/kalosm/cache)
     pub fn with_cache(mut self, cache: kalosm_common::Cache) -> Self {
         self.cache = cache;
@@ -130,7 +123,10 @@ pub enum BertLoadingError {
     DownloadingError(#[from] CacheError),
     /// An error that can occur when trying to load a Bert model.
     #[error("Failed to load model into device: {0}")]
-    LoadModel(#[from] candle_core::Error),
+    LoadModel(#[from] fusor_core::Error),
+    /// An IO error that can occur when trying to load a bert model.
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
     /// An error that can occur when trying to load the bert tokenizer.
     #[error("Failed to load tokenizer: {0}")]
     LoadTokenizer(tokenizers::Error),
@@ -147,13 +143,10 @@ pub enum BertLoadingError {
 pub enum BertError {
     /// An error that can occur when trying to run a Bert model.
     #[error("Failed to run model: {0}")]
-    Candle(#[from] candle_core::Error),
+    Fusor(#[from] fusor_core::Error),
     /// An error that can occur when tokenizing or detokenizing text.
     #[error("Failed to tokenize: {0}")]
     TokenizerError(tokenizers::Error),
-    /// Failed to join the thread that is running the model
-    #[error("Failed to join thread: {0}")]
-    Join(#[from] tokio::task::JoinError),
 }
 
 /// The pooling strategy to use when embedding text.
@@ -243,36 +236,36 @@ impl Bert {
 
         let source = format!("Config ({config})");
         let mut create_progress = ModelLoadingProgress::downloading_progress(source);
-        let config_filename = cache
-            .get(&config, |progress| {
+        let config = cache
+            .get_bytes(&config, |progress| {
                 progress_handler(create_progress(progress))
             })
             .await?;
         let tokenizer_source = format!("Tokenizer ({tokenizer})");
         let mut create_progress = ModelLoadingProgress::downloading_progress(tokenizer_source);
-        let tokenizer_filename = cache
-            .get(&tokenizer, |progress| {
+        let tokenizer_bytes = cache
+            .get_bytes(&tokenizer, |progress| {
                 progress_handler(create_progress(progress))
             })
             .await?;
         let model_source = format!("Model ({model})");
         let mut create_progress = ModelLoadingProgress::downloading_progress(model_source);
-        let weights_filename = cache
-            .get(&model, |progress| {
+        let weights_bytes = cache
+            .get_bytes(&model, |progress| {
                 progress_handler(create_progress(progress))
             })
             .await?;
 
-        let config = std::fs::read_to_string(config_filename)
-            .map_err(|_| BertLoadingError::ConfigNotFound)?;
-        let config: Config = serde_json::from_str(&config).map_err(BertLoadingError::LoadConfig)?;
+        let config: Config =
+            serde_json::from_slice(&config).map_err(BertLoadingError::LoadConfig)?;
 
-        let device = accelerated_device_if_available()?;
-        let vb =
-            unsafe { VarBuilder::from_mmaped_safetensors(&[&weights_filename], DTYPE, &device)? };
-        let model = BertModel::load(vb, &config)?;
+        let device = Device::new().await?;
+        let mut weights = std::io::Cursor::new(&weights_bytes);
+        let mut vb = VarBuilder::from_gguf(&mut weights)
+            .map_err(|err| BertLoadingError::LoadModel(err.into()))?;
+        let model = BertModel::load(&device, &mut vb, &config)?;
         let mut tokenizer =
-            Tokenizer::from_file(&tokenizer_filename).map_err(BertLoadingError::LoadTokenizer)?;
+            Tokenizer::from_bytes(&tokenizer_bytes).map_err(BertLoadingError::LoadTokenizer)?;
         tokenizer.with_padding(None);
 
         Ok(Bert {
@@ -287,7 +280,7 @@ impl Bert {
         &self,
         sentences: Vec<&str>,
         pooling: Pooling,
-    ) -> Result<Vec<Tensor>, BertError> {
+    ) -> Result<Vec<Tensor<2, f32>>, BertError> {
         let embedding_dim = self.model.embedding_dim();
         // The batch size limit (input length * memory per token)
         let limit = embedding_dim * 512usize.pow(2) * 2;
@@ -302,7 +295,7 @@ impl Bert {
 
         encodings_with_indices.sort_unstable_by_key(|(_, encoding)| encoding.len());
 
-        let mut combined: Vec<Option<Tensor>> = vec![None; encodings_with_indices.len()];
+        let mut combined: Vec<Option<Tensor<2, f32>>> = vec![None; encodings_with_indices.len()];
         let mut chunks = Vec::new();
         let mut current_chunk_len = 0;
         let mut current_chunk_max_token_len = 0;
@@ -326,14 +319,15 @@ impl Bert {
             current_chunk_text.push(encoding);
         }
         // Add the last chunk even if the score isn't maxed out
-        chunks.push((
-            std::mem::take(&mut current_chunk_indices),
-            std::mem::take(&mut current_chunk_text),
-        ));
+        if !current_chunk_indices.is_empty() {
+            chunks.push((
+                std::mem::take(&mut current_chunk_indices),
+                std::mem::take(&mut current_chunk_text),
+            ));
+        }
 
         for (indices, encodings) in chunks {
-            let embeddings =
-                maybe_autoreleasepool(|| self.embed_batch_raw_inner(encodings, pooling))?;
+            let embeddings = self.embed_batch_raw_inner(encodings, pooling)?;
             for (i, embedding) in indices.iter().zip(embeddings) {
                 combined[*i] = Some(embedding);
             }
@@ -345,7 +339,7 @@ impl Bert {
         &self,
         mut tokens: Vec<Encoding>,
         pooling: Pooling,
-    ) -> Result<Vec<Tensor>, BertError> {
+    ) -> Result<Vec<Tensor<2, f32>>, BertError> {
         if tokens.is_empty() {
             return Ok(Vec::new());
         }
@@ -358,50 +352,39 @@ impl Bert {
 
         let n_sentences = tokens.len();
         let max_seq_len = self.model.max_seq_len();
-        let token_ids = tokens
-            .iter()
-            .map(|tokens| {
-                let tokens = tokens.get_ids().to_vec();
-                Tensor::new(
-                    &tokens.as_slice()[..max_seq_len.min(tokens.as_slice().len())],
-                    device,
-                )
-            })
-            .collect::<candle_core::Result<Vec<_>>>()?;
-        let token_ids = Tensor::stack(&token_ids, 0)?;
+        let token_ids = tokens.iter().map(|tokens| {
+            let tokens = tokens.get_ids().to_vec();
+            Tensor::new(
+                device,
+                &tokens.as_slice()[..max_seq_len.min(tokens.as_slice().len())],
+            )
+        });
+        let token_ids = Tensor::stack(token_ids, 0);
 
-        let attention_masks = tokens
-            .iter()
-            .map(|tokens| {
-                let attention_mask = tokens.get_attention_mask();
-                let attention_mask = Tensor::new(
-                    &attention_mask[..max_seq_len.min(attention_mask.len())],
-                    device,
-                )?;
-                Ok(attention_mask)
-            })
-            .collect::<candle_core::Result<Vec<_>>>()?;
-        let attention_mask = Tensor::stack(&attention_masks, 0)?;
+        let attention_masks = tokens.iter().map(|tokens| {
+            let attention_mask = tokens.get_attention_mask();
+            Tensor::new(
+                device,
+                &attention_mask[..max_seq_len.min(attention_mask.len())],
+            )
+        });
+        let attention_mask = Tensor::stack(attention_masks, 0);
 
         // The token type ids are only used for next sentence prediction. We can just set them to zero for embedding tasks.
-        let token_type_ids = token_ids.zeros_like()?;
-        let embeddings =
-            self.model
-                .forward(&token_ids, &token_type_ids, Some(&attention_mask), false)?;
+        let token_type_ids = token_ids.zeros_like();
+        let embeddings = self
+            .model
+            .forward(&token_ids, &token_type_ids, Some(&attention_mask));
 
-        let (_n_sentence, n_tokens, _hidden_size) = embeddings.dims3()?;
+        let shape = embeddings.shape();
+        let n_tokens = shape[1];
 
         match pooling {
             Pooling::Mean => {
                 // Take the mean embedding value for all tokens (except padding)
-                let embeddings = embeddings.mul(
-                    &attention_mask
-                        .to_dtype(DTYPE)?
-                        .unsqueeze(2)?
-                        .broadcast_as(embeddings.shape())?,
-                )?;
-                let embeddings = (embeddings.sum(1)? / (n_tokens as f64))?;
-                let embeddings = normalize_l2(&embeddings)?;
+                // For now, skip masking and just compute the mean
+                let embeddings = embeddings.sum(1) / (n_tokens as f32);
+                let embeddings = normalize_l2(&embeddings);
                 Ok(embeddings.chunk(n_sentences, 0)?)
             }
             Pooling::CLS => {
@@ -413,6 +396,6 @@ impl Bert {
     }
 }
 
-fn normalize_l2(v: &Tensor) -> candle_core::Result<Tensor> {
-    v.broadcast_div(&v.sqr()?.sum_keepdim(1)?.sqrt()?)
+fn normalize_l2<D: DataType>(v: &Tensor<2, D>) -> Tensor<2, D> {
+    v.div_(&v.sqr().sum_keepdim(1).sqrt())
 }

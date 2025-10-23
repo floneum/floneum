@@ -1,11 +1,12 @@
-use std::collections::{HashSet, VecDeque};
+use rustc_hash::FxHashSet;
+use std::collections::VecDeque;
 
 use super::AnyComputeKey;
 
 #[derive(Default, Debug)]
 pub(crate) struct ComputeQueue {
     nodes: VecDeque<AnyComputeKey>,
-    set: HashSet<AnyComputeKey>,
+    set: FxHashSet<AnyComputeKey>,
 }
 
 impl ComputeQueue {

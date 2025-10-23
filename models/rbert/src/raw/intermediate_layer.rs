@@ -1,6 +1,6 @@
-use candle_core::{Result, Tensor};
-use candle_nn::{Module, VarBuilder};
-use candle_transformers::models::with_tracing::{linear, Linear};
+use fusor_core::layers::Linear;
+use fusor_core::{Device, VarBuilder};
+use fusor_core::{Result, Tensor};
 
 use super::HiddenActLayer;
 
@@ -12,8 +12,12 @@ pub(crate) struct BertIntermediate {
 }
 
 impl BertIntermediate {
-    pub(crate) fn load(vb: VarBuilder, config: &super::Config) -> Result<Self> {
-        let dense = linear(config.hidden_size, config.intermediate_size, vb.pp("dense"))?;
+    pub(crate) fn load(
+        device: &Device,
+        vb: &mut VarBuilder,
+        config: &super::Config,
+    ) -> Result<Self> {
+        let dense = Linear::load(device, &mut vb.pp("ffn_up"))?;
         Ok(Self {
             dense,
             intermediate_act: HiddenActLayer::new(config.hidden_act),
@@ -22,11 +26,10 @@ impl BertIntermediate {
     }
 }
 
-impl Module for BertIntermediate {
-    fn forward(&self, hidden_states: &Tensor) -> Result<Tensor> {
+impl BertIntermediate {
+    pub(crate) fn forward(&self, hidden_states: &Tensor<3, f32>) -> Tensor<3, f32> {
         let _enter = self.span.enter();
-        let hidden_states = self.dense.forward(hidden_states)?;
-        let ys = self.intermediate_act.forward(&hidden_states)?;
-        Ok(ys)
+        let hidden_states = self.dense.forward(hidden_states);
+        self.intermediate_act.forward(&hidden_states)
     }
 }

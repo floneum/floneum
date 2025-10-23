@@ -1,16 +1,14 @@
 use std::{
     fmt::{Debug, Display},
     marker::PhantomData,
+    num::NonZeroU64,
     ops::{Add, AddAssign, Deref, Div, DivAssign, Index, Mul, MulAssign, Range, Sub, SubAssign},
     sync::Arc,
 };
 
 use bytemuck::{AnyBitPattern, NoUninit};
 use tabbycat::Graph;
-use wgpu::{
-    BufferDescriptor, COPY_BUFFER_ALIGNMENT,
-    util::{DeviceExt, DownloadBuffer},
-};
+use wgpu::{COPY_BUFFER_ALIGNMENT, util::DownloadBuffer};
 
 use crate::{
     Device, ElementWiseOperation, MatMulOperation, MatMulParams, PairWiseFunction,
@@ -48,6 +46,8 @@ pub trait DataType:
 
 pub trait FloatDataType: DataType {
     fn from_f32(value: f32) -> Self;
+
+    fn is_finite(&self) -> bool;
 }
 
 impl DataType for f32 {
@@ -65,6 +65,10 @@ impl DataType for f32 {
 impl FloatDataType for f32 {
     fn from_f32(value: f32) -> Self {
         value
+    }
+
+    fn is_finite(&self) -> bool {
+        f32::is_finite(*self)
     }
 }
 
@@ -84,6 +88,10 @@ impl FloatDataType for half::f16 {
     fn from_f32(value: f32) -> Self {
         half::f16::from_f32(value)
     }
+
+    fn is_finite(&self) -> bool {
+        half::f16::is_finite(*self)
+    }
 }
 
 impl DataType for u32 {
@@ -99,7 +107,7 @@ impl DataType for u32 {
 }
 
 #[non_exhaustive]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DataTypeEnum {
     F32,
     F16,
@@ -446,28 +454,26 @@ impl TensorData {
     pub(crate) fn new_for_shape(device: &Device, shape: &[usize], datatype: DataTypeEnum) -> Self {
         let size =
             padded_tensor_size((datatype.element_size() * shape.iter().product::<usize>()) as u64);
-        let buffer = device.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Tensor Buffer"),
+
+        // Try to get a buffer from the cache first
+        let buffer = device.create_buffer(
             size,
-            usage: wgpu::BufferUsages::STORAGE
+            wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_SRC
                 | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        );
+
         Self::new_from_buffer(device, buffer, shape, datatype)
     }
 
     pub(crate) fn new_splat<D: DataType>(device: &Device, shape: &[usize], data: D) -> Self {
         let datatype = D::WGSL_TYPE;
-        let buffer = device
-            .wgpu_device()
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Splat Tensor Buffer"),
-                contents: bytemuck::bytes_of(&data),
-                usage: wgpu::BufferUsages::STORAGE
-                    | wgpu::BufferUsages::COPY_SRC
-                    | wgpu::BufferUsages::COPY_DST,
-            });
+        let buffer = device.create_buffer_init(
+            bytemuck::bytes_of(&data),
+            wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+        );
         let strides = (0..shape.len()).map(|_| 0).collect();
         let layout = Layout::from_parts(0, shape.into(), strides);
         Self::new_from_parts(device, buffer, layout, datatype)
@@ -483,30 +489,34 @@ impl TensorData {
             element_size: u64,
             shape: &[usize],
             device: &Device,
-        ) -> (wgpu::Buffer, u64) {
+        ) -> (Arc<wgpu::Buffer>, u64) {
             let size = element_size * shape.iter().copied().product::<usize>() as u64;
 
             let padded_size = padded_tensor_size(size);
 
-            let wgt_descriptor = BufferDescriptor {
-                label: Some("Tensor Buffer"),
-                size: padded_size,
-                usage: wgpu::BufferUsages::STORAGE
+            let buffer = device.create_buffer(
+                padded_size,
+                wgpu::BufferUsages::STORAGE
                     | wgpu::BufferUsages::COPY_SRC
                     | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: true,
-            };
-
-            let buffer = device.wgpu_device().create_buffer(&wgt_descriptor);
+            );
             (buffer, size)
         }
         let (buffer, unpadded_size) = create_aligned_buffer(size_of::<D>() as u64, shape, device);
 
-        buffer.slice(..).get_mapped_range_mut()[..unpadded_size as usize]
-            .iter_mut()
-            .zip(data.flat_map(bytemuck::bytes_of))
-            .for_each(|(dst, src)| *dst = *src);
-        buffer.unmap();
+        if let Some(unpadded_size) = NonZeroU64::new(unpadded_size) {
+            let write = device
+                .wgpu_queue()
+                .write_buffer_with(&buffer, 0, unpadded_size);
+            if let Some(mut write) = write {
+                write
+                    .iter_mut()
+                    .zip(data.flat_map(bytemuck::bytes_of))
+                    .for_each(|(dst, src)| *dst = *src);
+            } else {
+                tracing::info!("Falling back to staging buffer for tensor upload");
+            }
+        }
 
         Self::new_from_buffer(device, buffer, shape, D::WGSL_TYPE)
     }
@@ -551,6 +561,12 @@ pub struct Tensor<const R: usize, D> {
     datatype: PhantomData<D>,
 }
 
+impl<const R: usize, D: DataType> Display for Tensor<R, D> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} x {:?}", self.datatype(), self.shape())
+    }
+}
+
 impl<const R: usize, D: DataType> Debug for Tensor<R, D> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Tensor({} x {:?})", self.datatype(), self.shape())
@@ -577,6 +593,13 @@ impl<const R: usize, D> Clone for Tensor<R, D> {
 
 pub trait IntoTensor<const R: usize, D> {
     fn into_tensor(self, device: &Device) -> Tensor<R, D>;
+}
+
+impl<D: DataType> IntoTensor<0, D> for () {
+    fn into_tensor(self, device: &Device) -> Tensor<0, D> {
+        let iter = std::iter::empty();
+        Tensor::new_inner(device, iter, [])
+    }
 }
 
 impl<'a, I, D: DataType> IntoTensor<1, D> for I
@@ -795,13 +818,32 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
     }
 
     pub async fn as_slice(&self) -> Result<TensorSlice<R, D>, wgpu::BufferAsyncError> {
+        #[cfg(not(target_arch = "wasm32"))]
         let start_time = std::time::Instant::now();
         let tensor = self.data.materialize();
+        #[cfg(not(target_arch = "wasm32"))]
         tracing::trace!("Materialized tensor in {:?}", start_time.elapsed());
+        #[cfg(not(target_arch = "wasm32"))]
         let start_time = std::time::Instant::now();
         let out = Self::as_slice_from_tensor_data(&tensor).await;
+        #[cfg(not(target_arch = "wasm32"))]
         tracing::trace!("Downloaded tensor in {:?}", start_time.elapsed());
         out
+    }
+
+    pub fn debug_assert_real(self) -> Self
+    where
+        D: FloatDataType,
+    {
+        #[cfg(debug_assertions)]
+        {
+            use pollster::FutureExt as _;
+            let as_slice = self.as_slice().block_on().unwrap();
+            for item in as_slice.as_slice() {
+                assert!(item.is_finite(), "Tensor contains non-finite value: {item}");
+            }
+        }
+        self
     }
 
     pub(crate) fn element_wise<D2: DataType>(
@@ -932,6 +974,12 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
 
     pub(crate) fn graph(&self) -> &ComputeGraph {
         &self.data.graph
+    }
+
+    /// Returns a hash of the compute graph. The hash is sensitive to the structure of the
+    /// compute graph
+    pub fn graph_hash(&self) -> u64 {
+        self.data.graph.graph_hash(self.data.key)
     }
 }
 
@@ -1153,6 +1201,10 @@ impl<D: DataType, const R: usize> TensorSlice<R, D> {
 }
 
 impl<D: DataType, const R: usize> TensorSlice<R, D> {
+    pub fn shape(&self) -> &[usize] {
+        self.layout.shape()
+    }
+
     fn get(&self, index: [usize; R]) -> Option<&D> {
         let mut index_sum = 0;
         let layout = &self.layout;
@@ -1191,4 +1243,66 @@ async fn test_tensor() {
     assert_eq!(as_slice[[1, 1]], 4.);
     assert_eq!(as_slice[[2, 0]], 5.);
     assert_eq!(as_slice[[2, 1]], 6.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_graph_hash() {
+    let device = Device::new().await.unwrap();
+
+    // Create a tensor and use it in different operations
+    let data = [[1., 2.], [3., 4.]];
+    let tensor = Tensor::new(&device, &data);
+
+    // Create two identical computational graphs using the same tensor
+    let result1 = &tensor + &tensor; // Add tensor to itself
+    let result1 = result1 * 2.0; // Multiply by 2
+
+    let result2 = &tensor + &tensor; // Same operations
+    let result2 = result2 * 2.0;
+
+    // The hashes should be the same because the graph structure is identical
+    let hash1 = result1.graph_hash();
+    let hash2 = result2.graph_hash();
+    assert_eq!(hash1, hash2, "Identical graphs should have the same hash");
+
+    // Create a different graph with a different operation
+    let result3 = &tensor * &tensor; // Different operation (multiply instead of add)
+    let result3 = result3 * 2.0;
+    let hash3 = result3.graph_hash();
+    assert_ne!(
+        hash1, hash3,
+        "Different graphs should have different hashes"
+    );
+
+    // Create a graph with different ordering (should have different hash)
+    let result4 = tensor.clone() * 2.0; // Multiply first
+    let result4 = &result4 + &result4; // Then add
+    let hash4 = result4.graph_hash();
+    assert_ne!(
+        hash1, hash4,
+        "Graphs with different operation order should have different hashes"
+    );
+
+    // Test that using a different tensor with the same shape produces the same hash
+    let data2 = [[5., 6.], [7., 8.]]; // Different data, same shape
+    let tensor2 = Tensor::new(&device, &data2);
+    let result5 = &tensor2 + &tensor2;
+    let result5 = result5 * 2.0;
+    let hash5 = result5.graph_hash();
+    assert_eq!(
+        hash1, hash5,
+        "Graphs with different tensors but same shape should have the same hash"
+    );
+
+    // Test that different shapes produce different hashes
+    let data3 = [[1., 2., 3.], [4., 5., 6.]];
+    let tensor3 = Tensor::new(&device, &data3);
+    let result6 = &tensor3 + &tensor3;
+    let result6 = result6 * 2.0;
+    let hash6 = result6.graph_hash();
+    assert_ne!(
+        hash1, hash6,
+        "Graphs with different shapes should have different hashes"
+    );
 }

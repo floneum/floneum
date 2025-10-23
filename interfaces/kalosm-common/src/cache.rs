@@ -1,20 +1,19 @@
-use hf_hub::{Repo, RepoType};
 use httpdate::parse_http_date;
 use kalosm_model_types::{FileLoadingProgress, FileSource};
-use reqwest::{
-    header::{HeaderValue, CONTENT_LENGTH, LAST_MODIFIED, RANGE},
-    IntoUrl,
-};
-use reqwest::{Response, StatusCode};
 use std::path::PathBuf;
-use std::str::FromStr;
+
+#[cfg(feature = "tokio")]
 use tokio::fs::{File, OpenOptions};
+#[cfg(feature = "tokio")]
 use tokio::io::AsyncWriteExt;
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum CacheError {
+    #[cfg(feature = "tokio")]
     #[error("Hugging Face API error: {0}")]
     HuggingFaceApi(#[from] hf_hub::api::tokio::ApiError),
+    #[cfg(feature = "tokio")]
     #[error("Unable to get file metadata for {0}: {1}")]
     UnableToGetFileMetadata(PathBuf, #[source] tokio::io::Error),
     #[error("IO error: {0}")]
@@ -22,7 +21,7 @@ pub enum CacheError {
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
     #[error("Unexpected status code: {0}")]
-    UnexpectedStatusCode(StatusCode),
+    UnexpectedStatusCode(reqwest::StatusCode),
 }
 
 #[derive(Debug, Clone)]
@@ -64,12 +63,57 @@ impl Cache {
         }
     }
 
+    /// Get the bytes from the cache, downloading it if necessary
+    pub async fn get_bytes(
+        &self,
+        source: &FileSource,
+        progress: impl FnMut(FileLoadingProgress),
+    ) -> Result<Vec<u8>, CacheError> {
+        #[cfg(feature = "tokio")]
+        {
+            let path = self.get(source, progress).await;
+            tokio::fs::read(path?).await.map_err(CacheError::from)
+        }
+        #[cfg(not(feature = "tokio"))]
+        {
+            match source {
+                FileSource::HuggingFace {
+                    model_id,
+                    revision,
+                    file,
+                } => {
+                    let token = self.huggingface_token.clone().or_else(huggingface_token);
+                    let url =
+                        format!("https://huggingface.co/{model_id}/resolve/{revision}/{file}");
+                    let client = reqwest::Client::new();
+                    tracing::trace!("Fetching metadata for {file} from {url}");
+                    let response = client
+                        .get(&url)
+                        .with_authorization_header(token.clone())
+                        .send()
+                        .await
+                        .map_err(CacheError::from)?
+                        .bytes()
+                        .await
+                        .map_err(CacheError::from)?;
+                    Ok(response.to_vec())
+                }
+                _ => Err(CacheError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Local file access not supported without the 'tokio' feature",
+                ))),
+            }
+        }
+    }
+
     /// Get the file from the cache, downloading it if necessary
+    #[cfg(feature = "tokio")]
     pub async fn get(
         &self,
         source: &FileSource,
         progress: impl FnMut(FileLoadingProgress),
     ) -> Result<PathBuf, CacheError> {
+        use hf_hub::{Repo, RepoType};
         match source {
             FileSource::HuggingFace {
                 model_id,
@@ -77,9 +121,6 @@ impl Cache {
                 file,
             } => {
                 let token = self.huggingface_token.clone().or_else(huggingface_token);
-
-                let path = self.location.join(model_id).join(revision);
-                let complete_download = path.join(file);
 
                 let repo = Repo::with_revision(
                     model_id.to_string(),
@@ -96,6 +137,9 @@ impl Cache {
                     .send()
                     .await;
 
+                let path = self.location.join(model_id).join(revision);
+                let complete_download = path.join(file);
+
                 if complete_download.exists() {
                     let metadata = tokio::fs::metadata(&complete_download).await.map_err(|e| {
                         CacheError::UnableToGetFileMetadata(complete_download.clone(), e)
@@ -105,7 +149,7 @@ impl Cache {
                     if let Some(last_updated) = response
                         .as_ref()
                         .ok()
-                        .and_then(|response| response.headers().get(LAST_MODIFIED))
+                        .and_then(|response| response.headers().get(reqwest::header::LAST_MODIFIED))
                         .and_then(|last_updated| last_updated.to_str().ok())
                         .and_then(|s| parse_http_date(s).ok())
                     {
@@ -144,20 +188,34 @@ impl Cache {
 impl Default for Cache {
     fn default() -> Self {
         Self {
-            location: dirs::data_dir().unwrap().join("kalosm").join("cache"),
+            location: {
+                #[cfg(feature = "tokio")]
+                {
+                    dirs::data_dir().unwrap().join("kalosm").join("cache")
+                }
+                #[cfg(not(feature = "tokio"))]
+                {
+                    Default::default()
+                }
+            },
             huggingface_token: None,
         }
     }
 }
 
-async fn download_into<U: IntoUrl>(
+#[cfg(feature = "tokio")]
+async fn download_into<U: reqwest::IntoUrl>(
     url: U,
     file: &PathBuf,
-    head: Response,
+    head: reqwest::Response,
     client: reqwest::Client,
     token: Option<String>,
     mut progress: impl FnMut(FileLoadingProgress),
 ) -> Result<(), CacheError> {
+    use reqwest::header::{HeaderValue, CONTENT_LENGTH, RANGE};
+    use reqwest::StatusCode;
+    use std::str::FromStr;
+
     let length = head
         .headers()
         .get(CONTENT_LENGTH)
@@ -262,6 +320,10 @@ async fn downloads_work() {
 }
 
 fn huggingface_token() -> Option<String> {
-    let cache = hf_hub::Cache::default();
-    cache.token().or_else(|| std::env::var("HF_TOKEN").ok())
+    cfg!(not(target_arch = "wasm32"))
+        .then(|| {
+            let cache = hf_hub::Cache::default();
+            cache.token().or_else(|| std::env::var("HF_TOKEN").ok())
+        })
+        .flatten()
 }

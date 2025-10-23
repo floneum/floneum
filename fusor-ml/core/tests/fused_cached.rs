@@ -1,7 +1,6 @@
 // Make sure in-place opts don't change immutable tensors
 
 use fusor_core::Device;
-use fusor_core::Sum;
 use fusor_core::Tensor;
 
 #[tokio::test]

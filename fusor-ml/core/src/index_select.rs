@@ -91,7 +91,7 @@ impl IndexSelectOperation {
         self
     }
 
-    fn build_index_kernel(&self, kernel: &mut GenericKernel) -> String {
+    fn build_index_kernel(&self, kernel: &mut GenericKernel) {
         assert!(
             self.rank() <= 3,
             "IndexSelect only supports up to 3 rank tensors"
@@ -100,7 +100,6 @@ impl IndexSelectOperation {
         let tile_size = self.tile_size;
         let rank = self.rank();
 
-        let mut kernel_body = String::new();
         let global_id = kernel.global_id();
         let input = kernel.add_tensor_input(self.rank() as u32, false, self.datatype);
         let indexes = kernel.add_tensor_input(1, false, DataTypeEnum::U32);
@@ -122,41 +121,41 @@ impl IndexSelectOperation {
         for i in 0..self.rank() {
             let index = ["x", "y", "z"][i];
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "let tile_index_{i} = {global_id}.{index} * {tile_size};"
             )
             .unwrap();
         }
-        writeln!(&mut kernel_body, "\n").unwrap();
+        writeln!(kernel, "\n").unwrap();
 
         for i in 0..rank {
-            writeln!(&mut kernel_body, "for (var local_index_{i} = 0u; local_index_{i} < {tile_size}; local_index_{i}++) {{").unwrap();
+            writeln!(kernel, "for (var local_index_{i} = 0u; local_index_{i} < {tile_size}; local_index_{i}++) {{").unwrap();
         }
 
         for i in 0..rank {
             writeln!(
-                &mut kernel_body,
+                kernel,
                 "let merged_index_{i} = tile_index_{i} + local_index_{i};"
             )
             .unwrap();
         }
 
         output.check_bounds(
-            &mut kernel_body,
+            kernel,
             (0..).map(|i| format!("merged_index_{i}")),
-            |kernel_body| {
+            |kernel| {
                 let dimension = self.dimension;
                 writeln!(
-                    kernel_body,
+                    kernel,
                     "let select_index_value = {indexes}[merged_index_{dimension}];",
                 )
                 .unwrap();
-                write!(kernel_body, "let select_index = ",).unwrap();
-                write!(kernel_body, "{}", process_index_input("select_index_value")).unwrap();
-                writeln!(kernel_body, ";").unwrap();
-                write!(kernel_body, "let input_index = ",).unwrap();
+                write!(kernel, "let select_index = ",).unwrap();
+                write!(kernel, "{}", process_index_input("select_index_value")).unwrap();
+                writeln!(kernel, ";").unwrap();
+                write!(kernel, "let input_index = ",).unwrap();
                 input.strided_index(
-                    kernel_body,
+                    kernel,
                     (0..).map(|i| {
                         if i == self.dimension {
                             "select_index".to_string()
@@ -165,25 +164,23 @@ impl IndexSelectOperation {
                         }
                     }),
                 );
-                writeln!(kernel_body, ";").unwrap();
+                writeln!(kernel, ";").unwrap();
 
-                write!(kernel_body, "let output_index = ",).unwrap();
-                output.strided_index(kernel_body, (0..).map(|i| format!("merged_index_{i}")));
-                writeln!(kernel_body, ";").unwrap();
+                write!(kernel, "let output_index = ",).unwrap();
+                output.strided_index(kernel, (0..).map(|i| format!("merged_index_{i}")));
+                writeln!(kernel, ";").unwrap();
 
-                writeln!(kernel_body, "let input = {input}[input_index];",).unwrap();
+                writeln!(kernel, "let input = {input}[input_index];",).unwrap();
 
-                write!(kernel_body, "{output}[output_index] = ").unwrap();
-                write!(kernel_body, "{}", process_value_input("input")).unwrap();
-                writeln!(kernel_body, ";").unwrap();
+                write!(kernel, "{output}[output_index] = ").unwrap();
+                write!(kernel, "{}", process_value_input("input")).unwrap();
+                writeln!(kernel, ";").unwrap();
             },
         );
 
         for _ in 0..rank {
-            writeln!(&mut kernel_body, "}}").unwrap();
+            writeln!(kernel, "}}").unwrap();
         }
-
-        kernel_body
     }
 }
 
@@ -239,18 +236,14 @@ impl Operation for IndexSelectOperation {
         let indexes_shape = indexes.layout().shape();
         let output_shape: Box<[usize]> =
             IndexSelectOperation::calc_output_shape(self.dimension, value_shape, indexes_shape);
-        let output_buf = device.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
-            label: Some(&format!(
-                "IndexSelectOperation output buffer for {}",
-                self.name()
-            )),
-            size: padded_tensor_size(
-                (output_shape.iter().copied().product::<usize>() * value.datatype().element_size())
-                    as u64,
-            ),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
+        let size = padded_tensor_size(
+            (output_shape.iter().copied().product::<usize>() * value.datatype().element_size())
+                as u64,
+        );
+        let output_buf = device.create_buffer(
+            size,
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        );
         let output_tensor =
             TensorData::new_from_buffer(device, output_buf, &output_shape, value.datatype());
         // Make sure the output tensor has the correct shape
@@ -278,8 +271,7 @@ impl Operation for IndexSelectOperation {
         _: &[crate::mir::inputs::MirValue],
         kernel: &mut GenericKernel,
     ) {
-        let kernel_text = self.build_index_kernel(kernel);
-        kernel.push_body(&kernel_text);
+        self.build_index_kernel(kernel);
     }
 
     fn output(

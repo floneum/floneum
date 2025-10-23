@@ -5,7 +5,6 @@ use std::time::Duration;
 use candle_core::MetalDevice;
 use candle_core::backend::BackendDevice;
 use criterion::BatchSize;
-use fusor_core::Sum;
 use fusor_core::{Device, Tensor};
 use futures::executor::block_on;
 use ndarray::Axis;

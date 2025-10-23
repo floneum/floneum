@@ -8,6 +8,8 @@ use crate::BertBuilder;
 use crate::BertError;
 use crate::BertLoadingError;
 use crate::Pooling;
+use kalosm_language_model::FutureWasmNotSend;
+use kalosm_language_model::WasmNotSend;
 pub use kalosm_language_model::{
     Embedder, EmbedderCacheExt, EmbedderExt, Embedding, EmbeddingInput, EmbeddingVariant,
     ModelBuilder,
@@ -33,26 +35,26 @@ impl ModelBuilder for BertBuilder {
 
 impl Bert {
     /// Embed a sentence with a specific pooling strategy.
-    pub fn embed_with_pooling(
+    pub async fn embed_with_pooling(
         &self,
         input: &str,
         pooling: Pooling,
     ) -> Result<Embedding, BertError> {
         let mut tensors = self.embed_batch_raw(vec![input], pooling)?;
 
+        let last = tensors.pop().unwrap();
+        let last_slice = last
+            .as_slice()
+            .await
+            .map_err(|err| BertError::Fusor(fusor_core::Error::BufferAsyncError(err)))?;
+        let slice_data = last_slice.to_vec2();
         Ok(Embedding::from(
-            tensors
-                .pop()
-                .unwrap()
-                .to_vec2()?
-                .into_iter()
-                .next()
-                .unwrap(),
+            slice_data.into_iter().next().into_iter().next().unwrap(),
         ))
     }
 
     /// Embed a batch of sentences with a specific pooling strategy.
-    pub fn embed_batch_with_pooling(
+    pub async fn embed_batch_with_pooling(
         &self,
         inputs: Vec<&str>,
         pooling: Pooling,
@@ -61,8 +63,9 @@ impl Bert {
 
         let mut embeddings = Vec::with_capacity(tensors.len());
         for tensor in tensors {
+            let slice_data = tensor.to_vec2().await?;
             embeddings.push(Embedding::from(
-                tensor.to_vec2()?.into_iter().next().unwrap(),
+                slice_data.into_iter().next().into_iter().next().unwrap(),
             ));
         }
 
@@ -76,7 +79,7 @@ impl Embedder for Bert {
     fn embed_for(
         &self,
         input: EmbeddingInput,
-    ) -> impl Future<Output = Result<Embedding, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Embedding, Self::Error>> + WasmNotSend {
         match (&*self.embedding_search_prefix, input.variant) {
             (Some(prefix), EmbeddingVariant::Query) => {
                 let mut new_input = prefix.clone();
@@ -90,7 +93,7 @@ impl Embedder for Bert {
     fn embed_vec_for(
         &self,
         inputs: Vec<EmbeddingInput>,
-    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + WasmNotSend {
         let inputs = inputs
             .into_iter()
             .map(
@@ -108,18 +111,13 @@ impl Embedder for Bert {
     }
 
     async fn embed_string(&self, input: String) -> Result<Embedding, Self::Error> {
-        let self_clone = self.clone();
-        tokio::task::spawn_blocking(move || self_clone.embed_with_pooling(&input, Pooling::CLS))
-            .await?
+        self.embed_with_pooling(&input, Pooling::CLS).await
     }
 
     async fn embed_vec(&self, inputs: Vec<String>) -> Result<Vec<Embedding>, Self::Error> {
-        let self_clone = self.clone();
-        tokio::task::spawn_blocking(move || {
-            let inputs_borrowed = inputs.iter().map(|s| s.as_str()).collect::<Vec<_>>();
-            self_clone.embed_batch_with_pooling(inputs_borrowed, Pooling::CLS)
-        })
-        .await?
+        let inputs_borrowed = inputs.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+        self.embed_batch_with_pooling(inputs_borrowed, Pooling::CLS)
+            .await
     }
 }
 
@@ -127,7 +125,7 @@ impl Deref for Bert {
     type Target = dyn Fn(
         &str,
     ) -> Pin<
-        Box<dyn Future<Output = Result<Embedding, BertError>> + Send + 'static>,
+        Box<dyn FutureWasmNotSend<Output = Result<Embedding, BertError>> + 'static>,
     >;
 
     fn deref(&self) -> &Self::Target {
@@ -142,13 +140,8 @@ impl Deref for Bert {
             let self_clone = myself.clone();
             let input = text.to_string();
 
-            Box::pin(async move {
-                tokio::task::spawn_blocking(move || {
-                    self_clone.embed_with_pooling(&input, Pooling::CLS)
-                })
-                .await?
-            })
-                as Pin<Box<dyn Future<Output = Result<Embedding, BertError>> + Send + 'static>>
+            Box::pin(async move { self_clone.embed_with_pooling(&input, Pooling::CLS).await })
+                as Pin<Box<dyn FutureWasmNotSend<Output = Result<Embedding, BertError>> + 'static>>
         };
 
         // Make sure the layout of the closure and Self is the same.

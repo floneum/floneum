@@ -56,6 +56,9 @@ impl<M: CreateChatSession> Clone for Chat<M> {
         let mut queued_messages = self.queued_messages.clone();
         let session = OnceLock::new();
         if let Some(Ok(old_session)) = self.session.get() {
+            #[cfg(target_arch = "wasm32")]
+            let old_session = old_session.try_lock().unwrap();
+            #[cfg(not(target_arch = "wasm32"))]
             let old_session = old_session.lock_blocking();
             if let Ok(old_session) = old_session.try_clone() {
                 session
@@ -279,7 +282,7 @@ impl<M: CreateChatSession> Chat<M> {
     /// let history = session.history();
     /// println!("{:?}", history);
     /// # }
-    /// ````
+    /// ```
     pub fn session(&self) -> Result<impl Deref<Target = M::ChatSession> + use<'_, M>, &M::Error> {
         match self
             .session
@@ -290,6 +293,9 @@ impl<M: CreateChatSession> Chat<M> {
             })
             .as_ref()
         {
+            #[cfg(target_arch = "wasm32")]
+            Ok(session) => Ok(session.try_lock().unwrap()),
+            #[cfg(not(target_arch = "wasm32"))]
             Ok(session) => Ok(session.lock_blocking()),
             Err(err) => Err(err),
         }

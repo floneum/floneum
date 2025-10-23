@@ -18,140 +18,170 @@ const SUBGROUP_SIZE: u32 = 32;
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn q_n_sgemv(
     op: &QMatMulOperation,
-    generic_kernel: &mut GenericKernel,
+    kernel: &mut GenericKernel,
     _: &WorkgroupShape,
     input_a: &TensorInput,
     input_b: &QMatrixInput,
     output: &TensorInput,
     _n_size: &str,
-    // m size is always 1 for sgemv
     _m_size: &str,
     k_size: &str,
 ) {
     let dtype = op.input_datatype;
-    let workgroup_index = generic_kernel.workgroup_index();
-    let subgroup_index = generic_kernel.subgroup_index();
-    let subgroup_local_index = generic_kernel.subgroup_local_index();
+    let workgroup_index = kernel.workgroup_index();
+    let subgroup_index = kernel.subgroup_index();
+    let subgroup_local_index = kernel.subgroup_local_index();
     let elements_per_block = op.elements_per_block();
 
-    let mut kernel = String::new();
+    // Handle batch dimensions
+    writeln!(kernel, "let batch_idx = {workgroup_index}.z;").unwrap();
+    // Handle M dimension - each workgroup handles one M value
+    writeln!(kernel, "let m_idx = {workgroup_index}.y;").unwrap();
 
     // Find the reduce size in blocks rounded up
     writeln!(
-        &mut kernel,
+        kernel,
         "let k_block_size = ({k_size} + {elements_per_block} - 1) / {elements_per_block};"
     )
     .unwrap();
 
     // In index of the single element in the vector we are multiplying against
-    writeln!(&mut kernel, "let workgroup_offset = {workgroup_index}.x;").unwrap();
+    writeln!(kernel, "let workgroup_offset = {workgroup_index}.x;").unwrap();
     writeln!(
-        &mut kernel,
+        kernel,
         "let row = ({SUBGROUP_COUNT} * workgroup_offset + {subgroup_index}) * {Q_N_SGEMV_CHUNK_SIZE};"
     )
     .unwrap();
 
-    writeln!(&mut kernel, "let row_block_offset = row * k_block_size;").unwrap();
+    writeln!(kernel, "let row_block_offset = row * k_block_size;").unwrap();
 
-    writeln!(&mut kernel, "let thread_id = {subgroup_local_index} / 2;").unwrap();
-    writeln!(
-        &mut kernel,
-        "let thread_local_id = {subgroup_local_index} % 2;"
-    )
-    .unwrap();
+    writeln!(kernel, "let thread_id = {subgroup_local_index} / 2;").unwrap();
+    writeln!(kernel, "let thread_local_id = {subgroup_local_index} % 2;").unwrap();
 
-    writeln!(&mut kernel, "let lane_index = thread_local_id * 8;").unwrap();
+    writeln!(kernel, "let lane_index = thread_local_id * 8;").unwrap();
 
     writeln!(
-        &mut kernel,
+        kernel,
         "var y_offset = thread_id * {elements_per_block} + lane_index;"
     )
     .unwrap();
 
     let sum_storage_type = maybe_vec_storage_type(Q_N_SGEMV_CHUNK_SIZE, dtype);
-    writeln!(&mut kernel, "var sum = {sum_storage_type}();",).unwrap();
+    writeln!(kernel, "var sum = {sum_storage_type}();",).unwrap();
 
-    writeln!(&mut kernel, "var cached_a_values = array<{dtype}, 16>();",).unwrap();
+    writeln!(kernel, "var cached_a_values = array<{dtype}, 16>();",).unwrap();
 
     // Loop over all of the blocks this thread is responsible for
     writeln!(
-        &mut kernel,
+        kernel,
         "for (var i = thread_id; i < k_block_size; i += {SUBGROUP_SIZE}/2u) {{"
     )
     .unwrap();
     {
         // First load the values of a into cached_a_values
-        writeln!(&mut kernel, "var vector_sum = vec2f();").unwrap();
-        writeln!(&mut kernel, "for (var j = 0u; j < 8; j += 2u) {{").unwrap();
+        writeln!(kernel, "var vector_sum = vec2f();").unwrap();
+        writeln!(kernel, "for (var j = 0u; j < 8; j += 2u) {{").unwrap();
         {
+            // Load a_val_0 = input_a[batch_idx, m_idx, j + y_offset + 0]
+            write!(kernel, "let a_val_0 = {input_a}[").unwrap();
+            input_a.strided_index(
+                kernel,
+                vec![
+                    "batch_idx".to_string(),
+                    "m_idx".to_string(),
+                    "j + y_offset + 0".to_string(),
+                ],
+            );
+            writeln!(kernel, "];").unwrap();
+
+            // Load a_val_1 = input_a[batch_idx, m_idx, j + y_offset + 1]
+            write!(kernel, "let a_val_1 = {input_a}[").unwrap();
+            input_a.strided_index(
+                kernel,
+                vec![
+                    "batch_idx".to_string(),
+                    "m_idx".to_string(),
+                    "j + y_offset + 1".to_string(),
+                ],
+            );
+            writeln!(kernel, "];").unwrap();
+
+            // Load a_val_16 = input_a[batch_idx, m_idx, j + y_offset + 16]
+            write!(kernel, "let a_val_16 = {input_a}[").unwrap();
+            input_a.strided_index(
+                kernel,
+                vec![
+                    "batch_idx".to_string(),
+                    "m_idx".to_string(),
+                    "j + y_offset + 16".to_string(),
+                ],
+            );
+            writeln!(kernel, "];").unwrap();
+
+            // Load a_val_17 = input_a[batch_idx, m_idx, j + y_offset + 17]
+            write!(kernel, "let a_val_17 = {input_a}[").unwrap();
+            input_a.strided_index(
+                kernel,
+                vec![
+                    "batch_idx".to_string(),
+                    "m_idx".to_string(),
+                    "j + y_offset + 17".to_string(),
+                ],
+            );
+            writeln!(kernel, "];").unwrap();
+
+            writeln!(kernel, "vector_sum[0] += a_val_0 + a_val_1;").unwrap();
+            writeln!(kernel, "cached_a_values[j + 0] = a_val_0;").unwrap();
             writeln!(
-                &mut kernel,
-                "vector_sum[0] += {input_a}[j + y_offset + 0] + {input_a}[j + y_offset + 1];"
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "cached_a_values[j + 0] = {input_a}[j + y_offset + 0];"
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "cached_a_values[j + 1] = {input_a}[j + y_offset + 1] * {};",
+                kernel,
+                "cached_a_values[j + 1] = a_val_1 * {};",
                 shift_right_scale(8)
             )
             .unwrap();
 
+            writeln!(kernel, "vector_sum[1] += a_val_16 + a_val_17;").unwrap();
             writeln!(
-                &mut kernel,
-                "vector_sum[1] += {input_a}[j + y_offset + 16] + {input_a}[j + y_offset + 17];"
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "cached_a_values[j + 8] = {input_a}[j + y_offset + 16] * {};",
+                kernel,
+                "cached_a_values[j + 8] = a_val_16 * {};",
                 shift_right_scale(4)
             )
             .unwrap();
             writeln!(
-                &mut kernel,
-                "cached_a_values[j + 9] = {input_a}[j + y_offset + 17] * {};",
+                kernel,
+                "cached_a_values[j + 9] = a_val_17 * {};",
                 shift_right_scale(12)
             )
             .unwrap();
         }
-        writeln!(&mut kernel, "}}").unwrap();
+        writeln!(kernel, "}}").unwrap();
 
-        writeln!(
-            &mut kernel,
-            "let vector_total = vector_sum.x + vector_sum.y;"
-        )
-        .unwrap();
+        writeln!(kernel, "let vector_total = vector_sum.x + vector_sum.y;").unwrap();
 
-        writeln!(&mut kernel, "var block_offset = row_block_offset + i;").unwrap();
+        writeln!(kernel, "var block_offset = row_block_offset + i;").unwrap();
         if Q_N_SGEMV_CHUNK_SIZE > 1 {
             writeln!(
-                &mut kernel,
+                kernel,
                 "for (var offset = 0u; offset < {Q_N_SGEMV_CHUNK_SIZE}; offset += 1u) {{"
             )
             .unwrap();
         }
         {
-            block_dot(&mut kernel, op, input_b);
+            block_dot(kernel, op, input_b);
             let indexed = maybe_vec_storage_index(Q_N_SGEMV_CHUNK_SIZE, "sum", "offset");
-            writeln!(&mut kernel, "{indexed} += product;").unwrap();
+            writeln!(kernel, "{indexed} += product;").unwrap();
         }
         if Q_N_SGEMV_CHUNK_SIZE > 1 {
-            writeln!(&mut kernel, "block_offset += k_block_size;").unwrap();
-            writeln!(&mut kernel, "}}").unwrap();
+            writeln!(kernel, "block_offset += k_block_size;").unwrap();
+            writeln!(kernel, "}}").unwrap();
         }
 
-        writeln!(&mut kernel, "y_offset += {elements_per_block} * 16;").unwrap();
+        writeln!(kernel, "y_offset += {elements_per_block} * 16;").unwrap();
     }
-    writeln!(&mut kernel, "}}").unwrap();
+    writeln!(kernel, "}}").unwrap();
 
     // Get the sum among all threads in the subgroup
     writeln!(
-        &mut kernel,
+        kernel,
         "sum = {};",
         maybe_vec_storage_subgroup_add(Q_N_SGEMV_CHUNK_SIZE, "sum")
     )
@@ -161,35 +191,34 @@ pub(crate) fn q_n_sgemv(
 
     if Q_N_SGEMV_CHUNK_SIZE > 1 {
         writeln!(
-            &mut kernel,
+            kernel,
             "for (var offset = 0u; offset < {Q_N_SGEMV_CHUNK_SIZE}; offset += 1u) {{"
         )
         .unwrap();
     }
     {
-        writeln!(&mut kernel, "if {subgroup_local_index} == 0u {{").unwrap();
+        writeln!(kernel, "if {subgroup_local_index} == 0u {{").unwrap();
         {
             // Write the output to the output tensor if this is the first thread in the workgroup
-            write!(&mut kernel, "{output}[").unwrap();
+            write!(kernel, "{output}[").unwrap();
             let index = if Q_N_SGEMV_CHUNK_SIZE > 1 {
                 "row + offset".to_string()
             } else {
                 "row".to_string()
             };
-            output.strided_index(&mut kernel, ["0".to_string(), index]);
+            let output_indices = vec!["batch_idx".to_string(), "m_idx".to_string(), index];
+            output.strided_index(kernel, output_indices);
             let indexed = maybe_vec_storage_index(Q_N_SGEMV_CHUNK_SIZE, "sum", "offset");
-            writeln!(&mut kernel, "] = {indexed};").unwrap();
+            writeln!(kernel, "] = {indexed};").unwrap();
         }
-        writeln!(&mut kernel, "}}").unwrap();
+        writeln!(kernel, "}}").unwrap();
     }
     if Q_N_SGEMV_CHUNK_SIZE > 1 {
-        writeln!(&mut kernel, "}}").unwrap();
+        writeln!(kernel, "}}").unwrap();
     }
-
-    generic_kernel.push_body(&kernel);
 }
 
-fn block_dot(kernel: &mut String, op: &QMatMulOperation, input_b: &QMatrixInput) {
+fn block_dot(kernel: &mut GenericKernel, op: &QMatMulOperation, input_b: &QMatrixInput) {
     match op.matrix.datatype {
         fusor_gguf::GgmlType::F32 => todo!(),
         fusor_gguf::GgmlType::F16 => todo!(),
@@ -208,7 +237,7 @@ fn block_dot(kernel: &mut String, op: &QMatMulOperation, input_b: &QMatrixInput)
     }
 }
 
-fn block_dot_q4_0(kernel: &mut String, op: &QMatMulOperation, input_b: &QMatrixInput) {
+fn block_dot_q4_0(kernel: &mut GenericKernel, op: &QMatMulOperation, input_b: &QMatrixInput) {
     let dtype = op.input_datatype;
     writeln!(kernel, "var chunk_sum = vec4<{dtype}>();").unwrap();
 
@@ -266,7 +295,7 @@ fn block_dot_q4_0(kernel: &mut String, op: &QMatMulOperation, input_b: &QMatrixI
     writeln!(kernel, "let product = {dtype}({input_b}[block_offset].scale) * (chunk_sum.x + chunk_sum.y + chunk_sum.z + chunk_sum.w + vector_total * -8.0);").unwrap();
 }
 
-fn block_dot_q5_0(kernel: &mut String, op: &QMatMulOperation, input_b: &QMatrixInput) {
+fn block_dot_q5_0(kernel: &mut GenericKernel, op: &QMatMulOperation, input_b: &QMatrixInput) {
     let dtype = op.input_datatype;
     let elements_per_block = op.elements_per_block();
     writeln!(kernel, "var chunk_sum = vec4<{dtype}>();").unwrap();

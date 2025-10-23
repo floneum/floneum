@@ -16,18 +16,17 @@ mod self_output;
 use self_output::*;
 mod intermediate_layer;
 use intermediate_layer::*;
+mod embedding;
+mod layer_norm;
 
-use candle_core::{DType, Device, Result, Tensor};
-use candle_nn::VarBuilder;
+use fusor_core::{Device, FloatDataType, Result, Tensor, VarBuilder};
 use serde::Deserialize;
-
-pub(crate) const DTYPE: DType = DType::F32;
+use std::fmt::Debug;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum HiddenAct {
     Gelu,
-    GeluApproximate,
     Relu,
 }
 
@@ -42,12 +41,11 @@ impl HiddenActLayer {
         Self { act, span }
     }
 
-    fn forward(&self, xs: &Tensor) -> candle_core::Result<Tensor> {
+    fn forward<const R: usize, D: FloatDataType>(&self, xs: &Tensor<R, D>) -> Tensor<R, D> {
         let _enter = self.span.enter();
         match self.act {
             // https://github.com/huggingface/transformers/blob/cd4584e3c809bb9e1392ccd3fe38b40daba5519a/src/transformers/activations.py#L213
-            HiddenAct::Gelu => xs.gelu_erf(),
-            HiddenAct::GeluApproximate => xs.gelu(),
+            HiddenAct::Gelu => xs.gelu(),
             HiddenAct::Relu => xs.relu(),
         }
     }
@@ -70,7 +68,6 @@ pub struct Config {
     num_attention_heads: usize,
     intermediate_size: usize,
     hidden_act: HiddenAct,
-    hidden_dropout_prob: f32,
     max_position_embeddings: usize,
     type_vocab_size: usize,
     initializer_range: f64,
@@ -80,7 +77,6 @@ pub struct Config {
     position_embedding_type: PositionEmbeddingType,
     #[serde(default)]
     use_cache: bool,
-    classifier_dropout: Option<f64>,
     model_type: Option<String>,
 }
 
@@ -95,17 +91,25 @@ pub struct BertModel {
 
 impl BertModel {
     /// Load a new [`BertModel`] from [`VarBuilder`] with a [`Config`].
-    pub fn load(vb: VarBuilder, config: &Config) -> Result<Self> {
+    pub fn load(device: &Device, vb: &mut VarBuilder, config: &Config) -> Result<Self> {
         let (embeddings, encoder) = match (
-            BertEmbeddings::load(vb.pp("embeddings"), config),
-            BertEncoder::load(vb.pp("encoder"), config),
+            BertEmbeddings::load(device, vb, config),
+            BertEncoder::load(device, vb, config),
         ) {
             (Ok(embeddings), Ok(encoder)) => (embeddings, encoder),
             (Err(err), _) | (_, Err(err)) => {
                 if let Some(model_type) = &config.model_type {
                     if let (Ok(embeddings), Ok(encoder)) = (
-                        BertEmbeddings::load(vb.pp(format!("{model_type}.embeddings")), config),
-                        BertEncoder::load(vb.pp(format!("{model_type}.encoder")), config),
+                        BertEmbeddings::load(
+                            device,
+                            &mut vb.pp(format!("{model_type}.embeddings")),
+                            config,
+                        ),
+                        BertEncoder::load(
+                            device,
+                            &mut vb.pp(format!("{model_type}.encoder")),
+                            config,
+                        ),
                     ) {
                         (embeddings, encoder)
                     } else {
@@ -119,7 +123,7 @@ impl BertModel {
         Ok(Self {
             embeddings,
             encoder,
-            device: vb.device().clone(),
+            device: device.clone(),
             span: tracing::span!(tracing::Level::TRACE, "model"),
         })
     }
@@ -129,20 +133,15 @@ impl BertModel {
     /// input_ids: The token ids of the input.
     /// token_type_ids: The token type ids of the input. (this should be a tensor of 0s for embedding tasks)
     /// attention_mask: The attention mask of the input. This can be None for embedding tasks with a single sentence. If you pad the input with 0s, you will need to create an attention mask.
-    /// train: Whether to run the model in training mode or not.
     pub fn forward(
         &self,
-        input_ids: &Tensor,
-        token_type_ids: &Tensor,
-        attention_mask: Option<&Tensor>,
-        train: bool,
-    ) -> Result<Tensor> {
+        input_ids: &Tensor<2, u32>,
+        token_type_ids: &Tensor<2, u32>,
+        attention_mask: Option<&Tensor<2, u32>>,
+    ) -> Tensor<3, f32> {
         let _enter = self.span.enter();
-        let embedding_output = self.embeddings.forward(input_ids, token_type_ids, train)?;
-        let sequence_output = self
-            .encoder
-            .forward(&embedding_output, attention_mask, train)?;
-        Ok(sequence_output)
+        let embedding_output = self.embeddings.forward(input_ids, token_type_ids);
+        self.encoder.forward(&embedding_output, attention_mask)
     }
 
     pub(crate) fn max_seq_len(&self) -> usize {

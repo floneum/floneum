@@ -17,7 +17,7 @@ impl<D: DataType> Tensor<3, D> {
         let cos = cos.narrow(0, 0, sequence_length);
         let sin = sin.narrow(0, 0, sequence_length);
         let rotated = rotate_half(self.clone());
-        self * cos.broadcast(shape) + rotated * sin.broadcast(shape)
+        self * cos.broadcast_as(shape) + rotated * sin.broadcast_as(shape)
     }
 
     pub fn rope_interleaved(self, cos: Tensor<2, D>, sin: Tensor<2, D>) -> Tensor<3, D> {
@@ -28,11 +28,11 @@ impl<D: DataType> Tensor<3, D> {
         let cos = cos
             .narrow(0, 0, sequence_length)
             .reshape([sequence_length, embed / 2, 1])
-            .broadcast([height, sequence_length, embed / 2, 1]);
+            .broadcast_as([height, sequence_length, embed / 2, 1]);
         let sin = sin
             .narrow(0, 0, sequence_length)
             .reshape([sequence_length, embed / 2, 1])
-            .broadcast([height, sequence_length, embed / 2, 1]);
+            .broadcast_as([height, sequence_length, embed / 2, 1]);
 
         let x = self.reshape([height, sequence_length, embed / 2, 2]);
 

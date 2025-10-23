@@ -1,8 +1,8 @@
 use enumset::{EnumSet, EnumSetType};
 use fusor_gguf::GgmlType;
 use std::fmt::{Debug, Write};
-use std::sync::OnceLock;
-use wgpu::{BindGroupLayout, CommandEncoder, PipelineCompilationOptions, util::DeviceExt};
+use std::sync::{Arc, OnceLock};
+use wgpu::{BindGroupLayout, CommandEncoder, PipelineCompilationOptions};
 
 use crate::mir::inputs::{
     KernelInputValue, QBufferInput, QInfoInput, TensorBufferInput, TensorInfoInput,
@@ -72,16 +72,28 @@ impl GenericKernel {
         }
     }
 
+    pub(crate) fn clear(&mut self) {
+        self.workgroup_size = [1, 1, 1];
+        self.inputs.clear();
+        self.max_binding = 0;
+        self.registered_bindings.clear();
+        self.functions.clear();
+        self.max_function_id = 0;
+        self.globals.clear();
+        self.max_global_id = 0;
+        self.enabled_builtins.clear();
+        self.quantized_type_definitions.clear();
+        self.kernel = OnceLock::new();
+        self.body.clear();
+        self.name.clear();
+    }
+
     pub(crate) fn pre_register_binding(&mut self, binding: u32) {
         self.registered_bindings.push(binding);
     }
 
     pub(crate) fn name_mut(&mut self) -> &mut String {
         &mut self.name
-    }
-
-    pub(crate) fn push_body(&mut self, body: &str) {
-        self.body.push_str(body);
     }
 
     pub(crate) fn set_workgroup_size(&mut self, workgroup_size: impl Into<WorkgroupShape>) {
@@ -215,39 +227,39 @@ impl GenericKernel {
         global
     }
 
-    pub(crate) fn subgroup_size(&mut self) -> String {
+    pub(crate) fn subgroup_size(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::SubgroupSize;
-        "subgroup_size".to_string()
+        "subgroup_size"
     }
 
-    pub(crate) fn global_id(&mut self) -> String {
+    pub(crate) fn global_id(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::GlobalId;
-        "global_id".to_string()
+        "global_id"
     }
 
-    pub(crate) fn subgroup_local_index(&mut self) -> String {
+    pub(crate) fn subgroup_local_index(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::SubgroupLocalIndex;
-        "subgroup_local_id".to_string()
+        "subgroup_local_id"
     }
 
-    pub(crate) fn subgroup_index(&mut self) -> String {
+    pub(crate) fn subgroup_index(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::SubgroupIndex;
-        "subgroup_id".to_string()
+        "subgroup_id"
     }
 
-    pub(crate) fn workgroup_local_index(&mut self) -> String {
+    pub(crate) fn workgroup_local_index(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::WorkgroupLocalIndex;
-        "workgroup_local_id".to_string()
+        "workgroup_local_id"
     }
 
-    pub(crate) fn subgroups_per_workgroup(&mut self) -> String {
+    pub(crate) fn subgroups_per_workgroup(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::SubgroupsPerWorkgroup;
-        "subgroups_per_workgroup".to_string()
+        "subgroups_per_workgroup"
     }
 
-    pub(crate) fn workgroup_index(&mut self) -> String {
+    pub(crate) fn workgroup_index(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::WorkgroupIndex;
-        "workgroup_index".to_string()
+        "workgroup_index"
     }
 
     pub(crate) fn bind_group_layout(&self, device: &crate::Device) -> BindGroupLayout {
@@ -403,7 +415,7 @@ impl GenericKernel {
         &self,
         device: &crate::Device,
         bind_group_layout: &BindGroupLayout,
-        inputs: Vec<KernelInputValue>,
+        inputs: &[KernelInputValue],
     ) -> wgpu::BindGroup {
         assert_eq!(self.inputs.len(), inputs.len(), "Input count mismatch");
 
@@ -412,32 +424,25 @@ impl GenericKernel {
         fn create_u32_iter_buffer(
             device: &crate::Device,
             data: impl IntoIterator<Item = u32>,
-        ) -> wgpu::Buffer {
-            device
-                .wgpu_device()
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("u32_iter_buffer"),
-                    contents: bytemuck::cast_slice(&data.into_iter().collect::<Vec<_>>()),
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                })
+            len: u64,
+        ) -> Arc<wgpu::Buffer> {
+            device.create_buffer_init_iter(
+                data.into_iter().flat_map(|x| x.to_ne_bytes()),
+                wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                len * 4,
+            )
         }
         let create_u32_buffer = |device: &crate::Device, data: u32| {
-            device
-                .wgpu_device()
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("u32_buffer"),
-                    contents: bytemuck::bytes_of(&data),
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                })
+            device.create_buffer_init(
+                bytemuck::bytes_of(&data),
+                wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            )
         };
         let create_f32_buffer = |device: &crate::Device, data: f32| {
-            device
-                .wgpu_device()
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("f32_buffer"),
-                    contents: bytemuck::bytes_of(&data),
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                })
+            device.create_buffer_init(
+                bytemuck::bytes_of(&data),
+                wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            )
         };
         for (input, value) in self.inputs.iter().zip(inputs.iter()) {
             match (&input.ty, value) {
@@ -452,7 +457,11 @@ impl GenericKernel {
                     // Tensor info
                     owned_entries.push((
                         matrix_input.info_binding,
-                        create_u32_iter_buffer(device, matrix.iter().map(|x| *x as u32)),
+                        create_u32_iter_buffer(
+                            device,
+                            matrix.iter().map(|x| *x as u32),
+                            matrix.len() as _,
+                        ),
                     ));
                 }
                 (
@@ -482,6 +491,7 @@ impl GenericKernel {
                                     ]
                                 }),
                             ),
+                            (1 + tensor_input.rank * 2) as _,
                         ),
                     ));
                 }
@@ -514,22 +524,22 @@ impl GenericKernel {
     pub(crate) fn run(
         &self,
         device: &Device,
-        inputs: Vec<KernelInputValue>,
+        inputs: &[KernelInputValue],
         command_encoder: &mut CommandEncoder,
         workgroup_dispatch_size: [u32; 3],
     ) {
-        let bind_group_layout = self.bind_group_layout(device);
-        let bind_group = self.create_bind_group(device, &bind_group_layout, inputs);
-        let pipeline = self.compute_pipeline(device, &bind_group_layout);
+        let [workgroup_size_x, workgroup_size_y, workgroup_size_z] = workgroup_dispatch_size;
+        if workgroup_size_x * workgroup_size_y * workgroup_size_z > 0 {
+            let bind_group_layout = self.bind_group_layout(device);
+            let bind_group = self.create_bind_group(device, &bind_group_layout, inputs);
+            let pipeline = self.compute_pipeline(device, &bind_group_layout);
 
-        {
             let mut cpass = command_encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some(&self.name),
                 timestamp_writes: None,
             });
             cpass.set_pipeline(&pipeline);
             cpass.set_bind_group(0, &bind_group, &[]);
-            let [workgroup_size_x, workgroup_size_y, workgroup_size_z] = workgroup_dispatch_size;
             cpass.dispatch_workgroups(workgroup_size_x, workgroup_size_y, workgroup_size_z);
         }
     }
@@ -565,6 +575,9 @@ impl GenericKernel {
 
     fn kernel(&self, f: &mut String) -> std::fmt::Result {
         writeln!(f, "enable f16;")?;
+
+        #[cfg(target_arch = "wasm32")]
+        writeln!(f, "enable subgroups;")?;
 
         self.declare_quantized_types(f)?;
 
@@ -669,5 +682,21 @@ impl GenericKernel {
         writeln!(f, "}}")?;
 
         Ok(())
+    }
+}
+
+impl Write for GenericKernel {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        self.body.push_str(s);
+        Ok(())
+    }
+
+    fn write_char(&mut self, c: char) -> std::fmt::Result {
+        self.body.push(c);
+        Ok(())
+    }
+
+    fn write_fmt(&mut self, args: std::fmt::Arguments) -> std::fmt::Result {
+        self.body.write_fmt(args)
     }
 }

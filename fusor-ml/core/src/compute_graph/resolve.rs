@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::sync::Arc;
 
 use rustc_hash::FxHashSet;
@@ -70,30 +71,45 @@ impl<'a> Resolver<'a> {
             let constraint = operation.workgroup_shape_constraints(&self.graph.device);
             let mut new_merged = current_constraints.clone();
             new_merged.merge(&constraint);
-            let old_best = current_constraints.solve(&limits).unwrap();
+            let old_best = current_constraints.solve(&limits).unwrap_or_else(|| {
+                panic!(
+                    "Failed to find a valid workgroup shape for constraints {current_constraints:?}"
+                )
+            });
             let mut extend = self.should_extend_kernel(new_inputs.clone(), &inputs);
             extend &= new_merged.solve(&limits).is_some();
-            current_constraints = new_merged;
-            if !extend {
-                let kernel = std::mem::take(&mut kernel);
-                let inputs = std::mem::take(&mut inputs);
-                let all_input_values = std::mem::take(&mut all_input_values);
-                let pending_operations = std::mem::take(&mut pending_operations);
+            if extend {
+                current_constraints = new_merged;
+            } else {
                 self.flush_operations(
-                    kernel,
-                    pending_operations,
-                    inputs,
-                    all_input_values,
+                    &mut kernel,
+                    &pending_operations,
+                    &inputs,
+                    &all_input_values,
                     old_best,
                 );
-                current_constraints.clear();
+                pending_operations.clear();
+                all_input_values.clear();
+                inputs.clear();
+                kernel.clear();
+                current_constraints = constraint;
             }
             // Map layout isn't really a kernel. Resolve it immediately
-            if let AnyComputeKey::MapLayout(key) = node {
+            let map_layout = if let AnyComputeKey::MapLayout(key) = node {
                 let map_layout = self.graph.nodes.map_layout[&key].clone();
+                Some(map_layout)
+            }
+            // Try to lower the resize immediately
+            else if let AnyComputeKey::Resize(key) = node {
+                let resize = self.graph.nodes.resize[&key].clone();
+                resize.lower(self.graph)
+            } else {
+                None
+            };
+            if let Some(map_layout) = map_layout {
                 let result = map_layout.run(self.graph);
                 // Cache the result
-                self.graph.cached_results.insert(key.into(), result);
+                self.graph.cached_results.insert(node, result);
             } else {
                 self.push_operation(
                     new_inputs,
@@ -104,7 +120,7 @@ impl<'a> Resolver<'a> {
                     &mut all_input_values,
                     &mut pending_operations,
                 );
-            }
+            };
         }
 
         if !pending_operations.is_empty() {
@@ -114,10 +130,10 @@ impl<'a> Resolver<'a> {
                 )
             });
             self.flush_operations(
-                kernel,
-                pending_operations,
-                inputs,
-                all_input_values,
+                &mut kernel,
+                &pending_operations,
+                &inputs,
+                &all_input_values,
                 old_best,
             );
         }
@@ -130,6 +146,20 @@ impl<'a> Resolver<'a> {
         new_inputs: Vec<MirValue>,
         inputs: &[Vec<MirValue>],
     ) -> bool {
+        if inputs
+            .iter()
+            .flat_map(|inputs| inputs.iter().map(MirValue::input_values))
+            .sum::<usize>()
+            + new_inputs.iter().map(MirValue::input_values).sum::<usize>()
+            > self
+                .graph
+                .device
+                .wgpu_device()
+                .limits()
+                .max_storage_buffers_per_shader_stage as _
+        {
+            return false;
+        }
         for input in &new_inputs {
             for other in inputs.iter().flatten() {
                 if let (MirValue::Tensor(input_tensor), MirValue::Tensor(other_tensor)) =
@@ -176,34 +206,42 @@ impl<'a> Resolver<'a> {
 
     fn flush_operations(
         &mut self,
-        mut kernel: GenericKernel,
-        queued_operations: Vec<(AnyComputeKey, Arc<dyn Operation>)>,
-        inputs: Vec<Vec<MirValue>>,
-        all_input_values: Vec<KernelInputValue>,
+        mut kernel: &mut GenericKernel,
+        queued_operations: &[(AnyComputeKey, Arc<dyn Operation>)],
+        inputs: &[Vec<MirValue>],
+        all_input_values: &[KernelInputValue],
         workgroup_shape: workgroup_shape::WorkgroupShape,
     ) {
         let mut max_dispatch_size = [0; 3];
-        for ((key, operation), inputs) in queued_operations.into_iter().zip(inputs) {
+        for ((key, operation), inputs) in queued_operations.iter().zip(inputs) {
             // Map layout isn't really a kernel. Skip it
             if matches!(key, AnyComputeKey::MapLayout(_)) {
                 continue;
             }
 
-            let dispatch_size = operation.dispatch_size(&workgroup_shape, &inputs);
+            let dispatch_size = operation.dispatch_size(&workgroup_shape, inputs);
             for (new, max) in dispatch_size.iter().zip(max_dispatch_size.iter_mut()) {
                 *max = (*max).max(*new);
             }
-            kernel.push_body("{");
-            operation.build_kernel(self.graph, &workgroup_shape, &inputs, &mut kernel);
+            if cfg!(debug_assertions) {
+                writeln!(&mut kernel, "{{ // start {}", operation.name()).unwrap();
+            } else {
+                writeln!(&mut kernel, "{{").unwrap();
+            }
+            operation.build_kernel(self.graph, &workgroup_shape, inputs, kernel);
             let name = kernel.name_mut();
             if !name.is_empty() {
                 *name += "->";
             }
             *name += &operation.name();
-            kernel.push_body("}");
-            // Check if that makes any of this nodes dependents dead
+            if cfg!(debug_assertions) {
+                writeln!(&mut kernel, "}} // end {}", operation.name()).unwrap();
+            } else {
+                writeln!(&mut kernel, "}}").unwrap();
+            }
+            // Check if that makes any of this node's dependencies dead
             let mut dependencies = Vec::new();
-            visit_dependencies(&self.graph.nodes, key, |dependent_key| {
+            visit_dependencies(&self.graph.nodes, *key, |dependent_key| {
                 dependencies.push(dependent_key);
             });
             for dependency in dependencies {
