@@ -62,20 +62,12 @@ impl Into<SlidingWindow> for [usize; 3] {
 impl<const R: usize, D: DataType> Tensor<R, D> {
     /// Create a sliding window view of a tensor using strided views (zero-copy)
     ///
-    /// Creates a new tensor with an additional dimension containing sliding windows.
-    /// This operation doesn't allocate new memory - it creates a strided view into
-    /// the same underlying buffer.
-    ///
-    /// For example, if the input is (batch, channels, length) and we create windows
-    /// on axis 2, the output will be (batch, channels, num_windows, window_size).
-    ///
     /// # Arguments
-    /// * `window_size` - Size of each window
-    /// * `step` - Step size between consecutive windows (stride)
-    /// * `axis` - Axis along which to create windows
-    ///
+    /// - `windows`: Array of SlidingWindow configurations specifying the axis, window size, and step
     /// # Returns
-    /// A new tensor with rank R+1 containing the windowed view
+    /// - A new tensor with increased rank, with new dimensions appended for each sliding window
+    /// # Panics
+    /// - If any of the specified axes are out of bounds or not unique
     pub fn sliding_window_view<const DIFF: usize, const R2: usize>(
         &self,
         windows: [impl Into<SlidingWindow>; DIFF],
@@ -86,12 +78,18 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
         let shape = *self.shape();
         let mut windows: [SlidingWindow; DIFF] = windows.map(|w| w.into());
         windows.sort_by_key(|w| w.axis);
-        windows.windows(2).for_each(|w_pair| {
-            assert!(
-                w_pair[0].axis != w_pair[1].axis,
-                "Sliding window axes must be unique"
-            );
-        });
+        #[cfg(debug_assertions)]
+        {
+            windows.iter().for_each(|w| {
+                assert!(w.axis < R, "Sliding window axis out of bounds");
+            });
+            windows.windows(2).for_each(|w_pair| {
+                assert!(
+                    w_pair[0].axis != w_pair[1].axis,
+                    "Sliding window axes must be unique"
+                );
+            });
+        }
 
         self.add_map_layout(MapLayoutOperation::new(
             self.key(),

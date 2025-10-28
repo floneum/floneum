@@ -4,6 +4,7 @@ mod chunk;
 mod gelu;
 mod index;
 mod narrow;
+mod pool;
 mod relu;
 mod rms_norm;
 mod rope;
