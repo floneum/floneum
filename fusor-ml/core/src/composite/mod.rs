@@ -8,6 +8,7 @@ mod relu;
 mod rms_norm;
 mod rope;
 mod silu;
+mod sliding_window_view;
 mod softmax;
 mod sqr;
 mod squeeze;
