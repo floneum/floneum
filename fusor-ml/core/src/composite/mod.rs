@@ -1,6 +1,7 @@
 mod arange;
 mod cat;
 mod chunk;
+mod conv;
 mod gelu;
 mod index;
 mod narrow;
@@ -16,4 +17,5 @@ mod squeeze;
 mod to_vec;
 mod unsqueeze;
 mod where_cond;
+mod zeros;
 mod zeros_like;
