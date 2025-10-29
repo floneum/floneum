@@ -48,13 +48,13 @@ use std::{
     time::Duration,
 };
 
-use candle_transformers::models::whisper::{self as m};
-
 use futures_util::{Stream, StreamExt};
 
 mod model;
 mod source;
 pub use source::*;
+
+use crate::config::SAMPLE_RATE;
 mod audio;
 mod config;
 mod quantized;
@@ -1032,7 +1032,7 @@ where
     <S as Iterator>::Item: rodio::Sample,
     f32: FromSample<<S as Iterator>::Item>,
 {
-    let resample = UniformSourceIterator::new(input, 1, m::SAMPLE_RATE as u32);
+    let resample = UniformSourceIterator::new(input, 1, SAMPLE_RATE as u32);
     let pass_filter = resample.low_pass(3000).high_pass(200).convert_samples();
 
     pass_filter.collect::<Vec<f32>>()

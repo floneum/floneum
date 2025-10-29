@@ -26,15 +26,17 @@ enum ModelType {
 }
 
 impl ModelType {
-    fn load(
+    async fn load(
         weights_filename: &PathBuf,
         device: &Device,
         config: Config,
     ) -> fusor_core::Result<Self> {
-        let mut vb = fusor_core::VarBuilder::from_gguf(weights_filename, device)?;
-        Ok(Self::Quantized(crate::quantized::Whisper::load(
-            device, &mut vb, config,
-        )?))
+        let file = std::fs::File::open(weights_filename)?;
+        let reader = std::io::BufReader::new(file);
+        let mut vb = fusor_core::VarBuilder::from_gguf(&mut reader)?;
+        Ok(Self::Quantized(
+            crate::quantized::Whisper::load(device, &mut vb, config).await?,
+        ))
     }
 
     fn config(&self) -> &Config {
@@ -89,13 +91,13 @@ pub(crate) struct WhisperInner {
 }
 
 impl WhisperInner {
-    pub(crate) fn new(
+    pub(crate) async fn new(
         settings: WhisperBuilder,
         weights_filename: PathBuf,
         tokenizer_filename: PathBuf,
         config_filename: PathBuf,
     ) -> Result<Self, WhisperLoadingError> {
-        let device = accelerated_device_if_available()?;
+        let device = Device::new().await?;
         let tokenizer =
             Tokenizer::from_file(tokenizer_filename).map_err(WhisperLoadingError::LoadTokenizer)?;
         let config: Config =
@@ -370,7 +372,7 @@ impl Decoder {
                 }
                 .i(0)?
                 .i(0)?;
-                no_speech_prob = &logits
+                no_speech_prob = logits
                     .softmax(0)
                     .i(self.no_speech_token as usize)
                     .to_scalar::<f32>() as f64;
@@ -402,7 +404,7 @@ impl Decoder {
                 })?;
                 distr.sample(&mut self.rng) as u32
             } else {
-                let logits = softmax(&logits, 0)?;
+                let logits = logits.softmax(0)?;
                 let logits_v: Vec<f32> =
                     self.apply_timestamp_rules(logits, &tokens, task.without_timestamps)?;
                 logits_v
@@ -421,8 +423,8 @@ impl Decoder {
             queued_tokens.push(next_token);
             let prob = logits
                 .softmax_last_dim()
-                .i(next_token as usize)?
-                .to_scalar::<f32>()? as f64;
+                .i(next_token as usize)
+                .to_scalar::<f32>() as f64;
             // If we have read the maximum number of tokens, stop regardless of the eot token
             // Or if word level timestamps are disabled, stop as soon was we reach the eot token
             if tokens.len() > self.model.config().max_target_positions
@@ -683,7 +685,7 @@ impl Decoder {
 
 pub fn token_id(tokenizer: &Tokenizer, token: &str) -> fusor_core::Result<u32> {
     match tokenizer.token_to_id(token) {
-        None => fusor_core::bail!("no token-id for {token}"),
+        None => panic!("no token-id for {token}"),
         Some(id) => Ok(id),
     }
 }

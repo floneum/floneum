@@ -15,7 +15,7 @@ fusor-core.workspace = true
 fusor-gguf.workspace = true
 byteorder = "1.4.3"
 hf-hub = { version = "0.4.0", default-features = false }
-tokenizers.workspace = true
+tokenizers = { workspace = true, features = ["fancy-regex"] }
 serde_json = "1.0.107"
 hound = "3.5"
 rodio = "0.20.1"
@@ -31,7 +31,7 @@ half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_di
 kalosm-common = { workspace = true }
 kalosm-language-model.workspace = true
 kalosm-model-types.workspace = true
-serde = { version = "1.0.209", optional = true }
+serde = { version = "1.0.209" }
 flate2 = "1.0.35"
 rayon = "1.10.0"
 
@@ -41,6 +41,3 @@ anyhow.workspace = true
 tracing-subscriber = "0.3.19"
 tokio = { version = "1.32.0", features = ["full"] }
 reqwest = "0.12.15"
-
-[features]
-serde = ["dep:serde"]

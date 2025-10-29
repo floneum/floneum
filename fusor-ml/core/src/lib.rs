@@ -50,4 +50,10 @@ pub enum Error {
     VarBuilder(String),
 }
 
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Error::GgufError(e.into())
+    }
+}
+
 pub type Result<T, E = Error> = std::result::Result<T, E>;

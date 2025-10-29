@@ -1,31 +1,30 @@
 // Based on https://github.com/nicksenger/candle/tree/feat/whisper-dtw with some optimizations and refactoring
 // https://rtavenar.github.io/blog/dtw.html is a good resource for understanding the dtw algorithm
 
-use candle_nn::ops::softmax_last_dim;
-use candle_transformers::models::whisper::{HOP_LENGTH, N_FRAMES, SAMPLE_RATE};
 use core::f32;
-use fusor_core::{CpuStorage, IndexOp, InplaceOp1, Tensor, D};
+use fusor_core::Tensor;
 use rayon::iter::*;
 use std::num::NonZeroUsize;
+
+use crate::config::{HOP_LENGTH, N_FRAMES, SAMPLE_RATE};
 
 /// Returns the token-level timestamps as a tensor of shape batch x timestamps
 pub(super) fn extract_timestamps(
     // A list of (layer, head) pairs to use for timestamp determination
     alignment_heads: &[[usize; 2]],
-    cross_attentions: &[Tensor],
+    cross_attentions: &[Tensor<2, f32>],
     filter_width: NonZeroUsize,
     n_frames: usize,
     mask: Vec<Vec<bool>>,
 ) -> fusor_core::Result<Vec<Vec<f32>>> {
     // Select relevant cross-attention heads
     let weights = Tensor::stack(
-        &alignment_heads
+        alignment_heads
             .iter()
             .copied()
-            .filter_map(|[layer, head]| cross_attentions.get(layer)?.i((.., head)).ok())
-            .collect::<Vec<_>>(),
+            .filter_map(|[layer, head]| cross_attentions.get(layer)?.i((.., head)).ok()),
         0,
-    )?
+    )
     .permute((1, 0, 2, 3))?
     .narrow(3, 0, n_frames.min(N_FRAMES) / 2)?;
 
@@ -35,7 +34,7 @@ pub(super) fn extract_timestamps(
     }
 
     // Normalize
-    let weights = softmax_last_dim(&weights.contiguous()?)?;
+    let weights = weights.softmax_last_dim();
 
     // Smooth
     let weights = &median_filter(
@@ -50,7 +49,7 @@ pub(super) fn extract_timestamps(
     // Do the timewarp
     ((0..weights.dim(0)?).map(|batch_idx| {
         // Exclude any tokens in the mask
-        let batch_index_cost = cost.neg()?.i(batch_idx)?.to_dtype(fusor_core::DType::F32)?;
+        let batch_index_cost = cost.neg().i(batch_idx).cast::<f32>();
         let batch_index_cost = batch_index_cost.to_vec2::<f32>()?;
         let batch_index_cost = batch_index_cost
             .into_iter()
@@ -184,33 +183,34 @@ fn median_filter(filter_width: NonZeroUsize, weights: Tensor) -> fusor_core::Res
     }
 
     medians.par_iter().try_for_each(|weights| {
-        struct Median {
-            pad_width: usize,
-        }
+        // struct Median {
+        //     pad_width: usize,
+        // }
 
-        impl InplaceOp1 for Median {
-            fn name(&self) -> &'static str {
-                "median"
-            }
+        // impl InplaceOp1 for Median {
+        //     fn name(&self) -> &'static str {
+        //         "median"
+        //     }
 
-            fn cpu_fwd(
-                &self,
-                storage: &mut fusor_core::CpuStorage,
-                layout: &fusor_core::Layout,
-            ) -> fusor_core::Result<()> {
-                assert!(layout.is_contiguous());
-                if let CpuStorage::F32(storage) = storage {
-                    storage.select_nth_unstable_by(self.pad_width, |a, b| {
-                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-                    });
-                } else {
-                    unimplemented!()
-                }
+        //     fn cpu_fwd(
+        //         &self,
+        //         storage: &mut fusor_core::CpuStorage,
+        //         layout: &fusor_core::Layout,
+        //     ) -> fusor_core::Result<()> {
+        //         assert!(layout.is_contiguous());
+        //         if let CpuStorage::F32(storage) = storage {
+        //             storage.select_nth_unstable_by(self.pad_width, |a, b| {
+        //                 a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+        //             });
+        //         } else {
+        //             unimplemented!()
+        //         }
 
-                Ok(())
-            }
-        }
-        weights.inplace_op1(&Median { pad_width })
+        //         Ok(())
+        //     }
+        // }
+        // weights.inplace_op1(&Median { pad_width })
+        todo!()
     })?;
 
     Tensor::cat(&medians, 3)?

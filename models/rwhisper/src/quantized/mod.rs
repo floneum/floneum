@@ -6,7 +6,6 @@ use fusor_core::{
     layers::{Conv1d, Conv1dConfig, Embedding, LayerNorm, Linear},
     Device, Result, Tensor, VarBuilder,
 };
-use kalosm_common::{AttentionMask, KvCache, MaskCache, TensorCache};
 use timestamps::extract_timestamps;
 
 use crate::config::Config;
@@ -22,8 +21,8 @@ fn conv1d(
 ) -> Result<Conv1d> {
     let weight = vb
         .get((out_channels, in_channels, kernel_size), "weight")?
-        .dequantize()?;
-    let bias = vb.get(out_channels, "bias")?.dequantize()?;
+        .dequantize();
+    let bias = vb.get(out_channels, "bias")?.dequantize();
     Ok(Conv1d::new(weight, Some(bias), config))
 }
 
@@ -40,7 +39,6 @@ impl MultiHeadAttentionCache {
 }
 
 // https://github.com/openai/whisper/blob/f572f2161ba831bae131364c3bffdead7af6d210/whisper/model.py#L62
-#[derive(Debug, Clone)]
 struct MultiHeadAttention {
     query: Linear,
     key: Linear,
@@ -75,8 +73,8 @@ impl MultiHeadAttention {
         x: &Tensor,
         cache: Option<&mut MultiHeadAttentionCache>,
     ) -> Result<(Tensor, Tensor)> {
-        let key_states = self.key.forward(x)?;
-        let value_states = self.value.forward(x)?;
+        let key_states = self.key.forward(x);
+        let value_states = self.value.forward(x);
         let (key_states, value_states) = match cache {
             None => (key_states, value_states),
             Some(cache) => cache.kv_cache.append(&key_states, &value_states)?,
@@ -90,8 +88,8 @@ impl MultiHeadAttention {
         kv: (Tensor, Tensor),
         mask: Option<&AttentionMask>,
         attention_output: Option<&mut TensorCache>,
-    ) -> Result<Tensor> {
-        let query_states = self.query.forward(query)?;
+    ) -> Tensor {
+        let query_states = self.query.forward(query);
         let (key_states, value_states) = &kv;
         let wv = self.qkv_attention(
             &query_states,
@@ -99,36 +97,35 @@ impl MultiHeadAttention {
             value_states,
             mask,
             attention_output,
-        )?;
-        let out = self.out.forward(&wv)?;
-        Ok(out)
+        );
+        self.out.forward(&wv)
     }
 
-    fn reshape_head(&self, x: &Tensor) -> Result<Tensor> {
-        let (n_batch, n_ctx, n_state) = x.dims3()?;
+    fn reshape_head(&self, x: &Tensor<3, f32>) -> Tensor<4, f32> {
+        let [n_batch, n_ctx, n_state] = *x.shape();
         let target_dims = &[n_batch, n_ctx, self.n_head, n_state / self.n_head];
         x.reshape(target_dims)?.transpose(1, 2)
     }
 
     fn qkv_attention(
         &self,
-        q: &Tensor,
-        k: &Tensor,
-        v: &Tensor,
+        q: &Tensor<3, f32>,
+        k: &Tensor<3, f32>,
+        v: &Tensor<3, f32>,
         mask: Option<&AttentionMask>,
         attention_output: Option<&mut TensorCache>,
     ) -> Result<Tensor> {
-        let (_, _, n_state) = q.dims3()?;
-        let scale = ((n_state / self.n_head) as f64).powf(-0.25);
-        let q = (self.reshape_head(q)? * scale)?;
-        let k = (self.reshape_head(k)?.transpose(2, 3)? * scale)?;
-        let v = self.reshape_head(v)?.contiguous()?;
+        let [_, _, n_state] = *q.shape();
+        let scale = ((n_state / self.n_head) as f64).powf(-0.25) as f32;
+        let q = (self.reshape_head(q) * scale);
+        let k = (self.reshape_head(k).transpose(2, 3) * scale);
+        let v = self.reshape_head(v);
         let mut qk = {
             let _enter = self.matmul_span.enter();
-            q.matmul(&k)?
+            q.mat_mul(&k)
         };
         if let Some(mask) = mask {
-            mask.forward(&mut qk)?
+            mask.forward(&mut qk)
         }
         if let Some(out) = attention_output {
             out.append(&qk).unwrap();
@@ -149,18 +146,18 @@ impl MultiHeadAttention {
 
 struct ResidualAttentionBlockCache {
     attn: MultiHeadAttentionCache,
-    feature_attn_cache: Option<(Tensor, Tensor)>,
+    feature_attn_cache: Option<(Tensor<2, f32>, Tensor<2, f32>)>,
 }
 
 // https://github.com/openai/whisper/blob/f572f2161ba831bae131364c3bffdead7af6d210/whisper/model.py#L111
 #[derive(Debug, Clone)]
 struct ResidualAttentionBlock {
     attn: MultiHeadAttention,
-    attn_ln: LayerNorm,
-    cross_attn: Option<(MultiHeadAttention, LayerNorm)>,
+    attn_ln: LayerNorm<2>,
+    cross_attn: Option<(MultiHeadAttention, LayerNorm<2>)>,
     mlp_linear1: Linear,
     mlp_linear2: Linear,
-    mlp_ln: LayerNorm,
+    mlp_ln: LayerNorm<2>,
     span: tracing::Span,
 }
 
@@ -176,7 +173,8 @@ impl ResidualAttentionBlock {
         let attn = MultiHeadAttention::load(n_state, n_head, device, &mut vb.pp("self_attn"))?;
         let attn_ln = LayerNorm::load(device, &mut vb.pp("self_attn_layer_norm"), 1e-5)?;
         let cross_attn = if cross_attn {
-            let cross_attn = MultiHeadAttention::load(n_state, n_head, device, &mut vb.pp("encoder_attn"))?;
+            let cross_attn =
+                MultiHeadAttention::load(n_state, n_head, device, &mut vb.pp("encoder_attn"))?;
             let cross_attn_ln =
                 LayerNorm::load(device, &mut vb.pp("encoder_attn_layer_norm"), 1e-5)?;
             Some((cross_attn, cross_attn_ln))
@@ -248,9 +246,9 @@ fn sinusoids(length: usize, channels: usize, device: &Device) -> Result<Tensor<2
 pub struct AudioEncoder {
     conv1: Conv1d,
     conv2: Conv1d,
-    positional_embedding: Tensor,
+    positional_embedding: Tensor<2, f32>,
     blocks: Vec<ResidualAttentionBlock>,
-    ln_post: LayerNorm,
+    ln_post: LayerNorm<2>,
     span: tracing::Span,
     conv1_span: tracing::Span,
     conv2_span: tracing::Span,
@@ -281,7 +279,13 @@ impl AudioEncoder {
         let positional_embedding = sinusoids(n_ctx, n_state, vb.device())?;
         let blocks = (0..cfg.encoder_layers)
             .map(|i| {
-                ResidualAttentionBlock::load(n_state, n_head, false, device, &mut vb.pp(format!("layers.{i}")))
+                ResidualAttentionBlock::load(
+                    n_state,
+                    n_head,
+                    false,
+                    device,
+                    &mut vb.pp(format!("layers.{i}")),
+                )
             })
             .collect::<Result<Vec<_>>>()?;
         let ln_post = LayerNorm::load(device, &mut vb.pp("layer_norm"), 1e-5)?;
@@ -335,9 +339,9 @@ impl TextDecoderCache {
 #[derive(Debug, Clone)]
 pub struct TextDecoder {
     token_embedding: Embedding,
-    positional_embedding: Tensor,
+    positional_embedding: Tensor<2, f32>,
     blocks: Vec<ResidualAttentionBlock>,
-    ln: LayerNorm,
+    ln: LayerNorm<2>,
     max_target_positions: usize,
     mask_cache: Arc<MaskCache>,
     span: tracing::Span,
