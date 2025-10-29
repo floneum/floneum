@@ -173,6 +173,13 @@ impl AttentionMask {
         self.mask.add_(&attention_scores)
     }
 
+    pub fn forward<const R: usize>(&self, attention_scores: &mut Tensor<R, f32>)
+    where
+        (Tensor<2, f32>, Tensor<R, f32>): MaxRank<R, f32>,
+    {
+        *attention_scores = self.apply(attention_scores);
+    }
+
     pub fn mask(&self) -> &Tensor<2, f32> {
         &self.mask
     }
@@ -186,7 +193,12 @@ pub struct MaskCache {
 
 impl MaskCache {
     /// Get or create a causal mask for the given sequence length
-    pub fn get_mask(&self, seq_len: usize, device: &crate::Device) -> AttentionMask {
+    pub fn get_mask(
+        &self,
+        seq_len: usize,
+        index_pos: usize,
+        device: &crate::Device,
+    ) -> AttentionMask {
         // Check if we have it cached
         {
             let masks = self.masks.read().unwrap();

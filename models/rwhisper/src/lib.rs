@@ -544,8 +544,10 @@ impl WhisperBuilder {
             .await?;
 
         let (rx, tx) = std::sync::mpsc::channel();
+        let mut model = WhisperInner::new(self, filename, tokenizer_filename, config)
+            .await
+            .unwrap();
         let thread = std::thread::spawn(move || {
-            let mut model = WhisperInner::new(self, filename, tokenizer_filename, config).unwrap();
             while let Ok(message) = tx.recv() {
                 match message {
                     WhisperMessage::Kill => return,

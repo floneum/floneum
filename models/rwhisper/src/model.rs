@@ -26,17 +26,17 @@ enum ModelType {
 }
 
 impl ModelType {
-    async fn load(
+    fn load(
         weights_filename: &PathBuf,
         device: &Device,
         config: Config,
     ) -> fusor_core::Result<Self> {
         let file = std::fs::File::open(weights_filename)?;
-        let reader = std::io::BufReader::new(file);
+        let mut reader = std::io::BufReader::new(file);
         let mut vb = fusor_core::VarBuilder::from_gguf(&mut reader)?;
-        Ok(Self::Quantized(
-            crate::quantized::Whisper::load(device, &mut vb, config).await?,
-        ))
+        Ok(Self::Quantized(crate::quantized::Whisper::load(
+            device, &mut vb, config,
+        )?))
     }
 
     fn config(&self) -> &Config {
@@ -152,12 +152,8 @@ impl WhisperInner {
     ) {
         let mel = audio::pcm_to_mel(&self.config, &pcm_data, &self.mel_filters);
         let mel_len = mel.len();
-        let mel = Tensor::from_vec(
-            mel,
-            (self.config.num_mel_bins, mel_len / self.config.num_mel_bins),
-            &self.device,
-        )
-        .unwrap();
+        let mel = Tensor::new(&self.device, &mel)
+            .reshape([self.config.num_mel_bins, mel_len / self.config.num_mel_bins]);
 
         if let Some(language) = language {
             if let Err(err) = self.decoder.set_language_token(language) {
@@ -220,7 +216,7 @@ impl Decoder {
                 }
             })
             .collect();
-        let suppress_tokens = Tensor::new(suppress_tokens.as_slice(), device)?;
+        let suppress_tokens = Tensor::new(device, suppress_tokens.as_slice());
         let sot_token = token_id(&tokenizer, SOT_TOKEN)?;
         let transcribe_token = token_id(&tokenizer, TRANSCRIBE_TOKEN)?;
         let translate_token = token_id(&tokenizer, TRANSLATE_TOKEN)?;
@@ -368,10 +364,10 @@ impl Decoder {
             // token logits and the probability for the according token.
             if i == 0 {
                 let logits = match &mut self.model {
-                    ModelType::Quantized(model) => model.decoder.final_linear(&ys.i(..1)?)?,
+                    ModelType::Quantized(model) => model.decoder.final_linear(&ys.i(..1)),
                 }
-                .i(0)?
-                .i(0)?;
+                .i(0)
+                .i(0);
                 no_speech_prob = logits
                     .softmax(0)
                     .i(self.no_speech_token as usize)
@@ -605,7 +601,7 @@ impl Decoder {
             }
 
             // Encode all of the chunks
-            let batched_mel_segment = Tensor::stack(&chunked, 0)?;
+            let batched_mel_segment = Tensor::stack(&chunked, 0);
             let batched_audio_features = self.encode(&batched_mel_segment)?;
             let split = batched_audio_features.chunk(chunk_indices.len(), 0)?;
 

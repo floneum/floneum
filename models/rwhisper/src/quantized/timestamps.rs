@@ -12,7 +12,7 @@ use crate::config::{HOP_LENGTH, N_FRAMES, SAMPLE_RATE};
 pub(super) fn extract_timestamps(
     // A list of (layer, head) pairs to use for timestamp determination
     alignment_heads: &[[usize; 2]],
-    cross_attentions: &[Tensor<2, f32>],
+    cross_attentions: &[Tensor<4, f32>],
     filter_width: NonZeroUsize,
     n_frames: usize,
     mask: Vec<Vec<bool>>,
@@ -25,10 +25,10 @@ pub(super) fn extract_timestamps(
             .filter_map(|[layer, head]| cross_attentions.get(layer)?.i((.., head)).ok()),
         0,
     )
-    .permute((1, 0, 2, 3))?
-    .narrow(3, 0, n_frames.min(N_FRAMES) / 2)?;
+    .permute([1, 0, 2, 3])
+    .narrow(3, 0, n_frames.min(N_FRAMES) / 2);
 
-    if weights.dims().contains(&0) {
+    if weights.shape().contains(&0) {
         // No tokens to be aligned
         return Ok(Vec::new());
     }
@@ -40,14 +40,14 @@ pub(super) fn extract_timestamps(
     let weights = &median_filter(
         filter_width,
         weights
-            .broadcast_sub(&weights.mean_keepdim(D::Minus2)?)?
-            .broadcast_div(&weights.var_keepdim(D::Minus2)?.sqrt()?)?,
+            .sub_(&weights.mean_keepdim(weights.rank() - 2))
+            .div_(&weights.var_keepdim(weights.rank() - 2).sqrt()),
     )?;
 
-    let cost = weights.mean(1)?;
+    let cost = weights.mean(1);
 
     // Do the timewarp
-    ((0..weights.dim(0)?).map(|batch_idx| {
+    ((0..weights.shape()[0]).map(|batch_idx| {
         // Exclude any tokens in the mask
         let batch_index_cost = cost.neg().i(batch_idx).cast::<f32>();
         let batch_index_cost = batch_index_cost.to_vec2::<f32>()?;
@@ -162,59 +162,57 @@ fn dynamic_time_warp(matrix: Vec<Vec<f32>>) -> fusor_core::Result<(Vec<f32>, Vec
     Ok((xs, ys))
 }
 
-fn median_filter(filter_width: NonZeroUsize, weights: Tensor) -> fusor_core::Result<Tensor> {
-    let filter_width = filter_width.get();
-    let pad_width = filter_width / 2;
-    let (_, _c, _, w) = weights.dims4()?;
-    if w <= pad_width {
-        return Ok(weights);
-    }
+fn median_filter(
+    filter_width: NonZeroUsize,
+    weights: Tensor<4, f32>,
+) -> fusor_core::Result<Tensor<4, f32>> {
+    // let filter_width = filter_width.get();
+    // let pad_width = filter_width / 2;
+    // let [_, _c, _, w] = *weights.shape();
+    // if w <= pad_width {
+    //     return Ok(weights);
+    // }
 
-    let weights = weights.pad_with_same(3, pad_width, pad_width)?;
-    let mut medians = vec![];
-    for i in 0..w {
-        let weights = weights.narrow(3, i, filter_width)?;
-        medians.push(
-            weights
-                .unsqueeze(D::Minus2)?
-                .to_device(&fusor_core::Device::Cpu)?
-                .contiguous()?,
-        );
-    }
+    // let weights = weights.pad_with_same(3, pad_width, pad_width);
+    // let mut medians = vec![];
+    // for i in 0..w {
+    //     let weights = weights.narrow(3, i, filter_width);
+    //     medians.push(weights.unsqueeze(weights.rank() - 2));
+    // }
 
-    medians.par_iter().try_for_each(|weights| {
-        // struct Median {
-        //     pad_width: usize,
-        // }
+    // medians.par_iter().try_for_each(|weights| {
+    //     struct Median {
+    //         pad_width: usize,
+    //     }
 
-        // impl InplaceOp1 for Median {
-        //     fn name(&self) -> &'static str {
-        //         "median"
-        //     }
+    //     impl InplaceOp1 for Median {
+    //         fn name(&self) -> &'static str {
+    //             "median"
+    //         }
 
-        //     fn cpu_fwd(
-        //         &self,
-        //         storage: &mut fusor_core::CpuStorage,
-        //         layout: &fusor_core::Layout,
-        //     ) -> fusor_core::Result<()> {
-        //         assert!(layout.is_contiguous());
-        //         if let CpuStorage::F32(storage) = storage {
-        //             storage.select_nth_unstable_by(self.pad_width, |a, b| {
-        //                 a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-        //             });
-        //         } else {
-        //             unimplemented!()
-        //         }
+    //         fn cpu_fwd(
+    //             &self,
+    //             storage: &mut fusor_core::CpuStorage,
+    //             layout: &fusor_core::Layout,
+    //         ) -> fusor_core::Result<()> {
+    //             assert!(layout.is_contiguous());
+    //             if let CpuStorage::F32(storage) = storage {
+    //                 storage.select_nth_unstable_by(self.pad_width, |a, b| {
+    //                     a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+    //                 });
+    //             } else {
+    //                 unimplemented!()
+    //             }
 
-        //         Ok(())
-        //     }
-        // }
-        // weights.inplace_op1(&Median { pad_width })
-        todo!()
-    })?;
+    //             Ok(())
+    //         }
+    //     }
+    //     weights.inplace_op1(&Median { pad_width })
+    // })?;
 
-    Tensor::cat(&medians, 3)?
-        .narrow(4, pad_width, 1)?
-        .squeeze(4)?
-        .to_device(weights.device())
+    // Tensor::cat(&medians, 3)
+    //     .narrow(4, pad_width, 1)
+    //     .squeeze(4)?
+    //     .to_device(weights.device())
+    todo!()
 }

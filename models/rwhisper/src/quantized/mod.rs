@@ -3,6 +3,7 @@
 use std::{num::NonZeroUsize, sync::Arc};
 
 use fusor_core::{
+    cache::{AttentionMask, KvCache, MaskCache, TensorCache},
     layers::{Conv1d, Conv1dConfig, Embedding, LayerNorm, Linear},
     Device, Result, Tensor, VarBuilder,
 };
@@ -17,12 +18,11 @@ fn conv1d(
     out_channels: usize,
     kernel_size: usize,
     config: Conv1dConfig,
-    vb: VarBuilder,
+    device: &Device,
+    vb: &mut VarBuilder,
 ) -> Result<Conv1d> {
-    let weight = vb
-        .get((out_channels, in_channels, kernel_size), "weight")?
-        .dequantize();
-    let bias = vb.get(out_channels, "bias")?.dequantize();
+    let weight = vb.get("weight", device)?.dequantize();
+    let bias = vb.get("bias", device)?.dequantize();
     Ok(Conv1d::new(weight, Some(bias), config))
 }
 
@@ -33,7 +33,7 @@ struct MultiHeadAttentionCache {
 impl MultiHeadAttentionCache {
     fn new(max_seq_len: usize) -> Self {
         Self {
-            kv_cache: KvCache::new(1, max_seq_len),
+            kv_cache: KvCache::new(1),
         }
     }
 }
@@ -87,7 +87,7 @@ impl MultiHeadAttention {
         query: &Tensor,
         kv: (Tensor, Tensor),
         mask: Option<&AttentionMask>,
-        attention_output: Option<&mut TensorCache>,
+        attention_output: Option<&mut TensorCache<3, f32>>>,
     ) -> Tensor {
         let query_states = self.query.forward(query);
         let (key_states, value_states) = &kv;
@@ -103,8 +103,8 @@ impl MultiHeadAttention {
 
     fn reshape_head(&self, x: &Tensor<3, f32>) -> Tensor<4, f32> {
         let [n_batch, n_ctx, n_state] = *x.shape();
-        let target_dims = &[n_batch, n_ctx, self.n_head, n_state / self.n_head];
-        x.reshape(target_dims)?.transpose(1, 2)
+        let target_dims = [n_batch, n_ctx, self.n_head, n_state / self.n_head];
+        x.reshape(target_dims).transpose(1, 2)
     }
 
     fn qkv_attention(
@@ -113,8 +113,8 @@ impl MultiHeadAttention {
         k: &Tensor<3, f32>,
         v: &Tensor<3, f32>,
         mask: Option<&AttentionMask>,
-        attention_output: Option<&mut TensorCache>,
-    ) -> Result<Tensor> {
+        attention_output: Option<&mut TensorCache<3, f32>>,
+    ) -> Result<Tensor<2, f32>> {
         let [_, _, n_state] = *q.shape();
         let scale = ((n_state / self.n_head) as f64).powf(-0.25) as f32;
         let q = (self.reshape_head(q) * scale);
@@ -136,10 +136,10 @@ impl MultiHeadAttention {
         };
         let wv = {
             let _enter = self.matmul_span.enter();
-            w.matmul(&v)?
+            w.mat_mul(&v)
         }
-        .transpose(1, 2)?
-        .flatten_from(2)?;
+        .transpose(1, 2)
+        .flatten_last_n::<2, _>();
         Ok(wv)
     }
 }
@@ -150,7 +150,6 @@ struct ResidualAttentionBlockCache {
 }
 
 // https://github.com/openai/whisper/blob/f572f2161ba831bae131364c3bffdead7af6d210/whisper/model.py#L111
-#[derive(Debug, Clone)]
 struct ResidualAttentionBlock {
     attn: MultiHeadAttention,
     attn_ln: LayerNorm<2>,
@@ -202,47 +201,45 @@ impl ResidualAttentionBlock {
         x: &Tensor,
         mask: Option<&AttentionMask>,
         mut cache: Option<&mut ResidualAttentionBlockCache>,
-        attention_output: Option<&mut TensorCache>,
+        attention_output: Option<&mut TensorCache<3, f32>>,
     ) -> Result<Tensor> {
         let _enter = self.span.enter();
 
-        let attn_ln_x = self.attn_ln.forward(x)?;
+        let attn_ln_x = self.attn_ln.forward(x);
         let kv = self
             .attn
             .forward_kv(&attn_ln_x, cache.as_mut().map(|cache| &mut cache.attn))?;
-        let attn = self.attn.forward(&attn_ln_x, kv, mask, None)?;
-        let mut x = (x + attn)?;
+        let attn = self.attn.forward(&attn_ln_x, kv, mask, None);
+        let mut x = x + attn;
         if let (Some(kv), Some((attn, ln))) = (audio_features_kv, &mut self.cross_attn) {
-            let ln_x = ln.forward(&x)?;
-            x = (&x + attn.forward(&ln_x, kv, None, attention_output)?)?;
+            let ln_x = ln.forward(&x);
+            x = &x + attn.forward(&ln_x, kv, None, attention_output);
         }
         let mlp = x
-            .apply(&self.mlp_ln)?
-            .apply(&self.mlp_linear1)?
-            .gelu()?
-            .apply(&self.mlp_linear2)?;
-        x + mlp
+            .apply(&self.mlp_ln)
+            .apply(&self.mlp_linear1)
+            .gelu()
+            .apply(&self.mlp_linear2);
+        Ok(x + mlp)
     }
 }
 
-fn sinusoids(length: usize, channels: usize, device: &Device) -> Result<Tensor<2, f32>> {
+fn sinusoids(length: usize, channels: usize, device: &Device) -> Tensor<2, f32> {
     let max_timescale = 10000f32;
     let log_timescale_increment = max_timescale.ln() / (channels / 2 - 1) as f32;
     let inv_timescales: Vec<_> = (0..channels / 2)
         .map(|i| (i as f32 * (-log_timescale_increment)).exp())
         .collect();
-    let inv_timescales = Tensor::new(inv_timescales.as_slice(), device).unsqueeze(0);
-    let arange = Tensor::arange(0, length as u32, device)
+    let inv_timescales = Tensor::new(device, inv_timescales.as_slice()).unsqueeze(0);
+    let arange = Tensor::arange(device, 0, length as u32)
         .cast::<f32>()
         .unsqueeze(1);
     let sh = (length, channels / 2);
-    let scaled_time = (arange.broadcast_as(sh) * inv_timescales.broadcast_as(sh));
-    let sincos = Tensor::cat(&[scaled_time.sin(), scaled_time.cos()], 1);
-    Ok(sincos)
+    let scaled_time = arange.broadcast_as(sh) * inv_timescales.broadcast_as(sh);
+    Tensor::cat([scaled_time.sin(), scaled_time.cos()], 1)
 }
 
 // https://github.com/openai/whisper/blob/f572f2161ba831bae131364c3bffdead7af6d210/whisper/model.py#L143
-#[derive(Debug, Clone)]
 pub struct AudioEncoder {
     conv1: Conv1d,
     conv2: Conv1d,
@@ -274,9 +271,16 @@ impl AudioEncoder {
             groups: 1,
             dilation: 1,
         };
-        let conv1 = conv1d(cfg.num_mel_bins, n_state, 3, cfg1, vb.pp("conv1"))?;
-        let conv2 = conv1d(n_state, n_state, 3, cfg2, vb.pp("conv2"))?;
-        let positional_embedding = sinusoids(n_ctx, n_state, vb.device())?;
+        let conv1 = conv1d(
+            cfg.num_mel_bins,
+            n_state,
+            3,
+            cfg1,
+            device,
+            &mut vb.pp("conv1"),
+        )?;
+        let conv2 = conv1d(n_state, n_state, 3, cfg2, device, &mut vb.pp("conv2"))?;
+        let positional_embedding = sinusoids(n_ctx, n_state, device);
         let blocks = (0..cfg.encoder_layers)
             .map(|i| {
                 ResidualAttentionBlock::load(
@@ -301,24 +305,24 @@ impl AudioEncoder {
         })
     }
 
-    pub fn forward(&mut self, x: &Tensor) -> Result<Tensor> {
+    pub fn forward(&mut self, x: &Tensor<3, f32>) -> Result<Tensor<3, f32>> {
         let _enter = self.span.enter();
         let x = {
             let _enter = self.conv1_span.enter();
-            self.conv1.forward(x)?.gelu()?
+            self.conv1.forward(x).gelu()
         };
         let x = {
             let _enter = self.conv2_span.enter();
-            self.conv2.forward(&x)?.gelu()?
+            self.conv2.forward(&x).gelu()
         };
-        let x = x.transpose(1, 2)?;
-        let (_bsize, seq_len, _hidden) = x.dims3()?;
-        let positional_embedding = self.positional_embedding.narrow(0, 0, seq_len)?;
-        let mut x = x.broadcast_add(&positional_embedding)?;
+        let x = x.transpose(1, 2);
+        let [_bsize, seq_len, _hidden] = *x.shape();
+        let positional_embedding = self.positional_embedding.narrow(0, 0, seq_len);
+        let mut x = x.add_(&positional_embedding);
         for block in self.blocks.iter_mut() {
-            x = block.forward(None, &x, None, None, None)?
+            x = block.forward(None, &x, None, None, None)
         }
-        let x = self.ln_post.forward(&x)?;
+        let x = self.ln_post.forward(&x);
         Ok(x)
     }
 }
@@ -336,7 +340,6 @@ impl TextDecoderCache {
 }
 
 // https://github.com/openai/whisper/blob/f572f2161ba831bae131364c3bffdead7af6d210/whisper/model.py#L176
-#[derive(Debug, Clone)]
 pub struct TextDecoder {
     token_embedding: Embedding,
     positional_embedding: Tensor<2, f32>,
@@ -356,9 +359,7 @@ impl TextDecoder {
         let n_head = cfg.decoder_attention_heads;
         let max_target_positions = cfg.max_target_positions;
         let token_embedding = Embedding::load(device, &mut vb.pp("embed_tokens"))?;
-        let positional_embedding = vb
-            .get((max_target_positions, n_state), "embed_positions.weight")?
-            .dequantize()?;
+        let positional_embedding = vb.get("embed_positions.weight", device)?.dequantize();
         let blocks = (0..cfg.decoder_layers)
             .map(|i| {
                 ResidualAttentionBlock::load(
@@ -386,9 +387,9 @@ impl TextDecoder {
     pub fn forward(
         &mut self,
         tokens: &[u32],
-        audio_features: &Tensor,
+        audio_features: &Tensor<2, f32>,
         cache: &mut TextDecoderCache,
-        mut attention_output: Option<&mut [TensorCache]>,
+        mut attention_output: Option<&mut [TensorCache<3, f32>]>,
     ) -> Result<Tensor> {
         let index_pos = cache.tokens.len();
         cache.tokens.extend_from_slice(tokens);
@@ -397,16 +398,16 @@ impl TextDecoder {
             panic!("exceeded max sequence length")
         }
         let device = audio_features.device();
-        let mask = self.mask_cache.get_mask(seq_len, index_pos, None, device)?;
-        let x = Tensor::new(tokens, device)?;
+        let mask = self.mask_cache.get_mask(seq_len, index_pos, device);
+        let x = Tensor::new(&device, tokens);
         // The model expects a batch dim but this inference loop does not handle
         // it so we add it at this point.
-        let x = x.unsqueeze(0)?;
+        let x = x.unsqueeze(0);
 
         let _enter = self.span.enter();
-        let token_embedding = self.token_embedding.forward(&x)?;
-        let positional_embedding = self.positional_embedding.narrow(0, index_pos, seq_len)?;
-        let mut x = token_embedding.broadcast_add(&positional_embedding)?;
+        let token_embedding = self.token_embedding.forward(&x);
+        let positional_embedding = self.positional_embedding.narrow(0, index_pos, seq_len);
+        let mut x = token_embedding.add_(&positional_embedding);
         for (i, block) in self.blocks.iter_mut().enumerate() {
             if cache.blocks.len() <= i {
                 cache.blocks.push(ResidualAttentionBlockCache {
@@ -422,7 +423,8 @@ impl TextDecoder {
             let attention_output = attention_output.as_mut().map(|outputs| &mut outputs[i]);
             x = block.forward(query, &x, Some(&mask), Some(block_cache), attention_output)?;
         }
-        self.ln.forward(&x)
+        let out = self.ln.forward(&x);
+        Ok(out)
     }
 
     pub fn final_linear(&self, x: &Tensor) -> Result<Tensor> {
@@ -430,7 +432,7 @@ impl TextDecoder {
         let w = self.token_embedding.embeddings().broadcast_left(b_size)?;
         let logits = {
             let _enter = self.span_final.enter();
-            x.matmul(&w.t()?)?
+            x.mat_mul(&w.t()?)
         };
         Ok(logits)
     }
@@ -441,7 +443,6 @@ impl TextDecoder {
 }
 
 // https://github.com/openai/whisper/blob/f572f2161ba831bae131364c3bffdead7af6d210/whisper/model.py#L221
-#[derive(Debug, Clone)]
 pub struct Whisper {
     pub encoder: AudioEncoder,
     pub decoder: TextDecoder,
@@ -464,17 +465,17 @@ impl Whisper {
         filter_width: NonZeroUsize,
         n_frames: usize,
         mask: Vec<Vec<bool>>,
-        attention_output: &[TensorCache],
+        attention_output: &[TensorCache<3, f32>],
     ) -> Result<Vec<Vec<f32>>> {
         let Some(attention_heads) = attention_heads else {
-            return Err(fusor_core::Error::msg(
+            panic!(
                 "The attention heads for word-level timestamps are not available for this model",
-            ));
+            );
         };
 
         let mut attention_output_tensor = Vec::new();
         for attn in attention_output {
-            attention_output_tensor.push(attn.current_data()?.clone().unwrap());
+            attention_output_tensor.push(attn.current_data().unwrap().clone());
         }
 
         extract_timestamps(
