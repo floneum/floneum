@@ -1,10 +1,10 @@
 // Based on https://github.com/nicksenger/candle/tree/feat/whisper-dtw with some optimizations and refactoring
 // https://rtavenar.github.io/blog/dtw.html is a good resource for understanding the dtw algorithm
 
-use candle_core::{CpuStorage, IndexOp, InplaceOp1, Tensor, D};
 use candle_nn::ops::softmax_last_dim;
 use candle_transformers::models::whisper::{HOP_LENGTH, N_FRAMES, SAMPLE_RATE};
 use core::f32;
+use fusor_core::{CpuStorage, IndexOp, InplaceOp1, Tensor, D};
 use rayon::iter::*;
 use std::num::NonZeroUsize;
 
@@ -16,7 +16,7 @@ pub(super) fn extract_timestamps(
     filter_width: NonZeroUsize,
     n_frames: usize,
     mask: Vec<Vec<bool>>,
-) -> candle_core::Result<Vec<Vec<f32>>> {
+) -> fusor_core::Result<Vec<Vec<f32>>> {
     // Select relevant cross-attention heads
     let weights = Tensor::stack(
         &alignment_heads
@@ -50,10 +50,7 @@ pub(super) fn extract_timestamps(
     // Do the timewarp
     ((0..weights.dim(0)?).map(|batch_idx| {
         // Exclude any tokens in the mask
-        let batch_index_cost = cost
-            .neg()?
-            .i(batch_idx)?
-            .to_dtype(candle_core::DType::F32)?;
+        let batch_index_cost = cost.neg()?.i(batch_idx)?.to_dtype(fusor_core::DType::F32)?;
         let batch_index_cost = batch_index_cost.to_vec2::<f32>()?;
         let batch_index_cost = batch_index_cost
             .into_iter()
@@ -83,11 +80,11 @@ pub(super) fn extract_timestamps(
 
         Ok(jumps.collect())
     }))
-    .collect::<candle_core::Result<Vec<_>>>()
+    .collect::<fusor_core::Result<Vec<_>>>()
 }
 
 /// Computes the lowest cost warping path through the provided cost matrix
-fn dynamic_time_warp(matrix: Vec<Vec<f32>>) -> candle_core::Result<(Vec<f32>, Vec<f32>)> {
+fn dynamic_time_warp(matrix: Vec<Vec<f32>>) -> fusor_core::Result<(Vec<f32>, Vec<f32>)> {
     #[derive(Debug, Clone, Copy)]
     enum Action {
         Match,
@@ -166,7 +163,7 @@ fn dynamic_time_warp(matrix: Vec<Vec<f32>>) -> candle_core::Result<(Vec<f32>, Ve
     Ok((xs, ys))
 }
 
-fn median_filter(filter_width: NonZeroUsize, weights: Tensor) -> candle_core::Result<Tensor> {
+fn median_filter(filter_width: NonZeroUsize, weights: Tensor) -> fusor_core::Result<Tensor> {
     let filter_width = filter_width.get();
     let pad_width = filter_width / 2;
     let (_, _c, _, w) = weights.dims4()?;
@@ -181,7 +178,7 @@ fn median_filter(filter_width: NonZeroUsize, weights: Tensor) -> candle_core::Re
         medians.push(
             weights
                 .unsqueeze(D::Minus2)?
-                .to_device(&candle_core::Device::Cpu)?
+                .to_device(&fusor_core::Device::Cpu)?
                 .contiguous()?,
         );
     }
@@ -198,9 +195,9 @@ fn median_filter(filter_width: NonZeroUsize, weights: Tensor) -> candle_core::Re
 
             fn cpu_fwd(
                 &self,
-                storage: &mut candle_core::CpuStorage,
-                layout: &candle_core::Layout,
-            ) -> candle_core::Result<()> {
+                storage: &mut fusor_core::CpuStorage,
+                layout: &fusor_core::Layout,
+            ) -> fusor_core::Result<()> {
                 assert!(layout.is_contiguous());
                 if let CpuStorage::F32(storage) = storage {
                     storage.select_nth_unstable_by(self.pad_width, |a, b| {

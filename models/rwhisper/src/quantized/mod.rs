@@ -2,15 +2,14 @@
 
 use std::{num::NonZeroUsize, sync::Arc};
 
-use candle_core::{DType, Device, Result, Tensor};
-use candle_nn::{Conv1d, Conv1dConfig, LayerNorm, Module};
-use candle_transformers::{
-    models::whisper::Config,
-    quantized_nn::{layer_norm, linear, linear_no_bias, Embedding, Linear},
-    quantized_var_builder::VarBuilder,
+use fusor_core::{
+    layers::{Conv1d, Conv1dConfig, Embedding, LayerNorm, Linear},
+    Device, Result, Tensor, VarBuilder,
 };
 use kalosm_common::{AttentionMask, KvCache, MaskCache, TensorCache};
 use timestamps::extract_timestamps;
+
+use crate::config::Config;
 
 pub(crate) mod timestamps;
 
@@ -23,8 +22,8 @@ fn conv1d(
 ) -> Result<Conv1d> {
     let weight = vb
         .get((out_channels, in_channels, kernel_size), "weight")?
-        .dequantize(vb.device())?;
-    let bias = vb.get(out_channels, "bias")?.dequantize(vb.device())?;
+        .dequantize()?;
+    let bias = vb.get(out_channels, "bias")?.dequantize()?;
     Ok(Conv1d::new(weight, Some(bias), config))
 }
 
@@ -53,13 +52,13 @@ struct MultiHeadAttention {
 }
 
 impl MultiHeadAttention {
-    fn load(n_state: usize, n_head: usize, vb: VarBuilder) -> Result<Self> {
+    fn load(n_state: usize, n_head: usize, device: &Device, vb: &mut VarBuilder) -> Result<Self> {
         let softmax_span = tracing::span!(tracing::Level::TRACE, "multi-head-attn-softmax");
         let matmul_span = tracing::span!(tracing::Level::TRACE, "multi-head-attn-matmul");
-        let query = linear(n_state, n_state, vb.pp("q_proj"))?;
-        let value = linear(n_state, n_state, vb.pp("v_proj"))?;
-        let key = linear_no_bias(n_state, n_state, vb.pp("k_proj"))?;
-        let out = linear(n_state, n_state, vb.pp("out_proj"))?;
+        let query = Linear::load(device, &mut vb.pp("q_proj"))?;
+        let value = Linear::load(device, &mut vb.pp("v_proj"))?;
+        let key = Linear::load(device, &mut vb.pp("k_proj"))?;
+        let out = Linear::load(device, &mut vb.pp("out_proj"))?;
         Ok(Self {
             query,
             key,
@@ -136,7 +135,7 @@ impl MultiHeadAttention {
         }
         let w = {
             let _enter = self.softmax_span.enter();
-            candle_nn::ops::softmax_last_dim(&qk)?
+            qk.softmax_last_dim()
         };
         let wv = {
             let _enter = self.matmul_span.enter();
@@ -166,21 +165,28 @@ struct ResidualAttentionBlock {
 }
 
 impl ResidualAttentionBlock {
-    fn load(n_state: usize, n_head: usize, cross_attn: bool, vb: VarBuilder) -> Result<Self> {
+    fn load(
+        n_state: usize,
+        n_head: usize,
+        cross_attn: bool,
+        device: &Device,
+        vb: &mut VarBuilder,
+    ) -> Result<Self> {
         let span = tracing::span!(tracing::Level::TRACE, "residual-attn");
-        let attn = MultiHeadAttention::load(n_state, n_head, vb.pp("self_attn"))?;
-        let attn_ln = layer_norm(n_state, 1e-5, vb.pp("self_attn_layer_norm"))?;
+        let attn = MultiHeadAttention::load(n_state, n_head, device, &mut vb.pp("self_attn"))?;
+        let attn_ln = LayerNorm::load(device, &mut vb.pp("self_attn_layer_norm"), 1e-5)?;
         let cross_attn = if cross_attn {
-            let cross_attn = MultiHeadAttention::load(n_state, n_head, vb.pp("encoder_attn"))?;
-            let cross_attn_ln = layer_norm(n_state, 1e-5, vb.pp("encoder_attn_layer_norm"))?;
+            let cross_attn = MultiHeadAttention::load(n_state, n_head, device, &mut vb.pp("encoder_attn"))?;
+            let cross_attn_ln =
+                LayerNorm::load(device, &mut vb.pp("encoder_attn_layer_norm"), 1e-5)?;
             Some((cross_attn, cross_attn_ln))
         } else {
             None
         };
         let n_mlp = n_state * 4;
-        let mlp_linear1 = linear(n_state, n_mlp, vb.pp("fc1"))?;
-        let mlp_linear2 = linear(n_mlp, n_state, vb.pp("fc2"))?;
-        let mlp_ln = layer_norm(n_state, 1e-5, vb.pp("final_layer_norm"))?;
+        let mlp_linear1 = Linear::load(device, &mut vb.pp("fc1"))?;
+        let mlp_linear2 = Linear::load(device, &mut vb.pp("fc2"))?;
+        let mlp_ln = LayerNorm::load(device, &mut vb.pp("final_layer_norm"), 1e-5)?;
         Ok(Self {
             attn,
             attn_ln,
@@ -221,19 +227,19 @@ impl ResidualAttentionBlock {
     }
 }
 
-fn sinusoids(length: usize, channels: usize, device: &Device) -> Result<Tensor> {
+fn sinusoids(length: usize, channels: usize, device: &Device) -> Result<Tensor<2, f32>> {
     let max_timescale = 10000f32;
     let log_timescale_increment = max_timescale.ln() / (channels / 2 - 1) as f32;
     let inv_timescales: Vec<_> = (0..channels / 2)
         .map(|i| (i as f32 * (-log_timescale_increment)).exp())
         .collect();
-    let inv_timescales = Tensor::new(inv_timescales.as_slice(), device)?.unsqueeze(0)?;
-    let arange = Tensor::arange(0, length as u32, device)?
-        .to_dtype(DType::F32)?
-        .unsqueeze(1)?;
+    let inv_timescales = Tensor::new(inv_timescales.as_slice(), device).unsqueeze(0);
+    let arange = Tensor::arange(0, length as u32, device)
+        .cast::<f32>()
+        .unsqueeze(1);
     let sh = (length, channels / 2);
-    let scaled_time = (arange.broadcast_as(sh)? * inv_timescales.broadcast_as(sh)?)?;
-    let sincos = Tensor::cat(&[scaled_time.sin()?, scaled_time.cos()?], 1)?;
+    let scaled_time = (arange.broadcast_as(sh) * inv_timescales.broadcast_as(sh));
+    let sincos = Tensor::cat(&[scaled_time.sin(), scaled_time.cos()], 1);
     Ok(sincos)
 }
 
@@ -251,7 +257,7 @@ pub struct AudioEncoder {
 }
 
 impl AudioEncoder {
-    fn load(vb: VarBuilder, cfg: &Config) -> Result<Self> {
+    fn load(device: &Device, mut vb: VarBuilder, cfg: &Config) -> Result<Self> {
         let span = tracing::span!(tracing::Level::TRACE, "audio-encoder");
         let conv1_span = tracing::span!(tracing::Level::TRACE, "conv1");
         let conv2_span = tracing::span!(tracing::Level::TRACE, "conv2");
@@ -263,24 +269,22 @@ impl AudioEncoder {
             stride: 1,
             groups: 1,
             dilation: 1,
-            cudnn_fwd_algo: None,
         };
         let cfg2 = Conv1dConfig {
             padding: 1,
             stride: 2,
             groups: 1,
             dilation: 1,
-            cudnn_fwd_algo: None,
         };
         let conv1 = conv1d(cfg.num_mel_bins, n_state, 3, cfg1, vb.pp("conv1"))?;
         let conv2 = conv1d(n_state, n_state, 3, cfg2, vb.pp("conv2"))?;
         let positional_embedding = sinusoids(n_ctx, n_state, vb.device())?;
         let blocks = (0..cfg.encoder_layers)
             .map(|i| {
-                ResidualAttentionBlock::load(n_state, n_head, false, vb.pp(format!("layers.{i}")))
+                ResidualAttentionBlock::load(n_state, n_head, false, device, &mut vb.pp(format!("layers.{i}")))
             })
             .collect::<Result<Vec<_>>>()?;
-        let ln_post = layer_norm(n_state, 1e-5, vb.pp("layer_norm"))?;
+        let ln_post = LayerNorm::load(device, &mut vb.pp("layer_norm"), 1e-5)?;
         Ok(Self {
             conv1,
             conv2,
@@ -341,22 +345,28 @@ pub struct TextDecoder {
 }
 
 impl TextDecoder {
-    fn load(vb: VarBuilder, cfg: &Config) -> Result<Self> {
+    fn load(device: &Device, vb: &mut VarBuilder, cfg: &Config) -> Result<Self> {
         let span = tracing::span!(tracing::Level::TRACE, "text-decoder");
         let span_final = tracing::span!(tracing::Level::TRACE, "text-decoder-final");
         let n_state = cfg.d_model;
         let n_head = cfg.decoder_attention_heads;
         let max_target_positions = cfg.max_target_positions;
-        let token_embedding = Embedding::new(cfg.vocab_size, n_state, vb.pp("embed_tokens"))?;
+        let token_embedding = Embedding::load(device, &mut vb.pp("embed_tokens"))?;
         let positional_embedding = vb
             .get((max_target_positions, n_state), "embed_positions.weight")?
-            .dequantize(vb.device())?;
+            .dequantize()?;
         let blocks = (0..cfg.decoder_layers)
             .map(|i| {
-                ResidualAttentionBlock::load(n_state, n_head, true, vb.pp(format!("layers.{i}")))
+                ResidualAttentionBlock::load(
+                    n_state,
+                    n_head,
+                    true,
+                    device,
+                    &mut vb.pp(format!("layers.{i}")),
+                )
             })
             .collect::<Result<Vec<_>>>()?;
-        let ln = layer_norm(n_state, 1e-5, vb.pp("layer_norm"))?;
+        let ln = LayerNorm::load(device, &mut vb.pp("layer_norm"), 1e-5)?;
         Ok(Self {
             token_embedding,
             positional_embedding,
@@ -380,7 +390,7 @@ impl TextDecoder {
         cache.tokens.extend_from_slice(tokens);
         let seq_len = tokens.len();
         if index_pos + seq_len > self.max_target_positions {
-            candle_core::bail!("exceeded max sequence length")
+            panic!("exceeded max sequence length")
         }
         let device = audio_features.device();
         let mask = self.mask_cache.get_mask(seq_len, index_pos, None, device)?;
@@ -435,9 +445,9 @@ pub struct Whisper {
 }
 
 impl Whisper {
-    pub fn load(vb: &VarBuilder, config: Config) -> Result<Self> {
-        let encoder = AudioEncoder::load(vb.pp("model.encoder"), &config)?;
-        let decoder = TextDecoder::load(vb.pp("model.decoder"), &config)?;
+    pub fn load(device: &Device, vb: &mut VarBuilder, config: Config) -> Result<Self> {
+        let encoder = AudioEncoder::load(device, vb.pp("model.encoder"), &config)?;
+        let decoder = TextDecoder::load(device, &mut vb.pp("model.decoder"), &config)?;
         Ok(Self {
             encoder,
             decoder,
@@ -453,7 +463,7 @@ impl Whisper {
         attention_output: &[TensorCache],
     ) -> Result<Vec<Vec<f32>>> {
         let Some(attention_heads) = attention_heads else {
-            return Err(candle_core::Error::msg(
+            return Err(fusor_core::Error::msg(
                 "The attention heads for word-level timestamps are not available for this model",
             ));
         };
