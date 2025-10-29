@@ -1,26 +1,29 @@
-use crate::Tensor;
+use crate::{DataType, MaxRank, Tensor};
 
 /// A growable tensor cache.
 /// This cache manages tensor data with exponentially larger allocations as the sequence length increases.
 #[derive(Debug, Clone)]
-pub struct TensorCache {
-    all_data: Option<Tensor<3, f32>>,
+pub struct TensorCache<const R: usize, D: DataType> {
+    all_data: Option<Tensor<R, D>>,
     current_seq_len: usize,
+    allocated_seq_len: usize,
     concat_dim: usize,
 }
 
-impl TensorCache {
+impl<const R: usize, D: DataType> TensorCache<R, D> {
     /// Create a new cache with the given concatenation dimension
     pub fn new(concat_dim: usize) -> Self {
+        assert!(concat_dim < R, "concat_dim must be less than tensor rank R");
         Self {
             all_data: None,
             current_seq_len: 0,
+            allocated_seq_len: 0,
             concat_dim,
         }
     }
 
     /// Get the current data in the cache
-    pub fn current_data(&self) -> Option<&Tensor<3, f32>> {
+    pub fn current_data(&self) -> Option<&Tensor<R, D>> {
         self.all_data.as_ref()
     }
 
@@ -28,25 +31,51 @@ impl TensorCache {
     pub fn reset(&mut self) {
         self.all_data = None;
         self.current_seq_len = 0;
+        self.allocated_seq_len = 0;
     }
 
     /// Append a new value to the cache
     ///
     /// Returns the full cached tensor including the newly appended data
-    pub fn append(&mut self, v: &Tensor<3, f32>) -> Tensor<3, f32> {
+    pub fn append(&mut self, v: &Tensor<R, D>) -> Tensor<R, D> {
         let v_shape = v.shape();
         let seq_len = v_shape[self.concat_dim];
 
-        if let Some(ref cached) = self.all_data {
-            // Concatenate with existing cache
-            let result = Tensor::cat([cached.clone(), v.clone()], self.concat_dim);
-            self.current_seq_len += seq_len;
-            self.all_data = Some(result.clone());
-            result
+        if let Some(cached) = &mut self.all_data {
+            // First find the required new sequence length
+            let required_seq_len = self.current_seq_len + seq_len;
+            // Check if we need to grow the allocation
+            if required_seq_len > self.allocated_seq_len {
+                // Double the allocation until it's large enough
+                let new_allocated_seq_len = required_seq_len.next_power_of_two();
+                self.allocated_seq_len = new_allocated_seq_len;
+                let new_data_shape = std::array::from_fn(|i| {
+                    if i == self.concat_dim {
+                        new_allocated_seq_len - self.current_seq_len
+                    } else {
+                        v_shape[i]
+                    }
+                });
+                // Allocate new tensor with larger size
+                let new_data = Tensor::<R, D>::zeros(v.device(), new_data_shape);
+                *cached = Tensor::cat([cached.clone(), new_data], self.concat_dim);
+            }
+            // Assign the new data into the cached tensor
+            let slice = std::array::from_fn(|i| {
+                if i == self.concat_dim {
+                    self.current_seq_len..required_seq_len
+                } else {
+                    0..v_shape[i]
+                }
+            });
+            *cached = cached.slice_assign(slice, v);
+            self.current_seq_len = required_seq_len;
+            cached.clone()
         } else {
             // First append - just store it
             self.all_data = Some(v.clone());
             self.current_seq_len = seq_len;
+            self.allocated_seq_len = seq_len;
             v.clone()
         }
     }
@@ -57,8 +86,8 @@ impl TensorCache {
 /// Manages key and value caches separately, growing them as needed
 #[derive(Debug, Clone)]
 pub struct KvCache {
-    key: TensorCache,
-    value: TensorCache,
+    key: TensorCache<3, f32>,
+    value: TensorCache<3, f32>,
 }
 
 impl KvCache {
@@ -91,7 +120,11 @@ impl KvCache {
     /// Append a new key/value pair to the cache
     ///
     /// Returns (full_keys, full_values) including the newly appended data
-    pub fn append(&mut self, k: &Tensor<3, f32>, v: &Tensor<3, f32>) -> (Tensor<3, f32>, Tensor<3, f32>) {
+    pub fn append(
+        &mut self,
+        k: &Tensor<3, f32>,
+        v: &Tensor<3, f32>,
+    ) -> (Tensor<3, f32>, Tensor<3, f32>) {
         let keys = self.key.append(k);
         let values = self.value.append(v);
         (keys, values)
@@ -129,19 +162,15 @@ impl AttentionMask {
     /// Returns: masked attention scores
     ///
     /// The mask will be broadcast to match the attention scores shape
-    pub fn apply(&self, attention_scores: &Tensor<4, f32>) -> Tensor<4, f32> {
-        // Broadcast the 2D mask to 4D: (seq_len, seq_len) -> (1, 1, seq_len, seq_len)
-        // Unsqueeze twice to add batch and head dimensions
-        let mask_4d = self.mask.unsqueeze(0).unsqueeze(0);
-
+    pub fn apply<const R: usize>(&self, attention_scores: &Tensor<R, f32>) -> Tensor<R, f32>
+    where
+        (Tensor<2, f32>, Tensor<R, f32>): MaxRank<R, f32>,
+    {
+        const {
+            assert!(R >= 2, "Attention scores must have rank >= 2");
+        }
         // Broadcast add
-        attention_scores.add_(&mask_4d)
-    }
-
-    /// Apply the mask to 3D attention scores
-    pub fn apply_3d(&self, attention_scores: &Tensor<3, f32>) -> Tensor<3, f32> {
-        let mask_3d = self.mask.unsqueeze(0);
-        attention_scores.add_(&mask_3d)
+        self.mask.add_(&attention_scores)
     }
 
     pub fn mask(&self) -> &Tensor<2, f32> {
@@ -218,6 +247,9 @@ mod tests {
         assert_eq!(cache.current_seq_len, 2);
 
         let output = result.as_slice().await.unwrap();
+
+        println!("{output:?}");
+
         assert_eq!(output[[0, 0, 0]], 1.0);
         assert_eq!(output[[0, 0, 1]], 2.0);
         assert_eq!(output[[0, 1, 0]], 3.0);
@@ -375,7 +407,7 @@ mod tests {
         let scores_data = [[[1.0, 2.0], [3.0, 4.0]]];
         let scores = Tensor::new(&device, &scores_data);
 
-        let masked = mask.apply_3d(&scores);
+        let masked = mask.apply(&scores);
 
         let output = masked.as_slice().await.unwrap();
 
