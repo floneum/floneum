@@ -1,0 +1,10 @@
+[2m2025-09-11T09:53:43.555599Z[0m [32m INFO[0m [2mhf_hub[0m[2m:[0m Token file not found "/Users/sankha/.cache/huggingface/token"    
+[2m2025-09-11T09:53:43.555657Z[0m [32m INFO[0m [2mhf_hub[0m[2m:[0m Token file not found "/Users/sankha/.cache/huggingface/token"    
+[2m2025-09-11T09:54:10.239627Z[0m [32m INFO[0m [2mhf_hub[0m[2m:[0m Token file not found "/Users/sankha/.cache/huggingface/token"    
+[2m2025-09-11T09:54:10.239654Z[0m [32m INFO[0m [2mhf_hub[0m[2m:[0m Token file not found "/Users/sankha/.cache/huggingface/token"    
+[2m2025-09-11T09:54:10.534011Z[0m [32m INFO[0m [2mhf_hub[0m[2m:[0m Token file not found "/Users/sankha/.cache/huggingface/token"    
+[2m2025-09-11T09:54:10.534123Z[0m [32m INFO[0m [2mhf_hub[0m[2m:[0m Token file not found "/Users/sankha/.cache/huggingface/token"    
+[2m2025-09-11T09:54:10.991955Z[0m [32m INFO[0m [2mhf_hub[0m[2m:[0m Token file not found "/Users/sankha/.cache/huggingface/token"    
+[2m2025-09-11T09:54:10.992069Z[0m [32m INFO[0m [2mhf_hub[0m[2m:[0m Token file not found "/Users/sankha/.cache/huggingface/token"    
+{"generation":0,"metadata":{"sampler_time":{"secs":0,"nanos":50420},"constraint_time":{"secs":0,"nanos":12962084},"parser_time":{"secs":0,"nanos":234084},"transformer_time":{"secs":5,"nanos":217445498},"trie_time":{"secs":0,"nanos":41458},"total_time":{"secs":5,"nanos":334853334}},"pass":true,"entropy":0.0,"entropy_diff":1000.0,"tokenization_error":false,"tokens_after_tokenization_error":0,"result":"(define-fun f ((name String)) String (str.substr name 0 3)","tokens":[69647,2269,359,282,1819,609,935,595,935,320,496,18497,836,220,15,220,18,8]}
+{"average_metadata":{"sampler_time":{"secs":0,"nanos":50420},"constraint_time":{"secs":0,"nanos":12962084},"parser_time":{"secs":0,"nanos":234084},"transformer_time":{"secs":5,"nanos":217445498},"trie_time":{"secs":0,"nanos":41458},"total_time":{"secs":5,"nanos":334853334}},"average_entropy":0.0,"average_entropy_diff":1000.0,"average_tokenization_error":0.0,"average_tokens_after_first_token_error":0.0,"total_duration":{"secs":11,"nanos":310106166},"average_token_count":0.0}

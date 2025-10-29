@@ -3,13 +3,11 @@ use rbert::*;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let bert = Bert::builder().build().await?;
-    let sentences = [
-        "Kalosm can be used to build local AI applications",
-        "With private LLMs data never leaves your computer",
-        "The quick brown fox jumps over the lazy dog",
-    ];
+    let sentences = ["Kalosm can be used to build local AI applications"; 60];
+    let start = std::time::Instant::now();
     let embeddings = bert.embed_batch(sentences).await?;
     println!("embeddings {:?}", embeddings);
+    println!("took {:?}", start.elapsed());
 
     // Find the cosine similarity between the first two sentences
     let mut similarities = vec![];

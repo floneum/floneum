@@ -1,0 +1,9 @@
+[2m2025-09-11T04:13:59.030784Z[0m [32m INFO[0m [2mhf_hub[0m[2m:[0m Token file not found "/Users/sankha/.cache/huggingface/token"    
+[2m2025-09-11T04:13:59.030838Z[0m [32m INFO[0m [2mhf_hub[0m[2m:[0m Token file not found "/Users/sankha/.cache/huggingface/token"    
+[2m2025-09-11T04:14:34.954114Z[0m [32m INFO[0m [2mhf_hub[0m[2m:[0m Token file not found "/Users/sankha/.cache/huggingface/token"    
+[2m2025-09-11T04:14:34.954149Z[0m [32m INFO[0m [2mhf_hub[0m[2m:[0m Token file not found "/Users/sankha/.cache/huggingface/token"    
+[2m2025-09-11T04:14:35.317514Z[0m [32m INFO[0m [2mhf_hub[0m[2m:[0m Token file not found "/Users/sankha/.cache/huggingface/token"    
+[2m2025-09-11T04:14:35.317626Z[0m [32m INFO[0m [2mhf_hub[0m[2m:[0m Token file not found "/Users/sankha/.cache/huggingface/token"    
+[2m2025-09-11T04:14:35.571414Z[0m [32m INFO[0m [2mhf_hub[0m[2m:[0m Token file not found "/Users/sankha/.cache/huggingface/token"    
+[2m2025-09-11T04:14:35.571528Z[0m [32m INFO[0m [2mhf_hub[0m[2m:[0m Token file not found "/Users/sankha/.cache/huggingface/token"    
+{"generation":0,"metadata":{"sampler_time":{"secs":0,"nanos":109251},"constraint_time":{"secs":0,"nanos":640896293},"parser_time":{"secs":0,"nanos":3247345},"transformer_time":{"secs":0,"nanos":757331083},"trie_time":{"secs":0,"nanos":46338},"total_time":{"secs":1,"nanos":635286583}},"pass":false,"entropy":0.0,"entropy_diff":1000.0,"tokenization_error":true,"tokens_after_tokenization_error":2,"result":"(define-fun f ((firstname String) (lastname String)) String (str.++ (str.++ lastname \" \") (str.substr firstname 0 1))","tokens":[69647,2269,359,282,1819,29525,935,8,320,30306,935,595,935,320,496,13,1044,320,496,13,1044,46441,330,12590,320,496,18497,49293,220,15,220,16,8,8]}

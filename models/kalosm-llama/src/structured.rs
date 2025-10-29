@@ -610,12 +610,18 @@ impl Add for StructuredInferenceTimingInfo {
 
     fn add(self, other: Self) -> Self {
         Self {
-            sampler_time: self.sampler_time + other.sampler_time,
-            constraint_time: self.constraint_time + other.constraint_time,
-            parser_time: self.parser_time + other.parser_time,
-            transformer_time: self.transformer_time + other.transformer_time,
-            trie_time: self.trie_time + other.trie_time,
-            total_time: self.total_time + other.total_time,
+            sampler_time: self.sampler_time.checked_add(other.sampler_time).unwrap(),
+            constraint_time: self
+                .constraint_time
+                .checked_add(other.constraint_time)
+                .unwrap(),
+            parser_time: self.parser_time.checked_add(other.parser_time).unwrap(),
+            transformer_time: self
+                .transformer_time
+                .checked_add(other.transformer_time)
+                .unwrap(),
+            trie_time: self.trie_time.checked_add(other.trie_time).unwrap(),
+            total_time: self.total_time.checked_add(other.total_time).unwrap(),
         }
     }
 }

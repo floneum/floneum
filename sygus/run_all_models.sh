@@ -60,7 +60,7 @@ TASK="./src/prompt"
 TIME=$((60*5))
 
 
-cargo build --features "${FEATURES}" --release 
+cargo build --features "${FEATURES}" --release
 
 for model in "${models[@]}"; do
   for grammar in "${GRAMMARS[@]}"; do
@@ -71,6 +71,12 @@ for model in "${models[@]}"; do
       attempt=1
 
       while [ $attempt -le $max_retries ]; do
+        file_name="results/${grammar}_${model}_${combo_tag}.jsonl"
+        # If the file exists skip
+        if [ -f "${file_name}" ]; then
+          echo "[${model} | ${combo_tag}] Output file ${file_name} already exists, skipping."
+          break
+        fi
         if "../target/release/sygus" \
               --model "${model}" \
               --grammar "sygus-strings/${grammar}.sl" \
@@ -78,7 +84,7 @@ for model in "${models[@]}"; do
               --time-seconds "${TIME}" \
               --fast-case "${fast}" \
               --recursion-depth 6 \
-              > "results/${grammar}_${model}_${combo_tag}.jsonl" 2>&1
+              > "${file_name}" 2>&1
         then
           echo "[${model} | ${combo_tag}] succeeded on attempt #${attempt}"
           break

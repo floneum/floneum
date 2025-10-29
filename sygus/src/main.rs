@@ -915,6 +915,7 @@ async fn run() {
             average_tokenization_error: runs.iter().filter(|run| run.tokenization_error).count() as f64 / runs.len() as f64,
             average_tokens_after_first_token_error: runs.iter().map(|run| run.tokens_after_tokenization_error as f64).sum::<f64>() / runs.len() as f64,
             total_duration,
+            average_token_count: runs.iter().map(|run| run.tokens.len() as f64).sum::<f64>() / runs.len() as f64,
         };
         println!("{}", serde_json::to_string(&summary).unwrap());
     })

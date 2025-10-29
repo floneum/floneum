@@ -177,24 +177,22 @@ impl SlabGrammar {
         }
     }
 
-    fn remove(&mut self, id: u32) {
-        let rule_ids = self.rules[id as usize]
-            .rhs
-            .iter()
-            .map(|(id, _)| id as u32)
-            .collect::<Vec<_>>();
-        for rule_id in rule_ids {
-            let len = self.rules[id as usize].rhs[rule_id as usize].len();
-            for i in 0..len {
-                let rhs = &mut self.rules[id as usize].rhs[rule_id as usize];
-                let symbol = rhs[i].clone();
+    fn clear(&mut self, id: u32) -> Slab<Cow<'static, [Symbol<u32>]>> {
+        let rhs = std::mem::take(&mut self.rules[id as usize].rhs);
+        for (rule_id, rhs) in &rhs {
+            for symbol in &**rhs {
                 let loc = UsedLocation {
                     rule: id,
-                    index: rule_id,
+                    index: rule_id as u32,
                 };
-                self.remove_reference(&symbol, loc);
+                self.remove_reference(symbol, loc);
             }
         }
+        rhs
+    }
+
+    fn remove(&mut self, id: u32) {
+        self.clear(id);
         self.rules.remove(id as usize);
     }
 
@@ -271,63 +269,207 @@ impl SlabGrammar {
         }
     }
 
-    fn split_nt(
+    fn split_appears_at_end(
         &mut self,
-        loc: &u32,
-        new_loc: &u32,
-        common: &u32,
-        mut new_row: impl FnMut(&[Symbol<u32>]) -> bool,
-        mut replace_row: impl FnMut(&[Symbol<u32>]) -> Vec<Symbol<u32>>,
-    ) {
-        let mut id_mapping = FxHashMap::default();
-        let mut changed = Slab::new();
-        let mut unchanged = Slab::new();
-        self.rules[*loc as usize].rhs.retain(|i, rhs| {
-            if new_row(&rhs) {
-                changed.insert(rhs.clone());
-                true
-            } else {
-                let new_id = unchanged.insert(rhs.clone());
-                id_mapping.insert(new_id, i);
-                false
-            }
-        });
+        merge: Merge,
+        allow_incorrect: bool,
+    ) -> FxHashMap<u32, [u32; 2]> {
+        // First identify locations where the two pairs are adjacent in the same rule
+        let pair_0 = &self.terminal_locations[&merge.pair[0]];
+        let ends_with_pair_0 = self.find_ends_with_token(
+            merge.pair[0],
+            pair_0.keys().cloned().collect(),
+            Default::default(),
+        );
 
-        let mut merged = changed;
-        for (i, rhs) in &mut merged {
-            if new_row(&rhs) {
-                *rhs = replace_row(&rhs).into();
-            }
-            let location = UsedLocation {
-                rule: *new_loc,
-                index: i as u32,
+        // Create a variant of appear_at_end with the last symbol swapped for the new token
+        let mut merged_appear_at_end = FxHashMap::default();
+        // First insert an empty value for each non-terminal
+        for symbol in &ends_with_pair_0 {
+            let Symbol::NonTerminal(nt) = symbol else {
+                continue;
             };
-            for symbol in &**rhs {
-                self.add_reference(symbol, location);
-            }
+            merged_appear_at_end.insert(
+                *nt,
+                [
+                    self.insert(Default::default()),
+                    self.insert(Default::default()),
+                ],
+            );
         }
-        self.rules[*new_loc as usize].rhs = merged;
+        // Then fill it in
+        for (loc, [new_loc, common]) in &merged_appear_at_end {
+            self.split_appears_at_end_nt(
+                *loc,
+                *new_loc,
+                *common,
+                merge,
+                &ends_with_pair_0,
+                &merged_appear_at_end,
+                allow_incorrect,
+            );
+        }
 
-        if !unchanged.is_empty() {
-            for (id, rhs) in &unchanged {
-                let old_location = UsedLocation {
-                    rule: *loc,
-                    index: id_mapping[&id] as u32,
+        merged_appear_at_end
+    }
+
+    fn split_appears_at_end_nt(
+        &mut self,
+        loc: u32,
+        new_loc: u32,
+        common: u32,
+        merge: Merge,
+        ends_with_pair_0: &FxHashSet<Symbol<u32>>,
+        merged_appear_at_end: &FxHashMap<u32, [u32; 2]>,
+        allow_incorrect: bool,
+    ) {
+        let rules = self.clear(loc);
+        for (_, rhs) in rules {
+            let [start @ .., end] = &*rhs else {
+                self.push_rhs(common, rhs);
+                continue;
+            };
+            if ends_with_pair_0.contains(end) {
+                let shared_prefix = (!start.is_empty()).then(|| match start {
+                    [symbol] => symbol.clone(),
+                    _ => {
+                        let shared_prefix = self.insert(Slab::new());
+                        self.push_rhs(shared_prefix, start.to_vec().into());
+                        Symbol::NonTerminal(shared_prefix)
+                    }
+                });
+                let loc_rhs = if let Some(shared_prefix) = shared_prefix {
+                    vec![shared_prefix, end.clone()]
+                } else {
+                    vec![end.clone()]
                 };
-                let common_location = UsedLocation {
-                    rule: *common,
-                    index: id as u32,
+                self.push_rhs(loc, loc_rhs.into());
+                let new_end = match end {
+                    Symbol::Terminal(_) => Symbol::Terminal(merge.new_token),
+                    Symbol::NonTerminal(nt) => Symbol::NonTerminal(merged_appear_at_end[&nt][0]),
+                    Symbol::Epsilon => Symbol::Epsilon,
                 };
-                for symbol in &**rhs {
-                    self.remove_reference(symbol, old_location);
-                    self.add_reference(symbol, common_location);
+                let new_loc_rhs = if let Some(shared_prefix) = shared_prefix {
+                    vec![shared_prefix, new_end]
+                } else {
+                    vec![new_end]
+                };
+                self.push_rhs(new_loc, new_loc_rhs.into());
+                if let Symbol::NonTerminal(nt) = end {
+                    let new_end = merged_appear_at_end[&nt][1];
+                    let common_rhs = if let Some(shared_prefix) = shared_prefix {
+                        vec![shared_prefix, Symbol::NonTerminal(new_end)]
+                    } else {
+                        vec![Symbol::NonTerminal(new_end)]
+                    };
+                    self.push_rhs(new_loc, common_rhs.into());
                 }
+            } else {
+                self.push_rhs(common, rhs);
             }
-            self.rules[*common as usize].rhs = unchanged;
-            self.push_rhs(*loc, vec![Symbol::NonTerminal(*common)].into());
+        }
+        self.push_rhs(loc, vec![Symbol::NonTerminal(common)].into());
+    }
+
+    fn split_appears_at_start(
+        &mut self,
+        merge: Merge,
+        allow_incorrect: bool,
+    ) -> FxHashMap<u32, [u32; 2]> {
+        let pair_1 = &self.terminal_locations[&merge.pair[1]];
+        let starts_with_pair_1 = self.find_starts_with_token(
+            merge.pair[1],
+            pair_1.keys().cloned().collect(),
+            Default::default(),
+        );
+
+        // Create a variant of appear_at_start with the first symbol removed
+        let mut merged_appear_at_start = FxHashMap::default();
+        // First insert an empty value for each non-terminal
+        for symbol in &starts_with_pair_1 {
+            let Symbol::NonTerminal(nt) = symbol else {
+                continue;
+            };
+            merged_appear_at_start.insert(
+                *nt,
+                [
+                    self.insert(Default::default()),
+                    self.insert(Default::default()),
+                ],
+            );
+        }
+        // Then fill it in
+        for (loc, [new_loc, common]) in &merged_appear_at_start {
+            self.split_appears_at_start_nt(
+                *loc,
+                *new_loc,
+                *common,
+                merge,
+                &starts_with_pair_1,
+                &merged_appear_at_start,
+                allow_incorrect,
+            );
         }
 
-        self.verify_integrity("after split_nt");
+        merged_appear_at_start
+    }
+
+    fn split_appears_at_start_nt(
+        &mut self,
+        loc: u32,
+        new_loc: u32,
+        common: u32,
+        merge: Merge,
+        starts_with_pair_1: &FxHashSet<Symbol<u32>>,
+        merged_appear_at_start: &FxHashMap<u32, [u32; 2]>,
+        allow_incorrect: bool,
+    ) {
+        let rules = self.clear(loc);
+        for (_, rhs) in rules {
+            let [start, end @ ..] = &*rhs else {
+                self.push_rhs(common, rhs);
+                continue;
+            };
+            if starts_with_pair_1.contains(start) {
+                let shared_suffix = (!end.is_empty()).then(|| match end {
+                    [symbol] => symbol.clone(),
+                    _ => {
+                        let shared_suffix = self.insert(Slab::new());
+                        self.push_rhs(shared_suffix, end.to_vec().into());
+                        Symbol::NonTerminal(shared_suffix)
+                    }
+                });
+                let loc_rhs = if let Some(shared_suffix) = shared_suffix {
+                    vec![start.clone(), shared_suffix]
+                } else {
+                    vec![start.clone()]
+                };
+                self.push_rhs(loc, loc_rhs.into());
+                let new_start = match start {
+                    Symbol::Terminal(_) => Symbol::Terminal(merge.new_token),
+                    Symbol::NonTerminal(nt) => Symbol::NonTerminal(merged_appear_at_start[&nt][0]),
+                    Symbol::Epsilon => Symbol::Epsilon,
+                };
+                let new_loc_rhs = if let Some(shared_suffix) = shared_suffix {
+                    vec![new_start, shared_suffix]
+                } else {
+                    vec![new_start]
+                };
+                self.push_rhs(new_loc, new_loc_rhs.into());
+                if let Symbol::NonTerminal(nt) = start {
+                    let new_common = merged_appear_at_start[&nt][1];
+                    let common_rhs = if let Some(shared_suffix) = shared_suffix {
+                        vec![Symbol::NonTerminal(new_common), shared_suffix]
+                    } else {
+                        vec![Symbol::NonTerminal(new_common)]
+                    };
+                    self.push_rhs(common, common_rhs.into());
+                }
+            } else {
+                self.push_rhs(common, rhs);
+            }
+        }
+        self.push_rhs(loc, vec![Symbol::NonTerminal(common)].into());
     }
 
     fn find_starts_with_token(
@@ -450,106 +592,14 @@ impl SlabGrammar {
     // c -> b
     pub fn shortcut_merge(&mut self, merge: &Merge, allow_incorrect: bool) -> bool {
         // If neither of the pair tokens are present in the grammar, we can skip the merge
-        let (Some(pair_0), Some(pair_1)) = (
-            self.terminal_locations.get(&merge.pair[0]).cloned(),
-            self.terminal_locations.get(&merge.pair[1]).cloned(),
-        ) else {
+        if !(self.terminal_locations.contains_key(&merge.pair[0])
+            && self.terminal_locations.contains_key(&merge.pair[1]))
+        {
             return false;
         };
 
-        // First identify locations where the two pairs are adjacent in the same rule
-        let starts_with_pair_1 = self.find_starts_with_token(
-            merge.pair[1],
-            pair_1.keys().cloned().collect(),
-            Default::default(),
-        );
-        let ends_with_pair_0 = self.find_ends_with_token(
-            merge.pair[0],
-            pair_0.keys().cloned().collect(),
-            Default::default(),
-        );
-
-        // Create a variant of appear_at_end with the last symbol swapped for the new token
-        let mut merged_appear_at_end = FxHashMap::default();
-        // First insert an empty value for each non-terminal
-        for symbol in &ends_with_pair_0 {
-            let Symbol::NonTerminal(nt) = symbol else {
-                continue;
-            };
-            merged_appear_at_end.insert(
-                *nt,
-                [
-                    self.insert(Default::default()),
-                    self.insert(Default::default()),
-                ],
-            );
-        }
-        // Then fill it in
-        for (loc, [new_loc, common]) in &merged_appear_at_end {
-            self.split_nt(
-                loc,
-                new_loc,
-                common,
-                |rhs| rhs.last().is_some_and(|rhs| ends_with_pair_0.contains(rhs)),
-                |rhs| {
-                    let mut new_rhs = rhs.to_vec();
-                    let tok = new_rhs.pop().unwrap();
-                    new_rhs.push(match tok {
-                        Symbol::Terminal(_) => Symbol::Terminal(merge.new_token),
-                        Symbol::NonTerminal(nt) => {
-                            Symbol::NonTerminal(merged_appear_at_end[&nt][0])
-                        }
-                        other => other,
-                    });
-                    new_rhs
-                },
-            );
-        }
-
-        // Create a variant of appear_at_start with the first symbol removed
-        let mut merged_appear_at_start = FxHashMap::default();
-        // First insert an empty value for each non-terminal
-        for symbol in &starts_with_pair_1 {
-            let Symbol::NonTerminal(nt) = symbol else {
-                continue;
-            };
-            merged_appear_at_start.insert(
-                *nt,
-                [
-                    self.insert(Default::default()),
-                    self.insert(Default::default()),
-                ],
-            );
-        }
-        // Then fill it in
-        for (loc, [new_loc, common]) in &merged_appear_at_start {
-            self.split_nt(
-                loc,
-                new_loc,
-                common,
-                |rhs| {
-                    rhs.first()
-                        .is_some_and(|rhs| starts_with_pair_1.contains(rhs))
-                },
-                |rhs| {
-                    let mut new_rhs = rhs.to_vec();
-                    let tok = new_rhs[0].clone();
-                    match tok {
-                        Symbol::NonTerminal(nt) => {
-                            new_rhs[0] = Symbol::NonTerminal(merged_appear_at_start[&nt][0])
-                        }
-                        _ => {
-                            if new_rhs.len() > 1 {
-                                new_rhs.remove(0);
-                            } else {
-                                new_rhs[0] = Symbol::Epsilon
-                            }
-                        }
-                    };
-                    new_rhs
-                },
-            );
-        }
+        let merged_appear_at_end = self.split_appears_at_end(merge.clone(), allow_incorrect);
+        let merged_appear_at_start = self.split_appears_at_start(merge.clone(), allow_incorrect);
 
         // If neither of the pair tokens are present in the grammar, we can skip the merge
         let (Some(pair_0), Some(pair_1)) = (

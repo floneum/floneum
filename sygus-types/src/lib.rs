@@ -27,7 +27,7 @@ impl Sum<Run> for Summary {
         let mut total_duration = Duration::default();
 
         for run in iter {
-            total_duration += run.metadata.total_time;
+            total_duration = total_duration.checked_add(run.metadata.total_time).unwrap();
             total_metadata = total_metadata + run.metadata;
             total_entropy += run.entropy;
             total_entropy_diff += run.entropy_diff;

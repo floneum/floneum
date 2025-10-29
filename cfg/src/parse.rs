@@ -14,7 +14,7 @@ use nom::{
 };
 
 /// A single grammar symbol.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Symbol<T = String> {
     /// A non‑terminal `A`.
     NonTerminal(T),

@@ -1,5 +1,5 @@
 (set-logic SLIA)
- 
+
 (synth-fun f ((name String)) String
     ((Start String (ntString))
      (ntString String (name " "
@@ -21,12 +21,12 @@
 
 
 (declare-var name String)
- 
+
 (constraint (= (f "Ducati100") "Ducati"))
 (constraint (= (f "Honda125") "Honda"))
 (constraint (= (f "Ducati250") "Ducati"))
 (constraint (= (f "Honda250") "Honda"))
 (constraint (= (f "Honda550") "Honda"))
 (constraint (= (f "Ducati125") "Ducati"))
- 
+
 (check-synth)

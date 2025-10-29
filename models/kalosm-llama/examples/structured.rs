@@ -32,8 +32,9 @@ async fn main() {
                 &mut session,
                 &format!("<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{task}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"),
                 sampler.clone(),
-                &grammar,
-                |token| {
+                Some(&grammar),
+                todo!(),
+                |token, _| {
                     print!("{}", token);
                     std::io::stdout().flush().unwrap();
                     Ok(())
@@ -59,11 +60,10 @@ fn create_grammar() -> Grammar<u32> {
     let tokenizer = Tokenizer::load_tokenizer("tokenizer.json");
 
     let grammar = parse::Grammar::parse(
-        r#"Start -> ntInt
-ntString -> 'name' | '" "' | '(' 'str.++' ' ' ntString ' ' ntString ')' | '(' 'str.replace' ' ' ntString ' ' ntString ' ' ntString ')' | '(' 'str.at' ' ' ntString ' ' ntInt ')' | '(' 'int.to.str' ' ' ntInt ')' | '(' 'str.substr' ' ' ntString ' ' ntInt ' ' ntInt ')'
-ntInt -> '0' | '1' | '2' | '(' '+' ' ' ntInt ' ' ntInt ')' | '(' '-' ' ' ntInt ' ' ntInt ')' | '(' 'str.len' ' ' ntString ')' | '(' 'str.to.int' ' ' ntString ')' | '(' 'str.indexof' ' ' ntString ' ' ntString ' ' ntInt ')'
-ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | '(' 'str.suffixof' ' ' ntString ' ' ntString ')' | '(' 'str.contains' ' ' ntString ' ' ntString ')'
-"#,
+        r#"Start -> '{' WHITESPACE '"settings"' WHITESPACE ':' WHITESPACE SETTINGS WHITESPACE '}'
+        SETTINGS -> '{' WHITESPACE '"printInEndpoint"' WHITESPACE ':' WHITESPACE BOOLEAN WHITESPACE '}'
+        BOOLEAN -> 'true' | 'false'
+        WHITESPACE -> ε | ' ' | '   '"#,
     )
     .unwrap();
 
@@ -83,7 +83,7 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
             String::from_utf8_lossy(&tokenizer.inverse_vocab[&merge.pair[1]]),
             String::from_utf8_lossy(&tokenizer.inverse_vocab[&merge.new_token])
         );
-        grammar.shortcut_merge(merge);
+        grammar.shortcut_merge(merge, true);
         processed_merges.push(merge.clone());
     }
 
