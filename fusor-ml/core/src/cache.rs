@@ -434,14 +434,14 @@ mod tests {
         let device = Device::new().await.unwrap();
         let cache = MaskCache::default();
 
-        let mask1 = cache.get_mask(3, &device);
-        let mask2 = cache.get_mask(3, &device);
+        let mask1 = cache.get_mask(3, 0, &device);
+        let mask2 = cache.get_mask(3, 0, &device);
 
         // Should be cached (same object)
         assert_eq!(mask1.mask().shape(), &[3, 3]);
         assert_eq!(mask2.mask().shape(), &[3, 3]);
 
-        let mask3 = cache.get_mask(5, &device);
+        let mask3 = cache.get_mask(5, 0, &device);
         assert_eq!(mask3.mask().shape(), &[5, 5]);
     }
 }
