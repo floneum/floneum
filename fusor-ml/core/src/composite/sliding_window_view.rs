@@ -127,8 +127,8 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
                                 let window = &windows[idx];
                                 strides[i] * window.step
                             } else {
-                                // Not windowed
-                                shape[i]
+                                // Not windowed - keep original stride
+                                strides[i]
                             }
                         } else {
                             // New dimensions for windows

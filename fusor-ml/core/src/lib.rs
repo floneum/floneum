@@ -15,6 +15,7 @@ pub use matmul::*;
 pub(crate) use pair_wise::*;
 pub use varbuilder::VarBuilder;
 
+pub mod cache;
 mod composite;
 mod compute_graph;
 mod device;
