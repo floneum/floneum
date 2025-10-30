@@ -79,83 +79,87 @@ pub(crate) fn q_n_sgemv(
     .unwrap();
     {
         // First load the values of a into cached_a_values
-        writeln!(kernel, "var vector_sum = vec2f();").unwrap();
-        writeln!(kernel, "for (var j = 0u; j < 8; j += 2u) {{").unwrap();
-        {
-            // Load a_val_0 = input_a[batch_idx, m_idx, j + y_offset + 0]
+        writeln!(kernel, "var vector_sum = {dtype}(0.0);").unwrap();
+
+        for j in (0..8).step_by(2) {
+            writeln!(kernel, "{{").unwrap();
+
             write!(kernel, "let a_val_0 = {input_a}[").unwrap();
             input_a.strided_index(
                 kernel,
                 vec![
                     "batch_idx".to_string(),
                     "m_idx".to_string(),
-                    "j + y_offset + 0".to_string(),
+                    format!("y_offset + {j}"),
                 ],
             );
             writeln!(kernel, "];").unwrap();
 
-            // Load a_val_1 = input_a[batch_idx, m_idx, j + y_offset + 1]
             write!(kernel, "let a_val_1 = {input_a}[").unwrap();
             input_a.strided_index(
                 kernel,
                 vec![
                     "batch_idx".to_string(),
                     "m_idx".to_string(),
-                    "j + y_offset + 1".to_string(),
+                    format!("y_offset + {}", j + 1),
                 ],
             );
             writeln!(kernel, "];").unwrap();
 
-            // Load a_val_16 = input_a[batch_idx, m_idx, j + y_offset + 16]
             write!(kernel, "let a_val_16 = {input_a}[").unwrap();
             input_a.strided_index(
                 kernel,
                 vec![
                     "batch_idx".to_string(),
                     "m_idx".to_string(),
-                    "j + y_offset + 16".to_string(),
+                    format!("y_offset + {}", j + 16),
                 ],
             );
             writeln!(kernel, "];").unwrap();
 
-            // Load a_val_17 = input_a[batch_idx, m_idx, j + y_offset + 17]
             write!(kernel, "let a_val_17 = {input_a}[").unwrap();
             input_a.strided_index(
                 kernel,
                 vec![
                     "batch_idx".to_string(),
                     "m_idx".to_string(),
-                    "j + y_offset + 17".to_string(),
+                    format!("y_offset + {}", j + 17),
                 ],
             );
             writeln!(kernel, "];").unwrap();
 
-            writeln!(kernel, "vector_sum[0] += a_val_0 + a_val_1;").unwrap();
-            writeln!(kernel, "cached_a_values[j + 0] = a_val_0;").unwrap();
             writeln!(
                 kernel,
-                "cached_a_values[j + 1] = a_val_1 * {};",
+                "vector_sum += a_val_0 + a_val_1 + a_val_16 + a_val_17;"
+            )
+            .unwrap();
+            writeln!(kernel, "cached_a_values[{j}] = a_val_0;").unwrap();
+            writeln!(
+                kernel,
+                "cached_a_values[{}] = a_val_1 * {};",
+                j + 1,
                 shift_right_scale(8)
             )
             .unwrap();
-
-            writeln!(kernel, "vector_sum[1] += a_val_16 + a_val_17;").unwrap();
             writeln!(
                 kernel,
-                "cached_a_values[j + 8] = a_val_16 * {};",
+                "cached_a_values[{}] = a_val_16 * {};",
+                j + 8,
                 shift_right_scale(4)
             )
             .unwrap();
             writeln!(
                 kernel,
-                "cached_a_values[j + 9] = a_val_17 * {};",
+                "cached_a_values[{}] = a_val_17 * {};",
+                j + 9,
                 shift_right_scale(12)
             )
             .unwrap();
-        }
-        writeln!(kernel, "}}").unwrap();
 
-        writeln!(kernel, "let vector_total = vector_sum.x + vector_sum.y;").unwrap();
+            writeln!(kernel, "}}").unwrap();
+        }
+
+        writeln!(kernel, "let vector_total = vector_sum;").unwrap();
 
         writeln!(kernel, "var block_offset = row_block_offset + i;").unwrap();
         if Q_N_SGEMV_CHUNK_SIZE > 1 {
@@ -241,56 +245,28 @@ fn block_dot_q4_0(kernel: &mut GenericKernel, op: &QMatMulOperation, input_b: &Q
     let dtype = op.input_datatype;
     writeln!(kernel, "var chunk_sum = vec4<{dtype}>();").unwrap();
 
-    writeln!(kernel, "for (var j = 0u; j < 8u; j += 4u) {{").unwrap();
-    {
+    for j in (0..8).step_by(4) {
+        let data_index = j / 4;
         writeln!(
             kernel,
-            "var data_u32 = {input_b}[block_offset].data[lane_index / 4 + j / 4];"
+            "{} data_u32 = {input_b}[block_offset].data[lane_index / 4 + {data_index}];",
+            if j == 0 { "var" } else { "" }
         )
         .unwrap();
         writeln!(
             kernel,
-            "chunk_sum[0] += cached_a_values[j + 0] * {dtype}(data_u32 & 0x000F);"
-        )
-        .unwrap();
-        writeln!(
-            kernel,
-            "chunk_sum[1] += cached_a_values[j + 1] * {dtype}(data_u32 & 0x0F00);"
-        )
-        .unwrap();
-        writeln!(
-            kernel,
-            "chunk_sum[2] += cached_a_values[j + 8] * {dtype}(data_u32 & 0x00F0);"
-        )
-        .unwrap();
-        writeln!(
-            kernel,
-            "chunk_sum[3] += cached_a_values[j + 9] * {dtype}(data_u32 & 0xF000);"
+            "chunk_sum += vec4<{dtype}>(cached_a_values[{j}] * {dtype}(data_u32 & 0x000F), cached_a_values[{}] * {dtype}(data_u32 & 0x0F00), cached_a_values[{}] * {dtype}(data_u32 & 0x00F0), cached_a_values[{}] * {dtype}(data_u32 & 0xF000));",
+            j + 1, j + 8, j + 9
         )
         .unwrap();
         writeln!(kernel, "data_u32 >>= 16u;").unwrap();
         writeln!(
             kernel,
-            "chunk_sum[0] += cached_a_values[j + 2] * {dtype}(data_u32 & 0x000F);"
-        )
-        .unwrap();
-        writeln!(
-            kernel,
-            "chunk_sum[1] += cached_a_values[j + 3] * {dtype}(data_u32 & 0x0F00);"
-        )
-        .unwrap();
-        writeln!(
-            kernel,
-            "chunk_sum[2] += cached_a_values[j + 10] * {dtype}(data_u32 & 0x00F0);"
-        )
-        .unwrap();
-        writeln!(
-            kernel,
-            "chunk_sum[3] += cached_a_values[j + 11] * {dtype}(data_u32 & 0xF000);"
+            "chunk_sum += vec4<{dtype}>(cached_a_values[{}] * {dtype}(data_u32 & 0x000F), cached_a_values[{}] * {dtype}(data_u32 & 0x0F00), cached_a_values[{}] * {dtype}(data_u32 & 0x00F0), cached_a_values[{}] * {dtype}(data_u32 & 0xF000));",
+            j + 2, j + 3, j + 10, j + 11
         )
         .unwrap();
     }
-    writeln!(kernel, "}}").unwrap();
 
     writeln!(kernel, "let product = {dtype}({input_b}[block_offset].scale) * (chunk_sum.x + chunk_sum.y + chunk_sum.z + chunk_sum.w + vector_total * -8.0);").unwrap();
 }
@@ -306,56 +282,31 @@ fn block_dot_q5_0(kernel: &mut GenericKernel, op: &QMatMulOperation, input_b: &Q
     )
     .unwrap();
 
-    writeln!(kernel, "for (var j = 0u; j < 8u; j += 4u) {{").unwrap();
-    {
+    for j in (0..8).step_by(4) {
+        let data_index = j / 4;
         writeln!(
             kernel,
-            "var low_u32 = {input_b}[block_offset].data_low_bits[lane_index / 4 + j / 4];"
+            "{} low_u32 = {input_b}[block_offset].data_low_bits[lane_index / 4 + {data_index}];",
+            if j == 0 { "var" } else { "" }
         )
         .unwrap();
+
         writeln!(
             kernel,
-            "chunk_sum[0] += cached_a_values[j + 0] * {dtype}((low_u32 & 0x000F) | ((high_u32 >> (j + 0 + lane_index) << 4) & 0x00010));"
+            "chunk_sum += vec4<{dtype}>(cached_a_values[{j}] * {dtype}((low_u32 & 0x000F) | ((high_u32 >> ({j} + lane_index) << 4) & 0x00010)), cached_a_values[{}] * {dtype}((low_u32 & 0x0F00) | ((high_u32 >> ({} + lane_index) << 12) & 0x01000)), cached_a_values[{}] * {dtype}((low_u32 & 0x00F0) | ((high_u32 >> ({j} + lane_index + {elements_per_block}/2) << 8) & 0x00100)), cached_a_values[{}] * {dtype}((low_u32 & 0xF000) | ((high_u32 >> ({} + lane_index + {elements_per_block}/2) << 16) & 0x10000)));",
+            j + 1, j + 1, j + 8, j + 9, j + 1
         )
         .unwrap();
-        writeln!(
-            kernel,
-            "chunk_sum[1] += cached_a_values[j + 1] * {dtype}((low_u32 & 0x0F00) | ((high_u32 >> (j + 1 + lane_index) << 12) & 0x01000));"
-        )
-        .unwrap();
-        writeln!(
-            kernel,
-            "chunk_sum[2] += cached_a_values[j + 8] * {dtype}((low_u32 & 0x00F0) | ((high_u32 >> (j + 0 + lane_index + {elements_per_block}/2) << 8) & 0x00100));"
-        )
-        .unwrap();
-        writeln!(
-            kernel,
-            "chunk_sum[3] += cached_a_values[j + 9] * {dtype}((low_u32 & 0xF000) | ((high_u32 >> (j + 1 + lane_index + {elements_per_block}/2) << 16) & 0x10000));"
-        )
-        .unwrap();
+
         writeln!(kernel, "low_u32 >>= 16u;").unwrap();
+
         writeln!(
             kernel,
-            "chunk_sum[0] += cached_a_values[j + 2] * {dtype}((low_u32 & 0x000F) | ((high_u32 >> (j + 2 + lane_index) << 4) & 0x00010));"
-        )
-        .unwrap();
-        writeln!(
-            kernel,
-            "chunk_sum[1] += cached_a_values[j + 3] * {dtype}((low_u32 & 0x0F00) | ((high_u32 >> (j + 3 + lane_index) << 12) & 0x01000));"
-        )
-        .unwrap();
-        writeln!(
-            kernel,
-            "chunk_sum[2] += cached_a_values[j + 10] * {dtype}((low_u32 & 0x00F0) | ((high_u32 >> (j + 2 + lane_index + {elements_per_block}/2) << 8) & 0x00100));"
-        )
-        .unwrap();
-        writeln!(
-            kernel,
-            "chunk_sum[3] += cached_a_values[j + 11] * {dtype}((low_u32 & 0xF000) | ((high_u32 >> (j + 3 + lane_index + {elements_per_block}/2) << 16) & 0x10000));"
+            "chunk_sum += vec4<{dtype}>(cached_a_values[{}] * {dtype}((low_u32 & 0x000F) | ((high_u32 >> ({} + lane_index) << 4) & 0x00010)), cached_a_values[{}] * {dtype}((low_u32 & 0x0F00) | ((high_u32 >> ({} + lane_index) << 12) & 0x01000)), cached_a_values[{}] * {dtype}((low_u32 & 0x00F0) | ((high_u32 >> ({} + lane_index + {elements_per_block}/2) << 8) & 0x00100)), cached_a_values[{}] * {dtype}((low_u32 & 0xF000) | ((high_u32 >> ({} + lane_index + {elements_per_block}/2) << 16) & 0x10000)));",
+            j + 2, j + 2, j + 3, j + 3, j + 10, j + 2, j + 11, j + 3
         )
         .unwrap();
     }
-    writeln!(kernel, "}}").unwrap();
 
     writeln!(kernel, "let product = {dtype}({input_b}[block_offset].scale) * (chunk_sum.x + chunk_sum.y + chunk_sum.z + chunk_sum.w + vector_total * -16.0);").unwrap();
 }
