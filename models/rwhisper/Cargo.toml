@@ -28,12 +28,13 @@ accelerate-src = { version = "0.3.2", optional = true }
 intel-mkl-src = { version = "0.8.1", features = ["mkl-static-lp64-iomp"], optional = true }
 cudarc = { version = "0.9.14", features = ["f16"], optional = true }
 half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_distr"], optional = true }
-kalosm-common = { workspace = true }
+kalosm-common = { workspace = true, features = ["tokio"] }
 kalosm-language-model.workspace = true
 kalosm-model-types.workspace = true
 serde = { version = "1.0.209" }
 flate2 = "1.0.35"
 rayon = "1.10.0"
+pollster = "0.4"
 
 [dev-dependencies]
 kalosm = { workspace = true, features = ["sound"], default-features = true }

@@ -22,7 +22,10 @@ pub(super) fn extract_timestamps(
         alignment_heads
             .iter()
             .copied()
-            .filter_map(|[layer, head]| cross_attentions.get(layer)?.i((.., head)).ok()),
+            .filter_map(|[layer, head]| {
+                let attn = cross_attentions.get(layer)?;
+                Some(attn.narrow(1, head, 1).squeeze(1))
+            }),
         0,
     )
     .permute([1, 0, 2, 3])
@@ -49,12 +52,23 @@ pub(super) fn extract_timestamps(
     // Do the timewarp
     ((0..weights.shape()[0]).map(|batch_idx| {
         // Exclude any tokens in the mask
-        let batch_index_cost = cost.neg().i(batch_idx).cast::<f32>();
-        let batch_index_cost = batch_index_cost.to_vec2::<f32>()?;
+        let batch_index_cost_3d = (-cost.clone()).narrow(0, batch_idx, 1).squeeze(0).cast::<f32>();
+        use pollster::FutureExt;
+        let batch_index_cost_slice = batch_index_cost_3d.as_slice().block_on()?;
+        let shape = batch_index_cost_slice.shape();
+        let (rows, cols) = (shape[0], shape[1]);
+        let batch_index_cost = (0..rows).map(|i| (0..cols).map(|j| batch_index_cost_slice[[i, j]]).collect()).collect::<Vec<Vec<_>>>();
         let batch_index_cost = batch_index_cost
             .into_iter()
             .enumerate()
-            .filter_map(|(i, v)| if mask[batch_idx][i] { Some(v) } else { None })
+            .filter_map(|(i, v)| {
+                // Check bounds before accessing mask to avoid panics
+                if i < mask.get(batch_idx).map(|m| m.len()).unwrap_or(0) && mask[batch_idx][i] {
+                    Some(v)
+                } else {
+                    None
+                }
+            })
             .collect::<Vec<_>>();
         if batch_index_cost.is_empty() || batch_index_cost[0].is_empty() {
             return Ok(Vec::new());
@@ -163,56 +177,10 @@ fn dynamic_time_warp(matrix: Vec<Vec<f32>>) -> fusor_core::Result<(Vec<f32>, Vec
 }
 
 fn median_filter(
-    filter_width: NonZeroUsize,
+    _filter_width: NonZeroUsize,
     weights: Tensor<4, f32>,
 ) -> fusor_core::Result<Tensor<4, f32>> {
-    // let filter_width = filter_width.get();
-    // let pad_width = filter_width / 2;
-    // let [_, _c, _, w] = *weights.shape();
-    // if w <= pad_width {
-    //     return Ok(weights);
-    // }
-
-    // let weights = weights.pad_with_same(3, pad_width, pad_width);
-    // let mut medians = vec![];
-    // for i in 0..w {
-    //     let weights = weights.narrow(3, i, filter_width);
-    //     medians.push(weights.unsqueeze(weights.rank() - 2));
-    // }
-
-    // medians.par_iter().try_for_each(|weights| {
-    //     struct Median {
-    //         pad_width: usize,
-    //     }
-
-    //     impl InplaceOp1 for Median {
-    //         fn name(&self) -> &'static str {
-    //             "median"
-    //         }
-
-    //         fn cpu_fwd(
-    //             &self,
-    //             storage: &mut fusor_core::CpuStorage,
-    //             layout: &fusor_core::Layout,
-    //         ) -> fusor_core::Result<()> {
-    //             assert!(layout.is_contiguous());
-    //             if let CpuStorage::F32(storage) = storage {
-    //                 storage.select_nth_unstable_by(self.pad_width, |a, b| {
-    //                     a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-    //                 });
-    //             } else {
-    //                 unimplemented!()
-    //             }
-
-    //             Ok(())
-    //         }
-    //     }
-    //     weights.inplace_op1(&Median { pad_width })
-    // })?;
-
-    // Tensor::cat(&medians, 3)
-    //     .narrow(4, pad_width, 1)
-    //     .squeeze(4)?
-    //     .to_device(weights.device())
-    todo!()
+    // TODO: Implement proper median filtering for timestamp smoothing
+    // For now, return the weights unchanged
+    Ok(weights)
 }

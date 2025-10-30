@@ -1,7 +1,6 @@
 use flate2::{write::ZlibEncoder, Compression};
-use fusor_core::{Device, Tensor};
+use fusor_core::{cache::TensorCache, Device, Error, Tensor};
 use futures_channel::mpsc::UnboundedSender;
-use kalosm_common::{accelerated_device_if_available, CacheError, TensorCache};
 use rand::{
     distr::{weighted::WeightedIndex, Distribution},
     SeedableRng,
@@ -20,6 +19,7 @@ use crate::{
     audio, config::*, quantized::TextDecoderCache, Task, TaskType, TokenChunk, WhisperBuilder,
     WhisperLanguage,
 };
+use kalosm_common::CacheError;
 
 enum ModelType {
     Quantized(crate::quantized::Whisper),
@@ -73,8 +73,8 @@ pub enum WhisperLoadingError {
 #[derive(Debug, thiserror::Error)]
 pub enum WhisperError {
     /// An error that can occur when trying to run a [`Whisper`] model.
-    #[error("Candle error: {0}")]
-    Candle(#[from] fusor_core::Error),
+    #[error("Fusor error: {0}")]
+    Fusor(#[from] fusor_core::Error),
     /// An error that can occur when encoding or decoding for a [`Whisper`] model.
     #[error("Tokenizer error: {0}")]
     Tokenizer(tokenizers::Error),
@@ -224,7 +224,7 @@ impl Decoder {
         let no_speech_token = NO_SPEECH_TOKENS
             .iter()
             .find_map(|token| token_id(&tokenizer, token).ok())
-            .ok_or_else(|| fusor_core::Error::Msg("no_speech_token not found".to_string()))?;
+            .ok_or_else(|| fusor_core::Error::msg("no_speech_token not found"))?;
         let timestamp_tokens = (0..=1500)
             .map(|i| token_id(&tokenizer, &format!("<|{:.2}|>", i as f32 * 0.02)))
             .collect::<fusor_core::Result<Vec<_>>>()?;
@@ -280,7 +280,7 @@ impl Decoder {
             .chain(std::iter::once(self.eot_token))
     }
 
-    fn encode(&mut self, mel: &Tensor) -> fusor_core::Result<Tensor> {
+    fn encode(&mut self, mel: &Tensor<3, f32>) -> fusor_core::Result<Tensor<3, f32>> {
         let tensor = match &mut self.model {
             ModelType::Quantized(model) => model.encoder.forward(mel)?,
         };
@@ -290,7 +290,7 @@ impl Decoder {
 
     fn decode(
         &mut self,
-        audio_features: &Tensor,
+        audio_features: &Tensor<2, f32>,
         temperature: f64,
         task: Task,
         previous_tokens: &[u32],
@@ -326,7 +326,7 @@ impl Decoder {
                         attention_output = Some({
                             let mut outputs = Vec::new();
                             for _ in 0..model.decoder.block_count() {
-                                outputs.push(TensorCache::new(2, usize::MAX));
+                                outputs.push(TensorCache::new(2));
                             }
                             outputs
                         });
@@ -364,24 +364,34 @@ impl Decoder {
             // token logits and the probability for the according token.
             if i == 0 {
                 let logits = match &mut self.model {
-                    ModelType::Quantized(model) => model.decoder.final_linear(&ys.i(..1)),
-                }
-                .i(0)
-                .i(0);
-                no_speech_prob = logits
-                    .softmax(0)
-                    .i(self.no_speech_token as usize)
-                    .to_scalar::<f32>() as f64;
+                    ModelType::Quantized(model) => {
+                        let ys_slice = ys.narrow(0, 0, 1);
+                        model.decoder.final_linear(&ys_slice)?
+                    }
+                };
+                let logits_2d = logits.i((.., 0, ..));
+                let logits_1d = logits_2d.narrow(0, 0, 1).squeeze(0);
+                use pollster::FutureExt;
+                let softmax_result = logits_1d.softmax(0);
+                let token_prob = softmax_result
+                    .narrow(0, self.no_speech_token as usize, 1)
+                    .squeeze(0);
+                no_speech_prob = token_prob
+                    .to_scalar()
+                    .block_on()
+                    .map_err(|e| WhisperError::Fusor(e.into()))?
+                    as f64;
             }
 
-            let (_, seq_len, _) = ys.dims3()?;
+            let [_, seq_len, _] = *ys.shape();
             let logits = match &mut self.model {
                 ModelType::Quantized(model) => {
-                    model.decoder.final_linear(&ys.i((..1, seq_len - 1..))?)?
+                    let ys_slice = ys.narrow(0, 0, 1).narrow(1, seq_len - 1, 1);
+                    model.decoder.final_linear(&ys_slice)?
                 }
-            }
-            .i(0)?
-            .i(0)?;
+            };
+            let logits_2d = logits.i((.., 0, ..));
+            let logits_1d = logits_2d.narrow(0, 0, 1).squeeze(0);
             // TODO: Besides suppress tokens, we should apply the heuristics from
             // ApplyTimestampRules, i.e.:
             // - Timestamps come in pairs, except before EOT.
@@ -389,20 +399,20 @@ impl Decoder {
             // - If the sum of the probabilities of timestamps is higher than any other tokens,
             //   only consider timestamps when sampling.
             // https://github.com/openai/whisper/blob/e8622f9afc4eba139bf796c210f5c01081000472/whisper/decoding.py#L439
-            let logits = logits.broadcast_add(&self.suppress_tokens)?;
+            let logits = &logits_1d + &self.suppress_tokens;
             let next_token = if temperature > 0f64 {
-                let prs = (&logits / temperature).softmax(0)?;
+                let prs = logits.clone() / (temperature as f32);
+                let prs = prs.softmax(0);
                 let logits_v: Vec<f32> =
                     self.apply_timestamp_rules(prs, &tokens, task.without_timestamps)?;
                 // Weights may be NaN if decoding fails
-                let distr = WeightedIndex::new(&logits_v).map_err(|_| {
-                    fusor_core::Error::Msg("Weights were invalid distribution".into())
-                })?;
+                let distr = WeightedIndex::new(&logits_v)
+                    .map_err(|_| fusor_core::Error::msg("Weights were invalid distribution"))?;
                 distr.sample(&mut self.rng) as u32
             } else {
-                let logits = logits.softmax(0)?;
+                let logits_sm = logits.softmax(0);
                 let logits_v: Vec<f32> =
-                    self.apply_timestamp_rules(logits, &tokens, task.without_timestamps)?;
+                    self.apply_timestamp_rules(logits_sm, &tokens, task.without_timestamps)?;
                 logits_v
                     .iter()
                     .enumerate()
@@ -417,10 +427,15 @@ impl Decoder {
             }
             tokens.push(next_token);
             queued_tokens.push(next_token);
-            let prob = logits
+            use pollster::FutureExt;
+            let prob_tensor = logits
                 .softmax_last_dim()
-                .i(next_token as usize)
-                .to_scalar::<f32>() as f64;
+                .narrow(0, next_token as usize, 1)
+                .squeeze(0);
+            let prob = prob_tensor
+                .to_scalar()
+                .block_on()
+                .map_err(|e| WhisperError::Fusor(e.into()))? as f64;
             // If we have read the maximum number of tokens, stop regardless of the eot token
             // Or if word level timestamps are disabled, stop as soon was we reach the eot token
             if tokens.len() > self.model.config().max_target_positions
@@ -539,7 +554,7 @@ impl Decoder {
 
     fn decode_with_fallback(
         &mut self,
-        audio_features: &Tensor,
+        audio_features: &Tensor<2, f32>,
         task: Task,
         previous_tokens: &[u32],
         n_frames: usize,
@@ -569,7 +584,7 @@ impl Decoder {
 
     fn run(
         &mut self,
-        mel: &Tensor,
+        mel: &Tensor<2, f32>,
         audio_frames: usize,
         task: Task,
         mut result: UnboundedSender<Segment>,
@@ -577,7 +592,7 @@ impl Decoder {
         // TODO: This should be dynamic based on how much memory the model uses and how much memory is available
         const MAX_CHUNKS: usize = 1;
 
-        let (_, content_frames) = mel.dims2()?;
+        let [_, content_frames] = *mel.shape();
         let mut seek = 0;
         let start_time = Instant::now();
         let mut chunk_indices = Vec::new();
@@ -595,13 +610,13 @@ impl Decoder {
                     break;
                 }
                 chunk_indices.push(seek..seek + segment_size);
-                let mel_segment = mel.narrow(1, seek, segment_size)?;
+                let mel_segment = mel.narrow(1, seek, segment_size);
                 chunked.push(mel_segment);
                 seek += segment_size;
             }
 
             // Encode all of the chunks
-            let batched_mel_segment = Tensor::stack(&chunked, 0);
+            let batched_mel_segment: Tensor<3, f32> = Tensor::stack(chunked.iter().cloned(), 0);
             let batched_audio_features = self.encode(&batched_mel_segment)?;
             let split = batched_audio_features.chunk(chunk_indices.len(), 0)?;
 
@@ -617,8 +632,10 @@ impl Decoder {
 
                 let segment_duration = (segment_size * HOP_LENGTH) as f64 / SAMPLE_RATE as f64;
 
+                // Squeeze the batch dimension since decode_with_fallback expects 2D tensor
+                let audio_features_2d = audio_features.squeeze(0);
                 let mut dr = self.decode_with_fallback(
-                    audio_features,
+                    &audio_features_2d,
                     task,
                     &tokens_in_sentence_fragment,
                     segment_size,
@@ -681,7 +698,7 @@ impl Decoder {
 
 pub fn token_id(tokenizer: &Tokenizer, token: &str) -> fusor_core::Result<u32> {
     match tokenizer.token_to_id(token) {
-        None => panic!("no token-id for {token}"),
+        None => Err(Error::msg(format!("no token-id for {token}"))),
         Some(id) => Ok(id),
     }
 }
@@ -689,11 +706,14 @@ pub fn token_id(tokenizer: &Tokenizer, token: &str) -> fusor_core::Result<u32> {
 impl Decoder {
     fn apply_timestamp_rules(
         &self,
-        logits: Tensor,
+        logits: Tensor<1, f32>,
         tokens: &[u32],
         no_timestamps: bool,
     ) -> fusor_core::Result<Vec<f32>> {
-        let mut logits = logits.to_vec1()?;
+        use pollster::FutureExt;
+        let logits_slice = logits.as_slice().block_on()?;
+        let len = logits_slice.shape()[0];
+        let mut logits = (0..len).map(|i| logits_slice[[i]]).collect::<Vec<_>>();
 
         logits[self.no_timestamps_token as usize] = 0.;
         logits[self.sot_token as usize] = 0.;
