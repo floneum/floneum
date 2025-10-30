@@ -48,6 +48,14 @@ pub enum Error {
     BufferAsyncError(#[from] wgpu::BufferAsyncError),
     #[error("VarBuilder error {0}")]
     VarBuilder(String),
+    #[error("Other error {0}")]
+    Other(String),
+}
+
+impl Error {
+    pub fn msg<S: Into<String>>(s: S) -> Self {
+        Error::Other(s.into())
+    }
 }
 
 impl From<std::io::Error> for Error {
