@@ -154,13 +154,7 @@ struct ResidualAttentionBlock {
 }
 
 impl ResidualAttentionBlock {
-    fn load(
-        n_state: usize,
-        n_head: usize,
-        cross_attn: bool,
-        device: &Device,
-        vb: &mut VarBuilder,
-    ) -> Result<Self> {
+    fn load(n_head: usize, cross_attn: bool, device: &Device, vb: &mut VarBuilder) -> Result<Self> {
         let span = tracing::span!(tracing::Level::TRACE, "residual-attn");
         let attn = MultiHeadAttention::load(n_head, device, &mut vb.pp("self_attn"))?;
         let attn_ln = LayerNorm::load(device, &mut vb.pp("self_attn_layer_norm"), 1e-5)?;
@@ -266,7 +260,6 @@ impl AudioEncoder {
         let blocks = (0..cfg.encoder_layers)
             .map(|i| {
                 ResidualAttentionBlock::load(
-                    n_state,
                     n_head,
                     false,
                     device,
@@ -337,7 +330,6 @@ impl TextDecoder {
     fn load(device: &Device, vb: &mut VarBuilder, cfg: &Config) -> Result<Self> {
         let span = tracing::span!(tracing::Level::TRACE, "text-decoder");
         let span_final = tracing::span!(tracing::Level::TRACE, "text-decoder-final");
-        let n_state = cfg.d_model;
         let n_head = cfg.decoder_attention_heads;
         let max_target_positions = cfg.max_target_positions;
         let token_embedding = Embedding::load(device, &mut vb.pp("embed_tokens"))?;
@@ -345,7 +337,6 @@ impl TextDecoder {
         let blocks = (0..cfg.decoder_layers)
             .map(|i| {
                 ResidualAttentionBlock::load(
-                    n_state,
                     n_head,
                     true,
                     device,
@@ -380,7 +371,10 @@ impl TextDecoder {
             return Err(Error::msg("exceeded max sequence length"));
         }
         let device = audio_features.device();
-        let mask = self.mask_cache.get_mask(seq_len, index_pos, device);
+        let mask = self
+            .mask_cache
+            .get_mask(seq_len, index_pos, None, device)
+            .map_err(Error::msg)?;
         let x = Tensor::new(&device, tokens);
         // The model expects a batch dim but this inference loop does not handle
         // it so we add it at this point.
@@ -448,7 +442,7 @@ impl Whisper {
         })
     }
 
-    pub(crate) fn dtw_timestamps(
+    pub(crate) async fn dtw_timestamps(
         attention_heads: Option<&'static [[usize; 2]]>,
         filter_width: NonZeroUsize,
         n_frames: usize,
@@ -473,5 +467,6 @@ impl Whisper {
             n_frames,
             mask,
         )
+        .await
     }
 }

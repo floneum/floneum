@@ -23,6 +23,7 @@ futures-channel = "0.3.31"
 tracing = "0.1.37"
 futures-util = "0.3.28"
 thiserror.workspace = true
+tokio = { version = "1", features = ["full"] }
 
 accelerate-src = { version = "0.3.2", optional = true }
 intel-mkl-src = { version = "0.8.1", features = ["mkl-static-lp64-iomp"], optional = true }

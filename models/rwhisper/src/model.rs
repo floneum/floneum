@@ -144,7 +144,7 @@ impl WhisperInner {
         })
     }
 
-    pub(crate) fn transcribe(
+    pub(crate) async fn transcribe(
         &mut self,
         pcm_data: Vec<f32>,
         word_level_time_stamps: bool,
@@ -164,16 +164,20 @@ impl WhisperInner {
             }
         }
 
-        if let Err(err) = self.decoder.run(
-            &mel,
-            pcm_data.len(),
-            Task {
-                task_type: TaskType::Unset,
-                word_level_time_stamps,
-                without_timestamps: true,
-            },
-            result,
-        ) {
+        if let Err(err) = self
+            .decoder
+            .run(
+                &mel,
+                pcm_data.len(),
+                Task {
+                    task_type: TaskType::Unset,
+                    word_level_time_stamps,
+                    without_timestamps: true,
+                },
+                result,
+            )
+            .await
+        {
             tracing::error!("Error transcribing audio: {err}");
         }
     }
@@ -289,7 +293,7 @@ impl Decoder {
         Ok(tensor)
     }
 
-    fn decode(
+    async fn decode(
         &mut self,
         audio_features: &Tensor<2, f32>,
         temperature: f64,
@@ -372,14 +376,13 @@ impl Decoder {
                 };
                 let logits_2d = logits.i((.., 0, ..));
                 let logits_1d = logits_2d.narrow(0, 0, 1).squeeze(0);
-                use pollster::FutureExt;
                 let softmax_result = logits_1d.softmax(0);
                 let token_prob = softmax_result
                     .narrow(0, self.no_speech_token as usize, 1)
                     .squeeze(0);
                 no_speech_prob = token_prob
                     .to_scalar()
-                    .block_on()
+                    .await
                     .map_err(|e| WhisperError::Fusor(e.into()))?
                     as f64;
             }
@@ -404,16 +407,18 @@ impl Decoder {
             let next_token = if temperature > 0f64 {
                 let prs = logits.clone() / (temperature as f32);
                 let prs = prs.softmax(0);
-                let logits_v: Vec<f32> =
-                    self.apply_timestamp_rules(prs, &tokens, task.without_timestamps)?;
+                let logits_v: Vec<f32> = self
+                    .apply_timestamp_rules(prs, &tokens, task.without_timestamps)
+                    .await?;
                 // Weights may be NaN if decoding fails
                 let distr = WeightedIndex::new(&logits_v)
                     .map_err(|_| fusor_core::Error::msg("Weights were invalid distribution"))?;
                 distr.sample(&mut self.rng) as u32
             } else {
                 let logits_sm = logits.softmax(0);
-                let logits_v: Vec<f32> =
-                    self.apply_timestamp_rules(logits_sm, &tokens, task.without_timestamps)?;
+                let logits_v: Vec<f32> = self
+                    .apply_timestamp_rules(logits_sm, &tokens, task.without_timestamps)
+                    .await?;
                 logits_v
                     .iter()
                     .enumerate()
@@ -428,14 +433,13 @@ impl Decoder {
             }
             tokens.push(next_token);
             queued_tokens.push(next_token);
-            use pollster::FutureExt;
             let prob_tensor = logits
                 .softmax_last_dim()
                 .narrow(0, next_token as usize, 1)
                 .squeeze(0);
             let prob = prob_tensor
                 .to_scalar()
-                .block_on()
+                .await
                 .map_err(|e| WhisperError::Fusor(e.into()))? as f64;
             // If we have read the maximum number of tokens, stop regardless of the eot token
             // Or if word level timestamps are disabled, stop as soon was we reach the eot token
@@ -455,7 +459,7 @@ impl Decoder {
                 vec![token_mask],
                 attention_output,
             )
-            .unwrap();
+            .await?;
             if let [timestamps] = result.as_slice() {
                 token_timestamps = Some(timestamps.clone());
             }
@@ -553,7 +557,7 @@ impl Decoder {
         })
     }
 
-    fn decode_with_fallback(
+    async fn decode_with_fallback(
         &mut self,
         audio_features: &Tensor<2, f32>,
         task: Task,
@@ -561,8 +565,9 @@ impl Decoder {
         n_frames: usize,
     ) -> Result<DecodingResult, WhisperError> {
         for (i, &t) in TEMPERATURES.iter().enumerate() {
-            let dr: Result<DecodingResult, WhisperError> =
-                self.decode(audio_features, t, task, previous_tokens, n_frames);
+            let dr: Result<DecodingResult, WhisperError> = self
+                .decode(audio_features, t, task, previous_tokens, n_frames)
+                .await;
             if i == TEMPERATURES.len() - 1 {
                 return dr;
             }
@@ -583,7 +588,7 @@ impl Decoder {
         unreachable!()
     }
 
-    fn run(
+    async fn run(
         &mut self,
         mel: &Tensor<2, f32>,
         audio_frames: usize,
@@ -635,12 +640,14 @@ impl Decoder {
 
                 // Squeeze the batch dimension since decode_with_fallback expects 2D tensor
                 let audio_features_2d = audio_features.squeeze(0);
-                let mut dr = self.decode_with_fallback(
-                    &audio_features_2d,
-                    task,
-                    &tokens_in_sentence_fragment,
-                    segment_size,
-                )?;
+                let mut dr = self
+                    .decode_with_fallback(
+                        &audio_features_2d,
+                        task,
+                        &tokens_in_sentence_fragment,
+                        segment_size,
+                    )
+                    .await?;
                 for chunk in dr.chunks.iter_mut() {
                     // Change to iter_mut() to allow mutable access
                     if let Some(timestamp) = &mut chunk.timestamp {
@@ -705,14 +712,14 @@ pub fn token_id(tokenizer: &Tokenizer, token: &str) -> fusor_core::Result<u32> {
 }
 
 impl Decoder {
-    fn apply_timestamp_rules(
+    async fn apply_timestamp_rules(
         &self,
         logits: Tensor<1, f32>,
         tokens: &[u32],
         no_timestamps: bool,
     ) -> fusor_core::Result<Vec<f32>> {
         use pollster::FutureExt;
-        let logits_slice = logits.as_slice().block_on()?;
+        let logits_slice = logits.as_slice().await?;
         let len = logits_slice.shape()[0];
         let mut logits = (0..len).map(|i| logits_slice[[i]]).collect::<Vec<_>>();
 

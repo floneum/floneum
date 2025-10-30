@@ -8,7 +8,7 @@ use std::num::NonZeroUsize;
 use crate::config::{HOP_LENGTH, N_FRAMES, SAMPLE_RATE};
 
 /// Returns the token-level timestamps as a tensor of shape batch x timestamps
-pub(super) fn extract_timestamps(
+pub(super) async fn extract_timestamps(
     // A list of (layer, head) pairs to use for timestamp determination
     alignment_heads: &[[usize; 2]],
     cross_attentions: &[Tensor<4, f32>],
@@ -46,14 +46,14 @@ pub(super) fn extract_timestamps(
     let cost = weights.mean(1);
 
     // Do the timewarp
-    ((0..weights.shape()[0]).map(|batch_idx| {
+    let mut results = Vec::new();
+    for batch_idx in 0..weights.shape()[0] {
         // Exclude any tokens in the mask
         let batch_index_cost_3d = (-cost.clone())
             .narrow(0, batch_idx, 1)
             .squeeze(0)
             .cast::<f32>();
-        use pollster::FutureExt;
-        let batch_index_cost_slice = batch_index_cost_3d.as_slice().block_on()?;
+        let batch_index_cost_slice = batch_index_cost_3d.as_slice().await?;
         let shape = batch_index_cost_slice.shape();
         let (rows, cols) = (shape[0], shape[1]);
         let batch_index_cost = (0..rows)
@@ -92,9 +92,9 @@ pub(super) fn extract_timestamps(
                 }
             });
 
-        Ok(jumps.collect())
-    }))
-    .collect::<fusor_core::Result<Vec<_>>>()
+        results.push(jumps.collect())
+    }
+    Ok(results)
 }
 
 /// Computes the lowest cost warping path through the provided cost matrix
