@@ -13,14 +13,7 @@ use crate::config::Config;
 
 pub(crate) mod timestamps;
 
-fn conv1d(
-    in_channels: usize,
-    out_channels: usize,
-    kernel_size: usize,
-    config: Conv1dConfig,
-    device: &Device,
-    vb: &mut VarBuilder,
-) -> Result<Conv1d> {
+fn conv1d(config: Conv1dConfig, device: &Device, vb: &mut VarBuilder) -> Result<Conv1d> {
     let weight = vb.get("weight", device)?.dequantize();
     let bias = vb.get("bias", device)?.dequantize();
     Ok(Conv1d::new(weight, Some(bias), config))
@@ -50,7 +43,7 @@ struct MultiHeadAttention {
 }
 
 impl MultiHeadAttention {
-    fn load(n_state: usize, n_head: usize, device: &Device, vb: &mut VarBuilder) -> Result<Self> {
+    fn load(n_head: usize, device: &Device, vb: &mut VarBuilder) -> Result<Self> {
         let softmax_span = tracing::span!(tracing::Level::TRACE, "multi-head-attn-softmax");
         let matmul_span = tracing::span!(tracing::Level::TRACE, "multi-head-attn-matmul");
         let query = Linear::load(device, &mut vb.pp("q_proj"))?;
@@ -169,18 +162,16 @@ impl ResidualAttentionBlock {
         vb: &mut VarBuilder,
     ) -> Result<Self> {
         let span = tracing::span!(tracing::Level::TRACE, "residual-attn");
-        let attn = MultiHeadAttention::load(n_state, n_head, device, &mut vb.pp("self_attn"))?;
+        let attn = MultiHeadAttention::load(n_head, device, &mut vb.pp("self_attn"))?;
         let attn_ln = LayerNorm::load(device, &mut vb.pp("self_attn_layer_norm"), 1e-5)?;
         let cross_attn = if cross_attn {
-            let cross_attn =
-                MultiHeadAttention::load(n_state, n_head, device, &mut vb.pp("encoder_attn"))?;
+            let cross_attn = MultiHeadAttention::load(n_head, device, &mut vb.pp("encoder_attn"))?;
             let cross_attn_ln =
                 LayerNorm::load(device, &mut vb.pp("encoder_attn_layer_norm"), 1e-5)?;
             Some((cross_attn, cross_attn_ln))
         } else {
             None
         };
-        let n_mlp = n_state * 4;
         let mlp_linear1 = Linear::load(device, &mut vb.pp("fc1"))?;
         let mlp_linear2 = Linear::load(device, &mut vb.pp("fc2"))?;
         let mlp_ln = LayerNorm::load(device, &mut vb.pp("final_layer_norm"), 1e-5)?;
@@ -269,15 +260,8 @@ impl AudioEncoder {
             groups: 1,
             dilation: 1,
         };
-        let conv1 = conv1d(
-            cfg.num_mel_bins,
-            n_state,
-            3,
-            cfg1,
-            device,
-            &mut vb.pp("conv1"),
-        )?;
-        let conv2 = conv1d(n_state, n_state, 3, cfg2, device, &mut vb.pp("conv2"))?;
+        let conv1 = conv1d(cfg1, device, &mut vb.pp("conv1"))?;
+        let conv2 = conv1d(cfg2, device, &mut vb.pp("conv2"))?;
         let positional_embedding = sinusoids(n_ctx, n_state, device);
         let blocks = (0..cfg.encoder_layers)
             .map(|i| {

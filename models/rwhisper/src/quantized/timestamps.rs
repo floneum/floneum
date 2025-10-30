@@ -3,7 +3,6 @@
 
 use core::f32;
 use fusor_core::Tensor;
-use rayon::iter::*;
 use std::num::NonZeroUsize;
 
 use crate::config::{HOP_LENGTH, N_FRAMES, SAMPLE_RATE};
@@ -19,13 +18,10 @@ pub(super) fn extract_timestamps(
 ) -> fusor_core::Result<Vec<Vec<f32>>> {
     // Select relevant cross-attention heads
     let weights = Tensor::stack(
-        alignment_heads
-            .iter()
-            .copied()
-            .filter_map(|[layer, head]| {
-                let attn = cross_attentions.get(layer)?;
-                Some(attn.narrow(1, head, 1).squeeze(1))
-            }),
+        alignment_heads.iter().copied().filter_map(|[layer, head]| {
+            let attn = cross_attentions.get(layer)?;
+            Some(attn.narrow(1, head, 1).squeeze(1))
+        }),
         0,
     )
     .permute([1, 0, 2, 3])
@@ -52,12 +48,17 @@ pub(super) fn extract_timestamps(
     // Do the timewarp
     ((0..weights.shape()[0]).map(|batch_idx| {
         // Exclude any tokens in the mask
-        let batch_index_cost_3d = (-cost.clone()).narrow(0, batch_idx, 1).squeeze(0).cast::<f32>();
+        let batch_index_cost_3d = (-cost.clone())
+            .narrow(0, batch_idx, 1)
+            .squeeze(0)
+            .cast::<f32>();
         use pollster::FutureExt;
         let batch_index_cost_slice = batch_index_cost_3d.as_slice().block_on()?;
         let shape = batch_index_cost_slice.shape();
         let (rows, cols) = (shape[0], shape[1]);
-        let batch_index_cost = (0..rows).map(|i| (0..cols).map(|j| batch_index_cost_slice[[i, j]]).collect()).collect::<Vec<Vec<_>>>();
+        let batch_index_cost = (0..rows)
+            .map(|i| (0..cols).map(|j| batch_index_cost_slice[[i, j]]).collect())
+            .collect::<Vec<Vec<_>>>();
         let batch_index_cost = batch_index_cost
             .into_iter()
             .enumerate()
