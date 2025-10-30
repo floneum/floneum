@@ -6,7 +6,7 @@
 use std::sync::Arc;
 use std::thread;
 
-use rustfft::FftPlanner;
+use rustfft::{num_complex::Complex, FftPlanner};
 
 use crate::config::{Config, CHUNK_LENGTH, HOP_LENGTH, N_FFT};
 
@@ -16,19 +16,15 @@ fn get_num_threads() -> usize {
         .unwrap_or(1)
 }
 
-fn fft(input: &mut [f32]) -> Vec<f32> {
+fn fft(input: &mut [Complex<f32>], fft_out: &mut Vec<f32>) {
     let mut fft = FftPlanner::new();
-    let mut input = input
-        .iter()
-        .copied()
-        .map(|re| rustfft::num_complex::Complex { re, im: 0.0 })
-        .collect::<Vec<_>>();
     let fft = fft.plan_fft_forward(input.len());
-    fft.process(&mut input);
-    input
-        .into_iter()
-        .flat_map(|c| vec![c.re, c.im])
-        .collect::<Vec<f32>>()
+    fft.process(input);
+    fft_out.clear();
+    for c in input.iter() {
+        fft_out.push(c.re);
+        fft_out.push(c.im);
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -46,27 +42,27 @@ fn log_mel_spectrogram_w(
 ) -> Vec<f32> {
     let n_fft = 1 + fft_size / 2;
 
-    let zero = 0.0_f32;
-    let mut fft_in = vec![zero; fft_size];
-    let mut mel = vec![zero; n_len * n_mel];
+    let mut fft_in = vec![Complex::ZERO; fft_size];
+    let mut mel = vec![0.0; n_len * n_mel];
     let n_samples = samples.len();
     let end = std::cmp::min(n_samples / fft_step + 1, n_len);
+    let mut fft_out = Vec::new();
 
     for i in (ith..end).step_by(n_threads) {
         let offset = i * fft_step;
 
         // apply Hanning window
         for j in 0..std::cmp::min(fft_size, n_samples - offset) {
-            fft_in[j] = hann[j] * samples[offset + j];
+            fft_in[j] = Complex::new(hann[j] * samples[offset + j], 0.0);
         }
 
         // fill the rest with zeros
         if n_samples - offset < fft_size {
-            fft_in[n_samples - offset..].fill(zero);
+            fft_in[n_samples - offset..].fill(Complex::ZERO);
         }
 
         // FFT
-        let mut fft_out: Vec<f32> = fft(&mut fft_in);
+        fft(&mut fft_in, &mut fft_out);
 
         // Calculate modulus^2 of complex numbers
         for j in 0..fft_size {
@@ -79,7 +75,7 @@ fn log_mel_spectrogram_w(
 
         // mel spectrogram
         for j in 0..n_mel {
-            let mut sum = zero;
+            let mut sum = 0.0;
             let mut k = 0;
             // Unroll loop
             while k < n_fft.saturating_sub(3) {
@@ -202,8 +198,14 @@ mod tests {
 
     #[test]
     fn test_fft() {
-        let mut input = vec![0.0, 1.0, 0.0, 0.0];
-        let output = fft(&mut input);
+        let mut input = vec![
+            Complex::new(0.0, 0.0),
+            Complex::new(1.0, 0.0),
+            Complex::new(0.0, 0.0),
+            Complex::new(0.0, 0.0),
+        ];
+        let mut output = Vec::new();
+        fft(&mut input, &mut output);
         assert_eq!(output, vec![1.0, 0.0, 0.0, -1.0, -1.0, 0.0, 0.0, 1.0]);
     }
 

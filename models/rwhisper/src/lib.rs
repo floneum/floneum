@@ -59,8 +59,7 @@ mod audio;
 mod config;
 mod quantized;
 
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 struct DecodingResult {
     text: String,
     avg_logprob: f64,
@@ -69,8 +68,7 @@ struct DecodingResult {
     chunks: Vec<TokenChunk>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 struct TokenChunk {
     text_range: Range<usize>,
     timestamp: Option<Range<f32>>,
@@ -113,8 +111,7 @@ impl std::fmt::Display for TokenChunkRef<'_> {
 }
 
 /// A transcribed segment of audio.
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Segment {
     sample_range: Range<usize>,
     start: f64,
