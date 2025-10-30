@@ -718,7 +718,6 @@ impl Decoder {
         tokens: &[u32],
         no_timestamps: bool,
     ) -> fusor_core::Result<Vec<f32>> {
-        use pollster::FutureExt;
         let logits_slice = logits.as_slice().await?;
         let len = logits_slice.shape()[0];
         let mut logits = (0..len).map(|i| logits_slice[[i]]).collect::<Vec<_>>();

@@ -95,7 +95,8 @@ impl<const R: usize, D: DataType> TensorCache<R, D> {
             });
             *cached = cached.slice_assign(slice, v);
             self.current_seq_len = required_seq_len;
-            cached.clone()
+            // Return only the valid portion of the cache, not the full allocated tensor
+            cached.narrow(self.concat_dim, 0, self.current_seq_len)
         } else {
             // First append - just store it
             self.all_data = Some(v.clone());
@@ -213,36 +214,88 @@ impl AttentionMask {
 /// Mask cache for efficiently managing attention masks
 #[derive(Debug, Clone, Default)]
 pub struct MaskCache {
-    masks: std::sync::Arc<std::sync::RwLock<std::collections::HashMap<usize, AttentionMask>>>,
+    masks: std::sync::Arc<
+        std::sync::RwLock<std::collections::HashMap<(usize, Option<usize>), AttentionMask>>,
+    >,
 }
 
 impl MaskCache {
     /// Get or create a causal mask for the given sequence length
+    ///
+    /// # Arguments
+    /// * `seq_len` - The sequence length
+    /// * `seqlen_offset` - The offset for the sequence (used for padding when not the first token)
+    /// * `sliding_window_size` - Optional sliding window size for sliding window attention
+    /// * `device` - The device to create the mask on
     pub fn get_mask(
         &self,
         seq_len: usize,
-        index_pos: usize,
+        seqlen_offset: usize,
+        sliding_window_size: Option<usize>,
         device: &crate::Device,
-    ) -> AttentionMask {
-        self.get_mask_len(seq_len, device)
+    ) -> Result<AttentionMask, String> {
+        let (seq_len, seqlen_offset) = if let Some(sliding_window_size) = sliding_window_size {
+            // offset + seqlen_offset should not exceed sliding_window_size
+            let offset = seqlen_offset.min(sliding_window_size.saturating_sub(seq_len));
+            (seq_len, offset)
+        } else {
+            (seq_len, seqlen_offset)
+        };
+
+        // Get or create the base mask
+        let mask = {
+            let masks = self.masks.read().unwrap();
+            masks.get(&(seq_len, sliding_window_size)).cloned()
+        };
+
+        let mask = if let Some(mask) = mask {
+            mask
+        } else {
+            // Create the mask based on whether we have a sliding window
+            let mask = if let Some(sliding_window_size) = sliding_window_size {
+                Self::create_sliding_window_mask(device, seq_len, sliding_window_size)
+            } else {
+                AttentionMask::causal(device, seq_len)
+            };
+
+            let mut masks = self.masks.write().unwrap();
+            masks.insert((seq_len, sliding_window_size), mask.clone());
+            mask
+        };
+
+        // If we have an offset, we need to pad the mask
+        if seqlen_offset > 0 {
+            // Pad the mask on the left with zeros
+            let mask_tensor = mask.mask();
+            let shape = mask_tensor.shape();
+            let zeros = Tensor::zeros(device, [shape[0], seqlen_offset]);
+            // Concatenate along dimension 1 (columns)
+            let padded_mask = Tensor::cat([zeros, mask_tensor.clone()], 1);
+            Ok(AttentionMask { mask: padded_mask })
+        } else {
+            Ok(mask)
+        }
     }
 
-    fn get_mask_len(&self, seq_len: usize, device: &crate::Device) -> AttentionMask {
-        // Check if we have it cached
-        {
-            let masks = self.masks.read().unwrap();
-            if let Some(mask) = masks.get(&seq_len) {
-                return mask.clone();
+    fn create_sliding_window_mask(
+        device: &crate::Device,
+        seq_len: usize,
+        sliding_window_size: usize,
+    ) -> AttentionMask {
+        // Create a mask that prevents attending to:
+        // 1. Future positions (i < j)
+        // 2. Positions outside the sliding window (j + sliding_window_size <= i)
+        let mut mask_data = vec![0.0f32; seq_len * seq_len];
+        for i in 0..seq_len {
+            for j in 0..seq_len {
+                if i < j || j + sliding_window_size <= i {
+                    mask_data[i * seq_len + j] = f32::NEG_INFINITY;
+                }
             }
         }
 
-        // Create and cache
-        let mask = AttentionMask::causal(device, seq_len);
-        {
-            let mut masks = self.masks.write().unwrap();
-            masks.insert(seq_len, mask.clone());
-        }
-        mask
+        let mask = Tensor::new(device, mask_data.chunks(seq_len).collect::<Vec<_>>());
+        AttentionMask { mask }
     }
 }
 
@@ -463,14 +516,52 @@ mod tests {
         let device = Device::new().await.unwrap();
         let cache = MaskCache::default();
 
-        let mask1 = cache.get_mask(3, 0, &device);
-        let mask2 = cache.get_mask(3, 0, &device);
+        let mask1 = cache.get_mask(3, 0, None, &device).unwrap();
+        let mask2 = cache.get_mask(3, 0, None, &device).unwrap();
 
         // Should be cached (same object)
         assert_eq!(mask1.mask().shape(), &[3, 3]);
         assert_eq!(mask2.mask().shape(), &[3, 3]);
 
-        let mask3 = cache.get_mask(5, 0, &device);
+        let mask3 = cache.get_mask(5, 0, None, &device).unwrap();
         assert_eq!(mask3.mask().shape(), &[5, 5]);
+    }
+
+    #[tokio::test]
+    async fn test_mask_cache_with_offset() {
+        let device = Device::new().await.unwrap();
+        let cache = MaskCache::default();
+
+        // Test with seqlen_offset
+        let mask = cache.get_mask(2, 3, None, &device).unwrap();
+        // Mask should be padded: [2, 3+2] = [2, 5]
+        assert_eq!(mask.mask().shape(), &[2, 5]);
+    }
+
+    #[tokio::test]
+    async fn test_mask_cache_sliding_window() {
+        let device = Device::new().await.unwrap();
+        let cache = MaskCache::default();
+
+        let mask = cache.get_mask(4, 0, Some(2), &device).unwrap();
+        assert_eq!(mask.mask().shape(), &[4, 4]);
+
+        let mask_data = mask.mask().as_slice().await.unwrap();
+
+        // Should match the sliding window pattern:
+        // Row 0: [0, -inf, -inf, -inf] (can only attend to self)
+        // Row 1: [0, 0, -inf, -inf] (can attend to 0,1)
+        // Row 2: [-inf, 0, 0, -inf] (can attend to 1,2 - sliding window of 2)
+        // Row 3: [-inf, -inf, 0, 0] (can attend to 2,3 - sliding window of 2)
+        assert_eq!(mask_data[[0, 0]], 0.0);
+        assert_eq!(mask_data[[0, 1]], f32::NEG_INFINITY);
+        assert_eq!(mask_data[[1, 0]], 0.0);
+        assert_eq!(mask_data[[1, 1]], 0.0);
+        assert_eq!(mask_data[[2, 0]], f32::NEG_INFINITY);
+        assert_eq!(mask_data[[2, 1]], 0.0);
+        assert_eq!(mask_data[[2, 2]], 0.0);
+        assert_eq!(mask_data[[3, 1]], f32::NEG_INFINITY);
+        assert_eq!(mask_data[[3, 2]], 0.0);
+        assert_eq!(mask_data[[3, 3]], 0.0);
     }
 }

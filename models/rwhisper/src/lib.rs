@@ -896,14 +896,16 @@ impl Display for WhisperLanguage {
 }
 
 struct WhisperDrop {
-    thread: Option<std::thread::JoinHandle<()>>,
+    thread: Option<tokio::task::JoinHandle<()>>,
     sender: std::sync::mpsc::Sender<WhisperMessage>,
 }
 
 impl Drop for WhisperDrop {
     fn drop(&mut self) {
         self.sender.send(WhisperMessage::Kill).unwrap();
-        self.thread.take().unwrap().join().unwrap();
+        if let Some(handle) = self.thread.take() {
+            handle.abort();
+        }
     }
 }
 
