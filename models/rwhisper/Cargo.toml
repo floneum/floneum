@@ -35,6 +35,7 @@ serde = { version = "1.0.209" }
 flate2 = "1.0.35"
 rayon = "1.10.0"
 pollster = "0.4"
+rustfft = "6.4.1"
 
 [dev-dependencies]
 kalosm = { workspace = true, features = ["sound"], default-features = true }
