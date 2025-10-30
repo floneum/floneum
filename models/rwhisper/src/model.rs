@@ -11,6 +11,7 @@ use std::{
     ops::RangeInclusive,
     path::PathBuf,
     time::{Duration, Instant},
+    usize,
 };
 use tokenizers::Tokenizer;
 
@@ -326,7 +327,7 @@ impl Decoder {
                         attention_output = Some({
                             let mut outputs = Vec::new();
                             for _ in 0..model.decoder.block_count() {
-                                outputs.push(TensorCache::new(2));
+                                outputs.push(TensorCache::new(2, usize::MAX));
                             }
                             outputs
                         });

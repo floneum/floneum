@@ -8,17 +8,19 @@ pub struct TensorCache<const R: usize, D: DataType> {
     current_seq_len: usize,
     allocated_seq_len: usize,
     concat_dim: usize,
+    max_sequence_len: usize,
 }
 
 impl<const R: usize, D: DataType> TensorCache<R, D> {
     /// Create a new cache with the given concatenation dimension
-    pub fn new(concat_dim: usize) -> Self {
+    pub fn new(concat_dim: usize, max_sequence_len: usize) -> Self {
         assert!(concat_dim < R, "concat_dim must be less than tensor rank R");
         Self {
             all_data: None,
             current_seq_len: 0,
             allocated_seq_len: 0,
             concat_dim,
+            max_sequence_len,
         }
     }
 
@@ -40,10 +42,33 @@ impl<const R: usize, D: DataType> TensorCache<R, D> {
     pub fn append(&mut self, v: &Tensor<R, D>) -> Tensor<R, D> {
         let v_shape = v.shape();
         let seq_len = v_shape[self.concat_dim];
+        // First find the required new sequence length
+        let required_seq_len = self.current_seq_len + seq_len;
+
+        // If the required size is larger than the max sequence length, cut the start of the cache.
+        if required_seq_len > self.max_sequence_len {
+            let max_seq_len = self.max_sequence_len;
+            let new_start = required_seq_len - max_seq_len;
+            let mut tensors = Vec::new();
+            // Cut the start of the cache.
+            if let Some(all_data) = self.all_data.as_ref() {
+                tensors.push(all_data.narrow(
+                    self.concat_dim,
+                    new_start,
+                    self.current_seq_len - new_start,
+                ));
+            }
+            tensors.push(v.clone());
+            let all_data = Tensor::cat(tensors, self.concat_dim);
+            let all_data_len = all_data.shape()[self.concat_dim];
+            self.all_data =
+                Some(all_data.narrow(self.concat_dim, all_data_len - max_seq_len, max_seq_len));
+            self.current_seq_len = max_seq_len;
+            self.allocated_seq_len = max_seq_len;
+            return all_data;
+        }
 
         if let Some(cached) = &mut self.all_data {
-            // First find the required new sequence length
-            let required_seq_len = self.current_seq_len + seq_len;
             // Check if we need to grow the allocation
             if required_seq_len > self.allocated_seq_len {
                 // Double the allocation until it's large enough
@@ -94,10 +119,10 @@ impl KvCache {
     /// Create a new KV cache
     ///
     /// concat_dim: The dimension along which to concatenate new key/value tensors (typically 1 for sequence length)
-    pub fn new(concat_dim: usize) -> Self {
+    pub fn new(concat_dim: usize, max_sequence_len: usize) -> Self {
         Self {
-            key: TensorCache::new(concat_dim),
-            value: TensorCache::new(concat_dim),
+            key: TensorCache::new(concat_dim, max_sequence_len),
+            value: TensorCache::new(concat_dim, max_sequence_len),
         }
     }
 
@@ -199,6 +224,10 @@ impl MaskCache {
         index_pos: usize,
         device: &crate::Device,
     ) -> AttentionMask {
+        self.get_mask_len(seq_len, device)
+    }
+
+    fn get_mask_len(&self, seq_len: usize, device: &crate::Device) -> AttentionMask {
         // Check if we have it cached
         {
             let masks = self.masks.read().unwrap();
@@ -225,7 +254,7 @@ mod tests {
     #[tokio::test]
     async fn test_tensor_cache_first_append() {
         let device = Device::new().await.unwrap();
-        let mut cache = TensorCache::new(1);
+        let mut cache = TensorCache::new(1, 2);
 
         let data = [[[1.0, 2.0]], [[3.0, 4.0]]];
         let tensor = Tensor::new(&device, &data);
@@ -245,7 +274,7 @@ mod tests {
     #[tokio::test]
     async fn test_tensor_cache_multiple_appends() {
         let device = Device::new().await.unwrap();
-        let mut cache = TensorCache::new(1);
+        let mut cache = TensorCache::new(1, 3);
 
         let data1 = [[[1.0, 2.0]]];
         let data2 = [[[3.0, 4.0]]];
@@ -271,7 +300,7 @@ mod tests {
     #[tokio::test]
     async fn test_tensor_cache_reset() {
         let device = Device::new().await.unwrap();
-        let mut cache = TensorCache::new(1);
+        let mut cache = TensorCache::new(1, 3);
 
         let data = [[[1.0, 2.0]]];
         let tensor = Tensor::new(&device, &data);
@@ -286,7 +315,7 @@ mod tests {
     #[tokio::test]
     async fn test_kv_cache_first_append() {
         let device = Device::new().await.unwrap();
-        let mut cache = KvCache::new(1);
+        let mut cache = KvCache::new(1, 2);
 
         let key_data = [[[1.0, 2.0]]];
         let value_data = [[[3.0, 4.0]]];
@@ -310,7 +339,7 @@ mod tests {
     #[tokio::test]
     async fn test_kv_cache_multiple_appends() {
         let device = Device::new().await.unwrap();
-        let mut cache = KvCache::new(1);
+        let mut cache = KvCache::new(1, 3);
 
         let key_data1 = [[[1.0, 2.0]]];
         let value_data1 = [[[3.0, 4.0]]];
@@ -345,7 +374,7 @@ mod tests {
     #[tokio::test]
     async fn test_kv_cache_reset() {
         let device = Device::new().await.unwrap();
-        let mut cache = KvCache::new(1);
+        let mut cache = KvCache::new(1, 3);
 
         let key_data = [[[1.0, 2.0]]];
         let value_data = [[[3.0, 4.0]]];

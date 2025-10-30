@@ -26,7 +26,7 @@ struct MultiHeadAttentionCache {
 impl MultiHeadAttentionCache {
     fn new(max_seq_len: usize) -> Self {
         Self {
-            kv_cache: KvCache::new(1),
+            kv_cache: KvCache::new(1, max_seq_len),
         }
     }
 }
