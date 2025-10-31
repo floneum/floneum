@@ -1,4 +1,4 @@
-use crate::{Device, NextRank, Result, Tensor, VarBuilder};
+use crate::{Device, NextRank, QMatrix, Result, Tensor, VarBuilder};
 
 /// Embedding layer for token/position embeddings
 ///
@@ -6,6 +6,7 @@ use crate::{Device, NextRank, Result, Tensor, VarBuilder};
 /// Embedding table shape: (num_embeddings, embedding_dim)
 #[derive(Clone, Debug)]
 pub struct Embedding {
+    embeddings_quantized: QMatrix,
     embeddings: Tensor<2, f32>,
     num_embeddings: usize,
     embedding_dim: usize,
@@ -13,12 +14,14 @@ pub struct Embedding {
 
 impl Embedding {
     /// Create a new embedding layer with the given embedding table
-    pub fn new(embeddings: Tensor<2, f32>) -> Self {
+    pub fn new(embeddings_quantized: QMatrix) -> Self {
+        let embeddings = embeddings_quantized.dequantize();
         let shape = embeddings.shape();
         let num_embeddings = shape[0];
         let embedding_dim = shape[1];
 
         Self {
+            embeddings_quantized,
             embeddings,
             num_embeddings,
             embedding_dim,
@@ -29,7 +32,7 @@ impl Embedding {
     ///
     /// Expects weight tensor with shape: (num_embeddings, embedding_dim)
     pub fn load(device: &Device, vb: &mut VarBuilder) -> Result<Self> {
-        let embeddings = vb.get("weight", device)?.dequantize();
+        let embeddings = vb.get("weight", device)?;
         Ok(Self::new(embeddings))
     }
 
@@ -40,7 +43,7 @@ impl Embedding {
         num_embeddings: usize,
         embedding_dim: usize,
     ) -> Result<Self> {
-        let embeddings = vb.get("weight", device)?.dequantize();
+        let embeddings = vb.get("weight", device)?;
 
         // Verify shape
         let shape = embeddings.shape();
@@ -93,6 +96,11 @@ impl Embedding {
         &self.embeddings
     }
 
+    /// Get the quantized embedding table
+    pub fn embeddings_quantized(&self) -> &QMatrix {
+        &self.embeddings_quantized
+    }
+
     pub fn num_embeddings(&self) -> usize {
         self.num_embeddings
     }
@@ -130,11 +138,11 @@ mod tests {
         let output = result.as_slice().await.unwrap();
 
         // Verify lookups
-        assert_eq!(output[[0, 0]], 1.0);  // index 0
+        assert_eq!(output[[0, 0]], 1.0); // index 0
         assert_eq!(output[[0, 1]], 2.0);
-        assert_eq!(output[[1, 0]], 5.0);  // index 2
+        assert_eq!(output[[1, 0]], 5.0); // index 2
         assert_eq!(output[[1, 1]], 6.0);
-        assert_eq!(output[[2, 0]], 3.0);  // index 1
+        assert_eq!(output[[2, 0]], 3.0); // index 1
         assert_eq!(output[[2, 1]], 4.0);
     }
 
@@ -161,13 +169,13 @@ mod tests {
         let output = result.as_slice().await.unwrap();
 
         // Verify lookups
-        assert_eq!(output[[0, 0, 0]], 1.0);  // index 0
+        assert_eq!(output[[0, 0, 0]], 1.0); // index 0
         assert_eq!(output[[0, 0, 1]], 2.0);
-        assert_eq!(output[[0, 1, 0]], 3.0);  // index 1
+        assert_eq!(output[[0, 1, 0]], 3.0); // index 1
         assert_eq!(output[[0, 1, 1]], 4.0);
-        assert_eq!(output[[1, 0, 0]], 5.0);  // index 2
+        assert_eq!(output[[1, 0, 0]], 5.0); // index 2
         assert_eq!(output[[1, 0, 1]], 6.0);
-        assert_eq!(output[[1, 1, 0]], 1.0);  // index 0
+        assert_eq!(output[[1, 1, 0]], 1.0); // index 0
         assert_eq!(output[[1, 1, 1]], 2.0);
     }
 

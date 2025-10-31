@@ -406,15 +406,10 @@ impl TextDecoder {
     }
 
     pub fn final_linear(&self, x: &Tensor<3, f32>) -> Result<Tensor<3, f32>> {
-        let b_size = x.shape()[0];
-        let embeddings = self.token_embedding.embeddings();
-        let [vocab_size, embed_dim] = *embeddings.shape();
-        let w = embeddings
-            .unsqueeze(0)
-            .broadcast_as([b_size, vocab_size, embed_dim]);
+        let embeddings = self.token_embedding.embeddings_quantized();
         let logits = {
             let _enter = self.span_final.enter();
-            x.mat_mul(&w.transpose(1, 2))
+            x.q_mat_mul(embeddings)
         };
         Ok(logits)
     }
