@@ -35,9 +35,9 @@ nnnoiseless = { version = "0.5.1", optional = true }
 
 [features]
 default = ["voice_detection", "denoise"]
-metal = ["candle-core/metal", "rwhisper/accelerate", "rwhisper/metal"]
-cuda = ["candle-core/cuda", "rwhisper/cuda", "rwhisper/cudnn"]
-mkl = ["candle-core/mkl", "rwhisper/mkl"]
+metal = ["candle-core/metal"]
+cuda = ["candle-core/cuda"]
+mkl = ["candle-core/mkl"]
 denoise = ["dep:nnnoiseless"]
 voice_detection = ["dep:voice_activity_detector", "dep:ort", "dep:ort-sys"]
 

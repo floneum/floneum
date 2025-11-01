@@ -1822,6 +1822,30 @@ impl<T> CastTensor<T> for T {
     }
 }
 
+impl CastTensor<f32> for u32 {
+    fn cast<const R: usize>(tensor: &Tensor<R, Self>) -> Tensor<R, f32> {
+        tensor.element_wise(ElementWiseOperation::new(
+            tensor.datatype(),
+            tensor.key(),
+            ElementWiseFunction::new("let output = f32(input);", DataTypeEnum::F32)
+                .with_name("cast"),
+            tensor.shape().as_slice(),
+        ))
+    }
+}
+
+impl CastTensor<half::f16> for u32 {
+    fn cast<const R: usize>(tensor: &Tensor<R, Self>) -> Tensor<R, half::f16> {
+        tensor.element_wise(ElementWiseOperation::new(
+            tensor.datatype(),
+            tensor.key(),
+            ElementWiseFunction::new("let output = f16(input);", DataTypeEnum::F16)
+                .with_name("cast"),
+            tensor.shape().as_slice(),
+        ))
+    }
+}
+
 impl CastTensor<half::f16> for f32 {
     fn cast<const R: usize>(tensor: &Tensor<R, Self>) -> Tensor<R, half::f16> {
         tensor.element_wise(ElementWiseOperation::new(

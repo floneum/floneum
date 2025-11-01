@@ -16,3 +16,4 @@ tokenizer.json
 *.wgsl
 out.txt
 todo.md
+rust-analyzer
