@@ -16,7 +16,7 @@ mod sgemv_params;
 pub fn get_optimal_params(m: usize, n: usize, k: usize) -> MatMulParams {
     match (m, n, k) {
         // Default fallback
-        (_, 1, _) => MatMulParams::Vector(gemv_parameters(m, n, k)),
+        (_, 0..32, _) => MatMulParams::Vector(gemv_parameters(m, n, k)),
         (_, _, _) => MatMulParams::MatMul(gemm_parameters(m, n, k)),
     }
 }
