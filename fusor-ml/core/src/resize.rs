@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use crate::{
-    DataTypeEnum, Layout, SmallerRank, TILE_SIZE, Tensor, TensorData,
+    DataTypeEnum, SmallerRank, TILE_SIZE, Tensor, TensorData,
     compute_graph::AnyComputeKey,
     map_layout::MapLayoutOperation,
     mir::{
@@ -42,24 +42,66 @@ impl ResizeOperation {
         &self,
         graph: &crate::compute_graph::ComputeGraphInner,
     ) -> Option<MapLayoutOperation> {
-        if self.fill_shape != self.new_shape
-            || self.current_shape.iter().product::<usize>()
-                != self.new_shape.iter().product::<usize>()
-        {
+        let full_fill = self.fill_shape == self.new_shape;
+        let matching_size = self.current_shape.iter().product::<usize>()
+            == self.new_shape.iter().product::<usize>();
+        if !full_fill || !matching_size {
             return None;
         }
 
         let input = graph.cached_results.get(&self.input)?;
         let input_layout = input.layout();
-        if !input_layout.is_contiguous() {
-            return None;
+
+        // Find the chunks of strides that are contiguous in the input
+        let mut contiguous_stride_chunks = Vec::new();
+        for (stride, len) in input_layout
+            .strides()
+            .iter()
+            .rev()
+            .zip(input_layout.shape().iter().rev())
+        {
+            let Some((last_stride, last_len)) = contiguous_stride_chunks.last_mut() else {
+                contiguous_stride_chunks.push((*stride, *len));
+                continue;
+            };
+            let contiguous_stride = *last_stride * *last_len;
+            if *stride == contiguous_stride {
+                *last_len *= len;
+            } else {
+                contiguous_stride_chunks.push((*stride, *len));
+            }
         }
+
+        // Check if the new shape can be formed by combining contiguous chunks
+        // of the input shape
         let new_shape = self.new_shape.clone();
-        let new_strides = Layout::continuous_strides(&new_shape);
+        let mut new_strides = Vec::new();
+        let offset = input_layout.offset();
+        let mut contiguous_stride_chunks_iter = contiguous_stride_chunks.iter_mut().peekable();
+        for shape in new_shape.iter().rev() {
+            // If we've used up this chunk and the current shape dimension is more than 1,
+            // move to the next chunk
+            while contiguous_stride_chunks_iter
+                .next_if(|(_, len)| *len == 1 && *shape > 1)
+                .is_some()
+            {}
+            let Some((stride, len)) = contiguous_stride_chunks_iter.peek_mut() else {
+                return None;
+            };
+            // Make sure the current chunk can be divided to form the new shape
+            if *len % *shape != 0 {
+                return None;
+            }
+            *len /= *shape;
+            new_strides.push(*stride);
+            *stride *= *shape;
+        }
+        new_strides.reverse();
+
         Some(MapLayoutOperation::new(
             self.input,
             move |_| new_shape.clone(),
-            move |_, _| (0, new_strides.clone()),
+            move |_, _| (offset, new_strides.as_slice().into()),
         ))
     }
 
