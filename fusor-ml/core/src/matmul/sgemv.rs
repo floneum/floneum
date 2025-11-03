@@ -203,20 +203,23 @@ pub(crate) fn sgemv(
             writeln!(kernel, "workgroupBarrier();").unwrap();
 
             // Then if this is the first subgroup, do one final shuffle down reduction
-            writeln!(kernel, "if {subgroup_id} != 0u {{ return; }}").unwrap();
-            // Copy over the final value from each subgroup from the workgroup shared memory to the acc variable
-            writeln!(
-                kernel,
-                "if {subgroup_local_id} < {subgroups_per_workgroup} {{"
-            )
-            .unwrap();
+            writeln!(kernel, "if {subgroup_id} != 0u {{").unwrap();
             {
-                writeln!(kernel, "acc = {local_data}[{subgroup_local_id}];").unwrap();
-            }
-            writeln!(kernel, "}}").unwrap();
-            writeln!(kernel, "else {{").unwrap();
-            {
-                writeln!(kernel, "acc = {storage_type}();").unwrap();
+                // Copy over the final value from each subgroup from the workgroup shared memory to the acc variable
+                writeln!(
+                    kernel,
+                    "if {subgroup_local_id} < {subgroups_per_workgroup} {{"
+                )
+                .unwrap();
+                {
+                    writeln!(kernel, "acc = {local_data}[{subgroup_local_id}];").unwrap();
+                }
+                writeln!(kernel, "}}").unwrap();
+                writeln!(kernel, "else {{").unwrap();
+                {
+                    writeln!(kernel, "acc = {storage_type}();").unwrap();
+                }
+                writeln!(kernel, "}}").unwrap();
             }
             writeln!(kernel, "}}").unwrap();
 

@@ -42,7 +42,6 @@ use model::{WhisperInner, WhisperLoadingError};
 use rodio::{source::UniformSourceIterator, Source};
 use std::{
     fmt::Display,
-    future::Future,
     ops::Range,
     pin::Pin,
     str::FromStr,
@@ -118,8 +117,8 @@ pub struct Segment {
     sample_range: Range<usize>,
     start: f64,
     duration: f64,
-    elapsed_time: Duration,
-    remaining_time: Duration,
+    elapsed_time: Option<Duration>,
+    remaining_time: Option<Duration>,
     progress: f32,
     result: DecodingResult,
 }
@@ -159,12 +158,12 @@ impl Segment {
     }
 
     /// Get the elapsed time
-    pub fn elapsed_time(&self) -> Duration {
+    pub fn elapsed_time(&self) -> Option<Duration> {
         self.elapsed_time
     }
 
     /// Get the estimated time remaining to process the entire audio file
-    pub fn remaining_time(&self) -> Duration {
+    pub fn remaining_time(&self) -> Option<Duration> {
         self.remaining_time
     }
 
@@ -427,9 +426,7 @@ impl WhisperBuilder {
             .await?;
 
         let (tx, rx) = futures_channel::mpsc::unbounded::<WhisperMessage>();
-        let mut model = WhisperInner::new(self, &model, &tokenizer, &config)
-            .await
-            .unwrap();
+        let mut model = WhisperInner::new(self, &model, &tokenizer, &config).await?;
 
         let task = Box::pin(async move {
             let mut rx = rx;

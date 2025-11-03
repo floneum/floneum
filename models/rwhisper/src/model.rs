@@ -592,7 +592,7 @@ impl Decoder {
 
         let [_, content_frames] = *mel.shape();
         let mut seek = 0;
-        let start_time = Instant::now();
+        let start_time = cfg!(not(target_arch = "wasm32")).then(Instant::now);
         let mut chunk_indices = Vec::new();
         let mut chunked = Vec::new();
         // Keep looping until we have all the chunks we need
@@ -669,10 +669,12 @@ impl Decoder {
                     tokens_in_sentence_fragment.extend(tokens.get_ids());
                 };
 
-                let elapsed = start_time.elapsed();
-                let remaining = Duration::from_millis(
-                    ((elapsed.as_millis() as usize / seek) * (content_frames - seek)) as u64,
-                );
+                let elapsed = start_time.map(|start| start.elapsed());
+                let remaining = elapsed.map(|elapsed| {
+                    Duration::from_millis(
+                        ((elapsed.as_millis() as usize / seek) * (content_frames - seek)) as u64,
+                    )
+                });
                 let progress = end as f32 / content_frames as f32;
                 let segment = Segment {
                     sample_range: (range.start * HOP_LENGTH)
