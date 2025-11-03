@@ -37,7 +37,6 @@ use cpal::FromSample;
 use futures_channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use kalosm_common::Cache;
 pub use kalosm_model_types::{FileSource, ModelBuilder, ModelLoadingProgress};
-use kalosm_model_types::{FutureWasmNotSend, WasmNotSend};
 use model::{WhisperInner, WhisperLoadingError};
 use rodio::{source::UniformSourceIterator, Source};
 use std::{
@@ -46,7 +45,7 @@ use std::{
     ops::Range,
     pin::Pin,
     str::FromStr,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -426,12 +425,14 @@ impl WhisperBuilder {
             })
             .await?;
 
-        let (rx, tx) = std::sync::mpsc::channel::<WhisperMessage>();
+        let (tx, rx) = futures_channel::mpsc::unbounded::<WhisperMessage>();
         let mut model = WhisperInner::new(self, &model, &tokenizer, &config)
             .await
             .unwrap();
+
         let task = Box::pin(async move {
-            while let Ok(message) = tx.recv() {
+            let mut rx = rx;
+            while let Some(message) = rx.next().await {
                 model
                     .transcribe(
                         message.samples,
@@ -441,12 +442,12 @@ impl WhisperBuilder {
                     )
                     .await;
             }
-        }) as Pin<Box<dyn FutureWasmNotSend<Output = ()> + 'static>>;
+        });
 
         Ok(Whisper {
             inner: Arc::new(WhisperTask {
-                task: task.into(),
-                sender: rx,
+                sender: tx,
+                task: Mutex::new(task),
             }),
         })
     }
@@ -802,8 +803,8 @@ impl Display for WhisperLanguage {
 }
 
 struct WhisperTask {
-    task: RwLock<Pin<Box<dyn FutureWasmNotSend<Output = ()> + 'static>>>,
-    sender: std::sync::mpsc::Sender<WhisperMessage>,
+    sender: UnboundedSender<WhisperMessage>,
+    task: Mutex<Pin<Box<dyn FutureWasmNotSend<Output = ()> + 'static>>>,
 }
 
 #[derive(Clone)]
@@ -848,7 +849,7 @@ pub struct TranscriptionTask {
     word_level_time_stamps: bool,
     audio: Vec<f32>,
     whisper: Whisper,
-    receiver: RwLock<Option<UnboundedReceiver<Segment>>>,
+    receiver: Mutex<Option<UnboundedReceiver<Segment>>>,
     language: Option<WhisperLanguage>,
 }
 
@@ -878,25 +879,29 @@ impl Stream for TranscriptionTask {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
         let myself = self.get_mut();
-        let mut write = myself.receiver.write().unwrap();
+        let mut write = myself.receiver.lock().unwrap();
         if write.is_none() {
             let (sender, receiver) = futures_channel::mpsc::unbounded();
             let pcm_data = std::mem::take(&mut myself.audio);
 
-            _ = myself.whisper.inner.sender.send(WhisperMessage {
-                samples: pcm_data,
-                timestamps: myself.word_level_time_stamps,
-                lang: myself.language,
-                sender,
-            });
+            myself
+                .whisper
+                .inner
+                .sender
+                .unbounded_send(WhisperMessage {
+                    samples: pcm_data,
+                    timestamps: myself.word_level_time_stamps,
+                    lang: myself.language,
+                    sender,
+                })
+                .unwrap();
 
             *write = Some(receiver);
         }
 
-        println!("Polling whisper task");
-        // Run the whisper task
-        let out = myself.whisper.inner.task.write().unwrap().poll_unpin(cx);
-        println!("out: {:?}", out);
+        // Poll the background task to make progress on transcription
+        let mut task = myself.whisper.inner.task.lock().unwrap();
+        let _ = task.poll_unpin(cx);
 
         write.as_mut().unwrap().poll_next_unpin(cx)
     }
