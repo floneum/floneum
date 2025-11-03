@@ -115,10 +115,10 @@ impl WhisperInner {
             mel_bytes,
             &mut mel_filters,
         );
-        let attention_heads = settings.model.timestamp_attention_heads();
+        let attention_heads = settings.model.heads;
 
         let model = ModelType::load(&weights_filename, &device, config.clone())?;
-        let language_token = if settings.model.is_multilingual() {
+        let language_token = if settings.model.multilingual {
             let language = settings.language.unwrap_or(WhisperLanguage::English);
             match token_id(&tokenizer, &format!("<|{language}|>")) {
                 Ok(token_id) => Some(token_id),

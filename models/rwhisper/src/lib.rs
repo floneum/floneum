@@ -348,7 +348,7 @@ impl ModelBuilder for WhisperBuilder {
     }
 
     fn requires_download(&self) -> bool {
-        let whisper = self.get_whisper_model_config();
+        let whisper = &self.model;
         let cache = Cache::default();
         !cache.exists(&whisper.model)
             || !cache.exists(&whisper.tokenizer)
@@ -357,102 +357,6 @@ impl ModelBuilder for WhisperBuilder {
 }
 
 impl WhisperBuilder {
-    fn get_whisper_model_config(&self) -> WhisperModelConfig {
-        let (model_id, revision) = self.model.model_and_revision();
-        match self.model {
-            WhisperSource::QuantizedTinyEn => {
-                let model = FileSource::huggingface(
-                    model_id.to_owned(),
-                    revision.to_owned(),
-                    "model-tiny-en-q80.gguf".to_owned(),
-                );
-                let tokenizer = FileSource::huggingface(
-                    model_id.to_owned(),
-                    revision.to_owned(),
-                    "tokenizer-tiny-en.json".to_owned(),
-                );
-                let config = FileSource::huggingface(
-                    model_id.to_owned(),
-                    revision.to_owned(),
-                    "config-tiny-en.json".to_owned(),
-                );
-                WhisperModelConfig::new(model, tokenizer, config)
-            }
-            WhisperSource::QuantizedTiny => {
-                let model = FileSource::huggingface(
-                    model_id.to_owned(),
-                    revision.to_owned(),
-                    "model-tiny-q80.gguf".to_owned(),
-                );
-                let tokenizer = FileSource::huggingface(
-                    model_id.to_owned(),
-                    revision.to_owned(),
-                    "tokenizer-tiny.json".to_owned(),
-                );
-                let config = FileSource::huggingface(
-                    model_id.to_owned(),
-                    revision.to_owned(),
-                    "config-tiny.json".to_owned(),
-                );
-                WhisperModelConfig::new(model, tokenizer, config)
-            }
-            WhisperSource::QuantizedDistilLargeV3 => {
-                let model = FileSource::huggingface(
-                    model_id.to_owned(),
-                    revision.to_owned(),
-                    "model.gguf".to_owned(),
-                );
-                let tokenizer = FileSource::huggingface(
-                    model_id.to_owned(),
-                    revision.to_owned(),
-                    "tokenizer.json".to_owned(),
-                );
-                let config = FileSource::huggingface(
-                    model_id.to_owned(),
-                    revision.to_owned(),
-                    "config.json".to_owned(),
-                );
-                WhisperModelConfig::new(model, tokenizer, config)
-            }
-            WhisperSource::QuantizedDistilMediumEn => {
-                let model = FileSource::huggingface(
-                    model_id.to_owned(),
-                    revision.to_owned(),
-                    "model.gguf".to_owned(),
-                );
-                let tokenizer = FileSource::huggingface(
-                    model_id.to_owned(),
-                    revision.to_owned(),
-                    "tokenizer.json".to_owned(),
-                );
-                let config = FileSource::huggingface(
-                    model_id.to_owned(),
-                    revision.to_owned(),
-                    "config.json".to_owned(),
-                );
-                WhisperModelConfig::new(model, tokenizer, config)
-            }
-            WhisperSource::QuantizedLargeV3Turbo => {
-                let model = FileSource::huggingface(
-                    model_id.to_owned(),
-                    revision.to_owned(),
-                    "model.gguf".to_owned(),
-                );
-                let tokenizer = FileSource::huggingface(
-                    model_id.to_owned(),
-                    revision.to_owned(),
-                    "tokenizer.json".to_owned(),
-                );
-                let config = FileSource::huggingface(
-                    model_id.to_owned(),
-                    revision.to_owned(),
-                    "config.json".to_owned(),
-                );
-                WhisperModelConfig::new(model, tokenizer, config)
-            }
-        }
-    }
-
     /// Build the model.
     pub async fn build(self) -> Result<Whisper, WhisperLoadingError> {
         self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator())
@@ -487,10 +391,10 @@ impl WhisperBuilder {
         mut progress_handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
     ) -> Result<Whisper, WhisperLoadingError> {
         // Download section
-        let whisper = self.get_whisper_model_config();
-        let tokenizer_source = whisper.tokenizer;
-        let model_source = whisper.model;
-        let config_source = whisper.config;
+        let whisper = &self.model;
+        let tokenizer_source = &whisper.tokenizer;
+        let model_source = &whisper.model;
+        let config_source = &whisper.config;
 
         let display_tokenizer_source = format!("Tokenizer ({tokenizer_source})");
         let mut create_progress =

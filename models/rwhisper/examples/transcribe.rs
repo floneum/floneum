@@ -9,10 +9,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .await;
 
     // Create a new small whisper model.
-    let model = WhisperBuilder::default()
-        .with_source(WhisperSource::SmallEn)
-        .build()
-        .await?;
+    let model = WhisperBuilder::default().build().await?;
 
     // Transcribe the audio.
     let mut text = model.transcribe(audio);

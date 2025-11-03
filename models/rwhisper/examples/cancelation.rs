@@ -13,10 +13,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let path = std::env::args().nth(1).unwrap();
 
     // Create a new small whisper model
-    let model = WhisperBuilder::default()
-        .with_source(WhisperSource::QuantizedDistilLargeV3)
-        .build()
-        .await?;
+    let model = WhisperBuilder::default().build().await?;
 
     for _ in 0..10 {
         // Load audio from a file

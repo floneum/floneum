@@ -7,7 +7,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // Create a new small whisper model
     let model = WhisperBuilder::default()
-        .with_source(WhisperSource::QuantizedTinyEn)
+        .with_source(WhisperSource::distil_large_v3_5())
         .build()
         .await?;
 

@@ -1,55 +1,62 @@
-use std::{fmt::Display, str::FromStr};
-
 use kalosm_model_types::FileSource;
 
-/// The source whisper model to use.
-#[derive(Clone, Copy, Debug, Default)]
-pub enum WhisperSource {
-    /// The tiny model quantized to run faster.
-    QuantizedTiny,
-    /// The tiny model with only English support quantized to run faster.
-    QuantizedTinyEn,
-    /// The medium model with only English support quantized to run faster.
-    QuantizedDistilMediumEn,
-    /// The quantized distil-large-v3 model.
-    QuantizedDistilLargeV3,
-    #[default]
-    /// The quantized large-v3-turbo model.
-    QuantizedLargeV3Turbo,
+/// Predefined Whisper model sources
+#[derive(Debug, Clone)]
+pub struct WhisperSource {
+    pub(crate) model: FileSource,
+    pub(crate) tokenizer: FileSource,
+    pub(crate) config: FileSource,
+    pub(crate) multilingual: bool,
+    pub(crate) heads: Option<&'static [[usize; 2]]>,
+}
+
+impl Default for WhisperSource {
+    fn default() -> Self {
+        Self::tiny_en()
+    }
 }
 
 impl WhisperSource {
-    /// Check if the model is multilingual.
-    pub fn is_multilingual(&self) -> bool {
-        match self {
-            Self::QuantizedTiny | Self::QuantizedDistilLargeV3 | Self::QuantizedLargeV3Turbo => {
-                true
-            }
-            Self::QuantizedTinyEn | Self::QuantizedDistilMediumEn => false,
+    /// Create a new WhisperSource
+    pub fn new(
+        model: FileSource,
+        tokenizer: FileSource,
+        config: FileSource,
+        multilingual: bool,
+        heads: Option<&'static [[usize; 2]]>,
+    ) -> Self {
+        Self {
+            model,
+            tokenizer,
+            config,
+            multilingual,
+            heads,
         }
     }
 
-    pub(crate) fn model_and_revision(&self) -> (&'static str, &'static str) {
-        match self {
-            Self::QuantizedTiny => ("lmz/candle-whisper", "main"),
-            Self::QuantizedTinyEn => ("lmz/candle-whisper", "main"),
-            Self::QuantizedDistilMediumEn => {
-                ("Demonthos/candle-quantized-whisper-medium-distil", "main")
-            }
-            Self::QuantizedDistilLargeV3 => {
-                ("Demonthos/candle-quantized-whisper-distil-v3", "main")
-            }
-            Self::QuantizedLargeV3Turbo => {
-                ("Demonthos/candle-quantized-whisper-large-v3-turbo", "main")
-            }
-        }
-    }
-
-    pub(crate) fn timestamp_attention_heads(&self) -> Option<&'static [[usize; 2]]> {
-        match self {
-            Self::QuantizedDistilMediumEn => None,
-            Self::QuantizedTiny => Some(&[[2, 2], [3, 0], [3, 2], [3, 3], [3, 4], [3, 5]]),
-            Self::QuantizedTinyEn => Some(&[
+    /// Tiny english model
+    pub fn tiny_en() -> Self {
+        let model = FileSource::huggingface(
+            "lmz/candle-whisper".to_owned(),
+            "main".to_owned(),
+            "model-tiny-en-q80.gguf".to_owned(),
+        );
+        let tokenizer = FileSource::huggingface(
+            "lmz/candle-whisper".to_owned(),
+            "main".to_owned(),
+            "tokenizer-tiny-en.json".to_owned(),
+        );
+        let config = FileSource::huggingface(
+            "lmz/candle-whisper".to_owned(),
+            "main".to_owned(),
+            "config-tiny-en.json".to_owned(),
+        );
+        WhisperSource::new(
+            model,
+            tokenizer,
+            config,
+            false,
+            Some(&[
                 [1, 0],
                 [2, 0],
                 [2, 5],
@@ -59,10 +66,178 @@ impl WhisperSource {
                 [3, 3],
                 [3, 4],
             ]),
-            Self::QuantizedLargeV3Turbo => {
-                Some(&[[2, 4], [2, 11], [3, 3], [3, 6], [3, 11], [3, 14]])
-            }
-            Self::QuantizedDistilLargeV3 => Some(&[
+        )
+    }
+
+    /// Tiny model
+    pub fn tiny() -> Self {
+        let model = FileSource::huggingface(
+            "lmz/candle-whisper".to_owned(),
+            "main".to_owned(),
+            "model-tiny-q80.gguf".to_owned(),
+        );
+        let tokenizer = FileSource::huggingface(
+            "lmz/candle-whisper".to_owned(),
+            "main".to_owned(),
+            "tokenizer-tiny.json".to_owned(),
+        );
+        let config = FileSource::huggingface(
+            "lmz/candle-whisper".to_owned(),
+            "main".to_owned(),
+            "config-tiny.json".to_owned(),
+        );
+        WhisperSource::new(
+            model,
+            tokenizer,
+            config,
+            true,
+            Some(&[[2, 2], [3, 0], [3, 2], [3, 3], [3, 4], [3, 5]]),
+        )
+    }
+
+    /// Base model
+    pub fn base() -> Self {
+        let model = FileSource::huggingface(
+            "Demonthos/fusor-whisper-base".to_owned(),
+            "main".to_owned(),
+            "whisper-base.gguf".to_owned(),
+        );
+        let tokenizer = FileSource::huggingface(
+            "openai/whisper-base".to_owned(),
+            "main".to_owned(),
+            "tokenizer.json".to_owned(),
+        );
+        let config = FileSource::huggingface(
+            "openai/whisper-base".to_owned(),
+            "main".to_owned(),
+            "config.json".to_owned(),
+        );
+        WhisperSource::new(model, tokenizer, config, true, None)
+    }
+
+    /// Base english model
+    pub fn base_en() -> Self {
+        let model = FileSource::huggingface(
+            "Demonthos/fusor-whisper-base-en".to_owned(),
+            "main".to_owned(),
+            "whisper-base-en.gguf".to_owned(),
+        );
+        let tokenizer = FileSource::huggingface(
+            "openai/whisper-base.en".to_owned(),
+            "main".to_owned(),
+            "tokenizer.json".to_owned(),
+        );
+        let config = FileSource::huggingface(
+            "openai/whisper-base.en".to_owned(),
+            "main".to_owned(),
+            "config.json".to_owned(),
+        );
+        WhisperSource::new(model, tokenizer, config, false, None)
+    }
+
+    /// Medium model
+    pub fn medium() -> Self {
+        let model = FileSource::huggingface(
+            "Demonthos/fusor-whisper-medium".to_owned(),
+            "main".to_owned(),
+            "whisper-medium.gguf".to_owned(),
+        );
+        let tokenizer = FileSource::huggingface(
+            "openai/whisper-medium".to_owned(),
+            "main".to_owned(),
+            "tokenizer.json".to_owned(),
+        );
+        let config = FileSource::huggingface(
+            "openai/whisper-medium".to_owned(),
+            "main".to_owned(),
+            "config.json".to_owned(),
+        );
+        WhisperSource::new(model, tokenizer, config, true, None)
+    }
+
+    /// Medium english model
+    pub fn medium_en() -> Self {
+        let model = FileSource::huggingface(
+            "Demonthos/fusor-whisper-medium-en".to_owned(),
+            "main".to_owned(),
+            "whisper-medium-en.gguf".to_owned(),
+        );
+        let tokenizer = FileSource::huggingface(
+            "openai/whisper-medium.en".to_owned(),
+            "main".to_owned(),
+            "tokenizer.json".to_owned(),
+        );
+        let config = FileSource::huggingface(
+            "openai/whisper-medium.en".to_owned(),
+            "main".to_owned(),
+            "config.json".to_owned(),
+        );
+        WhisperSource::new(model, tokenizer, config, false, None)
+    }
+
+    /// Large v3 model
+    pub fn large_v3() -> Self {
+        let model = FileSource::huggingface(
+            "Demonthos/fusor-whisper-large-v3".to_owned(),
+            "main".to_owned(),
+            "whisper-large-v3.gguf".to_owned(),
+        );
+        let tokenizer = FileSource::huggingface(
+            "openai/whisper-large-v3".to_owned(),
+            "main".to_owned(),
+            "tokenizer.json".to_owned(),
+        );
+        let config = FileSource::huggingface(
+            "openai/whisper-large-v3".to_owned(),
+            "main".to_owned(),
+            "config.json".to_owned(),
+        );
+        WhisperSource::new(model, tokenizer, config, true, None)
+    }
+
+    /// Distiled medium english model
+    pub fn distil_medium_en() -> Self {
+        let model = FileSource::huggingface(
+            "Demonthos/candle-quantized-whisper-medium-distil".to_owned(),
+            "main".to_owned(),
+            "model.gguf".to_owned(),
+        );
+        let tokenizer = FileSource::huggingface(
+            "Demonthos/candle-quantized-whisper-medium-distil".to_owned(),
+            "main".to_owned(),
+            "tokenizer.json".to_owned(),
+        );
+        let config = FileSource::huggingface(
+            "Demonthos/candle-quantized-whisper-medium-distil".to_owned(),
+            "main".to_owned(),
+            "config.json".to_owned(),
+        );
+        WhisperSource::new(model, tokenizer, config, false, None)
+    }
+
+    /// Distiled large v3.5 model
+    pub fn distil_large_v3_5() -> Self {
+        let model = FileSource::huggingface(
+            "Demonthos/fusor-distil-whisper-large-v3.5".to_owned(),
+            "main".to_owned(),
+            "whisper-distil-large-3.5.gguf".to_owned(),
+        );
+        let tokenizer = FileSource::huggingface(
+            "distil-whisper/distil-large-v3.5".to_owned(),
+            "main".to_owned(),
+            "tokenizer.json".to_owned(),
+        );
+        let config = FileSource::huggingface(
+            "distil-whisper/distil-large-v3.5".to_owned(),
+            "main".to_owned(),
+            "config.json".to_owned(),
+        );
+        WhisperSource::new(
+            model,
+            tokenizer,
+            config,
+            true,
+            Some(&[
                 [1, 0],
                 [1, 1],
                 [1, 2],
@@ -84,58 +259,79 @@ impl WhisperSource {
                 [1, 18],
                 [1, 19],
             ]),
-        }
+        )
     }
-}
 
-/// Error that reports the unsupported value
-#[derive(Debug, PartialEq, Eq)]
-pub struct ParseWhisperSourceError(String);
-
-impl Display for ParseWhisperSourceError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Source {} not supported ", self.0)
-    }
-}
-
-impl FromStr for WhisperSource {
-    type Err = ParseWhisperSourceError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "quantized_tiny" => Ok(Self::QuantizedTiny),
-            "quantized_tiny_en" => Ok(Self::QuantizedTinyEn),
-            "quantized_distil_large_v3" => Ok(Self::QuantizedDistilLargeV3),
-            "quantized_distil_medium_en" => Ok(Self::QuantizedDistilMediumEn),
-            "quantized_large_v3_turbo" => Ok(Self::QuantizedLargeV3Turbo),
-            _ => Err(ParseWhisperSourceError(s.to_owned())),
-        }
-    }
-}
-
-impl Display for WhisperSource {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::QuantizedTiny => write!(f, "quantized_tiny"),
-            Self::QuantizedTinyEn => write!(f, "quantized_tiny_en"),
-            Self::QuantizedDistilMediumEn => write!(f, "quantized_distil_medium_en"),
-            Self::QuantizedDistilLargeV3 => write!(f, "quantized_distil_large_v3"),
-            Self::QuantizedLargeV3Turbo => write!(f, "quantized_large_v3_turbo"),
-        }
-    }
-}
-
-pub(crate) struct WhisperModelConfig {
-    pub(crate) model: FileSource,
-    pub(crate) tokenizer: FileSource,
-    pub(crate) config: FileSource,
-}
-impl WhisperModelConfig {
-    pub(crate) fn new(model: FileSource, tokenizer: FileSource, config: FileSource) -> Self {
-        Self {
+    /// Distiled large v3 model
+    pub fn distil_large_v3() -> Self {
+        let model = FileSource::huggingface(
+            "Demonthos/candle-quantized-whisper-distil-v3".to_owned(),
+            "main".to_owned(),
+            "model.gguf".to_owned(),
+        );
+        let tokenizer = FileSource::huggingface(
+            "Demonthos/candle-quantized-whisper-distil-v3".to_owned(),
+            "main".to_owned(),
+            "tokenizer.json".to_owned(),
+        );
+        let config = FileSource::huggingface(
+            "Demonthos/candle-quantized-whisper-distil-v3".to_owned(),
+            "main".to_owned(),
+            "config.json".to_owned(),
+        );
+        WhisperSource::new(
             model,
             tokenizer,
             config,
-        }
+            true,
+            Some(&[
+                [1, 0],
+                [1, 1],
+                [1, 2],
+                [1, 3],
+                [1, 4],
+                [1, 5],
+                [1, 6],
+                [1, 7],
+                [1, 8],
+                [1, 9],
+                [1, 10],
+                [1, 11],
+                [1, 12],
+                [1, 13],
+                [1, 14],
+                [1, 15],
+                [1, 16],
+                [1, 17],
+                [1, 18],
+                [1, 19],
+            ]),
+        )
+    }
+
+    /// Large v3 turbo model
+    pub fn large_v3_turbo() -> Self {
+        let model = FileSource::huggingface(
+            "Demonthos/candle-quantized-whisper-large-v3-turbo".to_owned(),
+            "main".to_owned(),
+            "model.gguf".to_owned(),
+        );
+        let tokenizer = FileSource::huggingface(
+            "Demonthos/candle-quantized-whisper-large-v3-turbo".to_owned(),
+            "main".to_owned(),
+            "tokenizer.json".to_owned(),
+        );
+        let config = FileSource::huggingface(
+            "Demonthos/candle-quantized-whisper-large-v3-turbo".to_owned(),
+            "main".to_owned(),
+            "config.json".to_owned(),
+        );
+        WhisperSource::new(
+            model,
+            tokenizer,
+            config,
+            true,
+            Some(&[[2, 4], [2, 11], [3, 3], [3, 6], [3, 11], [3, 14]]),
+        )
     }
 }
