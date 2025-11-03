@@ -118,6 +118,25 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
         ))
     }
 
+    pub fn permute(&self, axes: [usize; R]) -> Tensor<R, T> {
+        for &axis in &axes {
+            assert!(axis < self.rank());
+        }
+        for i in 0..R {
+            for j in (i + 1)..R {
+                assert!(axes[i] != axes[j], "Axes must be unique");
+            }
+        }
+        self.add_map_layout(MapLayoutOperation::new(
+            self.key(),
+            move |shape| (0..R).map(|i| shape[axes[i]]).collect::<Box<[usize]>>(),
+            move |offset, strides| {
+                let new_strides = (0..R).map(|i| strides[axes[i]]).collect::<Box<[usize]>>();
+                (offset, new_strides)
+            },
+        ))
+    }
+
     pub fn transpose(&self, first_axis: usize, second_axis: usize) -> Tensor<R, T> {
         assert!(first_axis < self.rank());
         assert!(second_axis < self.rank());

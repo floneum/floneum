@@ -831,6 +831,11 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         out
     }
 
+    pub async fn to_scalar(&self) -> Result<D, wgpu::BufferAsyncError> {
+        let slice = self.as_slice().await?;
+        Ok(slice.as_scalar())
+    }
+
     pub fn debug_assert_real(self) -> Self
     where
         D: FloatDataType,
@@ -1114,6 +1119,13 @@ impl<const R: usize, D: DataType> TensorSlice<R, D> {
             }
             visitor(index);
         }
+    }
+
+    fn as_scalar(&self) -> D
+    where
+        D: Copy,
+    {
+        self.as_slice()[0]
     }
 
     #[cfg(feature = "extra_assertions")]

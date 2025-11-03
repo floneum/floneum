@@ -15,8 +15,7 @@ mod sgemv_params;
 
 pub fn get_optimal_params(m: usize, n: usize, k: usize) -> MatMulParams {
     match (m, n, k) {
-        // Default fallback
-        (_, 1, _) => MatMulParams::Vector(gemv_parameters(m, n, k)),
+        (_, 0..=64, _) => MatMulParams::Vector(gemv_parameters(m, n, k)),
         (_, _, _) => MatMulParams::MatMul(gemm_parameters(m, n, k)),
     }
 }
@@ -154,7 +153,7 @@ impl Operation for MatMulOperation {
         match &self.parameters {
             MatMulParams::Vector(sgemv_params) => sgemv::dispatch_size(
                 second_to_last_dim_size as u32,
-                1,
+                last_dim_size as u32,
                 batch_size as u32,
                 workgroup_shape,
                 sgemv_params,
@@ -404,6 +403,27 @@ async fn test_matmul() {
     assert_eq!(as_slice[[0, 1]], 2.);
     assert_eq!(as_slice[[1, 0]], 3.);
     assert_eq!(as_slice[[1, 1]], 6.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_asymetric_matmul() {
+    let device = Device::new().await.unwrap();
+
+    let data_a = [[1., 2.], [3., 4.], [5., 6.]];
+    let data_b = [[1., 2.], [3., 4.]];
+    let tensor_a = Tensor::new(&device, &data_a);
+    let tensor_b = Tensor::new(&device, &data_b);
+    let tensor = tensor_a.mat_mul(&tensor_b);
+    let as_slice = tensor.as_slice().await.unwrap();
+    println!("{as_slice:?}");
+
+    assert_eq!(as_slice[[0, 0]], 1. * 1. + 2. * 3.);
+    assert_eq!(as_slice[[0, 1]], 1. * 2. + 2. * 4.);
+    assert_eq!(as_slice[[1, 0]], 3. * 1. + 4. * 3.);
+    assert_eq!(as_slice[[1, 1]], 3. * 2. + 4. * 4.);
+    assert_eq!(as_slice[[2, 0]], 5. * 1. + 6. * 3.);
+    assert_eq!(as_slice[[2, 1]], 5. * 2. + 6. * 4.);
 }
 
 #[cfg(test)]

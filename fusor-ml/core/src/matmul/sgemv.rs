@@ -1,4 +1,5 @@
 use std::fmt::Write;
+use std::sync::OnceLock;
 
 use crate::{
     MatMulOperation,
@@ -20,9 +21,8 @@ pub(crate) fn sgemv(
     input_a: &TensorInput,
     input_b: &TensorInput,
     output: &TensorInput,
-    _n_size: &str,
-    // m size is always 1 for sgemv
-    _m_size: &str,
+    n_size: &str,
+    m_size: &str,
     k_size: &str,
     params: &SgemvParams,
     graph: &crate::compute_graph::ComputeGraphInner,
@@ -35,8 +35,11 @@ pub(crate) fn sgemv(
     let chunk_size = params.chunk_size;
     let vector_size = params.vector_size;
 
+    let pre_element_wise_functions: OnceLock<[Vec<_>; 2]> = OnceLock::new();
+    let post_element_wise_functions = OnceLock::new();
+
     // We don't need to synchronize between the whole workgroup if there is only one subgroup
-    let subgroup_size = graph.device.limits().max_subgroup_size;
+    let subgroup_size = graph.device.limits().min_subgroup_size;
     let workgroup_sync_data = (blocksize > subgroup_size).then(|| {
         let local_data = kernel.add_global_array(
             KernelGlobalSpace::Workgroup,
@@ -79,27 +82,43 @@ pub(crate) fn sgemv(
     // In index of the single element in the vector we are multiplying against
     writeln!(kernel, "let workgroup_offset = {workgroup_index}.x;").unwrap();
 
+    // Column index to compute (for n > 1)
+    writeln!(kernel, "let col_index = {workgroup_index}.y;").unwrap();
+
     let storage_type = maybe_vec_storage_type(chunk_size, dtype);
+
+    // Get column strides for input_b and output
+    let b_col_stride = input_b.stride_binding(op.rank() - 1);
+    let b_row_stride = input_b.stride_binding(op.rank() - 2);
+    let c_col_stride = output.stride_binding(op.rank() - 1);
+    let c_row_stride = output.stride_binding(op.rank() - 2);
 
     writeln!(kernel, "var acc = {storage_type}();").unwrap();
 
     // Find this threads position in the workgroup
-    writeln!(kernel, "var index = {workgroup_local_index};").unwrap();
+    writeln!(
+        kernel,
+        "var index = {workgroup_local_index} * {vector_size}u;"
+    )
+    .unwrap();
 
     let vec_storage = maybe_vec_storage_type(vector_size, dtype);
+
+    // Initialize pre-element-wise functions once
+    let pef = pre_element_wise_functions
+        .get_or_init(|| std::array::from_fn(|i| op.pre_element_wise[i].add_functions(kernel)));
 
     // Loop over all of the vector chunks this thread is responsible for
     writeln!(kernel, "while (index < {k_size}) {{").unwrap();
     {
         // Load vector elements into b_reg from input_b. This will be reused for each offset in the chunk
         for i in 0..vector_size {
-            writeln!(
-                kernel,
-                "let input_b_{i}_index = index + {i} * {vector_size};"
-            )
-            .unwrap();
-            let b_row_stride = input_b.stride_binding(op.rank() - 2);
-            writeln!(kernel, "let input_b_{i} = select({dtype}(0.0), {input_b}[b_start_index + input_b_{i}_index * {b_row_stride} + 0], input_b_{i}_index < {k_size});").unwrap();
+            writeln!(kernel, "let input_b_{i}_index = index + {i};").unwrap();
+            let b_base = format!(
+                "select({dtype}(0.0), {input_b}[b_start_index + input_b_{i}_index * {b_row_stride} + col_index * {b_col_stride}], input_b_{i}_index < {k_size})"
+            );
+            let b_val = pef[1].iter().fold(b_base, |acc, f| f.call(vec![acc]));
+            writeln!(kernel, "let input_b_{i} = {b_val};").unwrap();
         }
         write!(kernel, "let reg_b = {vec_storage}(").unwrap();
         for i in 0..vector_size {
@@ -118,16 +137,21 @@ pub(crate) fn sgemv(
             .unwrap();
         }
         let row_index = if chunk_size > 1 {
-            "(workgroup_offset + offset)"
+            format!("(workgroup_offset * {chunk_size} + offset)")
         } else {
-            "workgroup_offset"
+            "workgroup_offset".into()
         };
 
         // Load matrix row elements into a_reg from input_a
         for i in 0..vector_size {
             writeln!(kernel, "let input_a_{i}_index = index + {i};").unwrap();
             let a_row_stride = input_a.stride_binding(op.rank() - 2);
-            writeln!(kernel, "let input_a_{i} = select({dtype}(0.0), {input_a}[a_start_index + {row_index} * {a_row_stride} + input_a_{i}_index], input_a_{i}_index < {k_size});").unwrap();
+            let a_col_stride = input_a.stride_binding(op.rank() - 1);
+            let a_base = format!(
+                "select({dtype}(0.0), {input_a}[a_start_index + {row_index} * {a_row_stride} + input_a_{i}_index * {a_col_stride}], input_a_{i}_index < {k_size} && {row_index} < {m_size})"
+            );
+            let a_val = pef[0].iter().fold(a_base, |acc, f| f.call(vec![acc]));
+            writeln!(kernel, "let input_a_{i} = {a_val};").unwrap();
         }
         // Then pack them into a vector and write to the cache
         write!(kernel, "let reg_a = {vec_storage}(").unwrap();
@@ -164,41 +188,47 @@ pub(crate) fn sgemv(
     if let Some((local_data, subgroup_id, subgroup_local_id, subgroups_per_workgroup)) =
         workgroup_sync_data
     {
-        // Write the output to the workgroup memory if this is the first thread in the subgroup
-        writeln!(kernel, "if {subgroup_local_id} == 0u {{").unwrap();
+        let subgroup_size = kernel.subgroup_size();
+        let total_workgroup_size = workgroup_size.linearized();
+        writeln!(kernel, "if {total_workgroup_size} > {subgroup_size} {{").unwrap();
         {
-            writeln!(kernel, "{local_data}[{subgroup_id}] = acc;").unwrap();
+            // Write the output to the workgroup memory if this is the first thread in the subgroup
+            writeln!(kernel, "if {subgroup_local_id} == 0u {{").unwrap();
+            {
+                writeln!(kernel, "{local_data}[{subgroup_id}] = acc;").unwrap();
+            }
+            writeln!(kernel, "}}").unwrap();
+
+            // Wait until all threads have written to the workgroup shared memory
+            writeln!(kernel, "workgroupBarrier();").unwrap();
+
+            // Then if this is the first subgroup, do one final shuffle down reduction
+            writeln!(kernel, "if {subgroup_id} != 0u {{ return; }}").unwrap();
+            // Copy over the final value from each subgroup from the workgroup shared memory to the acc variable
+            writeln!(
+                kernel,
+                "if {subgroup_local_id} < {subgroups_per_workgroup} {{"
+            )
+            .unwrap();
+            {
+                writeln!(kernel, "acc = {local_data}[{subgroup_local_id}];").unwrap();
+            }
+            writeln!(kernel, "}}").unwrap();
+            writeln!(kernel, "else {{").unwrap();
+            {
+                writeln!(kernel, "acc = {storage_type}();").unwrap();
+            }
+            writeln!(kernel, "}}").unwrap();
+
+            // Finally get the final sum across all threads in the workgroup
+            writeln!(
+                kernel,
+                "acc = {};",
+                maybe_vec_storage_subgroup_add(chunk_size, "acc",)
+            )
+            .unwrap();
         }
         writeln!(kernel, "}}").unwrap();
-
-        // Wait until all threads have written to the workgroup shared memory
-        writeln!(kernel, "workgroupBarrier();").unwrap();
-
-        // Then if this is the first subgroup, do one final shuffle down reduction
-        writeln!(kernel, "if {subgroup_id} != 0u {{ return; }}").unwrap();
-        // Copy over the final value from each subgroup from the workgroup shared memory to the acc variable
-        writeln!(
-            kernel,
-            "if {subgroup_local_id} < {subgroups_per_workgroup} {{"
-        )
-        .unwrap();
-        {
-            writeln!(kernel, "acc = {local_data}[{subgroup_local_id}];").unwrap();
-        }
-        writeln!(kernel, "}}").unwrap();
-        writeln!(kernel, "else {{").unwrap();
-        {
-            writeln!(kernel, "acc = {storage_type}();").unwrap();
-        }
-        writeln!(kernel, "}}").unwrap();
-
-        // Finally get the final sum across all threads in the workgroup
-        writeln!(
-            kernel,
-            "acc = {};",
-            maybe_vec_storage_subgroup_add(chunk_size, "acc",)
-        )
-        .unwrap();
     }
 
     // If this is not the first simd thread in the workgroup, we can return early
@@ -214,20 +244,33 @@ pub(crate) fn sgemv(
     }
     {
         if chunk_size > 1 {
-            writeln!(kernel, "let output_index = workgroup_offset + offset;").unwrap();
+            writeln!(
+                kernel,
+                "let output_index = workgroup_offset * {chunk_size} + offset;"
+            )
+            .unwrap();
         } else {
             writeln!(kernel, "let output_index = workgroup_offset;").unwrap();
         }
-        let c_row_stride = output.stride_binding(op.rank() - 2);
-        write!(
-            kernel,
-            "{output}[c_start_index + output_index * {c_row_stride} + 0"
-        )
-        .unwrap();
+
+        // Apply post element-wise operations
+        let post_element_wise_functions =
+            post_element_wise_functions.get_or_init(|| op.post_element_wise.add_functions(kernel));
+        let result = post_element_wise_functions.iter().fold(
+            maybe_vec_storage_index(chunk_size, "acc", "offset"),
+            |acc, f| f.call(vec![acc]),
+        );
+
+        if chunk_size > 1 {
+            writeln!(
+                kernel,
+                "if (output_index >= {m_size} || col_index >= {n_size}) {{ continue; }}"
+            )
+            .unwrap();
+        }
         writeln!(
             kernel,
-            "] = {};",
-            maybe_vec_storage_index(chunk_size, "acc", "offset")
+            "{output}[c_start_index + output_index * {c_row_stride} + col_index * {c_col_stride}] = {result};",
         )
         .unwrap();
     }
@@ -237,13 +280,13 @@ pub(crate) fn sgemv(
 }
 
 pub(crate) fn dispatch_size(
+    m: u32,
     n: u32,
-    _m: u32,
     batch_size: u32,
     _workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
     params: &SgemvParams,
 ) -> [u32; 3] {
-    [n.div_ceil(params.chunk_size), 1, batch_size]
+    [m.div_ceil(params.chunk_size), n, batch_size]
 }
 
 pub(crate) fn workgroup_shape_constraints(
