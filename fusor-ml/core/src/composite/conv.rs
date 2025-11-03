@@ -64,10 +64,10 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
         // Step 1: Apply padding to the spatial dimensions (last DIFF dimensions)
         let padded = if padding.iter().any(|&p| p > 0) {
             let mut result = self.clone();
-            for i in 0..DIFF {
+            for (i, padding) in padding.iter().copied().enumerate() {
                 let axis = R - DIFF + i;
-                if padding[i] > 0 {
-                    result = result.pad_axis(axis, padding[i]);
+                if padding > 0 {
+                    result = result.pad_axis(axis, padding);
                 }
             }
             result

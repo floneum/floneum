@@ -214,6 +214,7 @@ impl AttentionMask {
 /// Mask cache for efficiently managing attention masks
 #[derive(Debug, Clone, Default)]
 pub struct MaskCache {
+    #[allow(clippy::type_complexity)]
     masks: std::sync::Arc<
         std::sync::RwLock<std::collections::HashMap<(usize, Option<usize>), AttentionMask>>,
     >,

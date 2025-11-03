@@ -85,9 +85,7 @@ impl ResizeOperation {
                 .next_if(|(_, len)| *len == 1 && *shape > 1)
                 .is_some()
             {}
-            let Some((stride, len)) = contiguous_stride_chunks_iter.peek_mut() else {
-                return None;
-            };
+            let (stride, len) = contiguous_stride_chunks_iter.peek_mut()?;
             // Make sure the current chunk can be divided to form the new shape
             if *len % *shape != 0 {
                 return None;
