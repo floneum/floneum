@@ -36,6 +36,7 @@
 use cpal::FromSample;
 use futures_channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use kalosm_common::Cache;
+use kalosm_model_types::FutureWasmNotSend;
 pub use kalosm_model_types::{FileSource, ModelBuilder, ModelLoadingProgress};
 use model::{WhisperInner, WhisperLoadingError};
 use rodio::{source::UniformSourceIterator, Source};
