@@ -375,7 +375,7 @@ impl TextDecoder {
             .mask_cache
             .get_mask(seq_len, index_pos, None, device)
             .map_err(Error::msg)?;
-        let x = Tensor::new(&device, tokens);
+        let x = Tensor::new(device, tokens);
         // The model expects a batch dim but this inference loop does not handle
         // it so we add it at this point.
         let x = x.unsqueeze(0);

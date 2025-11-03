@@ -401,7 +401,7 @@ impl WhisperBuilder {
             ModelLoadingProgress::downloading_progress(display_tokenizer_source);
         let tokenizer_filename = self
             .cache
-            .get(&tokenizer_source, |progress| {
+            .get(tokenizer_source, |progress| {
                 progress_handler(create_progress(progress))
             })
             .await?;
@@ -410,7 +410,7 @@ impl WhisperBuilder {
         let mut create_progress = ModelLoadingProgress::downloading_progress(display_model_source);
         let filename = self
             .cache
-            .get(&model_source, |progress| {
+            .get(model_source, |progress| {
                 progress_handler(create_progress(progress))
             })
             .await?;
@@ -419,7 +419,7 @@ impl WhisperBuilder {
         let mut create_progress = ModelLoadingProgress::downloading_progress(display_config_source);
         let config = self
             .cache
-            .get(&config_source, |progress| {
+            .get(config_source, |progress| {
                 progress_handler(create_progress(progress))
             })
             .await?;

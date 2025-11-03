@@ -307,12 +307,16 @@ mod tests {
         let fusor_result = fusor_output.as_slice().await.unwrap();
 
         // Candle convolution
-        let candle_input = CandleTensor::from_slice(&input_data, (2, 3, 8), &candle_device).unwrap();
-        let candle_weight = CandleTensor::from_slice(&weight_data, (5, 3, 4), &candle_device).unwrap();
+        let candle_input =
+            CandleTensor::from_slice(&input_data, (2, 3, 8), &candle_device).unwrap();
+        let candle_weight =
+            CandleTensor::from_slice(&weight_data, (5, 3, 4), &candle_device).unwrap();
         let candle_bias = CandleTensor::from_slice(&bias_data, 5, &candle_device).unwrap();
 
         let candle_output = candle_input.conv1d(&candle_weight, 1, 2, 1, 1).unwrap();
-        let candle_output = candle_output.broadcast_add(&candle_bias.reshape((1, 5, 1)).unwrap()).unwrap();
+        let candle_output = candle_output
+            .broadcast_add(&candle_bias.reshape((1, 5, 1)).unwrap())
+            .unwrap();
         let candle_result = candle_output.to_vec3::<f32>().unwrap();
 
         // Compare results
@@ -324,15 +328,22 @@ mod tests {
 
         for b in 0..2 {
             for c in 0..5 {
-                assert_eq!(fusor_shape[2], candle_result[b][c].len(),
-                    "Output length mismatch at batch {} channel {}", b, c);
+                assert_eq!(
+                    fusor_shape[2],
+                    candle_result[b][c].len(),
+                    "Output length mismatch at batch {} channel {}",
+                    b,
+                    c
+                );
                 for i in 0..fusor_shape[2] {
                     let fusor_val = fusor_result[[b, c, i]];
                     let candle_val = candle_result[b][c][i];
                     assert!(
                         (fusor_val - candle_val).abs() < 1e-3,
                         "Mismatch at [{}, {}, {}]: fusor={}, candle={}",
-                        b, c, i,
+                        b,
+                        c,
+                        i,
                         fusor_val,
                         candle_val
                     );

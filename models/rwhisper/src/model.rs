@@ -11,7 +11,6 @@ use std::{
     ops::RangeInclusive,
     path::PathBuf,
     time::{Duration, Instant},
-    usize,
 };
 use tokenizers::Tokenizer;
 

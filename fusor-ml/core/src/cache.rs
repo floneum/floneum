@@ -196,7 +196,7 @@ impl AttentionMask {
             assert!(R >= 2, "Attention scores must have rank >= 2");
         }
         // Broadcast add
-        self.mask.add_(&attention_scores)
+        self.mask.add_(attention_scores)
     }
 
     pub fn forward<const R: usize>(&self, attention_scores: &mut Tensor<R, f32>)

@@ -129,7 +129,9 @@ mod tests {
         // Test various configurations
         for (pool_size, stride) in [(2, 2), (3, 2), (4, 3)] {
             // Input: (1, 1, 12) - batch=1, channels=1, length=12
-            let input_data: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 3.0, 12.0, 3.0, 5.0, 39.0, 29.0, 1.0];
+            let input_data: Vec<f32> = vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 3.0, 12.0, 3.0, 5.0, 39.0, 29.0, 1.0,
+            ];
             let input_flat = input_data.clone();
 
             // Fusor expects (batch, channels, length) for 1D pooling with R=3, DIFF=1
@@ -142,10 +144,13 @@ mod tests {
 
             // Candle pooling - reshape to 2D and use max_pool2d
             // (1, 1, 12) -> (1, 1, 1, 12) for 2D pooling
-            let candle_input = CandleTensor::from_slice(&input_flat, (1, 1, 1, 12), &candle_device).unwrap();
+            let candle_input =
+                CandleTensor::from_slice(&input_flat, (1, 1, 1, 12), &candle_device).unwrap();
 
             // Use max_pool2d with kernel (1, pool_size) and stride (1, stride)
-            let candle_output = candle_input.max_pool2d_with_stride((1, pool_size), (1, stride)).unwrap();
+            let candle_output = candle_input
+                .max_pool2d_with_stride((1, pool_size), (1, stride))
+                .unwrap();
             // Reshape back from (1, 1, 1, out_len) to (1, 1, out_len)
             let candle_shape = candle_output.shape();
             let out_len = candle_shape.dims()[3];
@@ -156,9 +161,15 @@ mod tests {
             let fusor_shape = output_data.shape();
             assert_eq!(fusor_shape[0], 1);
             assert_eq!(fusor_shape[1], 1);
-            assert_eq!(candle_result[0][0].len(), fusor_shape[2],
+            assert_eq!(
+                candle_result[0][0].len(),
+                fusor_shape[2],
                 "Output length mismatch for pool_size={}, stride={}: fusor={}, candle={}",
-                pool_size, stride, fusor_shape[2], candle_result[0][0].len());
+                pool_size,
+                stride,
+                fusor_shape[2],
+                candle_result[0][0].len()
+            );
 
             for i in 0..fusor_shape[2] {
                 let fusor_val = output_data[[0, 0, i]];
@@ -166,7 +177,9 @@ mod tests {
                 assert!(
                     (fusor_val - candle_val).abs() < 1e-5,
                     "Mismatch at position {} (pool_size={}, stride={}): fusor={}, candle={}",
-                    i, pool_size, stride,
+                    i,
+                    pool_size,
+                    stride,
                     fusor_val,
                     candle_val
                 );
@@ -209,8 +222,11 @@ mod tests {
 
         // Candle pooling - reshape to 4D and use max_pool2d
         // (2, 4, 16) -> (2, 4, 1, 16)
-        let candle_input = CandleTensor::from_slice(&input_data, (2, 4, 1, 16), &candle_device).unwrap();
-        let candle_output = candle_input.max_pool2d_with_stride((1, pool_size), (1, stride)).unwrap();
+        let candle_input =
+            CandleTensor::from_slice(&input_data, (2, 4, 1, 16), &candle_device).unwrap();
+        let candle_output = candle_input
+            .max_pool2d_with_stride((1, pool_size), (1, stride))
+            .unwrap();
         // Reshape from (2, 4, 1, out_len) to (2, 4, out_len)
         let candle_shape = candle_output.shape();
         let out_len = candle_shape.dims()[3];
@@ -226,15 +242,22 @@ mod tests {
 
         for b in 0..2 {
             for c in 0..4 {
-                assert_eq!(fusor_shape[2], candle_result[b][c].len(),
-                    "Output length mismatch at batch {} channel {}", b, c);
+                assert_eq!(
+                    fusor_shape[2],
+                    candle_result[b][c].len(),
+                    "Output length mismatch at batch {} channel {}",
+                    b,
+                    c
+                );
                 for i in 0..fusor_shape[2] {
                     let fusor_val = output_data[[b, c, i]];
                     let candle_val = candle_result[b][c][i];
                     assert!(
                         (fusor_val - candle_val).abs() < 1e-5,
                         "Mismatch at [{}, {}, {}]: fusor={}, candle={}",
-                        b, c, i,
+                        b,
+                        c,
+                        i,
                         fusor_val,
                         candle_val
                     );

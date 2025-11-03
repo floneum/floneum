@@ -19,42 +19,42 @@ impl SlidingWindow {
     }
 }
 
-impl Into<SlidingWindow> for (usize, usize) {
-    fn into(self) -> SlidingWindow {
+impl From<(usize, usize)> for SlidingWindow {
+    fn from(val: (usize, usize)) -> Self {
         SlidingWindow {
-            axis: self.0,
-            window_size: self.1,
+            axis: val.0,
+            window_size: val.1,
             step: 1,
         }
     }
 }
 
-impl Into<SlidingWindow> for [usize; 2] {
-    fn into(self) -> SlidingWindow {
+impl From<[usize; 2]> for SlidingWindow {
+    fn from(val: [usize; 2]) -> Self {
         SlidingWindow {
-            axis: self[0],
-            window_size: self[1],
+            axis: val[0],
+            window_size: val[1],
             step: 1,
         }
     }
 }
 
-impl Into<SlidingWindow> for (usize, usize, usize) {
-    fn into(self) -> SlidingWindow {
+impl From<(usize, usize, usize)> for SlidingWindow {
+    fn from(val: (usize, usize, usize)) -> Self {
         SlidingWindow {
-            axis: self.0,
-            window_size: self.1,
-            step: self.2,
+            axis: val.0,
+            window_size: val.1,
+            step: val.2,
         }
     }
 }
 
-impl Into<SlidingWindow> for [usize; 3] {
-    fn into(self) -> SlidingWindow {
+impl From<[usize; 3]> for SlidingWindow {
+    fn from(val: [usize; 3]) -> Self {
         SlidingWindow {
-            axis: self[0],
-            window_size: self[1],
-            step: self[2],
+            axis: val[0],
+            window_size: val[1],
+            step: val[2],
         }
     }
 }

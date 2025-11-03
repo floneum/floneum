@@ -299,12 +299,16 @@ mod tests {
         let fusor_result = fusor_output.as_slice().await.unwrap();
 
         // Candle convolution
-        let candle_input = CandleTensor::from_slice(&input_data, (1, 1, 5), &candle_device).unwrap();
-        let candle_weight = CandleTensor::from_slice(&weight_data, (1, 1, 3), &candle_device).unwrap();
+        let candle_input =
+            CandleTensor::from_slice(&input_data, (1, 1, 5), &candle_device).unwrap();
+        let candle_weight =
+            CandleTensor::from_slice(&weight_data, (1, 1, 3), &candle_device).unwrap();
         let candle_bias = CandleTensor::from_slice(&[0.1f32], 1, &candle_device).unwrap();
 
         let candle_output = candle_input.conv1d(&candle_weight, 0, 1, 1, 1).unwrap();
-        let candle_output = candle_output.broadcast_add(&candle_bias.reshape((1, 1, 1)).unwrap()).unwrap();
+        let candle_output = candle_output
+            .broadcast_add(&candle_bias.reshape((1, 1, 1)).unwrap())
+            .unwrap();
         let candle_result = candle_output.to_vec3::<f32>().unwrap();
 
         // Compare results
@@ -350,8 +354,10 @@ mod tests {
         let fusor_result = fusor_output.as_slice().await.unwrap();
 
         // Candle convolution
-        let candle_input = CandleTensor::from_slice(&input_data, (1, 1, 5), &candle_device).unwrap();
-        let candle_weight = CandleTensor::from_slice(&weight_data, (1, 1, 3), &candle_device).unwrap();
+        let candle_input =
+            CandleTensor::from_slice(&input_data, (1, 1, 5), &candle_device).unwrap();
+        let candle_weight =
+            CandleTensor::from_slice(&weight_data, (1, 1, 3), &candle_device).unwrap();
         let candle_output = candle_input.conv1d(&candle_weight, 1, 1, 1, 1).unwrap();
         let candle_result = candle_output.to_vec3::<f32>().unwrap();
 
@@ -427,8 +433,10 @@ mod tests {
         let fusor_result = fusor_output.as_slice().await.unwrap();
 
         // Candle convolution
-        let candle_input = CandleTensor::from_slice(&input_data, (2, 3, 10), &candle_device).unwrap();
-        let candle_weight = CandleTensor::from_slice(&weight_data, (4, 3, 3), &candle_device).unwrap();
+        let candle_input =
+            CandleTensor::from_slice(&input_data, (2, 3, 10), &candle_device).unwrap();
+        let candle_weight =
+            CandleTensor::from_slice(&weight_data, (4, 3, 3), &candle_device).unwrap();
         let candle_output = candle_input.conv1d(&candle_weight, 1, 2, 1, 1).unwrap();
         let candle_result = candle_output.to_vec3::<f32>().unwrap();
 
@@ -447,7 +455,9 @@ mod tests {
                     assert!(
                         (fusor_val - candle_val).abs() < 1e-3,
                         "Mismatch at [{}, {}, {}]: fusor={}, candle={}",
-                        b, c, i,
+                        b,
+                        c,
+                        i,
                         fusor_val,
                         candle_val
                     );
