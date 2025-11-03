@@ -7328,7 +7328,6 @@ dependencies = [
  "intel-mkl-src",
  "kalosm",
  "kalosm-common",
- "kalosm-language-model",
  "kalosm-model-types",
  "pollster",
  "rand 0.9.2",

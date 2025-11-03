@@ -1,10 +1,10 @@
 use super::{NoOpenAIAPIKeyError, OpenAICompatibleClient};
 use crate::{
     ChatModel, ChatSession, ContentChunk, CreateChatSession, CreateDefaultChatConstraintsForType,
-    GenerationParameters, ModelBuilder, ModelConstraints, StructuredChatModel,
+    GenerationParameters, ModelConstraints, StructuredChatModel,
 };
 use futures_util::StreamExt;
-use kalosm_model_types::ModelLoadingProgress;
+use kalosm_model_types::{ModelBuilder, ModelLoadingProgress};
 use kalosm_sample::Schema;
 use reqwest_eventsource::{Event, RequestBuilderExt};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};

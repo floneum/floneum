@@ -36,8 +36,8 @@
 use cpal::FromSample;
 use futures_channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use kalosm_common::Cache;
-use kalosm_language_model::ModelBuilder;
-pub use kalosm_model_types::{FileSource, ModelLoadingProgress};
+pub use kalosm_model_types::{FileSource, ModelBuilder, ModelLoadingProgress};
+use kalosm_model_types::{FutureWasmNotSend, WasmNotSend};
 use model::{WhisperInner, WhisperLoadingError};
 use rodio::{source::UniformSourceIterator, Source};
 use std::{
@@ -441,7 +441,7 @@ impl WhisperBuilder {
                     )
                     .await;
             }
-        }) as Pin<Box<dyn Future<Output = ()> + Send>>;
+        }) as Pin<Box<dyn FutureWasmNotSend<Output = ()> + 'static>>;
 
         Ok(Whisper {
             inner: Arc::new(WhisperTask {
@@ -802,7 +802,7 @@ impl Display for WhisperLanguage {
 }
 
 struct WhisperTask {
-    task: RwLock<Pin<Box<dyn Future<Output = ()> + Send>>>,
+    task: RwLock<Pin<Box<dyn FutureWasmNotSend<Output = ()> + 'static>>>,
     sender: std::sync::mpsc::Sender<WhisperMessage>,
 }
 
@@ -893,8 +893,10 @@ impl Stream for TranscriptionTask {
             *write = Some(receiver);
         }
 
+        println!("Polling whisper task");
         // Run the whisper task
-        _ = myself.whisper.inner.task.write().unwrap().poll_unpin(cx);
+        let out = myself.whisper.inner.task.write().unwrap().poll_unpin(cx);
+        println!("out: {:?}", out);
 
         write.as_mut().unwrap().poll_next_unpin(cx)
     }

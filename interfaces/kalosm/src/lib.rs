@@ -14,9 +14,9 @@ pub mod language {
         ChatModel as _, ChatModelExt as _, ChatSession as _, CreateChatSession as _,
         CreateDefaultChatConstraintsForType as _, CreateDefaultCompletionConstraintsForType as _,
         CreateTextCompletionSession as _, Embedder as _, EmbedderCacheExt as _, EmbedderExt as _,
-        IntoChatMessage as _, IntoEmbedding as _, ModelBuilder as _, ModelConstraints as _,
-        StreamExt as _, StructuredChatModel as _, StructuredTextCompletionModel as _,
-        TextCompletionModel as _, TextCompletionModelExt as _, TextCompletionSession as _, *,
+        IntoChatMessage as _, IntoEmbedding as _, ModelConstraints as _, StreamExt as _,
+        StructuredChatModel as _, StructuredTextCompletionModel as _, TextCompletionModel as _,
+        TextCompletionModelExt as _, TextCompletionSession as _, *,
     };
     #[cfg(feature = "llama")]
     pub use kalosm_language::kalosm_llama::{
@@ -28,7 +28,9 @@ pub mod language {
     pub use kalosm_language::rbert::{Bert, BertBuilder, BertSource};
     pub use kalosm_language::search::*;
     pub use kalosm_language::vector_db::*;
-    pub use kalosm_model_types::{FileLoadingProgress, FileSource, ModelLoadingProgress};
+    pub use kalosm_model_types::{
+        FileLoadingProgress, FileSource, ModelBuilder as _, ModelLoadingProgress,
+    };
     pub use kalosm_streams::text_stream::*;
 
     #[cfg(feature = "surrealdb")]
