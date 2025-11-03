@@ -6,7 +6,7 @@ use crate::{Device, NextRank, QMatrix, Result, Tensor, VarBuilder};
 /// Embedding table shape: (num_embeddings, embedding_dim)
 #[derive(Clone, Debug)]
 pub struct Embedding {
-    embeddings_quantized: QMatrix,
+    embeddings_quantized: Option<QMatrix>,
     embeddings: Tensor<2, f32>,
     num_embeddings: usize,
     embedding_dim: usize,
@@ -21,7 +21,21 @@ impl Embedding {
         let embedding_dim = shape[1];
 
         Self {
-            embeddings_quantized,
+            embeddings_quantized: Some(embeddings_quantized),
+            embeddings,
+            num_embeddings,
+            embedding_dim,
+        }
+    }
+
+    /// Create a new embedding layer with the given embedding table
+    pub fn new_from_tensor(embeddings: Tensor<2, f32>) -> Self {
+        let shape = embeddings.shape();
+        let num_embeddings = shape[0];
+        let embedding_dim = shape[1];
+
+        Self {
+            embeddings_quantized: None,
             embeddings,
             num_embeddings,
             embedding_dim,
@@ -98,7 +112,7 @@ impl Embedding {
 
     /// Get the quantized embedding table
     pub fn embeddings_quantized(&self) -> &QMatrix {
-        &self.embeddings_quantized
+        self.embeddings_quantized.as_ref().unwrap()
     }
 
     pub fn num_embeddings(&self) -> usize {
@@ -123,7 +137,7 @@ mod tests {
         let emb_data = [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]];
         let embeddings = Tensor::new(&device, &emb_data);
 
-        let embedding_layer = Embedding::new(embeddings);
+        let embedding_layer = Embedding::new_from_tensor(embeddings);
 
         // Input: indices [0, 2, 1]
         let indices_data = [0u32, 2, 1];
@@ -154,7 +168,7 @@ mod tests {
         let emb_data = [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]];
         let embeddings = Tensor::new(&device, &emb_data);
 
-        let embedding_layer = Embedding::new(embeddings);
+        let embedding_layer = Embedding::new_from_tensor(embeddings);
 
         // Input: 2D indices [[0, 1], [2, 0]]
         let indices_data = [[0u32, 1], [2, 0]];
@@ -186,7 +200,7 @@ mod tests {
         let emb_data = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
         let embeddings = Tensor::new(&device, &emb_data);
 
-        let embedding_layer = Embedding::new(embeddings);
+        let embedding_layer = Embedding::new_from_tensor(embeddings);
 
         assert_eq!(embedding_layer.num_embeddings(), 2);
         assert_eq!(embedding_layer.embedding_dim(), 3);
