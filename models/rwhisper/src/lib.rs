@@ -10,9 +10,9 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), anyhow::Error> {
-//!     // Create a new small whisper model.
+//!     // Create a new tiny whisper model.
 //!     let model = WhisperBuilder::default()
-//!         .with_source(WhisperSource::SmallEn)
+//!         .with_source(WhisperSource::tiny())
 //!         .build()
 //!         .await?;
 //!
@@ -309,7 +309,7 @@ enum TaskType {
 /// // Create a new whisper model with a loading handler
 /// let model = Whisper::builder()
 ///     // You can set the model to use in the builder
-///     .with_source(WhisperSource::DistilLargeV3)
+///     .with_source(WhisperSource::distil_large_v3())
 ///     .build()
 ///     .await?;
 /// # Ok(())
