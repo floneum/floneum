@@ -13,7 +13,7 @@ async fn transcribe_the_odyssey() -> Result<(), anyhow::Error> {
 
     // Create a new small whisper model
     let model = WhisperBuilder::default()
-        .with_source(WhisperSource::QuantizedTinyEn)
+        .with_source(WhisperSource::tiny_en())
         .build()
         .await?;
 
