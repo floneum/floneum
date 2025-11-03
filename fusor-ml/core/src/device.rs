@@ -8,7 +8,7 @@ use std::{
 
 use lru::LruCache;
 use parking_lot::RwLock;
-use rustc_hash::{FxBuildHasher, FxHashMap};
+use rustc_hash::FxBuildHasher;
 use wgpu::{BindGroupLayout, BufferUsages, PipelineLayout, ShaderModule};
 
 #[derive(Debug)]
@@ -44,7 +44,8 @@ struct DeviceInner {
     compute_pipeline_cache:
         RwLock<LruCache<(PipelineLayout, ShaderModule), wgpu::ComputePipeline, FxBuildHasher>>,
     // Cache for buffer allocations, keyed by size in bytes
-    buffer_allocation_cache: RwLock<FxHashMap<(u64, BufferUsages), Vec<CachedBuffer>>>,
+    buffer_allocation_cache:
+        RwLock<LruCache<(u64, BufferUsages), Vec<CachedBuffer>, FxBuildHasher>>,
 }
 
 impl Debug for DeviceInner {
@@ -100,6 +101,10 @@ impl Device {
             RwLock::new(LruCache::with_hasher(cache_size, Default::default()));
         let compute_pipeline_cache =
             RwLock::new(LruCache::with_hasher(cache_size, Default::default()));
+        let buffer_allocation_cache = RwLock::new(LruCache::with_hasher(
+            const { NonZeroUsize::new(128).unwrap() },
+            Default::default(),
+        ));
 
         let device = Self {
             inner: Arc::new(DeviceInner {
@@ -112,7 +117,7 @@ impl Device {
                 pipeline_layout_cache,
                 shader_module_cache,
                 compute_pipeline_cache,
-                buffer_allocation_cache: RwLock::new(FxHashMap::default()),
+                buffer_allocation_cache,
             }),
         };
 
@@ -203,7 +208,7 @@ impl Device {
     /// Reset the initialized flag on all cached buffers.
     pub fn reset_initialized_buffers(&self) {
         let mut cache = self.inner.buffer_allocation_cache.write();
-        for buffers in cache.values_mut() {
+        for (_, buffers) in cache.iter_mut() {
             for buffer in buffers {
                 buffer.writen = false;
             }
@@ -255,8 +260,7 @@ impl Device {
                 self.inner
                     .buffer_allocation_cache
                     .write()
-                    .entry((size, usage))
-                    .or_default()
+                    .get_or_insert_mut((size, usage), Vec::new)
                     .push(CachedBuffer::new(buffer.clone(), to_initilize));
                 buffer
             })
