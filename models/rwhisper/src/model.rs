@@ -9,7 +9,6 @@ use std::{
     io::Write,
     num::NonZeroUsize,
     ops::RangeInclusive,
-    path::PathBuf,
     time::{Duration, Instant},
 };
 use tokenizers::Tokenizer;
@@ -26,13 +25,8 @@ enum ModelType {
 }
 
 impl ModelType {
-    fn load(
-        weights_filename: &PathBuf,
-        device: &Device,
-        config: Config,
-    ) -> fusor_core::Result<Self> {
-        let file = std::fs::File::open(weights_filename)?;
-        let mut reader = std::io::BufReader::new(file);
+    fn load(weights: &[u8], device: &Device, config: Config) -> fusor_core::Result<Self> {
+        let mut reader = std::io::Cursor::new(weights);
         let mut vb = fusor_core::VarBuilder::from_gguf(&mut reader)?;
         Ok(Self::Quantized(crate::quantized::Whisper::load(
             device, &mut vb, config,
@@ -93,16 +87,15 @@ pub(crate) struct WhisperInner {
 impl WhisperInner {
     pub(crate) async fn new(
         settings: WhisperBuilder,
-        weights_filename: PathBuf,
-        tokenizer_filename: PathBuf,
-        config_filename: PathBuf,
+        weights: &[u8],
+        tokenizer: &[u8],
+        config: &[u8],
     ) -> Result<Self, WhisperLoadingError> {
         let device = Device::new().await?;
         let tokenizer =
-            Tokenizer::from_file(tokenizer_filename).map_err(WhisperLoadingError::LoadTokenizer)?;
+            Tokenizer::from_bytes(tokenizer).map_err(WhisperLoadingError::LoadTokenizer)?;
         let config: Config =
-            serde_json::from_str(&std::fs::read_to_string(config_filename).unwrap())
-                .map_err(WhisperLoadingError::LoadConfig)?;
+            serde_json::from_slice(config).map_err(WhisperLoadingError::LoadConfig)?;
 
         let mel_bytes = match config.num_mel_bins {
             80 => include_bytes!("melfilters.bytes").as_slice(),
@@ -116,7 +109,7 @@ impl WhisperInner {
         );
         let attention_heads = settings.model.heads;
 
-        let model = ModelType::load(&weights_filename, &device, config.clone())?;
+        let model = ModelType::load(&weights, &device, config.clone())?;
         let language_token = if settings.model.multilingual {
             let language = settings.language.unwrap_or(WhisperLanguage::English);
             match token_id(&tokenizer, &format!("<|{language}|>")) {
