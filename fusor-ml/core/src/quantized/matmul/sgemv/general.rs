@@ -183,7 +183,7 @@ pub(crate) fn general_sgemv(
         writeln!(kernel, "workgroupBarrier();").unwrap();
 
         // Then if this is the first subgroup, do one final shuffle down reduction
-        writeln!(kernel, "if {subgroup_id} != 0u {{").unwrap();
+        writeln!(kernel, "if {subgroup_id} == 0u {{").unwrap();
         {
             // Copy over the final value from each subgroup from the workgroup shared memory to the acc variable
             writeln!(
