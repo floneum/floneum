@@ -11,8 +11,8 @@ use crate::{
         sgemv::{SGEMV_CHUNK_SIZE, SGEMV_VECTOR_SIZE},
     },
     util::{
-        maybe_vec_storage_index, maybe_vec_storage_subgroup_add, maybe_vec_storage_type,
-        maybe_vec_storage_type_enum,
+        maybe_vec_storage_add, maybe_vec_storage_index, maybe_vec_storage_subgroup_add,
+        maybe_vec_storage_type, maybe_vec_storage_type_enum,
     },
 };
 use std::fmt::Write;
@@ -225,7 +225,12 @@ pub(crate) fn general_sgemv(
                 "let neighbor = {local_data}[{workgroup_local_index} + {offset}u];"
             )
             .unwrap();
-            writeln!(kernel, "acc += neighbor;").unwrap();
+            writeln!(
+                kernel,
+                "acc = {};",
+                maybe_vec_storage_add(SGEMV_CHUNK_SIZE, "acc", "neighbor")
+            )
+            .unwrap();
             writeln!(kernel, "}}").unwrap();
         }
     }
