@@ -9,7 +9,7 @@ use std::{
 use lru::LruCache;
 use parking_lot::RwLock;
 use rustc_hash::FxBuildHasher;
-use wgpu::{BindGroupLayout, BufferUsages, Limits, PipelineLayout, ShaderModule};
+use wgpu::{BindGroupLayout, BufferUsages, PipelineLayout, ShaderModule};
 
 #[derive(Debug)]
 struct CachedBuffer {
@@ -77,16 +77,7 @@ impl Device {
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("Fusor ML Device"),
                 required_features,
-                required_limits: Limits {
-                    max_buffer_size: adapter.limits().max_buffer_size,
-                    max_compute_workgroup_storage_size: adapter
-                        .limits()
-                        .max_compute_workgroup_storage_size,
-                    max_storage_buffer_binding_size: adapter
-                        .limits()
-                        .max_storage_buffer_binding_size,
-                    ..Default::default()
-                },
+                required_limits: adapter.limits(),
                 ..Default::default()
             })
             .await?;
