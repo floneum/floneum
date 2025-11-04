@@ -727,6 +727,13 @@ struct BlockQ4_0Wgsl {
     pub(crate) data: [u32; Q4_0_BLOCK_SIZE / 8],
 }
 
+#[derive(AnyBitPattern, Clone, Copy)]
+#[repr(C)]
+struct BlockQ4_0WgslF32 {
+    pub(crate) scale: f32,
+    pub(crate) data: [u32; Q4_0_BLOCK_SIZE / 8],
+}
+
 #[derive(Zeroable, Pod, Clone, Copy, PartialEq, Debug)]
 #[repr(C)]
 pub struct BlockQ4_0 {
@@ -737,6 +744,14 @@ pub struct BlockQ4_0 {
 impl BlockQ4_0 {
     pub const WEIGHTS_SIZE: usize = Q4_0_BLOCK_SIZE / 2;
     pub const BLOCK_SIZE: usize = Q4_0_BLOCK_SIZE;
+
+    pub fn into_wgsl_bytes_f32(self) -> [u8; std::mem::size_of::<BlockQ4_0WgslF32>()] {
+        let mut bytes = [0; std::mem::size_of::<BlockQ4_0WgslF32>()];
+        let scale_f32 = self.scale.to_f32();
+        bytes[0..4].copy_from_slice(bytemuck::bytes_of(&scale_f32));
+        bytes[4..].copy_from_slice(bytemuck::cast_slice(&self.data));
+        bytes
+    }
 }
 
 impl GgufBlock for BlockQ4_0 {
@@ -804,6 +819,14 @@ struct BlockQ5_0Wgsl {
     pub(crate) data_low_bits: [u32; (Q5_0_BLOCK_SIZE / 2) / 4],
 }
 
+#[derive(AnyBitPattern, Clone, Copy)]
+#[repr(C)]
+struct BlockQ5_0WgslF32 {
+    pub(crate) scale: f32,
+    pub(crate) data_high_bits: [u32; (Q5_0_BLOCK_SIZE / 8) / 4],
+    pub(crate) data_low_bits: [u32; (Q5_0_BLOCK_SIZE / 2) / 4],
+}
+
 #[derive(Zeroable, Pod, Clone, Copy, PartialEq, Debug)]
 #[repr(C)]
 pub struct BlockQ5_0 {
@@ -818,6 +841,23 @@ impl BlockQ5_0 {
     pub const BLOCK_SIZE: usize = Q5_0_BLOCK_SIZE;
     pub const WEIGHTS_HIGH_BITS_SIZE: usize = Q5_0_BLOCK_SIZE / 8;
     pub const WEIGHTS_LOW_BITS_SIZE: usize = Q5_0_BLOCK_SIZE / 2;
+
+    pub fn into_wgsl_bytes_f32(self) -> [u8; std::mem::size_of::<BlockQ5_0WgslF32>()] {
+        let mut bytes = [0; std::mem::size_of::<BlockQ5_0WgslF32>()];
+        let scale_offset = offset_of!(BlockQ5_0WgslF32, scale);
+        let scale_f32 = self.scale.to_f32();
+        let scale_bytes = bytemuck::bytes_of(&scale_f32);
+        bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(scale_bytes);
+        let data_high_bits_offset = offset_of!(BlockQ5_0WgslF32, data_high_bits);
+        let data_high_bits_bytes = bytemuck::cast_slice(&self.data_high_bits);
+        bytes[data_high_bits_offset..data_high_bits_offset + data_high_bits_bytes.len()]
+            .copy_from_slice(data_high_bits_bytes);
+        let data_low_bits_offset = offset_of!(BlockQ5_0WgslF32, data_low_bits);
+        let data_low_bits_bytes = bytemuck::cast_slice(&self.data_low_bits);
+        bytes[data_low_bits_offset..data_low_bits_offset + data_low_bits_bytes.len()]
+            .copy_from_slice(data_low_bits_bytes);
+        bytes
+    }
 }
 
 impl GgufBlock for BlockQ5_0 {
@@ -906,6 +946,13 @@ struct BlockQ8_0Wgsl {
     pub(crate) data: [u32; Q8_0_BLOCK_SIZE / 4],
 }
 
+#[derive(AnyBitPattern, Clone, Copy)]
+#[repr(C)]
+struct BlockQ8_0WgslF32 {
+    pub(crate) scale: f32,
+    pub(crate) data: [u32; Q8_0_BLOCK_SIZE / 4],
+}
+
 #[derive(Zeroable, Pod, Clone, Copy, PartialEq, Debug)]
 #[repr(C)]
 pub struct BlockQ8_0 {
@@ -916,6 +963,18 @@ pub struct BlockQ8_0 {
 impl BlockQ8_0 {
     pub const BLOCK_SIZE: usize = Q8_0_BLOCK_SIZE;
     pub const WEIGHTS_SIZE: usize = Q8_0_BLOCK_SIZE;
+
+    pub fn into_wgsl_bytes_f32(self) -> [u8; std::mem::size_of::<BlockQ8_0WgslF32>()] {
+        let mut bytes = [0; std::mem::size_of::<BlockQ8_0WgslF32>()];
+        let scale_offset = offset_of!(BlockQ8_0WgslF32, scale);
+        let scale_f32 = self.scale.to_f32();
+        let scale_bytes = bytemuck::bytes_of(&scale_f32);
+        bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(scale_bytes);
+        let data_offset = offset_of!(BlockQ8_0WgslF32, data);
+        let data_bytes = bytemuck::cast_slice(&self.data);
+        bytes[data_offset..data_offset + data_bytes.len()].copy_from_slice(data_bytes);
+        bytes
+    }
 }
 
 impl GgufBlock for BlockQ8_0 {
@@ -970,6 +1029,15 @@ pub struct BlockQ4KWgsl {
     data: [u32; (K_BLOCK_SIZE / 2) / 4],
 }
 
+#[derive(AnyBitPattern, Clone, Copy)]
+#[repr(C)]
+pub struct BlockQ4KWgslF32 {
+    scale: f32,
+    min: f32,
+    scales: [u32; 12 / 4],
+    data: [u32; (K_BLOCK_SIZE / 2) / 4],
+}
+
 #[derive(Zeroable, Pod, Clone, Copy, PartialEq, Debug)]
 #[repr(C)]
 pub struct BlockQ4K {
@@ -983,6 +1051,25 @@ impl BlockQ4K {
     pub const BLOCK_SIZE: usize = K_BLOCK_SIZE;
     pub const SCALES_SIZE: usize = 12;
     pub const WEIGHTS_SIZE: usize = K_BLOCK_SIZE / 2;
+
+    pub fn into_wgsl_bytes_f32(self) -> [u8; std::mem::size_of::<BlockQ4KWgslF32>()] {
+        let mut bytes = [0; std::mem::size_of::<BlockQ4KWgslF32>()];
+        let scale_offset = offset_of!(BlockQ4KWgslF32, scale);
+        let scale_f32 = self.scale.to_f32();
+        let scale_bytes = bytemuck::bytes_of(&scale_f32);
+        bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(scale_bytes);
+        let min_offset = offset_of!(BlockQ4KWgslF32, min);
+        let min_f32 = self.min.to_f32();
+        let min_bytes = bytemuck::bytes_of(&min_f32);
+        bytes[min_offset..min_offset + min_bytes.len()].copy_from_slice(min_bytes);
+        let scales_offset = offset_of!(BlockQ4KWgslF32, scales);
+        let scales_bytes = bytemuck::bytes_of(&self.scales);
+        bytes[scales_offset..scales_offset + scales_bytes.len()].copy_from_slice(scales_bytes);
+        let data_offset = offset_of!(BlockQ4KWgslF32, data);
+        let data_bytes = bytemuck::cast_slice(&self.data);
+        bytes[data_offset..data_offset + data_bytes.len()].copy_from_slice(data_bytes);
+        bytes
+    }
 
     pub fn scale(&self) -> f32 {
         self.scale.to_f32()
@@ -1089,6 +1176,15 @@ pub struct BlockQ6KWgsl {
     pub(crate) scale: half::f16,
 }
 
+#[derive(AnyBitPattern, Clone, Copy)]
+#[repr(C)]
+pub struct BlockQ6KWgslF32 {
+    pub(crate) data_low_bits: [u32; (K_BLOCK_SIZE / 2) / 4],
+    pub(crate) data_high_bits: [u32; (K_BLOCK_SIZE / 4) / 4],
+    pub(crate) scales: [u32; (K_BLOCK_SIZE / 16) / 4],
+    pub(crate) scale: f32,
+}
+
 #[derive(Zeroable, Pod, Clone, Copy, PartialEq, Debug)]
 #[repr(C)]
 pub struct BlockQ6K {
@@ -1107,6 +1203,26 @@ impl BlockQ6K {
     pub const SCALES_SIZE: usize = K_BLOCK_SIZE / 16;
     pub const WEIGHTS_LOW_BITS_SIZE: usize = K_BLOCK_SIZE / 2;
     pub const WEIGHTS_HIGH_BITS_SIZE: usize = K_BLOCK_SIZE / 4;
+
+    pub fn into_wgsl_bytes_f32(self) -> [u8; std::mem::size_of::<BlockQ6KWgslF32>()] {
+        let mut bytes = [0; std::mem::size_of::<BlockQ6KWgslF32>()];
+        let data_low_bits_offset = offset_of!(BlockQ6KWgslF32, data_low_bits);
+        let data_low_bits_bytes = bytemuck::cast_slice(&self.data_low_bits);
+        bytes[data_low_bits_offset..data_low_bits_offset + data_low_bits_bytes.len()]
+            .copy_from_slice(data_low_bits_bytes);
+        let data_high_bits_offset = offset_of!(BlockQ6KWgslF32, data_high_bits);
+        let data_high_bits_bytes = bytemuck::cast_slice(&self.data_high_bits);
+        bytes[data_high_bits_offset..data_high_bits_offset + data_high_bits_bytes.len()]
+            .copy_from_slice(data_high_bits_bytes);
+        let scales_offset = offset_of!(BlockQ6KWgslF32, scales);
+        let scales_bytes = bytemuck::bytes_of(&self.scales);
+        bytes[scales_offset..scales_offset + scales_bytes.len()].copy_from_slice(scales_bytes);
+        let scale_offset = offset_of!(BlockQ6KWgslF32, scale);
+        let scale_f32 = self.scale.to_f32();
+        let scale_bytes = bytemuck::bytes_of(&scale_f32);
+        bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(scale_bytes);
+        bytes
+    }
 }
 
 impl GgufBlock for BlockQ6K {

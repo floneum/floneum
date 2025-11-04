@@ -194,12 +194,8 @@ impl QMatrix {
 async fn test_dequantize_smol_lm() {
     use crate::Device;
     use fusor_gguf::GgufMetadata;
-    use num_traits::float::Float;
 
     let device = Device::new().await.unwrap();
-    if !device.f16_supported() {
-        return;
-    }
 
     let url = "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf";
     let bytes = reqwest::get(url).await.unwrap().bytes().await.unwrap();
@@ -220,7 +216,7 @@ async fn test_dequantize_smol_lm() {
             )
             .unwrap();
         let candle_result = candle_q_tensor
-            .dequantize_f16(&candle_core::Device::Cpu)
+            .dequantize(&candle_core::Device::Cpu)
             .unwrap();
 
         let candle_result_doubled = (&candle_result * 2.0).unwrap();
@@ -238,13 +234,13 @@ async fn test_dequantize_smol_lm() {
 
         match candle_result.rank() {
             1 => {
-                let fusor_result = q_matrix.dequantize::<1, half::f16>();
-                let candle_result = candle_result.to_vec1::<half::f16>().unwrap();
+                let fusor_result = q_matrix.dequantize::<1, f32>();
+                let candle_result = candle_result.to_vec1::<f32>().unwrap();
                 let result = fusor_result.as_slice().await.unwrap();
                 for i in 0..candle_result.len() {
                     let expected = candle_result[i];
                     let actual = result[[i]];
-                    if (expected - actual).abs() > half::f16::from_f32(0.01) {
+                    if (expected - actual).abs() > 0.01 {
                         assert_eq!(
                             expected, actual,
                             "Mismatch at ({i}) - expected: {expected}, actual: {actual}"
@@ -252,13 +248,13 @@ async fn test_dequantize_smol_lm() {
                     }
                 }
 
-                let fusor_result = q_matrix.dequantize::<1, half::f16>() * half::f16::from_f32(2.0);
-                let candle_result = candle_result_doubled.to_vec1::<half::f16>().unwrap();
+                let fusor_result = q_matrix.dequantize::<1, f32>() * 2.0;
+                let candle_result = candle_result_doubled.to_vec1::<f32>().unwrap();
                 let result = fusor_result.as_slice().await.unwrap();
                 for i in 0..candle_result.len() {
                     let expected = candle_result[i];
                     let actual = result[[i]];
-                    if (expected - actual).abs() > half::f16::from_f32(0.01) {
+                    if (expected - actual).abs() > 0.01 {
                         assert_eq!(
                             expected, actual,
                             "Mismatch at ({i}) - expected: {expected}, actual: {actual}"
@@ -267,14 +263,14 @@ async fn test_dequantize_smol_lm() {
                 }
             }
             2 => {
-                let fusor_result = q_matrix.dequantize::<2, half::f16>();
-                let candle_result = candle_result.to_vec2::<half::f16>().unwrap();
+                let fusor_result = q_matrix.dequantize::<2, f32>();
+                let candle_result = candle_result.to_vec2::<f32>().unwrap();
                 let result = fusor_result.as_slice().await.unwrap();
                 for x in 0..candle_result.len() {
                     for y in 0..candle_result[0].len() {
                         let expected = candle_result[x][y];
                         let actual = result[[x, y]];
-                        if (expected - actual).abs() > half::f16::from_f32(0.01) {
+                        if (expected - actual).abs() > 0.01 {
                             assert_eq!(
                                 expected, actual,
                                 "Mismatch at ({x}, {y}) - expected: {expected}, actual: {actual}"
@@ -283,14 +279,14 @@ async fn test_dequantize_smol_lm() {
                     }
                 }
 
-                let fusor_result = q_matrix.dequantize::<2, half::f16>() * half::f16::from_f32(2.0);
-                let candle_result = candle_result_doubled.to_vec2::<half::f16>().unwrap();
+                let fusor_result = q_matrix.dequantize::<2, f32>() * 2.0;
+                let candle_result = candle_result_doubled.to_vec2::<f32>().unwrap();
                 let result = fusor_result.as_slice().await.unwrap();
                 for x in 0..candle_result.len() {
                     for y in 0..candle_result[0].len() {
                         let expected = candle_result[x][y];
                         let actual = result[[x, y]];
-                        if (expected - actual).abs() > half::f16::from_f32(0.01) {
+                        if (expected - actual).abs() > 0.01 {
                             assert_eq!(
                                 expected, actual,
                                 "Mismatch at ({x}, {y}) - expected: {expected}, actual: {actual}"

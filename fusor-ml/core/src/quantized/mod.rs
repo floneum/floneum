@@ -69,27 +69,72 @@ impl QMatrix {
         shape: Box<[usize]>,
         ty: GgmlType,
     ) -> Result<Self, GgufReadError> {
+        let use_f16 = device.f16_supported();
         let bytes: Box<[u8]> = match ty {
-            GgmlType::Q4_0 => bytemuck::cast_slice::<_, BlockQ4_0>(bytes)
-                .iter()
-                .flat_map(|block| block.into_wgsl_bytes())
-                .collect(),
-            GgmlType::Q5_0 => bytemuck::cast_slice::<_, BlockQ5_0>(bytes)
-                .iter()
-                .flat_map(|block| block.into_wgsl_bytes())
-                .collect(),
-            GgmlType::Q8_0 => bytemuck::cast_slice::<_, BlockQ8_0>(bytes)
-                .iter()
-                .flat_map(|block| block.into_wgsl_bytes())
-                .collect(),
-            GgmlType::Q4K => bytemuck::cast_slice::<_, BlockQ4K>(bytes)
-                .iter()
-                .flat_map(|block| block.into_wgsl_bytes())
-                .collect(),
-            GgmlType::Q6K => bytemuck::cast_slice::<_, BlockQ6K>(bytes)
-                .iter()
-                .flat_map(|block| block.into_wgsl_bytes())
-                .collect(),
+            GgmlType::Q4_0 => {
+                let map = if use_f16 {
+                    BlockQ4_0::into_wgsl_bytes
+                } else {
+                    BlockQ4_0::into_wgsl_bytes_f32
+                };
+                bytemuck::cast_slice::<_, BlockQ4_0>(bytes)
+                    .iter()
+                    .copied()
+                    .flat_map(map)
+                    .collect()
+            }
+            GgmlType::Q5_0 => {
+                let map = if use_f16 {
+                    BlockQ5_0::into_wgsl_bytes
+                } else {
+                    BlockQ5_0::into_wgsl_bytes_f32
+                };
+                bytemuck::cast_slice::<_, BlockQ5_0>(bytes)
+                    .iter()
+                    .copied()
+                    .flat_map(map)
+                    .collect()
+            }
+            GgmlType::Q8_0 => {
+                let map = if use_f16 {
+                    BlockQ8_0::into_wgsl_bytes
+                } else {
+                    BlockQ8_0::into_wgsl_bytes_f32
+                };
+                bytemuck::cast_slice::<_, BlockQ8_0>(bytes)
+                    .iter()
+                    .copied()
+                    .flat_map(map)
+                    .collect()
+            }
+            GgmlType::Q4K => {
+                let slice = bytemuck::cast_slice::<_, BlockQ4K>(bytes);
+                if use_f16 {
+                    slice
+                        .iter()
+                        .copied()
+                        .flat_map(BlockQ4K::into_wgsl_bytes)
+                        .collect()
+                } else {
+                    slice
+                        .iter()
+                        .copied()
+                        .flat_map(BlockQ4K::into_wgsl_bytes_f32)
+                        .collect()
+                }
+            }
+            GgmlType::Q6K => {
+                let map = if use_f16 {
+                    BlockQ6K::into_wgsl_bytes
+                } else {
+                    BlockQ6K::into_wgsl_bytes_f32
+                };
+                bytemuck::cast_slice::<_, BlockQ6K>(bytes)
+                    .iter()
+                    .copied()
+                    .flat_map(map)
+                    .collect()
+            }
             GgmlType::F16 | GgmlType::F32 => bytes.into(),
             _ => todo!(),
         };
@@ -302,7 +347,7 @@ trait WgslQuantizedType: GgufBlock {
 
     // This is used in the fuzzing test
     #[allow(unused)]
-    fn write_type<W: Write>(f: &mut W) -> std::fmt::Result;
+    fn write_type<W: Write>(f: &mut W, use_f16: bool) -> std::fmt::Result;
 }
 
 const fn center_of_bit_space(bits: u8) -> u8 {
@@ -463,8 +508,8 @@ impl WgslQuantizedType for BlockQ4_0 {
         process_element("result".to_string(), code);
     }
 
-    fn write_type<W: Write>(f: &mut W) -> std::fmt::Result {
-        write_q4_0_type(f)
+    fn write_type<W: Write>(f: &mut W, use_f16: bool) -> std::fmt::Result {
+        write_q4_0_type(f, use_f16)
     }
 }
 
@@ -654,8 +699,8 @@ impl WgslQuantizedType for BlockQ5_0 {
         process_element("result".to_string(), code);
     }
 
-    fn write_type<W: Write>(f: &mut W) -> std::fmt::Result {
-        write_q5_0_type(f)
+    fn write_type<W: Write>(f: &mut W, use_f16: bool) -> std::fmt::Result {
+        write_q5_0_type(f, use_f16)
     }
 }
 
@@ -759,8 +804,8 @@ impl WgslQuantizedType for BlockQ8_0 {
         process_element("result".to_string(), code);
     }
 
-    fn write_type<W: Write>(f: &mut W) -> std::fmt::Result {
-        write_q8_0_type(f)
+    fn write_type<W: Write>(f: &mut W, use_f16: bool) -> std::fmt::Result {
+        write_q8_0_type(f, use_f16)
     }
 }
 
@@ -1156,8 +1201,8 @@ impl WgslQuantizedType for BlockQ4K {
         process_element("result".to_string(), code);
     }
 
-    fn write_type<W: Write>(f: &mut W) -> std::fmt::Result {
-        write_q4_k_type(f)
+    fn write_type<W: Write>(f: &mut W, use_f16: bool) -> std::fmt::Result {
+        write_q4_k_type(f, use_f16)
     }
 }
 
@@ -1397,8 +1442,8 @@ impl WgslQuantizedType for BlockQ6K {
         _ = write_q6_k_dequant(code, datatype, &chunk, index, process_element);
     }
 
-    fn write_type<W: Write>(f: &mut W) -> std::fmt::Result {
-        write_q6_k_type(f)
+    fn write_type<W: Write>(f: &mut W, use_f16: bool) -> std::fmt::Result {
+        write_q6_k_type(f, use_f16)
     }
 }
 
@@ -1600,11 +1645,15 @@ where
             )
         };
         let mut kernel = String::new();
-        if !device.f16_supported() {
+        let use_f16 = device.f16_supported();
+        if !use_f16 {
+            // Skip test if f16 is not supported since the test uses f16 block conversion
             return;
         }
-        writeln!(&mut kernel, "enable f16;").unwrap();
-        B::write_type(&mut kernel).unwrap();
+        if use_f16 {
+            writeln!(&mut kernel, "enable f16;").unwrap();
+        }
+        B::write_type(&mut kernel, use_f16).unwrap();
         writeln!(
             &mut kernel,
             "@group(0) @binding(0) var<storage, read> block: {};",
@@ -1798,11 +1847,15 @@ where
         }
 
         let mut kernel = String::new();
-        writeln!(&mut kernel, "enable f16;").unwrap();
-        if !device.f16_supported() {
+        let use_f16 = device.f16_supported();
+        if !use_f16 {
+            // Skip test if f16 is not supported since the test uses f16 block conversion
             return;
         }
-        B::write_type(&mut kernel).unwrap();
+        if use_f16 {
+            writeln!(&mut kernel, "enable f16;").unwrap();
+        }
+        B::write_type(&mut kernel, use_f16).unwrap();
         writeln!(
             &mut kernel,
             "@group(0) @binding(0) var<storage, read> block: {};",
