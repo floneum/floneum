@@ -68,7 +68,7 @@ impl Device {
         let adapter = instance.request_adapter(&Default::default()).await.unwrap();
         let mut required_features = wgpu::Features::empty();
         if adapter.features().contains(wgpu::Features::SUBGROUP) {
-            // required_features |= wgpu::Features::SUBGROUP;
+            required_features |= wgpu::Features::SUBGROUP;
         }
         if adapter.features().contains(wgpu::Features::SHADER_F16) {
             required_features |= wgpu::Features::SHADER_F16;

@@ -269,8 +269,8 @@ impl ReduceOperation {
             // Optimized subgroup reduction with unrolled shuffle operations
             let mut offset = max_subgroup_size;
             while offset > 1 {
+                writeln!(kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
                 offset /= 2;
-                writeln!(kernel, "if {subgroup_size} < {offset}u {{").unwrap();
                 writeln!(
                     kernel,
                     "let neighbor = subgroupShuffleDown(merged, {offset}u);"
@@ -309,8 +309,8 @@ impl ReduceOperation {
             // Final unrolled subgroup reduction
             offset = max_subgroup_size;
             while offset > 1 {
+                writeln!(kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
                 offset /= 2;
-                writeln!(kernel, "if {subgroup_size} < {offset}u {{").unwrap();
                 writeln!(
                     kernel,
                     "let neighbor = subgroupShuffleDown(merged, {offset}u);"
@@ -335,7 +335,7 @@ impl ReduceOperation {
                 writeln!(kernel, "{local_data}[{workgroup_local_index}] = merged;").unwrap();
                 writeln!(kernel, "workgroupBarrier();").unwrap();
                 offset /= 2;
-                writeln!(kernel, "if {workgroup_local_index} < {offset}u {{").unwrap();
+                writeln!(kernel, "{{").unwrap();
                 writeln!(
                     kernel,
                     "let neighbor = {local_data}[{workgroup_local_index} + {offset}u];"
