@@ -328,7 +328,6 @@ impl ReduceOperation {
             // Otherwise reduce using shared memory
             let local_data =
                 kernel.add_global_array(KernelGlobalSpace::Workgroup, dtype, blocksize.to_string());
-            // Optimized subgroup reduction with unrolled shuffle operations
             let mut offset = blocksize;
             while offset > 1 {
                 // Write this thread's value to the shared memory
