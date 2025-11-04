@@ -45,8 +45,9 @@ pub(crate) fn sgemv(
     k_size: &str,
     graph: &crate::compute_graph::ComputeGraphInner,
 ) {
+    let device = &graph.device;
     match op.matrix.datatype {
-        GgmlType::Q6K => q6k_sgemv(
+        GgmlType::Q6K if device.subgroups_supported() => q6k_sgemv(
             op,
             generic_kernel,
             workgroup_size,
@@ -57,7 +58,7 @@ pub(crate) fn sgemv(
             _m_size,
             k_size,
         ),
-        GgmlType::Q4K => q4k_sgemv(
+        GgmlType::Q4K if device.subgroups_supported() => q4k_sgemv(
             op,
             generic_kernel,
             workgroup_size,
@@ -68,7 +69,7 @@ pub(crate) fn sgemv(
             _m_size,
             k_size,
         ),
-        GgmlType::Q4_0 | GgmlType::Q5_0 => q_n_sgemv(
+        GgmlType::Q4_0 | GgmlType::Q5_0 if device.subgroups_supported() => q_n_sgemv(
             op,
             generic_kernel,
             workgroup_size,
@@ -79,7 +80,7 @@ pub(crate) fn sgemv(
             _m_size,
             k_size,
         ),
-        GgmlType::Q8_0 => q_8_0_sgemv(
+        GgmlType::Q8_0 if device.subgroups_supported() => q_8_0_sgemv(
             op,
             generic_kernel,
             workgroup_size,
@@ -108,19 +109,21 @@ pub(crate) fn sgemv(
 pub(crate) fn dispatch_size(matrix: &QMatrix, n: u32, m: u32, batch_size: u32) -> [u32; 3] {
     // Use Y dimension to handle M (each workgroup handles one M value)
     // and X dimension for N (output dimension)
-    if matrix.datatype == GgmlType::Q6K {
-        return [n.div_ceil(Q6K_SGEMV_CHUNK_SIZE * 2), m, batch_size];
+    if matrix.device.subgroups_supported() {
+        if matrix.datatype == GgmlType::Q6K {
+            return [n.div_ceil(Q6K_SGEMV_CHUNK_SIZE), m, batch_size];
+        }
+        if matrix.datatype == GgmlType::Q4K {
+            return [n.div_ceil(Q4K_SGEMV_CHUNK_SIZE), m, batch_size];
+        }
+        if matches!(matrix.datatype, GgmlType::Q4_0 | GgmlType::Q5_0) {
+            return [n.div_ceil(Q_N_SGEMV_CHUNK_SIZE), m, batch_size];
+        }
+        if matches!(matrix.datatype, GgmlType::Q8_0) {
+            return [n.div_ceil(Q_8_0_SGEMV_CHUNK_SIZE), m, batch_size];
+        }
     }
-    if matrix.datatype == GgmlType::Q4K {
-        return [n.div_ceil(Q4K_SGEMV_CHUNK_SIZE * 2), m, batch_size];
-    }
-    if matches!(matrix.datatype, GgmlType::Q4_0 | GgmlType::Q5_0) {
-        return [n.div_ceil(Q_N_SGEMV_CHUNK_SIZE * 2), m, batch_size];
-    }
-    if matches!(matrix.datatype, GgmlType::Q8_0) {
-        return [n.div_ceil(Q_8_0_SGEMV_CHUNK_SIZE * 2), m, batch_size];
-    }
-    [n.div_ceil(SGEMV_CHUNK_SIZE * 2), m, batch_size]
+    [n.div_ceil(SGEMV_CHUNK_SIZE), m, batch_size]
 }
 
 pub(crate) fn workgroup_shape_constraints(
@@ -128,15 +131,17 @@ pub(crate) fn workgroup_shape_constraints(
     device: &Device,
 ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
     let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
-    let limits = device.limits();
-    constraints.add_constraint(
-        0,
-        crate::mir::workgroup_shape::Constraint::more_than_or_equals(limits.min_subgroup_size),
-    );
-    constraints.add_constraint(
-        0,
-        crate::mir::workgroup_shape::Constraint::less_than_or_equals(limits.max_subgroup_size),
-    );
+    if device.subgroups_supported() {
+        let limits = device.limits();
+        constraints.add_constraint(
+            0,
+            crate::mir::workgroup_shape::Constraint::more_than_or_equals(limits.min_subgroup_size),
+        );
+        constraints.add_constraint(
+            0,
+            crate::mir::workgroup_shape::Constraint::less_than_or_equals(limits.max_subgroup_size),
+        );
+    }
     constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));
     constraints.add_constraint(2, crate::mir::workgroup_shape::Constraint::Equals(1));
     constraints

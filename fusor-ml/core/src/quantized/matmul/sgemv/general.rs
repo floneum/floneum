@@ -36,24 +36,7 @@ pub(crate) fn general_sgemv(
     let workgroup_index = kernel.workgroup_index();
     let workgroup_local_index = kernel.workgroup_local_index();
     let elements_per_block = op.elements_per_block();
-    // We don't need to synchronize between the whole workgroup if there is only one subgroup
-    let subgroup_size = graph.device.limits().max_subgroup_size;
-    let workgroup_sync_data = (blocksize > subgroup_size).then(|| {
-        let local_data = kernel.add_global_array(
-            KernelGlobalSpace::Workgroup,
-            maybe_vec_storage_type_enum(SGEMV_CHUNK_SIZE, dtype),
-            blocksize.to_string(),
-        );
-        let subgroup_id = kernel.subgroup_index();
-        let subgroup_local_id = kernel.subgroup_local_index();
-        let subgroups_per_workgroup = kernel.subgroups_per_workgroup();
-        (
-            local_data,
-            subgroup_id,
-            subgroup_local_id,
-            subgroups_per_workgroup,
-        )
-    });
+    let device = &graph.device;
 
     // Handle batch dimensions
     writeln!(kernel, "let batch_idx = {global_id}.z;").unwrap();
@@ -126,12 +109,12 @@ pub(crate) fn general_sgemv(
         if SGEMV_CHUNK_SIZE > 1 {
             writeln!(
                 kernel,
-                "for (var offset = 0u; offset < {SGEMV_CHUNK_SIZE}; offset += 1u) {{"
+                "for (var acc_offset = 0u; acc_offset < {SGEMV_CHUNK_SIZE}; acc_offset += 1u) {{"
             )
             .unwrap();
         }
         let index = if SGEMV_CHUNK_SIZE > 1 {
-            "(workgroup_offset + offset)"
+            "(workgroup_offset + acc_offset)"
         } else {
             "workgroup_offset"
         };
@@ -141,7 +124,7 @@ pub(crate) fn general_sgemv(
         )
         .unwrap();
 
-        let acc_indexed = maybe_vec_storage_index(SGEMV_CHUNK_SIZE, "acc", "offset");
+        let acc_indexed = maybe_vec_storage_index(SGEMV_CHUNK_SIZE, "acc", "acc_offset");
         dequantize_vec4_block(
             kernel,
             op.matrix.datatype,
@@ -161,55 +144,90 @@ pub(crate) fn general_sgemv(
 
     writeln!(kernel, "}}").unwrap();
 
-    // Get the sum among all threads in the subgroup
-    writeln!(
-        kernel,
-        "acc = {};",
-        maybe_vec_storage_subgroup_add(SGEMV_CHUNK_SIZE, "acc",)
-    )
-    .unwrap();
-
-    if let Some((local_data, subgroup_id, subgroup_local_id, subgroups_per_workgroup)) =
-        workgroup_sync_data
-    {
-        // Write the output to the workgroup memory if this is the first thread in the subgroup
-        writeln!(kernel, "if {subgroup_local_id} == 0u {{").unwrap();
-        {
-            writeln!(kernel, "{local_data}[{subgroup_id}] = acc;").unwrap();
-        }
-        writeln!(kernel, "}}").unwrap();
-
-        // Wait until all threads have written to the workgroup shared memory
-        writeln!(kernel, "workgroupBarrier();").unwrap();
-
-        // Then if this is the first subgroup, do one final shuffle down reduction
-        writeln!(kernel, "if {subgroup_id} == 0u {{").unwrap();
-        {
-            // Copy over the final value from each subgroup from the workgroup shared memory to the acc variable
-            writeln!(
-                kernel,
-                "if {subgroup_local_id} < {subgroups_per_workgroup} {{"
-            )
-            .unwrap();
-            {
-                writeln!(kernel, "acc = {local_data}[{subgroup_local_id}];").unwrap();
-            }
-            writeln!(kernel, "}}").unwrap();
-            writeln!(kernel, "else {{").unwrap();
-            {
-                writeln!(kernel, "acc = {storage_type}();").unwrap();
-            }
-            writeln!(kernel, "}}").unwrap();
-        }
-        writeln!(kernel, "}}").unwrap();
-
-        // Finally get the final sum across all threads in the workgroup
+    // Reduce with subgroup operations if the device supports subgroups
+    if device.subgroups_supported() {
+        // Get the sum among all threads in the subgroup
         writeln!(
             kernel,
             "acc = {};",
-            maybe_vec_storage_subgroup_add(SGEMV_CHUNK_SIZE, "acc",)
+            maybe_vec_storage_subgroup_add(SGEMV_CHUNK_SIZE, "acc")
         )
         .unwrap();
+
+        // We don't need to synchronize between the whole workgroup if there is only one subgroup
+        let subgroup_size = graph.device.limits().max_subgroup_size;
+        if blocksize > subgroup_size {
+            let local_data = kernel.add_global_array(
+                KernelGlobalSpace::Workgroup,
+                maybe_vec_storage_type_enum(SGEMV_CHUNK_SIZE, dtype),
+                subgroup_size.to_string(),
+            );
+            let subgroup_id = kernel.subgroup_index();
+            let subgroup_local_id = kernel.subgroup_local_index();
+            let subgroups_per_workgroup = kernel.subgroups_per_workgroup();
+
+            // Write the output to the workgroup memory if this is the first thread in the subgroup
+            writeln!(kernel, "if {subgroup_local_id} == 0u {{").unwrap();
+            {
+                writeln!(kernel, "{local_data}[{subgroup_id}] = acc;").unwrap();
+            }
+            writeln!(kernel, "}}").unwrap();
+
+            // Wait until all threads have written to the workgroup shared memory
+            writeln!(kernel, "workgroupBarrier();").unwrap();
+
+            // Then if this is the first subgroup, do one final shuffle down reduction
+            writeln!(kernel, "if {subgroup_id} == 0u {{").unwrap();
+            {
+                // Copy over the final value from each subgroup from the workgroup shared memory to the acc variable
+                writeln!(
+                    kernel,
+                    "if {subgroup_local_id} < {subgroups_per_workgroup} {{"
+                )
+                .unwrap();
+                {
+                    writeln!(kernel, "acc = {local_data}[{subgroup_local_id}];").unwrap();
+                }
+                writeln!(kernel, "}}").unwrap();
+                writeln!(kernel, "else {{").unwrap();
+                {
+                    writeln!(kernel, "acc = {storage_type}();").unwrap();
+                }
+                writeln!(kernel, "}}").unwrap();
+            }
+            writeln!(kernel, "}}").unwrap();
+
+            // Finally get the final sum across all threads in the workgroup
+            writeln!(
+                kernel,
+                "acc = {};",
+                maybe_vec_storage_subgroup_add(SGEMV_CHUNK_SIZE, "acc",)
+            )
+            .unwrap();
+        }
+    }
+    // Otherwise, reduce using workgroup memory
+    else {
+        let local_data = kernel.add_global_array(
+            KernelGlobalSpace::Workgroup,
+            maybe_vec_storage_type_enum(SGEMV_CHUNK_SIZE, dtype),
+            blocksize.to_string(),
+        );
+        let mut offset = blocksize;
+        while offset > 1 {
+            // Write this thread's value to the shared memory
+            writeln!(kernel, "{local_data}[{workgroup_local_index}] = acc;").unwrap();
+            writeln!(kernel, "workgroupBarrier();").unwrap();
+            offset /= 2;
+            writeln!(kernel, "{{").unwrap();
+            writeln!(
+                kernel,
+                "let neighbor = {local_data}[{workgroup_local_index} + {offset}u];"
+            )
+            .unwrap();
+            writeln!(kernel, "acc += neighbor;").unwrap();
+            writeln!(kernel, "}}").unwrap();
+        }
     }
 
     // If this is not the first simd thread in the workgroup, we can return early
@@ -219,13 +237,13 @@ pub(crate) fn general_sgemv(
     if SGEMV_CHUNK_SIZE > 1 {
         writeln!(
             kernel,
-            "for (var offset = 0u; offset < {SGEMV_CHUNK_SIZE}; offset += 1u) {{"
+            "for (var acc_offset = 0u; acc_offset < {SGEMV_CHUNK_SIZE}; acc_offset += 1u) {{"
         )
         .unwrap();
     }
     {
         if SGEMV_CHUNK_SIZE > 1 {
-            writeln!(kernel, "let output_index = workgroup_offset + offset;").unwrap();
+            writeln!(kernel, "let output_index = workgroup_offset + acc_offset;").unwrap();
         } else {
             writeln!(kernel, "let output_index = workgroup_offset;").unwrap();
         }
@@ -241,7 +259,7 @@ pub(crate) fn general_sgemv(
         writeln!(
             kernel,
             "] = {};",
-            maybe_vec_storage_index(SGEMV_CHUNK_SIZE, "acc", "offset")
+            maybe_vec_storage_index(SGEMV_CHUNK_SIZE, "acc", "acc_offset")
         )
         .unwrap();
     }
