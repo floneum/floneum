@@ -577,6 +577,9 @@ async fn test_reduce_sum_f16() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
+    if !device.f16_supported() {
+        return;
+    }
 
     let data = [
         [half::f16::from_f32(1.), half::f16::from_f32(2.)],

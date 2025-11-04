@@ -348,6 +348,9 @@ async fn test_pair_wise_add_f16() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
+    if !device.f16_supported() {
+        return;
+    }
 
     let data_a = [
         [half::f16::from_f32(1.), half::f16::from_f32(2.)],

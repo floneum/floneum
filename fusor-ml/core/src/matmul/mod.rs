@@ -525,6 +525,9 @@ async fn test_batched_matmul() {
 #[tokio::test]
 async fn test_matmul_f16() {
     let device = Device::new().await.unwrap();
+    if !device.f16_supported() {
+        return;
+    }
 
     let data_a = [[half::f16::from_f32(1.)], [half::f16::from_f32(3.)]];
     let data_b = [[half::f16::from_f32(1.), half::f16::from_f32(2.)]];

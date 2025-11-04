@@ -1600,6 +1600,9 @@ where
             )
         };
         let mut kernel = String::new();
+        if !device.f16_supported() {
+            return;
+        }
         writeln!(&mut kernel, "enable f16;").unwrap();
         B::write_type(&mut kernel).unwrap();
         writeln!(
@@ -1796,6 +1799,9 @@ where
 
         let mut kernel = String::new();
         writeln!(&mut kernel, "enable f16;").unwrap();
+        if !device.f16_supported() {
+            return;
+        }
         B::write_type(&mut kernel).unwrap();
         writeln!(
             &mut kernel,

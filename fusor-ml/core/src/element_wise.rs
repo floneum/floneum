@@ -457,6 +457,9 @@ async fn test_add_const_reversed() {
 #[tokio::test]
 async fn test_add_const_f16() {
     let device = Device::new().await.unwrap();
+    if !device.f16_supported() {
+        return;
+    }
 
     let data = [
         [
@@ -1863,6 +1866,9 @@ impl CastTensor<half::f16> for f32 {
 #[tokio::test]
 async fn test_f32_to_f16_cast() {
     let device = Device::new().await.unwrap();
+    if !device.f16_supported() {
+        return;
+    }
 
     let data = [[1.0f32, 2.0f32], [3.0f32, 4.0f32], [5.0f32, 6.0f32]];
     let tensor = Tensor::new(&device, &data);
@@ -1895,6 +1901,9 @@ impl CastTensor<f32> for half::f16 {
 #[tokio::test]
 async fn test_f16_to_f32_cast() {
     let device = Device::new().await.unwrap();
+    if !device.f16_supported() {
+        return;
+    }
 
     let data = [
         [half::f16::from_f32(1.0), half::f16::from_f32(2.0)],

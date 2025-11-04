@@ -197,6 +197,9 @@ async fn test_dequantize_smol_lm() {
     use num_traits::float::Float;
 
     let device = Device::new().await.unwrap();
+    if !device.f16_supported() {
+        return;
+    }
 
     let url = "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf";
     let bytes = reqwest::get(url).await.unwrap().bytes().await.unwrap();

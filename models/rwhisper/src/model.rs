@@ -109,7 +109,7 @@ impl WhisperInner {
         );
         let attention_heads = settings.model.heads;
 
-        let model = ModelType::load(&weights, &device, config.clone())?;
+        let model = ModelType::load(weights, &device, config.clone())?;
         let language_token = if settings.model.multilingual {
             let language = settings.language.unwrap_or(WhisperLanguage::English);
             match token_id(&tokenizer, &format!("<|{language}|>")) {

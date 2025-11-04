@@ -141,6 +141,9 @@ async fn test_fuzz_q_mat_mul() {
     use candle_core::Module;
 
     let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("blk.0.attn_q.weight").await;
+    if !device.f16_supported() {
+        return;
+    }
     println!("q_matrix: {q_matrix:?}");
 
     for _ in 0..25 {
@@ -195,6 +198,9 @@ async fn test_fuzz_q_mat_mul_transposed() {
     use candle_core::Module;
 
     let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("blk.0.attn_q.weight").await;
+    if !device.f16_supported() {
+        return;
+    }
     println!("q_matrix: {q_matrix:?}");
 
     for _ in 0..25 {
@@ -251,6 +257,9 @@ async fn test_fuzz_q_mat_mul_sgemv() {
     use candle_core::Module;
 
     let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("token_embd.weight").await;
+    if !device.f16_supported() {
+        return;
+    }
 
     for _ in 0..25 {
         let size = 576;
@@ -307,6 +316,9 @@ async fn test_fuzz_q_mat_mul_gemv_transposed() {
     use candle_core::Module;
 
     let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("blk.0.attn_q.weight").await;
+    if !device.f16_supported() {
+        return;
+    }
     println!("q_matrix: {q_matrix:?}");
 
     for _ in 0..25 {
@@ -363,6 +375,9 @@ async fn test_fuzz_q_mat_mul_q8_0() {
     use candle_core::Module;
 
     let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("token_embd.weight").await;
+    if !device.f16_supported() {
+        return;
+    }
 
     // Always test the edge cases
     let mut widths = vec![1, 256];
@@ -422,6 +437,9 @@ async fn test_fuzz_q_mat_mul_q5_0_gemv() {
     use candle_core::Module;
 
     let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("blk.0.ffn_gate.weight").await;
+    if !device.f16_supported() {
+        return;
+    }
 
     for _ in 0..25 {
         let width = 1;
@@ -485,6 +503,9 @@ async fn test_fuzz_q_mat_mul_q4_0_gemv() {
     };
     let (device, q_matrix, candle_q_matrix) =
         setup_smol_lm_matrix_with_source("blk.0.ffn_gate.weight", source).await;
+    if !device.f16_supported() {
+        return;
+    }
 
     for _ in 0..25 {
         let width = 1;
@@ -540,6 +561,9 @@ async fn test_fuzz_q_mat_mul_q6k() {
     use candle_core::Module;
 
     let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("blk.0.ffn_down.weight").await;
+    if !device.f16_supported() {
+        return;
+    }
 
     // Always test the edge cases
     let mut widths = vec![1, 256];
@@ -600,6 +624,9 @@ async fn test_fuzz_q_mat_mul_q4k() {
     use candle_core::Module;
 
     let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("blk.3.ffn_down.weight").await;
+    if !device.f16_supported() {
+        return;
+    }
 
     // Always test the edge cases
     let mut widths = vec![1, 256];

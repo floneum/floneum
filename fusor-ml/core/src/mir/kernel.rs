@@ -382,7 +382,7 @@ impl GenericKernel {
         };
         let module = self.kernel.get_or_init(|| {
             let mut kernel = String::new();
-            self.kernel(&mut kernel).unwrap();
+            self.kernel(&mut kernel, device).unwrap();
             device
                 .shader_module_cache()
                 .write()
@@ -573,8 +573,10 @@ impl GenericKernel {
         Ok(())
     }
 
-    fn kernel(&self, f: &mut String) -> std::fmt::Result {
-        writeln!(f, "enable f16;")?;
+    fn kernel(&self, f: &mut String, device: &Device) -> std::fmt::Result {
+        if device.f16_supported() {
+            writeln!(f, "enable f16;").unwrap();
+        }
 
         #[cfg(target_arch = "wasm32")]
         writeln!(f, "enable subgroups;")?;
