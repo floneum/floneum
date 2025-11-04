@@ -148,7 +148,7 @@ impl Operation for PairWiseOperation {
 
     fn build_kernel(
         &self,
-        _: &ComputeGraphInner,
+        graph: &ComputeGraphInner,
         _: &crate::mir::workgroup_shape::WorkgroupShape,
         inputs: &[crate::mir::inputs::MirValue],
         kernel: &mut GenericKernel,
@@ -173,6 +173,7 @@ impl Operation for PairWiseOperation {
         }
 
         build_visit_tiled_kernel(
+            &graph.device,
             shape,
             TILE_SIZE,
             datatypes,
