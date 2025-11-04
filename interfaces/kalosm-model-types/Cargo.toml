@@ -19,3 +19,4 @@ kalosm = { workspace = true, features = [
     "language",
     "surrealdb",
 ], default-features = true }
+tokio = { version = "1", features = ["full"] }
