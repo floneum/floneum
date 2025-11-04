@@ -111,16 +111,16 @@ pub(crate) fn dispatch_size(matrix: &QMatrix, n: u32, m: u32, batch_size: u32) -
     // and X dimension for N (output dimension)
     if matrix.device.subgroups_supported() {
         if matrix.datatype == GgmlType::Q6K {
-            return [n.div_ceil(Q6K_SGEMV_CHUNK_SIZE), m, batch_size];
+            return [n.div_ceil(Q6K_SGEMV_CHUNK_SIZE * 2), m, batch_size];
         }
         if matrix.datatype == GgmlType::Q4K {
-            return [n.div_ceil(Q4K_SGEMV_CHUNK_SIZE), m, batch_size];
+            return [n.div_ceil(Q4K_SGEMV_CHUNK_SIZE * 2), m, batch_size];
         }
         if matches!(matrix.datatype, GgmlType::Q4_0 | GgmlType::Q5_0) {
-            return [n.div_ceil(Q_N_SGEMV_CHUNK_SIZE), m, batch_size];
+            return [n.div_ceil(Q_N_SGEMV_CHUNK_SIZE * 2), m, batch_size];
         }
         if matches!(matrix.datatype, GgmlType::Q8_0) {
-            return [n.div_ceil(Q_8_0_SGEMV_CHUNK_SIZE), m, batch_size];
+            return [n.div_ceil(Q_8_0_SGEMV_CHUNK_SIZE * 2), m, batch_size];
         }
     }
     [n.div_ceil(SGEMV_CHUNK_SIZE), m, batch_size]
