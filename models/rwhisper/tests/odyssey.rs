@@ -20,7 +20,7 @@ async fn transcribe_the_odyssey() -> Result<(), anyhow::Error> {
     let source = Cursor::new(content);
     // Decode that sound file into a source
     let audio = Decoder::new(source).unwrap();
-    let audio = audio.take_duration(Duration::from_secs(60 * 10));
+    let audio = audio.take_duration(Duration::from_secs(10));
 
     // Transcribe the source audio into text
     let mut text = model.transcribe(audio).timestamped();

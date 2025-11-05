@@ -141,36 +141,7 @@ impl<'a> Resolver<'a> {
         self.graph.cached_results[&self.target].clone()
     }
 
-    fn should_extend_kernel(
-        &mut self,
-        new_inputs: Vec<MirValue>,
-        inputs: &[Vec<MirValue>],
-    ) -> bool {
-        // if inputs
-        //     .iter()
-        //     .flat_map(|inputs| inputs.iter().map(MirValue::input_values))
-        //     .sum::<usize>()
-        //     + new_inputs.iter().map(MirValue::input_values).sum::<usize>()
-        //     > self
-        //         .graph
-        //         .device
-        //         .wgpu_device()
-        //         .limits()
-        //         .max_storage_buffers_per_shader_stage as _
-        // {
-        //     return false;
-        // }
-        // for input in &new_inputs {
-        //     for other in inputs.iter().flatten() {
-        //         if let (MirValue::Tensor(input_tensor), MirValue::Tensor(other_tensor)) =
-        //             (input, other)
-        //             && input_tensor == other_tensor
-        //         {
-        //             return false;
-        //         }
-        //     }
-        // }
-        // true
+    fn should_extend_kernel(&mut self, _: Vec<MirValue>, _: &[Vec<MirValue>]) -> bool {
         // TODO: Restore with better testing. This passes all tests in fusor, but breaks rbert and rwhisper
         return false;
     }

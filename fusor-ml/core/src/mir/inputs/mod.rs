@@ -41,15 +41,6 @@ impl MirValue {
         }
     }
 
-    pub(crate) fn input_values(&self) -> usize {
-        match self {
-            MirValue::QMatrix(_) => 2,
-            MirValue::Tensor(_) => 2,
-            MirValue::Integer(_) => 1,
-            MirValue::Float(_) => 1,
-        }
-    }
-
     pub(crate) fn visit_input_values<F>(&self, mut f: F)
     where
         F: FnMut(KernelInputValue),
