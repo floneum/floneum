@@ -143,7 +143,7 @@ impl<'a> Resolver<'a> {
 
     fn should_extend_kernel(&mut self, _: Vec<MirValue>, _: &[Vec<MirValue>]) -> bool {
         // TODO: Restore with better testing. This passes all tests in fusor, but breaks rbert and rwhisper
-        return false;
+        false
     }
 
     #[allow(clippy::too_many_arguments)]
