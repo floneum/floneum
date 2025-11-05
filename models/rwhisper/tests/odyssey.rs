@@ -23,7 +23,7 @@ async fn transcribe_the_odyssey() -> Result<(), anyhow::Error> {
     let audio = audio.take_duration(Duration::from_secs(10));
 
     // Transcribe the source audio into text
-    let mut text = model.transcribe(audio).timestamped();
+    let mut text = model.transcribe(audio);
 
     // As the model transcribes the audio, print the text to the console
     while let Some(segment) = text.next().await {
