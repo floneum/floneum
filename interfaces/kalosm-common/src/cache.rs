@@ -66,7 +66,7 @@ impl Cache {
     pub async fn get_bytes(
         &self,
         source: &FileSource,
-        progress: impl FnMut(FileLoadingProgress),
+        #[allow(unused)] progress: impl FnMut(FileLoadingProgress),
     ) -> Result<Vec<u8>, CacheError> {
         #[cfg(feature = "tokio")]
         {
