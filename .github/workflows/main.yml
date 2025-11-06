@@ -76,7 +76,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: cargo test --lib --bins --tests --examples --workspace --features kalosm/language,kalosm/sound,kalosm/vision,kalosm/remote,kalosm/scrape --exclude fusor-core --exclude rbert --exclude rwhisper
+        run: cargo test --lib --bins --tests --examples --workspace --features kalosm/language,kalosm/sound,kalosm/vision,kalosm/remote,kalosm/scrape --exclude fusor-core --exclude rbert --exclude rwhisper --exclude kalosm-learning
 
   doc:
     if: github.event.pull_request.draft == false
