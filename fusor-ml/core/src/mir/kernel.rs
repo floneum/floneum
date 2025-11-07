@@ -382,7 +382,7 @@ impl GenericKernel {
         };
         let module = self.kernel.get_or_init(|| {
             let mut kernel = String::new();
-            self.kernel(&mut kernel).unwrap();
+            self.kernel(&mut kernel, device).unwrap();
             device
                 .shader_module_cache()
                 .write()
@@ -544,42 +544,45 @@ impl GenericKernel {
         }
     }
 
-    fn declare_quantized_types(&self, f: &mut String) -> std::fmt::Result {
+    fn declare_quantized_types(&self, f: &mut String, use_f16: bool) -> std::fmt::Result {
         let q4_0 = GgmlType::Q4_0;
         if self.quantized_type_definitions.contains(q4_0) {
-            write_q4_0_type(f)?;
+            write_q4_0_type(f, use_f16)?;
         }
 
         let q5_0 = GgmlType::Q5_0;
         if self.quantized_type_definitions.contains(q5_0) {
-            write_q5_0_type(f)?;
+            write_q5_0_type(f, use_f16)?;
         }
 
         let q8_0 = GgmlType::Q8_0;
         if self.quantized_type_definitions.contains(q8_0) {
-            write_q8_0_type(f)?;
+            write_q8_0_type(f, use_f16)?;
         }
 
         let q4_k = GgmlType::Q4K;
         if self.quantized_type_definitions.contains(q4_k) {
-            write_q4_k_type(f)?;
+            write_q4_k_type(f, use_f16)?;
         }
 
         let q6_k = GgmlType::Q6K;
         if self.quantized_type_definitions.contains(q6_k) {
-            write_q6_k_type(f)?;
+            write_q6_k_type(f, use_f16)?;
         }
 
         Ok(())
     }
 
-    fn kernel(&self, f: &mut String) -> std::fmt::Result {
-        writeln!(f, "enable f16;")?;
+    fn kernel(&self, f: &mut String, device: &Device) -> std::fmt::Result {
+        let use_f16 = device.f16_supported();
+        if use_f16 {
+            writeln!(f, "enable f16;").unwrap();
+        }
 
         #[cfg(target_arch = "wasm32")]
         writeln!(f, "enable subgroups;")?;
 
-        self.declare_quantized_types(f)?;
+        self.declare_quantized_types(f, use_f16)?;
 
         for input in &self.inputs {
             write!(f, "{input}")?;

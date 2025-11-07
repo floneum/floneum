@@ -1,10 +1,9 @@
 use super::{AnthropicCompatibleClient, NoAnthropicAPIKeyError};
 use crate::{
     ChatMessage, ChatModel, ChatSession, ContentChunk, CreateChatSession, GenerationParameters,
-    ModelBuilder,
 };
 use futures_util::StreamExt;
-use kalosm_model_types::ModelLoadingProgress;
+use kalosm_model_types::{ModelBuilder, ModelLoadingProgress};
 use reqwest_eventsource::{Event, RequestBuilderExt};
 use serde::{Deserialize, Serialize};
 use std::{future::Future, sync::Arc};

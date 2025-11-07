@@ -104,8 +104,7 @@ async fn setup_smol_lm_matrix_with_source(
     let device = Device::new().await.unwrap();
 
     let cache = Cache::default();
-    let path = cache.get(&source, |_| {}).await.unwrap();
-    let bytes = tokio::fs::read(&path).await.unwrap();
+    let bytes = cache.get_bytes(&source, |_| {}).await.unwrap();
 
     let mut reader = std::io::Cursor::new(&bytes);
     let metadata = GgufMetadata::read(&mut reader).unwrap();

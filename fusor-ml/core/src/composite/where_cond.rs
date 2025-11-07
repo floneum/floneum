@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    DataType, Tensor, TensorData,
+    DataType, Device, Tensor, TensorData,
     compute_graph::AnyComputeKey,
     layout::TILE_SIZE,
     mir::{
@@ -71,7 +71,12 @@ impl WhereCondOperation {
         self.shape.len() as _
     }
 
-    fn kernel(&self, _workgroup_shape: &WorkgroupShape, kernel: &mut GenericKernel) {
+    fn kernel(
+        &self,
+        device: &Device,
+        _workgroup_shape: &WorkgroupShape,
+        kernel: &mut GenericKernel,
+    ) {
         let datatypes = vec![
             self.condition_datatype.into(),
             self.output_datatype.into(),
@@ -80,6 +85,7 @@ impl WhereCondOperation {
         ];
 
         build_visit_tiled_kernel(
+            device,
             &self.shape,
             TILE_SIZE,
             datatypes,
@@ -154,12 +160,12 @@ impl Operation for WhereCondOperation {
 
     fn build_kernel(
         &self,
-        _: &crate::compute_graph::ComputeGraphInner,
+        graph: &crate::compute_graph::ComputeGraphInner,
         workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
         _: &[MirValue],
         kernel: &mut GenericKernel,
     ) {
-        self.kernel(workgroup_shape, kernel);
+        self.kernel(&graph.device, workgroup_shape, kernel);
     }
 
     fn output(&self, _: &crate::compute_graph::ComputeGraphInner, inputs: &[MirValue]) -> MirValue {

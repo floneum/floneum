@@ -130,19 +130,11 @@ impl SoftmaxOperation {
         let output_tensor = kernel.add_tensor_input(output_rank, true, out_datatype);
         let reduce_size = kernel.add_integer_input();
         let reduce_stride = kernel.add_integer_input();
-        let local_m_data =
-            kernel.add_global_array(KernelGlobalSpace::Workgroup, dtype, blocksize.to_string());
-        let local_d_data =
-            kernel.add_global_array(KernelGlobalSpace::Workgroup, dtype, blocksize.to_string());
 
         let global_m_final = kernel.add_global_value(KernelGlobalSpace::Workgroup, dtype);
         let global_d_final = kernel.add_global_value(KernelGlobalSpace::Workgroup, dtype);
 
         let workgroup_local_index = kernel.workgroup_local_index();
-        let subgroup_id = kernel.subgroup_index();
-        let subgroup_local_id = kernel.subgroup_local_index();
-        let subgroups_per_workgroup = kernel.subgroups_per_workgroup();
-        let subgroup_size = kernel.subgroup_size();
 
         // Each workgroup group works on a single column in the input tensor. This code calculates the
         // start offset of the input and output tensors for each thread group.
@@ -236,78 +228,119 @@ impl SoftmaxOperation {
         writeln!(kernel, "}}").unwrap();
         writeln!(kernel).unwrap();
 
-        let limits = device.limits();
-        let max_subgroup_size = limits.max_subgroup_size;
+        // If subgroups are supported, use shuffle down reduction
+        if device.subgroups_supported() {
+            let limits = device.limits();
+            let subgroup_id = kernel.subgroup_index();
+            let subgroup_local_id = kernel.subgroup_local_index();
+            let subgroups_per_workgroup = kernel.subgroups_per_workgroup();
+            let subgroup_size = kernel.subgroup_size();
+            let max_subgroup_size = limits.max_subgroup_size;
+            let local_m_data = kernel.add_global_array(
+                KernelGlobalSpace::Workgroup,
+                dtype,
+                max_subgroup_size.to_string(),
+            );
+            let local_d_data = kernel.add_global_array(
+                KernelGlobalSpace::Workgroup,
+                dtype,
+                max_subgroup_size.to_string(),
+            );
+            // Optimized subgroup reduction with unrolled shuffle operations
+            let mut offset = max_subgroup_size;
+            while offset > 1 {
+                writeln!(kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
+                offset /= 2;
+                writeln!(
+                    kernel,
+                    "let m_peer = subgroupShuffleDown(m_lane, {offset}u);"
+                )
+                .unwrap();
+                writeln!(
+                    kernel,
+                    "let d_peer = subgroupShuffleDown(d_lane, {offset}u);"
+                )
+                .unwrap();
+                combine(kernel, "m_lane", "d_lane", "m_peer", "d_peer");
+                writeln!(kernel, "}}").unwrap();
+            }
+            writeln!(kernel).unwrap();
 
-        // Optimized subgroup reduction with unrolled shuffle operations
-        let mut offset = max_subgroup_size;
-        while offset > 1 {
-            writeln!(kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
-            offset /= 2;
-            writeln!(
-                kernel,
-                "let m_peer = subgroupShuffleDown(m_lane, {offset}u);"
-            )
-            .unwrap();
-            writeln!(
-                kernel,
-                "let d_peer = subgroupShuffleDown(d_lane, {offset}u);"
-            )
-            .unwrap();
-            combine(kernel, "m_lane", "d_lane", "m_peer", "d_peer");
+            // Write the output to the workgroup memory if this is the first thread in the subgroup
+            writeln!(kernel, "if {subgroup_local_id} == 0u {{").unwrap();
+            writeln!(kernel, "{local_m_data}[{subgroup_id}] = m_lane;").unwrap();
+            writeln!(kernel, "{local_d_data}[{subgroup_id}] = d_lane;").unwrap();
             writeln!(kernel, "}}").unwrap();
-        }
-        writeln!(kernel).unwrap();
 
-        // Write the output to the workgroup memory if this is the first thread in the subgroup
-        writeln!(kernel, "if {subgroup_local_id} == 0u {{").unwrap();
-        writeln!(kernel, "{local_m_data}[{subgroup_id}] = m_lane;").unwrap();
-        writeln!(kernel, "{local_d_data}[{subgroup_id}] = d_lane;").unwrap();
-        writeln!(kernel, "}}").unwrap();
+            // Wait until all threads have written to the workgroup shared memory
+            writeln!(kernel, "workgroupBarrier();").unwrap();
 
-        // Wait until all threads have written to the workgroup shared memory
-        writeln!(kernel, "workgroupBarrier();").unwrap();
-
-        // Then if this is the first subgroup, do one final shuffle down reduction
-        // Copy over the best value from each subgroup from the workgroup shared memory to the merged variable
-        writeln!(
-            kernel,
-            "if {subgroup_local_id} < {subgroups_per_workgroup} {{"
-        )
-        .unwrap();
-        writeln!(kernel, "m_lane = {local_m_data}[{subgroup_local_id}];").unwrap();
-        writeln!(kernel, "d_lane = {local_d_data}[{subgroup_local_id}];").unwrap();
-        writeln!(kernel, "}}").unwrap();
-        writeln!(kernel, "else {{").unwrap();
-        writeln!(kernel, "m_lane = {dtype}(-3.40282e+38);").unwrap();
-        writeln!(kernel, "d_lane = {dtype}(0.0);").unwrap();
-        writeln!(kernel, "}}").unwrap();
-
-        // Optimized final subgroup reduction with unrolled operations
-        let mut offset = max_subgroup_size;
-        while offset > 1 {
-            writeln!(kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
-            offset /= 2;
+            // Then if this is the first subgroup, do one final shuffle down reduction
+            // Copy over the best value from each subgroup from the workgroup shared memory to the merged variable
             writeln!(
                 kernel,
-                "let m_peer = subgroupShuffleDown(m_lane, {offset}u);"
+                "if {subgroup_local_id} < {subgroups_per_workgroup} {{"
             )
             .unwrap();
-            writeln!(
-                kernel,
-                "let d_peer = subgroupShuffleDown(d_lane, {offset}u);"
-            )
-            .unwrap();
-            combine(kernel, "m_lane", "d_lane", "m_peer", "d_peer");
+            writeln!(kernel, "m_lane = {local_m_data}[{subgroup_local_id}];").unwrap();
+            writeln!(kernel, "d_lane = {local_d_data}[{subgroup_local_id}];").unwrap();
             writeln!(kernel, "}}").unwrap();
+            writeln!(kernel, "else {{").unwrap();
+            writeln!(kernel, "m_lane = {dtype}(-3.40282e+38);").unwrap();
+            writeln!(kernel, "d_lane = {dtype}(0.0);").unwrap();
+            writeln!(kernel, "}}").unwrap();
+
+            // Optimized final subgroup reduction with unrolled operations
+            let mut offset = max_subgroup_size;
+            while offset > 1 {
+                writeln!(kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
+                offset /= 2;
+                writeln!(
+                    kernel,
+                    "let m_peer = subgroupShuffleDown(m_lane, {offset}u);"
+                )
+                .unwrap();
+                writeln!(
+                    kernel,
+                    "let d_peer = subgroupShuffleDown(d_lane, {offset}u);"
+                )
+                .unwrap();
+                combine(kernel, "m_lane", "d_lane", "m_peer", "d_peer");
+                writeln!(kernel, "}}").unwrap();
+            }
+        } else {
+            // Otherwise, do a simpler workgroup reduction
+            let local_m_data =
+                kernel.add_global_array(KernelGlobalSpace::Workgroup, dtype, blocksize.to_string());
+            let local_d_data =
+                kernel.add_global_array(KernelGlobalSpace::Workgroup, dtype, blocksize.to_string());
+            let mut offset = blocksize;
+            while offset > 1 {
+                // Write this thread's values to the shared memory
+                writeln!(kernel, "{local_m_data}[{workgroup_local_index}] = m_lane;").unwrap();
+                writeln!(kernel, "{local_d_data}[{workgroup_local_index}] = d_lane;").unwrap();
+                writeln!(kernel, "workgroupBarrier();").unwrap();
+                offset /= 2;
+                writeln!(kernel, "{{").unwrap();
+                writeln!(
+                    kernel,
+                    "let m_peer = {local_m_data}[{workgroup_local_index} + {offset}u];"
+                )
+                .unwrap();
+                writeln!(
+                    kernel,
+                    "let d_peer = {local_d_data}[{workgroup_local_index} + {offset}u];"
+                )
+                .unwrap();
+                combine(kernel, "m_lane", "d_lane", "m_peer", "d_peer");
+                writeln!(kernel, "}}").unwrap();
+            }
         }
 
         // Write the output to the output tensor if this is the first thread in the workgroup
-        writeln!(kernel, "if {subgroup_id} == 0u {{").unwrap();
         writeln!(kernel, "if {workgroup_local_index} == 0u {{").unwrap();
         writeln!(kernel, "{global_m_final} = m_lane;").unwrap();
         writeln!(kernel, "{global_d_final} = d_lane;").unwrap();
-        writeln!(kernel, "}}").unwrap();
         writeln!(kernel, "}}").unwrap();
 
         writeln!(kernel, "workgroupBarrier();").unwrap();
@@ -376,8 +409,12 @@ impl Operation for SoftmaxOperation {
             0,
             Constraint::less_than(limits.max_compute_workgroup_size_x + 1),
         );
-        constraints.add_constraint(0, Constraint::more_than_or_equals(limits.min_subgroup_size));
-        constraints.add_constraint(0, Constraint::less_than_or_equals(limits.max_subgroup_size));
+        if device.subgroups_supported() {
+            constraints
+                .add_constraint(0, Constraint::more_than_or_equals(limits.min_subgroup_size));
+            constraints
+                .add_constraint(0, Constraint::less_than_or_equals(limits.max_subgroup_size));
+        }
         constraints.add_constraint(1, Constraint::equals(1));
         constraints.add_constraint(2, Constraint::equals(1));
         constraints

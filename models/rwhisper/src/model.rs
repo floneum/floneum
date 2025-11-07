@@ -9,7 +9,6 @@ use std::{
     io::Write,
     num::NonZeroUsize,
     ops::RangeInclusive,
-    path::PathBuf,
     time::{Duration, Instant},
 };
 use tokenizers::Tokenizer;
@@ -26,13 +25,8 @@ enum ModelType {
 }
 
 impl ModelType {
-    fn load(
-        weights_filename: &PathBuf,
-        device: &Device,
-        config: Config,
-    ) -> fusor_core::Result<Self> {
-        let file = std::fs::File::open(weights_filename)?;
-        let mut reader = std::io::BufReader::new(file);
+    fn load(weights: &[u8], device: &Device, config: Config) -> fusor_core::Result<Self> {
+        let mut reader = std::io::Cursor::new(weights);
         let mut vb = fusor_core::VarBuilder::from_gguf(&mut reader)?;
         Ok(Self::Quantized(crate::quantized::Whisper::load(
             device, &mut vb, config,
@@ -93,16 +87,15 @@ pub(crate) struct WhisperInner {
 impl WhisperInner {
     pub(crate) async fn new(
         settings: WhisperBuilder,
-        weights_filename: PathBuf,
-        tokenizer_filename: PathBuf,
-        config_filename: PathBuf,
+        weights: &[u8],
+        tokenizer: &[u8],
+        config: &[u8],
     ) -> Result<Self, WhisperLoadingError> {
         let device = Device::new().await?;
         let tokenizer =
-            Tokenizer::from_file(tokenizer_filename).map_err(WhisperLoadingError::LoadTokenizer)?;
+            Tokenizer::from_bytes(tokenizer).map_err(WhisperLoadingError::LoadTokenizer)?;
         let config: Config =
-            serde_json::from_str(&std::fs::read_to_string(config_filename).unwrap())
-                .map_err(WhisperLoadingError::LoadConfig)?;
+            serde_json::from_slice(config).map_err(WhisperLoadingError::LoadConfig)?;
 
         let mel_bytes = match config.num_mel_bins {
             80 => include_bytes!("melfilters.bytes").as_slice(),
@@ -116,7 +109,7 @@ impl WhisperInner {
         );
         let attention_heads = settings.model.heads;
 
-        let model = ModelType::load(&weights_filename, &device, config.clone())?;
+        let model = ModelType::load(weights, &device, config.clone())?;
         let language_token = if settings.model.multilingual {
             let language = settings.language.unwrap_or(WhisperLanguage::English);
             match token_id(&tokenizer, &format!("<|{language}|>")) {
@@ -599,7 +592,7 @@ impl Decoder {
 
         let [_, content_frames] = *mel.shape();
         let mut seek = 0;
-        let start_time = Instant::now();
+        let start_time = cfg!(not(target_arch = "wasm32")).then(Instant::now);
         let mut chunk_indices = Vec::new();
         let mut chunked = Vec::new();
         // Keep looping until we have all the chunks we need
@@ -676,10 +669,12 @@ impl Decoder {
                     tokens_in_sentence_fragment.extend(tokens.get_ids());
                 };
 
-                let elapsed = start_time.elapsed();
-                let remaining = Duration::from_millis(
-                    ((elapsed.as_millis() as usize / seek) * (content_frames - seek)) as u64,
-                );
+                let elapsed = start_time.map(|start| start.elapsed());
+                let remaining = elapsed.map(|elapsed| {
+                    Duration::from_millis(
+                        ((elapsed.as_millis() as usize / seek) * (content_frames - seek)) as u64,
+                    )
+                });
                 let progress = end as f32 / content_frames as f32;
                 let segment = Segment {
                     sample_range: (range.start * HOP_LENGTH)

@@ -2,6 +2,11 @@
 
 use std::{fmt::Display, path::PathBuf};
 
+mod builder;
+pub use builder::ModelBuilder;
+mod sync;
+pub use sync::*;
+
 /// The progress starting a model
 #[derive(Clone, Debug)]
 pub enum ModelLoadingProgress {

@@ -105,16 +105,10 @@ impl ReduceOperation {
         let output_tensor = kernel.add_tensor_input(output_rank, true, out_datatype);
         let reduce_size = kernel.add_integer_input();
         let reduce_stride = kernel.add_integer_input();
-        let local_data =
-            kernel.add_global_array(KernelGlobalSpace::Workgroup, dtype, blocksize.to_string());
         let reduce = self.add_function(kernel);
         let pre_element_wise = self.add_pre_element_wise_functions(kernel);
         let post_element_wise = self.add_post_element_wise_functions(kernel);
         let workgroup_local_index = kernel.workgroup_local_index();
-        let subgroup_id = kernel.subgroup_index();
-        let subgroup_local_id = kernel.subgroup_local_index();
-        let subgroups_per_workgroup = kernel.subgroups_per_workgroup();
-        let subgroup_size = kernel.subgroup_size();
 
         // Each workgroup group works on a single column in the input tensor. This code calculates the
         // start offset of the input and output tensors for each thread group.
@@ -258,69 +252,104 @@ impl ReduceOperation {
         writeln!(kernel, "index += 1u;").unwrap();
         writeln!(kernel, "}}").unwrap();
 
-        let limits = device.limits();
-        let max_subgroup_size = limits.max_subgroup_size;
+        // If subgroups are supported, do the shuffle down reduction
+        if device.subgroups_supported() {
+            let limits = device.limits();
+            let max_subgroup_size = limits.max_subgroup_size;
+            let local_data = kernel.add_global_array(
+                KernelGlobalSpace::Workgroup,
+                dtype,
+                max_subgroup_size.to_string(),
+            );
+            let subgroup_id = kernel.subgroup_index();
+            let subgroup_local_id = kernel.subgroup_local_index();
+            let subgroups_per_workgroup = kernel.subgroups_per_workgroup();
+            let subgroup_size = kernel.subgroup_size();
 
-        // Optimized subgroup reduction with unrolled shuffle operations
-        let mut offset = max_subgroup_size;
-        while offset > 1 {
-            writeln!(kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
-            offset /= 2;
-            writeln!(
-                kernel,
-                "let neighbor = subgroupShuffleDown(merged, {offset}u);"
-            )
-            .unwrap();
-            writeln!(
-                kernel,
-                "merged = {};",
-                reduce.call(vec!["neighbor".to_string(), "merged".to_string()])
-            )
-            .unwrap();
+            // Optimized subgroup reduction with unrolled shuffle operations
+            let mut offset = max_subgroup_size;
+            while offset > 1 {
+                writeln!(kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
+                offset /= 2;
+                writeln!(
+                    kernel,
+                    "let neighbor = subgroupShuffleDown(merged, {offset}u);"
+                )
+                .unwrap();
+                writeln!(
+                    kernel,
+                    "merged = {};",
+                    reduce.call(vec!["neighbor".to_string(), "merged".to_string()])
+                )
+                .unwrap();
+                writeln!(kernel, "}}").unwrap();
+            }
+
+            // Write the output to the workgroup memory if this is the first thread in the subgroup
+            writeln!(kernel, "if {subgroup_local_id} == 0u {{").unwrap();
+            writeln!(kernel, "{local_data}[{subgroup_id}] = merged;").unwrap();
             writeln!(kernel, "}}").unwrap();
+
+            // Wait until all threads have written to the workgroup shared memory
+            writeln!(kernel, "workgroupBarrier();").unwrap();
+
+            // Then if this is the first subgroup, do one final shuffle down reduction
+            // Copy over the best value from each subgroup from the workgroup shared memory to the merged variable
+            writeln!(
+                kernel,
+                "if {subgroup_local_id} < {subgroups_per_workgroup} {{"
+            )
+            .unwrap();
+            writeln!(kernel, "merged = {local_data}[{subgroup_local_id}];").unwrap();
+            writeln!(kernel, "}}").unwrap();
+            writeln!(kernel, "else {{").unwrap();
+            writeln!(kernel, "merged = {dtype}({});", self.function.initial_value,).unwrap();
+            writeln!(kernel, "}}").unwrap();
+
+            // Final unrolled subgroup reduction
+            offset = max_subgroup_size;
+            while offset > 1 {
+                writeln!(kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
+                offset /= 2;
+                writeln!(
+                    kernel,
+                    "let neighbor = subgroupShuffleDown(merged, {offset}u);"
+                )
+                .unwrap();
+                writeln!(
+                    kernel,
+                    "merged = {};",
+                    reduce.call(vec!["neighbor".to_string(), "merged".to_string()])
+                )
+                .unwrap();
+                writeln!(kernel, "}}").unwrap();
+            }
+        } else {
+            // Otherwise reduce using shared memory
+            let local_data =
+                kernel.add_global_array(KernelGlobalSpace::Workgroup, dtype, blocksize.to_string());
+            let mut offset = blocksize;
+            while offset > 1 {
+                // Write this thread's value to the shared memory
+                writeln!(kernel, "{local_data}[{workgroup_local_index}] = merged;").unwrap();
+                writeln!(kernel, "workgroupBarrier();").unwrap();
+                offset /= 2;
+                writeln!(kernel, "{{").unwrap();
+                writeln!(
+                    kernel,
+                    "let neighbor = {local_data}[{workgroup_local_index} + {offset}u];"
+                )
+                .unwrap();
+                writeln!(
+                    kernel,
+                    "merged = {};",
+                    reduce.call(vec!["neighbor".to_string(), "merged".to_string()])
+                )
+                .unwrap();
+                writeln!(kernel, "}}").unwrap();
+            }
         }
 
-        // Write the output to the workgroup memory if this is the first thread in the subgroup
-        writeln!(kernel, "if {subgroup_local_id} == 0u {{").unwrap();
-        writeln!(kernel, "{local_data}[{subgroup_id}] = merged;").unwrap();
-        writeln!(kernel, "}}").unwrap();
-
-        // Wait until all threads have written to the workgroup shared memory
-        writeln!(kernel, "workgroupBarrier();").unwrap();
-
-        // Then if this is the first subgroup, do one final shuffle down reduction
-        // Copy over the best value from each subgroup from the workgroup shared memory to the merged variable
-        writeln!(
-            kernel,
-            "if {subgroup_local_id} < {subgroups_per_workgroup} {{"
-        )
-        .unwrap();
-        writeln!(kernel, "merged = {local_data}[{subgroup_local_id}];").unwrap();
-        writeln!(kernel, "}}").unwrap();
-        writeln!(kernel, "else {{").unwrap();
-        writeln!(kernel, "merged = {dtype}({});", self.function.initial_value,).unwrap();
-        writeln!(kernel, "}}").unwrap();
-
-        // Final unrolled subgroup reduction
-        offset = max_subgroup_size;
-        while offset > 1 {
-            writeln!(kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
-            offset /= 2;
-            writeln!(
-                kernel,
-                "let neighbor = subgroupShuffleDown(merged, {offset}u);"
-            )
-            .unwrap();
-            writeln!(
-                kernel,
-                "merged = {};",
-                reduce.call(vec!["neighbor".to_string(), "merged".to_string()])
-            )
-            .unwrap();
-            writeln!(kernel, "}}").unwrap();
-        }
-
-        writeln!(kernel, "if {subgroup_id} == 0u {{").unwrap();
         // Write the output to the output tensor if this is the first thread in the workgroup
         writeln!(kernel, "if {workgroup_local_index} == 0u {{").unwrap();
         writeln!(
@@ -332,7 +361,6 @@ impl ReduceOperation {
         )
         .unwrap();
         writeln!(kernel, "{output_tensor}[out_start_offset] = data;").unwrap();
-        writeln!(kernel, "}}").unwrap();
         writeln!(kernel, "}}").unwrap();
     }
 }
@@ -348,8 +376,12 @@ impl Operation for ReduceOperation {
             0,
             Constraint::less_than(limits.max_compute_workgroup_size_x + 1),
         );
-        constraints.add_constraint(0, Constraint::more_than_or_equals(limits.min_subgroup_size));
-        constraints.add_constraint(0, Constraint::less_than_or_equals(limits.max_subgroup_size));
+        if device.subgroups_supported() {
+            constraints
+                .add_constraint(0, Constraint::more_than_or_equals(limits.min_subgroup_size));
+            constraints
+                .add_constraint(0, Constraint::less_than_or_equals(limits.max_subgroup_size));
+        }
         constraints.add_constraint(1, Constraint::equals(1));
         constraints.add_constraint(2, Constraint::equals(1));
         constraints
@@ -545,6 +577,9 @@ async fn test_reduce_sum_f16() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
+    if !device.f16_supported() {
+        return;
+    }
 
     let data = [
         [half::f16::from_f32(1.), half::f16::from_f32(2.)],

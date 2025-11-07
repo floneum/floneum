@@ -1,4 +1,3 @@
-use httpdate::parse_http_date;
 use kalosm_model_types::{FileLoadingProgress, FileSource};
 use std::path::PathBuf;
 
@@ -67,7 +66,7 @@ impl Cache {
     pub async fn get_bytes(
         &self,
         source: &FileSource,
-        progress: impl FnMut(FileLoadingProgress),
+        #[allow(unused)] progress: impl FnMut(FileLoadingProgress),
     ) -> Result<Vec<u8>, CacheError> {
         #[cfg(feature = "tokio")]
         {
@@ -151,7 +150,7 @@ impl Cache {
                         .ok()
                         .and_then(|response| response.headers().get(reqwest::header::LAST_MODIFIED))
                         .and_then(|last_updated| last_updated.to_str().ok())
-                        .and_then(|s| parse_http_date(s).ok())
+                        .and_then(|s| httpdate::parse_http_date(s).ok())
                     {
                         if last_updated <= file_last_modified {
                             return Ok(complete_download);

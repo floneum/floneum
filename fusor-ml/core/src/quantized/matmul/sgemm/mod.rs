@@ -26,10 +26,10 @@ pub(crate) fn sgemm(
     // m size is always 1 for sgemv
     _m_size: &str,
     k_size: &str,
-    _: &crate::compute_graph::ComputeGraphInner,
+    graph: &crate::compute_graph::ComputeGraphInner,
 ) {
     // Use chunked sgemm for all types that support mat4x4 dequantization
-    if dequantize_mat4x4_block_count(input_b.datatype) > 0 {
+    if dequantize_mat4x4_block_count(input_b.datatype) > 0 && graph.device.subgroups_supported() {
         let config = op.chunked_config.unwrap_or(ChunkedSgemmConfig::default());
         chunked_sgemm_with_config(op, generic_kernel, input_a, input_b, output, k_size, config);
     } else {
@@ -57,7 +57,8 @@ pub(crate) fn dispatch_size(
     batch_size: u32,
 ) -> [u32; 3] {
     // Use chunked dispatch size for all types that support mat4x4 dequantization
-    if dequantize_mat4x4_block_count(matrix.datatype()) > 0 {
+    if dequantize_mat4x4_block_count(matrix.datatype()) > 0 && matrix.device().subgroups_supported()
+    {
         let config = op.chunked_config.unwrap_or(ChunkedSgemmConfig::default());
         [
             m.div_ceil(workgroup_shape.y() * config.m_results_per_thread * 4),

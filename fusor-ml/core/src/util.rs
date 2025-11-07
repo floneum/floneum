@@ -34,6 +34,23 @@ pub(crate) fn maybe_vec_storage_subgroup_add(size: u32, value: impl Display) -> 
     }
 }
 
+pub(crate) fn maybe_vec_storage_add(
+    size: u32,
+    first: impl Display,
+    second: impl Display,
+) -> String {
+    match size {
+        1..=4 => format!("{first} + {second}"),
+        _ => format!(
+            "array({})",
+            (0..size)
+                .map(|i| { format!("{first}[{i}] + {second}[{i}]") })
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
 pub(crate) fn maybe_vec_storage_index(
     size: u32,
     value: impl Display,

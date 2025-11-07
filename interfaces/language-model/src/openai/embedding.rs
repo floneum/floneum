@@ -1,6 +1,6 @@
 use super::{NoOpenAIAPIKeyError, OpenAICompatibleClient};
-use crate::{Embedder, Embedding, ModelBuilder};
-use kalosm_model_types::ModelLoadingProgress;
+use crate::{Embedder, Embedding};
+use kalosm_model_types::{ModelBuilder, ModelLoadingProgress};
 use serde::Deserialize;
 use std::future::Future;
 use thiserror::Error;

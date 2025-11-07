@@ -73,7 +73,7 @@ impl Operation for SliceAssignOperation {
 
     fn build_kernel(
         &self,
-        _: &ComputeGraphInner,
+        graph: &ComputeGraphInner,
         _: &crate::mir::workgroup_shape::WorkgroupShape,
         inputs: &[crate::mir::inputs::MirValue],
         kernel: &mut crate::mir::kernel::GenericKernel,
@@ -86,6 +86,7 @@ impl Operation for SliceAssignOperation {
         let datatypes = vec![datatype; 2];
 
         build_visit_tiled_kernel(
+            &graph.device,
             input.layout().shape(),
             TILE_SIZE,
             datatypes,

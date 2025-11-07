@@ -13,3 +13,10 @@ indicatif = { version = "0.17.8", optional = true }
 
 [features]
 loading-progress-bar = ["dep:indicatif"]
+
+[dev-dependencies]
+kalosm = { workspace = true, features = [
+    "language",
+    "surrealdb",
+], default-features = true }
+tokio = { version = "1", features = ["full"] }

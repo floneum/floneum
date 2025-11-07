@@ -8,13 +8,10 @@ use crate::BertBuilder;
 use crate::BertError;
 use crate::BertLoadingError;
 use crate::Pooling;
-use kalosm_language_model::FutureWasmNotSend;
-use kalosm_language_model::WasmNotSend;
 pub use kalosm_language_model::{
     Embedder, EmbedderCacheExt, EmbedderExt, Embedding, EmbeddingInput, EmbeddingVariant,
-    ModelBuilder,
 };
-use kalosm_model_types::ModelLoadingProgress;
+use kalosm_model_types::{FutureWasmNotSend, ModelBuilder, ModelLoadingProgress, WasmNotSend};
 
 impl ModelBuilder for BertBuilder {
     type Model = Bert;

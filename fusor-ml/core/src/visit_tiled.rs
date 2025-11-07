@@ -3,7 +3,7 @@ use std::fmt::{Display, Write};
 use fusor_gguf::GgmlType;
 
 use crate::{
-    DataTypeEnum, Layout, QMatrix, TensorData, dequantize_block,
+    DataTypeEnum, Device, Layout, QMatrix, TensorData, dequantize_block,
     mir::{
         inputs::{MirValue, QMatrixInput, TensorInput},
         kernel::GenericKernel,
@@ -125,16 +125,18 @@ impl Display for MaybeQTensorInput {
 }
 
 pub(crate) fn build_visit_tiled_kernel(
+    device: &Device,
     shape: &[usize],
     tile_size: u32,
     datatypes: Vec<VisitTiledInputType>,
     modify_data: impl FnMut(&mut GenericKernel, &[String], &[MaybeQTensorInput], &[String]) -> String,
     kernel: &mut GenericKernel,
 ) {
-    build_tiled_map_kernel(shape, tile_size, &datatypes, kernel, modify_data);
+    build_tiled_map_kernel(device, shape, tile_size, &datatypes, kernel, modify_data);
 }
 
 fn build_tiled_map_kernel(
+    device: &Device,
     shape: &[usize],
     tile_size: u32,
     datatypes: &[VisitTiledInputType],
@@ -303,10 +305,10 @@ fn build_tiled_map_kernel(
             writeln!(kernel, "}}").unwrap();
         }
     } else {
-        let subgroup_size = kernel.subgroup_size();
-        let subgroup_local_id = kernel.subgroup_local_index();
         for (i, index) in global_indexes.iter().enumerate() {
-            if i == 0 {
+            if i == 0 && device.subgroups_supported() {
+                let subgroup_size = kernel.subgroup_size();
+                let subgroup_local_id = kernel.subgroup_local_index();
                 writeln!(
                     kernel,
                     "let tile_index_{i} = {subgroup_local_id} + (({index} / {subgroup_size}) * {subgroup_size}) * {scaled_tile_size};"
@@ -322,7 +324,8 @@ fn build_tiled_map_kernel(
             if *shape > 1 {
                 let local_tile_size = scaled_tile_size.min(*shape as _);
                 writeln!(kernel, "for (var local_index_{i} = 0u; local_index_{i} < {local_tile_size}; local_index_{i}++) {{").unwrap();
-                if i == 0 {
+                if i == 0 && device.subgroups_supported() {
+                    let subgroup_size = kernel.subgroup_size();
                     writeln!(
                         kernel,
                         "let merged_index_{i} = tile_index_{i} + local_index_{i} * {subgroup_size};"

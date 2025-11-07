@@ -148,7 +148,7 @@ impl Operation for PairWiseOperation {
 
     fn build_kernel(
         &self,
-        _: &ComputeGraphInner,
+        graph: &ComputeGraphInner,
         _: &crate::mir::workgroup_shape::WorkgroupShape,
         inputs: &[crate::mir::inputs::MirValue],
         kernel: &mut GenericKernel,
@@ -173,6 +173,7 @@ impl Operation for PairWiseOperation {
         }
 
         build_visit_tiled_kernel(
+            &graph.device,
             shape,
             TILE_SIZE,
             datatypes,
@@ -347,6 +348,9 @@ async fn test_pair_wise_add_f16() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
+    if !device.f16_supported() {
+        return;
+    }
 
     let data_a = [
         [half::f16::from_f32(1.), half::f16::from_f32(2.)],

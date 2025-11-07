@@ -9,7 +9,7 @@ use std::{
 use lru::LruCache;
 use parking_lot::RwLock;
 use rustc_hash::FxBuildHasher;
-use wgpu::{BindGroupLayout, BufferUsages, Limits, PipelineLayout, ShaderModule};
+use wgpu::{BindGroupLayout, BufferUsages, PipelineLayout, ShaderModule};
 
 #[derive(Debug)]
 struct CachedBuffer {
@@ -66,20 +66,18 @@ impl Device {
     pub async fn new() -> Result<Self, crate::Error> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
         let adapter = instance.request_adapter(&Default::default()).await.unwrap();
+        let mut required_features = wgpu::Features::empty();
+        if adapter.features().contains(wgpu::Features::SUBGROUP) {
+            required_features |= wgpu::Features::SUBGROUP;
+        }
+        if adapter.features().contains(wgpu::Features::SHADER_F16) {
+            required_features |= wgpu::Features::SHADER_F16;
+        }
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("Fusor ML Device"),
-                required_features: wgpu::Features::SUBGROUP | wgpu::Features::SHADER_F16,
-                required_limits: Limits {
-                    max_buffer_size: adapter.limits().max_buffer_size,
-                    max_compute_workgroup_storage_size: adapter
-                        .limits()
-                        .max_compute_workgroup_storage_size,
-                    max_storage_buffer_binding_size: adapter
-                        .limits()
-                        .max_storage_buffer_binding_size,
-                    ..Default::default()
-                },
+                required_features,
+                required_limits: adapter.limits(),
                 ..Default::default()
             })
             .await?;
@@ -164,10 +162,19 @@ impl Device {
     }
 
     pub fn limits(&self) -> wgpu::Limits {
-        let mut limits = self.inner.adapter.limits();
-        limits.max_subgroup_size = limits.max_subgroup_size.max(64);
-        limits.min_subgroup_size = limits.min_subgroup_size.max(4);
-        limits
+        self.inner.adapter.limits()
+    }
+
+    pub fn features(&self) -> wgpu::Features {
+        self.inner.device.features()
+    }
+
+    pub fn subgroups_supported(&self) -> bool {
+        self.features().contains(wgpu::Features::SUBGROUP)
+    }
+
+    pub fn f16_supported(&self) -> bool {
+        self.features().contains(wgpu::Features::SHADER_F16)
     }
 
     pub fn wgpu_adapter(&self) -> &wgpu::Adapter {

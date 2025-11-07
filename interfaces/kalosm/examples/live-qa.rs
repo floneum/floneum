@@ -28,6 +28,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // Record snippets of audio based on voice activity and transcribe them
     tokio::spawn({
         let document_table = document_table.clone();
+        let model = model.clone();
         async move {
             let mic_input = MicInput::default();
             // Chunk the audio into chunks based on voice activity
