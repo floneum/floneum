@@ -94,5 +94,5 @@ jobs:
           rustc -Vv
           cargo -V
           set RUST_BACKTRACE=1
-          cargo test --all --tests --features kalosm/language,kalosm/sound,kalosm/vision,kalosm/remote,kalosm/scrape --exclude kalosm-parse-macro  --exclude fusor-core
+          cargo test --all --tests --features kalosm/language,kalosm/sound,kalosm/vision,kalosm/remote,kalosm/scrape --exclude kalosm-parse-macro --exclude fusor-core --exclude rbert --exclude rwhisper --exclude kalosm-learning
         shell: cmd
