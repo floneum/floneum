@@ -67,12 +67,14 @@ where
     }
 }
 
+/// An async audio source from a stream of samples.
 pub struct AsyncSourceFromStream<I: Stream<Item = f32>> {
     stream: I,
     sample_rate: u32,
 }
 
 impl<I: Stream<Item = f32>> AsyncSourceFromStream<I> {
+    /// Create a new async audio source from a stream of samples.
     pub fn new(stream: I, sample_rate: u32) -> Self {
         Self {
             stream,

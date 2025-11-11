@@ -105,6 +105,7 @@ metal = [
     "kalosm-vision?/metal",
 ]
 sound = ["dep:kalosm-sound"]
+sound-source = ["kalosm-sound?/source"]
 surrealdb = ["dep:surrealdb", "dep:heed", "dep:arroy", "dep:thiserror"]
 vision = ["dep:kalosm-vision"]
 openai = ["kalosm-language?/openai"]
