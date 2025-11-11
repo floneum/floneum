@@ -4596,9 +4596,6 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "byteorder",
- "candle-core",
- "candle-nn",
- "candle-transformers",
  "cpal",
  "dasp",
  "futures-channel",
