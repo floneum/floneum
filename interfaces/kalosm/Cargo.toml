@@ -75,6 +75,8 @@ tokio = { version = "1", features = ["full"] }
 [dev-dependencies.kalosm]
 features = [
     "sound",
+    "sound-source",
+    "sound-voice-detection",
     "language",
     "vision",
     "remote",
@@ -106,6 +108,7 @@ metal = [
 ]
 sound = ["dep:kalosm-sound"]
 sound-source = ["kalosm-sound?/source"]
+sound-voice-detection = ["kalosm-sound?/voice-detection"]
 surrealdb = ["dep:surrealdb", "dep:heed", "dep:arroy", "dep:thiserror"]
 vision = ["dep:kalosm-vision"]
 openai = ["kalosm-language?/openai"]
