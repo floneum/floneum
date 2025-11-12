@@ -37,9 +37,9 @@ impl WhisperSource {
     /// Tiny english model
     pub fn tiny_en() -> Self {
         let model = FileSource::huggingface(
-            "lmz/candle-whisper".to_owned(),
+            "Demonthos/fusor-whisper-tiny-en".to_owned(),
             "main".to_owned(),
-            "model-tiny-en-q80.gguf".to_owned(),
+            "whisper-tiny-en.gguf".to_owned(),
         );
         let tokenizer = FileSource::huggingface(
             "lmz/candle-whisper".to_owned(),

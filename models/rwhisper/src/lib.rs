@@ -196,8 +196,8 @@ pub trait TranscribeChunkedAudioStreamExt<S> {
 
 impl<S> TranscribeChunkedAudioStreamExt<S> for S
 where
-    S: Stream + std::marker::Unpin + Send + 'static,
-    <S as Stream>::Item: Source + Send + 'static,
+    S: Stream + std::marker::Unpin + 'static,
+    <S as Stream>::Item: Source + 'static,
     <<S as Stream>::Item as Iterator>::Item: rodio::Sample,
     f32: FromSample<<<S as Stream>::Item as Iterator>::Item>,
 {

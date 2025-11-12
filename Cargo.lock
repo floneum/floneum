@@ -560,7 +560,7 @@ dependencies = [
  "quote",
  "serde",
  "serde_json",
- "ureq",
+ "ureq 2.12.1",
 ]
 
 [[package]]
@@ -1202,7 +1202,7 @@ version = "0.15.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d067ad48b8650848b989a59a86c6c36a995d02d2bf778d45c3c5d57bc2718f02"
 dependencies = [
- "smallvec",
+ "smallvec 1.15.1",
  "target-lexicon",
 ]
 
@@ -1753,7 +1753,7 @@ dependencies = [
  "dtoa-short",
  "itoa",
  "phf 0.11.3",
- "smallvec",
+ "smallvec 1.15.1",
 ]
 
 [[package]]
@@ -1766,7 +1766,7 @@ dependencies = [
  "dtoa-short",
  "itoa",
  "phf 0.11.3",
- "smallvec",
+ "smallvec 1.15.1",
 ]
 
 [[package]]
@@ -2069,6 +2069,16 @@ name = "data-encoding"
 version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
+
+[[package]]
+name = "der"
+version = "0.7.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7c1832837b905bbfb5101e07cc24c8deddf52f93225eee6ead5f4d63d53ddcb"
+dependencies = [
+ "pem-rfc7468",
+ "zeroize",
+]
 
 [[package]]
 name = "deranged"
@@ -2583,7 +2593,7 @@ dependencies = [
  "lebe",
  "miniz_oxide",
  "rayon-core",
- "smallvec",
+ "smallvec 1.15.1",
  "zune-inflate",
 ]
 
@@ -3634,7 +3644,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.69",
- "ureq",
+ "ureq 2.12.1",
 ]
 
 [[package]]
@@ -3657,7 +3667,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.16",
  "tokio",
- "ureq",
+ "ureq 2.12.1",
  "windows-sys 0.60.2",
 ]
 
@@ -3831,7 +3841,7 @@ dependencies = [
  "itoa",
  "pin-project-lite",
  "pin-utils",
- "smallvec",
+ "smallvec 1.15.1",
  "tokio",
  "want",
 ]
@@ -3969,7 +3979,7 @@ dependencies = [
  "icu_normalizer_data",
  "icu_properties",
  "icu_provider",
- "smallvec",
+ "smallvec 1.15.1",
  "zerovec",
 ]
 
@@ -4031,7 +4041,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b0875f23caa03898994f6ddc501886a45c7d3d62d04d2d90788d47be1b1e4de"
 dependencies = [
  "idna_adapter",
- "smallvec",
+ "smallvec 1.15.1",
  "utf8_iter",
 ]
 
@@ -4586,9 +4596,6 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "byteorder",
- "candle-core",
- "candle-nn",
- "candle-transformers",
  "cpal",
  "dasp",
  "futures-channel",
@@ -5387,7 +5394,7 @@ version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77a5d83df9f36fe23f0c3648c6bbb8b0298bb5f1939c8f2704431371f4b84d43"
 dependencies = [
- "smallvec",
+ "smallvec 1.15.1",
 ]
 
 [[package]]
@@ -5717,7 +5724,7 @@ dependencies = [
  "tar",
  "thiserror 1.0.69",
  "toml",
- "ureq",
+ "ureq 2.12.1",
  "url",
  "uuid",
  "walkdir",
@@ -5833,27 +5840,27 @@ dependencies = [
 
 [[package]]
 name = "ort"
-version = "2.0.0-rc.9"
+version = "2.0.0-rc.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52afb44b6b0cffa9bf45e4d37e5a4935b0334a51570658e279e9e3e6cf324aa5"
+checksum = "1fa7e49bd669d32d7bc2a15ec540a527e7764aec722a45467814005725bcd721"
 dependencies = [
- "half 2.6.0",
  "ndarray 0.16.1",
  "ort-sys",
+ "smallvec 2.0.0-alpha.10",
  "tracing",
 ]
 
 [[package]]
 name = "ort-sys"
-version = "2.0.0-rc.9"
+version = "2.0.0-rc.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c41d7757331aef2d04b9cb09b45583a59217628beaf91895b7e76187b6e8c088"
+checksum = "e2aba9f5c7c479925205799216e7e5d07cc1d4fa76ea8058c60a9a30f6a4e890"
 dependencies = [
  "flate2",
  "pkg-config",
  "sha2",
  "tar",
- "ureq",
+ "ureq 3.1.4",
 ]
 
 [[package]]
@@ -5903,7 +5910,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "redox_syscall",
- "smallvec",
+ "smallvec 1.15.1",
  "windows-targets 0.52.6",
 ]
 
@@ -5950,6 +5957,15 @@ checksum = "38af38e8470ac9dee3ce1bae1af9c1671fffc44ddfd8bd1d0a3445bf349a8ef3"
 dependencies = [
  "base64 0.22.1",
  "serde",
+]
+
+[[package]]
+name = "pem-rfc7468"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88b39c9bfcfc231068454382784bb460aae594343fb030d46e9f50a645418412"
+dependencies = [
+ "base64ct",
 ]
 
 [[package]]
@@ -7154,7 +7170,7 @@ checksum = "421400d13ccfd26dfa5858199c30a5d76f9c54e0dba7575273025b43c5175dbb"
 dependencies = [
  "heapless 0.8.0",
  "num-traits",
- "smallvec",
+ "smallvec 1.15.1",
 ]
 
 [[package]]
@@ -7533,7 +7549,7 @@ dependencies = [
  "phf_codegen 0.10.0",
  "precomputed-hash",
  "servo_arc",
- "smallvec",
+ "smallvec 1.15.1",
 ]
 
 [[package]]
@@ -7834,6 +7850,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
+name = "smallvec"
+version = "2.0.0-alpha.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51d44cfb396c3caf6fbfd0ab422af02631b69ddd96d2eff0b0f0724f9024051b"
+
+[[package]]
 name = "smol_str"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7888,7 +7910,7 @@ dependencies = [
  "hashbrown 0.15.5",
  "num-traits",
  "robust",
- "smallvec",
+ "smallvec 1.15.1",
 ]
 
 [[package]]
@@ -8936,7 +8958,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sharded-slab",
- "smallvec",
+ "smallvec 1.15.1",
  "thread_local",
  "tracing",
  "tracing-core",
@@ -8952,7 +8974,7 @@ checksum = "e8189decb5ac0fa7bc8b96b7cb9b2701d60d48805aca84a238004d665fcc4008"
 dependencies = [
  "nu-ansi-term",
  "sharded-slab",
- "smallvec",
+ "smallvec 1.15.1",
  "thread_local",
  "tracing-core",
  "tracing-log 0.2.0",
@@ -9141,7 +9163,7 @@ version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43f613e4fa046e69818dd287fdc4bc78175ff20331479dab6e1b0f98d57062de"
 dependencies = [
- "smallvec",
+ "smallvec 1.15.1",
 ]
 
 [[package]]
@@ -9214,6 +9236,36 @@ dependencies = [
  "socks",
  "url",
  "webpki-roots 0.26.11",
+]
+
+[[package]]
+name = "ureq"
+version = "3.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d39cb1dbab692d82a977c0392ffac19e188bd9186a9f32806f0aaa859d75585a"
+dependencies = [
+ "base64 0.22.1",
+ "der",
+ "log",
+ "native-tls",
+ "percent-encoding",
+ "rustls-pki-types",
+ "socks",
+ "ureq-proto",
+ "utf-8",
+ "webpki-root-certs",
+]
+
+[[package]]
+name = "ureq-proto"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60b4531c118335662134346048ddb0e54cc86bd7e81866757873055f0e38f5d2"
+dependencies = [
+ "base64 0.22.1",
+ "http 1.3.1",
+ "httparse",
+ "log",
 ]
 
 [[package]]
@@ -9488,6 +9540,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "webpki-root-certs"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee3e3b5f5e80bc89f30ce8d0343bf4e5f12341c51f3e26cbeecbc7c85443e85b"
+dependencies = [
+ "rustls-pki-types",
+]
+
+[[package]]
 name = "webpki-roots"
 version = "0.26.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9529,7 +9590,7 @@ dependencies = [
  "portable-atomic",
  "profiling",
  "raw-window-handle",
- "smallvec",
+ "smallvec 1.15.1",
  "static_assertions",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -9561,7 +9622,7 @@ dependencies = [
  "profiling",
  "raw-window-handle",
  "rustc-hash 1.1.0",
- "smallvec",
+ "smallvec 1.15.1",
  "thiserror 2.0.16",
  "wgpu-core-deps-apple",
  "wgpu-core-deps-emscripten",
@@ -9632,7 +9693,7 @@ dependencies = [
  "range-alloc",
  "raw-window-handle",
  "renderdoc-sys",
- "smallvec",
+ "smallvec 1.15.1",
  "thiserror 2.0.16",
  "wasm-bindgen",
  "web-sys",

@@ -31,18 +31,11 @@ async fn main() -> Result<(), anyhow::Error> {
         let model = model.clone();
         async move {
             let mic_input = MicInput::default();
-            // Chunk the audio into chunks based on voice activity
-            let mut audio_chunks = mic_input
-                .stream()
-                .voice_activity_stream()
-                .rechunk_voice_activity();
-            while let Some(input) = audio_chunks.next().await {
-                let mut transcribed = model.transcribe(input);
-                while let Some(transcribed) = transcribed.next().await {
-                    if transcribed.probability_of_no_speech() < 0.10 {
-                        let document = transcribed.text().into_document().await.unwrap();
-                        document_table.insert(document).await.unwrap();
-                    }
+            let mut transcribed = mic_input.stream().transcribe(model);
+            while let Some(transcribed) = transcribed.next().await {
+                if transcribed.probability_of_no_speech() < 0.10 {
+                    let document = transcribed.text().into_document().await.unwrap();
+                    document_table.insert(document).await.unwrap();
                 }
             }
         }
