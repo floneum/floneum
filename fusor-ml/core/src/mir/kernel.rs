@@ -580,7 +580,9 @@ impl GenericKernel {
         }
 
         #[cfg(target_arch = "wasm32")]
-        writeln!(f, "enable subgroups;")?;
+        if device.subgroups_supported() {
+            writeln!(f, "enable subgroups;")?;
+        }
 
         self.declare_quantized_types(f, use_f16)?;
 
