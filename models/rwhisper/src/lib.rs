@@ -389,7 +389,7 @@ impl WhisperBuilder {
     /// ```
     pub async fn build_with_loading_handler(
         self,
-        mut progress_handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+        mut progress_handler: impl FnMut(ModelLoadingProgress) + 'static,
     ) -> Result<Whisper, WhisperLoadingError> {
         // Download section
         let whisper = &self.model;
