@@ -36,8 +36,8 @@
 use cpal::FromSample;
 use futures_channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use kalosm_common::Cache;
-use kalosm_model_types::FutureWasmNotSend;
 pub use kalosm_model_types::{FileSource, ModelBuilder, ModelLoadingProgress};
+use kalosm_model_types::{FutureWasmNotSend, WasmNotSendSync};
 use model::{WhisperInner, WhisperLoadingError};
 use rodio::{source::UniformSourceIterator, Source};
 use std::{
@@ -389,7 +389,7 @@ impl WhisperBuilder {
     /// ```
     pub async fn build_with_loading_handler(
         self,
-        mut progress_handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+        mut progress_handler: impl FnMut(ModelLoadingProgress) + 'static,
     ) -> Result<Whisper, WhisperLoadingError> {
         // Download section
         let whisper = &self.model;

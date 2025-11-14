@@ -66,7 +66,7 @@ impl Cache {
     pub async fn get_bytes(
         &self,
         source: &FileSource,
-        #[allow(unused)] progress: impl FnMut(FileLoadingProgress),
+        #[allow(unused_mut)] mut progress: impl FnMut(FileLoadingProgress),
     ) -> Result<Vec<u8>, CacheError> {
         #[cfg(feature = "tokio")]
         {
@@ -75,6 +75,9 @@ impl Cache {
         }
         #[cfg(not(feature = "tokio"))]
         {
+            use futures_util::StreamExt;
+            use reqwest::StatusCode;
+            use std::str::FromStr;
             match source {
                 FileSource::HuggingFace {
                     model_id,
@@ -85,17 +88,54 @@ impl Cache {
                     let url =
                         format!("https://huggingface.co/{model_id}/resolve/{revision}/{file}");
                     let client = reqwest::Client::new();
-                    tracing::trace!("Fetching metadata for {file} from {url}");
-                    let response = client
-                        .get(&url)
+                    let head = client
+                        .head(&url)
                         .with_authorization_header(token.clone())
                         .send()
                         .await
-                        .map_err(CacheError::from)?
-                        .bytes()
-                        .await
                         .map_err(CacheError::from)?;
-                    Ok(response.to_vec())
+                    let length = head
+                        .headers()
+                        .get(reqwest::header::CONTENT_LENGTH)
+                        .and_then(|length| {
+                            length.to_str().ok().and_then(|s| u64::from_str(s).ok())
+                        });
+                    if let Some(length) = length {
+                        progress(FileLoadingProgress {
+                            progress: 0,
+                            cached_size: 0,
+                            size: length,
+                            start_time: None,
+                        });
+                    }
+                    let request = client.get(url).with_authorization_header(token);
+                    let response = request.send().await?;
+
+                    let status = response.status();
+                    if !(status == StatusCode::OK || status == StatusCode::PARTIAL_CONTENT) {
+                        return Err(CacheError::UnexpectedStatusCode(status));
+                    }
+
+                    let mut current_progress = 0;
+
+                    let mut bytes = Vec::new();
+                    let mut stream = response.bytes_stream();
+                    while let Some(chunk) = stream.next().await {
+                        let chunk = chunk?;
+                        bytes.extend_from_slice(&chunk);
+                        tracing::trace!("wrote chunk of size {}", chunk.len());
+                        current_progress += chunk.len() as u64;
+                        if let Some(length) = length {
+                            progress(FileLoadingProgress {
+                                progress: current_progress,
+                                cached_size: 0,
+                                size: length,
+                                start_time: None,
+                            });
+                        }
+                    }
+
+                    Ok(bytes)
                 }
                 _ => Err(CacheError::Io(std::io::Error::new(
                     std::io::ErrorKind::Other,
@@ -236,7 +276,7 @@ async fn download_into<U: reqwest::IntoUrl>(
             progress: start,
             cached_size: start,
             size: length,
-            start_time: std::time::Instant::now(),
+            start_time: Some(std::time::Instant::now()),
         });
     }
 
@@ -246,7 +286,7 @@ async fn download_into<U: reqwest::IntoUrl>(
             progress: start,
             cached_size: start,
             size: length.unwrap_or(0),
-            start_time: std::time::Instant::now(),
+            start_time: Some(std::time::Instant::now()),
         });
         return Ok(());
     }
@@ -277,7 +317,7 @@ async fn download_into<U: reqwest::IntoUrl>(
                 progress: current_progress,
                 cached_size: start,
                 size: length,
-                start_time: std::time::Instant::now(),
+                start_time: Some(std::time::Instant::now()),
             });
         }
     }

@@ -26,8 +26,8 @@ pub enum ModelLoadingProgress {
 /// The progress of a file download
 #[derive(Clone, Debug)]
 pub struct FileLoadingProgress {
-    /// The time stamp the download started
-    pub start_time: std::time::Instant,
+    /// The time stamp the download started. This is None on wasm
+    pub start_time: Option<std::time::Instant>,
     /// The size of the cached part of the download in bytes
     pub cached_size: u64,
     /// The size of the download in bytes
@@ -81,7 +81,7 @@ impl ModelLoadingProgress {
                 progress: FileLoadingProgress { start_time, .. },
                 ..
             } => {
-                let elapsed = start_time.elapsed();
+                let elapsed = start_time.as_ref()?.elapsed();
                 let progress = self.progress();
                 let remaining = (1. - progress) * elapsed.as_secs_f32();
                 Some(std::time::Duration::from_secs_f32(remaining))

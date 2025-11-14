@@ -4418,6 +4418,7 @@ dependencies = [
  "candle-core",
  "candle-nn",
  "dirs 5.0.1",
+ "futures-util",
  "hf-hub 0.4.3",
  "httpdate",
  "kalosm-model-types",
