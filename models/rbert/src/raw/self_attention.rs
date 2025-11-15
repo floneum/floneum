@@ -3,9 +3,9 @@ use fusor_core::{Device, VarBuilder};
 use fusor_core::{Result, Tensor};
 
 pub(crate) struct BertSelfAttention {
-    query: Linear,
-    key: Linear,
-    value: Linear,
+    query: Linear<f32>,
+    key: Linear<f32>,
+    value: Linear<f32>,
     num_attention_heads: usize,
     attention_head_size: usize,
     span: tracing::Span,

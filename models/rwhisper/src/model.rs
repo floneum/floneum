@@ -146,7 +146,8 @@ impl WhisperInner {
         let mel = audio::pcm_to_mel(&self.config, &pcm_data, &self.mel_filters);
         let mel_len = mel.len();
         let mel = Tensor::new(&self.device, &mel)
-            .reshape([self.config.num_mel_bins, mel_len / self.config.num_mel_bins]);
+            .reshape([self.config.num_mel_bins, mel_len / self.config.num_mel_bins])
+            .cast();
 
         if let Some(language) = language {
             if let Err(err) = self.decoder.set_language_token(language) {
@@ -179,7 +180,7 @@ struct Decoder {
     model: ModelType,
     rng: rand::rngs::StdRng,
     tokenizer: Tokenizer,
-    suppress_tokens: Tensor<1, f32>,
+    suppress_tokens: Tensor<1, half::f16>,
     sot_token: u32,
     transcribe_token: u32,
     translate_token: u32,
@@ -204,12 +205,12 @@ impl Decoder {
         let no_timestamps_token = token_id(&tokenizer, NO_TIMESTAMPS_TOKEN)?;
         // Suppress the notimestamps token when in timestamps mode.
         // https://github.com/openai/whisper/blob/e8622f9afc4eba139bf796c210f5c01081000472/whisper/decoding.py#L452
-        let suppress_tokens: Vec<f32> = (0..model.config().vocab_size as u32)
+        let suppress_tokens: Vec<half::f16> = (0..model.config().vocab_size as u32)
             .map(|i| {
                 if model.config().suppress_tokens.contains(&i) {
-                    f32::NEG_INFINITY
+                    half::f16::NEG_INFINITY
                 } else {
-                    0f32
+                    half::f16::ZERO
                 }
             })
             .collect();
@@ -277,7 +278,7 @@ impl Decoder {
             .chain(std::iter::once(self.eot_token))
     }
 
-    fn encode(&mut self, mel: &Tensor<3, f32>) -> fusor_core::Result<Tensor<3, f32>> {
+    fn encode(&mut self, mel: &Tensor<3, half::f16>) -> fusor_core::Result<Tensor<3, half::f16>> {
         let tensor = match &mut self.model {
             ModelType::Quantized(model) => model.encoder.forward(mel)?,
         };
@@ -287,7 +288,7 @@ impl Decoder {
 
     async fn decode(
         &mut self,
-        audio_features: &Tensor<2, f32>,
+        audio_features: &Tensor<2, half::f16>,
         temperature: f64,
         task: Task,
         previous_tokens: &[u32],
@@ -376,7 +377,7 @@ impl Decoder {
                     .to_scalar()
                     .await
                     .map_err(|e| WhisperError::Fusor(e.into()))?
-                    as f64;
+                    .into();
             }
 
             let [_, seq_len, _] = *ys.shape();
@@ -397,9 +398,9 @@ impl Decoder {
             // https://github.com/openai/whisper/blob/e8622f9afc4eba139bf796c210f5c01081000472/whisper/decoding.py#L439
             let logits = &logits_1d + &self.suppress_tokens;
             let next_token = if temperature > 0f64 {
-                let prs = logits.clone() / (temperature as f32);
+                let prs = logits.clone() / half::f16::from_f64(temperature);
                 let prs = prs.softmax(0);
-                let logits_v: Vec<f32> = self
+                let logits_v = self
                     .apply_timestamp_rules(prs, &tokens, task.without_timestamps)
                     .await?;
                 // Weights may be NaN if decoding fails
@@ -408,7 +409,7 @@ impl Decoder {
                 distr.sample(&mut self.rng) as u32
             } else {
                 let logits_sm = logits.softmax(0);
-                let logits_v: Vec<f32> = self
+                let logits_v = self
                     .apply_timestamp_rules(logits_sm, &tokens, task.without_timestamps)
                     .await?;
                 logits_v
@@ -432,7 +433,8 @@ impl Decoder {
             let prob = prob_tensor
                 .to_scalar()
                 .await
-                .map_err(|e| WhisperError::Fusor(e.into()))? as f64;
+                .map_err(|e| WhisperError::Fusor(e.into()))?
+                .to_f64();
             // If we have read the maximum number of tokens, stop regardless of the eot token
             // Or if word level timestamps are disabled, stop as soon was we reach the eot token
             if tokens.len() > self.model.config().max_target_positions
@@ -466,7 +468,7 @@ impl Decoder {
                 .collect();
             remaining_tokens.reverse();
             let mut queued_tokens = Vec::new();
-            let mut timestamp_start = None;
+            let mut timestamp_start: Option<f32> = None;
             let mut prev_text_len = 0;
             let mut chunks = Vec::new();
             let mut current_text = String::new();
@@ -474,7 +476,7 @@ impl Decoder {
                 queued_tokens.push(token);
                 if let Some(timestamps) = &token_timestamps {
                     if timestamp_start.is_none() {
-                        timestamp_start = Some(timestamps[index]);
+                        timestamp_start = Some(timestamps[index].into());
                     }
                 }
                 let detokenized = self
@@ -486,9 +488,13 @@ impl Decoder {
                 {
                     let timestamp = token_timestamps.as_ref().map(|timestamps| {
                         let start = timestamp_start.unwrap();
-                        let end = timestamps.get(index).copied().unwrap_or_else(|| {
-                            n_frames as f32 * HOP_LENGTH as f32 / SAMPLE_RATE as f32
-                        });
+                        let end = timestamps
+                            .get(index)
+                            .copied()
+                            .map(|f| f.to_f32())
+                            .unwrap_or_else(|| {
+                                n_frames as f32 * HOP_LENGTH as f32 / SAMPLE_RATE as f32
+                            });
                         timestamp_start = Some(end);
                         start..end
                     });
@@ -513,7 +519,7 @@ impl Decoder {
                     .map_err(WhisperError::Tokenizer)?;
                 let timestamp = token_timestamps.as_ref().map(|timestamps| {
                     let start = timestamp_start.unwrap();
-                    let end = *timestamps.last().unwrap();
+                    let end = timestamps.last().unwrap().to_f32();
                     start..end
                 });
                 let text_range = current_text.len()..current_text.len() + detokenized.len();
@@ -551,7 +557,7 @@ impl Decoder {
 
     async fn decode_with_fallback(
         &mut self,
-        audio_features: &Tensor<2, f32>,
+        audio_features: &Tensor<2, half::f16>,
         task: Task,
         previous_tokens: &[u32],
         n_frames: usize,
@@ -582,7 +588,7 @@ impl Decoder {
 
     async fn run(
         &mut self,
-        mel: &Tensor<2, f32>,
+        mel: &Tensor<2, half::f16>,
         audio_frames: usize,
         task: Task,
         mut result: UnboundedSender<Segment>,
@@ -614,7 +620,8 @@ impl Decoder {
             }
 
             // Encode all of the chunks
-            let batched_mel_segment: Tensor<3, f32> = Tensor::stack(chunked.iter().cloned(), 0);
+            let batched_mel_segment: Tensor<3, half::f16> =
+                Tensor::stack(chunked.iter().cloned(), 0);
             let batched_audio_features = self.encode(&batched_mel_segment)?;
             let split = batched_audio_features.chunk(chunk_indices.len(), 0)?;
 
@@ -708,22 +715,22 @@ pub fn token_id(tokenizer: &Tokenizer, token: &str) -> fusor_core::Result<u32> {
 impl Decoder {
     async fn apply_timestamp_rules(
         &self,
-        logits: Tensor<1, f32>,
+        logits: Tensor<1, half::f16>,
         tokens: &[u32],
         no_timestamps: bool,
-    ) -> fusor_core::Result<Vec<f32>> {
+    ) -> fusor_core::Result<Vec<half::f16>> {
         let logits_slice = logits.as_slice().await?;
         let len = logits_slice.shape()[0];
         let mut logits = (0..len).map(|i| logits_slice[[i]]).collect::<Vec<_>>();
 
-        logits[self.no_timestamps_token as usize] = 0.;
-        logits[self.sot_token as usize] = 0.;
-        logits[self.transcribe_token as usize] = 0.;
-        logits[self.translate_token as usize] = 0.;
+        logits[self.no_timestamps_token as usize] = half::f16::ZERO;
+        logits[self.sot_token as usize] = half::f16::ZERO;
+        logits[self.transcribe_token as usize] = half::f16::ZERO;
+        logits[self.translate_token as usize] = half::f16::ZERO;
 
         if no_timestamps {
             for i in self.timestamp_token_range.clone() {
-                logits[i as usize] = 0.;
+                logits[i as usize] = half::f16::ZERO;
             }
             return Ok(logits);
         }
@@ -740,14 +747,14 @@ impl Decoder {
             // If the last two tokens were timestamps, then the new token cannot be a timestamp
             (true, true) => {
                 for i in self.special_tokens() {
-                    logits[i as usize] = 0.;
+                    logits[i as usize] = half::f16::ZERO;
                 }
             }
             // If the last token was a timestamp and the penultimate token was not, then the new token must be a timestamp
             (false, true) => {
                 for (i, logit) in logits.iter_mut().enumerate() {
                     if !self.is_timestamp_or_eot(i as u32) {
-                        *logit = 0.;
+                        *logit = half::f16::ZERO;
                     }
                 }
             }
@@ -769,13 +776,13 @@ impl Decoder {
 
         for (i, logit) in logits.iter_mut().enumerate() {
             if self.timestamp_token_range.contains(&(i as u32)) && i < timestamp_last as usize {
-                *logit = 0.;
+                *logit = half::f16::ZERO;
             }
         }
 
         // If the sum of the probability over timestamps is more than any other individual token, sample a timestamp
-        let mut timestamp_sum_prob = 0.;
-        let mut max_text_token_prob = 0.;
+        let mut timestamp_sum_prob = half::f16::ZERO;
+        let mut max_text_token_prob = half::f16::ZERO;
         for (i, logit) in logits.iter().enumerate() {
             if self.is_timestamp_or_eot(i as u32) {
                 timestamp_sum_prob += logit;
@@ -787,7 +794,7 @@ impl Decoder {
         if timestamp_sum_prob > max_text_token_prob {
             for (i, logit) in logits.iter_mut().enumerate() {
                 if !self.is_timestamp_or_eot(i as u32) {
-                    *logit = 0.;
+                    *logit = half::f16::ZERO;
                 }
             }
         }

@@ -1,7 +1,6 @@
 // Based on https://github.com/nicksenger/candle/tree/feat/whisper-dtw with some optimizations and refactoring
 // https://rtavenar.github.io/blog/dtw.html is a good resource for understanding the dtw algorithm
 
-use core::f32;
 use fusor_core::Tensor;
 use std::num::NonZeroUsize;
 
@@ -11,11 +10,11 @@ use crate::config::{HOP_LENGTH, N_FRAMES, SAMPLE_RATE};
 pub(super) async fn extract_timestamps(
     // A list of (layer, head) pairs to use for timestamp determination
     alignment_heads: &[[usize; 2]],
-    cross_attentions: &[Tensor<4, f32>],
+    cross_attentions: &[Tensor<4, half::f16>],
     filter_width: NonZeroUsize,
     n_frames: usize,
     mask: Vec<Vec<bool>>,
-) -> fusor_core::Result<Vec<Vec<f32>>> {
+) -> fusor_core::Result<Vec<Vec<half::f16>>> {
     // Select relevant cross-attention heads
     let weights = Tensor::stack(
         alignment_heads.iter().copied().filter_map(|[layer, head]| {
@@ -52,7 +51,7 @@ pub(super) async fn extract_timestamps(
         let batch_index_cost_3d = (-cost.clone())
             .narrow(0, batch_idx, 1)
             .squeeze(0)
-            .cast::<f32>();
+            .cast::<half::f16>();
         let batch_index_cost_slice = batch_index_cost_3d.as_slice().await?;
         let shape = batch_index_cost_slice.shape();
         let (rows, cols) = (shape[0], shape[1]);
@@ -81,12 +80,17 @@ pub(super) async fn extract_timestamps(
                 text_indices
                     .iter()
                     .zip(text_indices.iter().skip(1))
-                    .map(|(a, b)| (b - a) as usize == 1),
+                    .map(|(a, b)| (b - a).to_f32() as usize == 1),
             )
             .zip(time_indices)
             .filter_map(|(is_jump, time_index)| {
                 if is_jump {
-                    Some(time_index / (SAMPLE_RATE / (HOP_LENGTH * 2)) as f32)
+                    Some(
+                        time_index
+                            / const {
+                                half::f16::from_f32_const((SAMPLE_RATE / (HOP_LENGTH * 2)) as f32)
+                            },
+                    )
                 } else {
                     None
                 }
@@ -98,7 +102,9 @@ pub(super) async fn extract_timestamps(
 }
 
 /// Computes the lowest cost warping path through the provided cost matrix
-fn dynamic_time_warp(matrix: Vec<Vec<f32>>) -> fusor_core::Result<(Vec<f32>, Vec<f32>)> {
+fn dynamic_time_warp(
+    matrix: Vec<Vec<half::f16>>,
+) -> fusor_core::Result<(Vec<half::f16>, Vec<half::f16>)> {
     #[derive(Debug, Clone, Copy)]
     enum Action {
         Match,
@@ -108,11 +114,17 @@ fn dynamic_time_warp(matrix: Vec<Vec<f32>>) -> fusor_core::Result<(Vec<f32>, Vec
 
     let n = matrix.len();
     let m = matrix[0].len();
-    // let mut cost = vec![vec![f32::INFINITY; m + 1]; n + 1];
+    // let mut cost = vec![vec![half::f16::INFINITY; m + 1]; n + 1];
     let mut cost = (0..n + 1)
         .map(|i| {
             (0..m + 1)
-                .map(|j| if i == 0 && j == 0 { 0. } else { f32::INFINITY })
+                .map(|j| {
+                    if i == 0 && j == 0 {
+                        half::f16::ZERO
+                    } else {
+                        half::f16::INFINITY
+                    }
+                })
                 .collect::<Box<[_]>>()
         })
         .collect::<Box<[_]>>();
@@ -131,7 +143,7 @@ fn dynamic_time_warp(matrix: Vec<Vec<f32>>) -> fusor_core::Result<(Vec<f32>, Vec
         })
         .collect::<Box<[_]>>();
 
-    cost[0][0] = 0.;
+    cost[0][0] = half::f16::ZERO;
     for j in 1..m + 1 {
         for i in 1..n + 1 {
             let down_left = cost[i - 1][j - 1];
@@ -154,8 +166,8 @@ fn dynamic_time_warp(matrix: Vec<Vec<f32>>) -> fusor_core::Result<(Vec<f32>, Vec
 
     let (mut xs, mut ys) = (vec![], vec![]);
     while i > 0 || j > 0 {
-        xs.push(i.saturating_sub(1) as f32);
-        ys.push(j.saturating_sub(1) as f32);
+        xs.push(half::f16::from_f32(i.saturating_sub(1) as f32));
+        ys.push(half::f16::from_f32(j.saturating_sub(1) as f32));
         match trace[i as usize][j as usize] {
             Action::Match => {
                 i = i.saturating_sub(1);
@@ -179,8 +191,8 @@ fn dynamic_time_warp(matrix: Vec<Vec<f32>>) -> fusor_core::Result<(Vec<f32>, Vec
 
 fn median_filter(
     _filter_width: NonZeroUsize,
-    weights: Tensor<4, f32>,
-) -> fusor_core::Result<Tensor<4, f32>> {
+    weights: Tensor<4, half::f16>,
+) -> fusor_core::Result<Tensor<4, half::f16>> {
     // TODO: Implement proper median filtering for timestamp smoothing
     // For now, return the weights unchanged
     Ok(weights)

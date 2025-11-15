@@ -1,20 +1,20 @@
 use fusor_gguf::GgmlType;
 
-use crate::{Device, QMatrix, Result, Tensor, VarBuilder};
+use crate::{DataType, Device, QMatrix, Result, Tensor, VarBuilder};
 
-pub struct Linear {
+pub struct Linear<T> {
     weight: QMatrix,
-    bias: Option<Tensor<1, f32>>,
+    bias: Option<Tensor<1, T>>,
 }
 
-impl Linear {
+impl<T: DataType> Linear<T> {
     pub fn load(device: &Device, vb: &mut VarBuilder) -> Result<Self> {
         let weight = vb.get("weight", device)?;
         let bias = vb.get("bias", device).ok().map(|bias| bias.dequantize());
         Ok(Self { weight, bias })
     }
 
-    pub fn forward(&self, input: &Tensor<3, f32>) -> Tensor<3, f32> {
+    pub fn forward(&self, input: &Tensor<3, T>) -> Tensor<3, T> {
         let output = input.q_mat_mul(&self.weight);
         match &self.bias {
             None => output,

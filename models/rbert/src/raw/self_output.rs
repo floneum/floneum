@@ -5,7 +5,7 @@ use fusor_core::{Result, Tensor};
 use crate::raw::layer_norm::{layer_norm, LayerNorm};
 
 pub(crate) struct BertSelfOutput {
-    dense: Linear,
+    dense: Linear<f32>,
     layer_norm: LayerNorm<1>,
     span: tracing::Span,
 }

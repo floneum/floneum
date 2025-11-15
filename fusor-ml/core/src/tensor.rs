@@ -468,8 +468,13 @@ impl TensorData {
 
     pub(crate) fn new_splat<D: DataType>(device: &Device, shape: &[usize], data: D) -> Self {
         let datatype = D::WGSL_TYPE;
+        let raw_data = bytemuck::bytes_of(&data);
+        let unpadded_size = raw_data.len();
+        let size = padded_tensor_size(unpadded_size as u64) as usize;
+        let mut padded_data = vec![0u8; size];
+        padded_data[..unpadded_size].copy_from_slice(raw_data);
         let buffer = device.create_buffer_init(
-            bytemuck::bytes_of(&data),
+            &padded_data,
             wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_SRC
                 | wgpu::BufferUsages::COPY_DST,
@@ -500,14 +505,14 @@ impl TensorData {
                     | wgpu::BufferUsages::COPY_SRC
                     | wgpu::BufferUsages::COPY_DST,
             );
-            (buffer, size)
+            (buffer, padded_size)
         }
-        let (buffer, unpadded_size) = create_aligned_buffer(size_of::<D>() as u64, shape, device);
+        let (buffer, padded_size) = create_aligned_buffer(size_of::<D>() as u64, shape, device);
 
-        if let Some(unpadded_size) = NonZeroU64::new(unpadded_size) {
+        if let Some(padded_size) = NonZeroU64::new(padded_size) {
             let write = device
                 .wgpu_queue()
-                .write_buffer_with(&buffer, 0, unpadded_size);
+                .write_buffer_with(&buffer, 0, padded_size);
             if let Some(mut write) = write {
                 write
                     .iter_mut()
@@ -1255,6 +1260,20 @@ async fn test_tensor() {
     assert_eq!(as_slice[[1, 1]], 4.);
     assert_eq!(as_slice[[2, 0]], 5.);
     assert_eq!(as_slice[[2, 1]], 6.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_zeros_f16() {
+    let device = Device::new().await.unwrap();
+
+    let tensor: Tensor<2, half::f16> = Tensor::zeros(&device, [2, 2]);
+
+    let as_slice = tensor.as_slice().await.unwrap();
+    assert_eq!(as_slice[[0, 0]], half::f16::ZERO);
+    assert_eq!(as_slice[[0, 1]], half::f16::ZERO);
+    assert_eq!(as_slice[[1, 0]], half::f16::ZERO);
+    assert_eq!(as_slice[[1, 1]], half::f16::ZERO);
 }
 
 #[cfg(test)]

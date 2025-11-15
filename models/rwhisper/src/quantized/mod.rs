@@ -7,20 +7,21 @@ use fusor_core::{
     layers::{Conv1d, Conv1dConfig, Embedding, LayerNorm, Linear},
     Device, Error, Result, Tensor, VarBuilder,
 };
+use rustfft::num_traits::Float;
 use timestamps::extract_timestamps;
 
 use crate::config::Config;
 
 pub(crate) mod timestamps;
 
-fn conv1d(config: Conv1dConfig, device: &Device, vb: &mut VarBuilder) -> Result<Conv1d> {
+fn conv1d(config: Conv1dConfig, device: &Device, vb: &mut VarBuilder) -> Result<Conv1d<half::f16>> {
     let weight = vb.get("weight", device)?.dequantize();
     let bias = vb.get("bias", device)?.dequantize();
     Ok(Conv1d::new(weight, Some(bias), config))
 }
 
 struct MultiHeadAttentionCache {
-    kv_cache: KvCache,
+    kv_cache: KvCache<half::f16>,
 }
 
 impl MultiHeadAttentionCache {
@@ -33,10 +34,10 @@ impl MultiHeadAttentionCache {
 
 // https://github.com/openai/whisper/blob/f572f2161ba831bae131364c3bffdead7af6d210/whisper/model.py#L62
 struct MultiHeadAttention {
-    query: Linear,
-    key: Linear,
-    value: Linear,
-    out: Linear,
+    query: Linear<half::f16>,
+    key: Linear<half::f16>,
+    value: Linear<half::f16>,
+    out: Linear<half::f16>,
     n_head: usize,
     softmax_span: tracing::Span,
     matmul_span: tracing::Span,
@@ -63,9 +64,9 @@ impl MultiHeadAttention {
 
     fn forward_kv(
         &self,
-        x: &Tensor<3, f32>,
+        x: &Tensor<3, half::f16>,
         cache: Option<&mut MultiHeadAttentionCache>,
-    ) -> Result<(Tensor<3, f32>, Tensor<3, f32>)> {
+    ) -> Result<(Tensor<3, half::f16>, Tensor<3, half::f16>)> {
         let key_states = self.key.forward(x);
         let value_states = self.value.forward(x);
         let (key_states, value_states) = match cache {
@@ -77,11 +78,11 @@ impl MultiHeadAttention {
 
     fn forward(
         &mut self,
-        query: &Tensor<3, f32>,
-        kv: (Tensor<3, f32>, Tensor<3, f32>),
-        mask: Option<&AttentionMask>,
-        attention_output: Option<&mut TensorCache<4, f32>>,
-    ) -> Result<Tensor<3, f32>> {
+        query: &Tensor<3, half::f16>,
+        kv: (Tensor<3, half::f16>, Tensor<3, half::f16>),
+        mask: Option<&AttentionMask<half::f16>>,
+        attention_output: Option<&mut TensorCache<4, half::f16>>,
+    ) -> Result<Tensor<3, half::f16>> {
         let query_states = self.query.forward(query);
         let (key_states, value_states) = &kv;
         let wv = self.qkv_attention(
@@ -94,7 +95,7 @@ impl MultiHeadAttention {
         Ok(self.out.forward(&wv))
     }
 
-    fn reshape_head(&self, x: &Tensor<3, f32>) -> Tensor<4, f32> {
+    fn reshape_head(&self, x: &Tensor<3, half::f16>) -> Tensor<4, half::f16> {
         let [n_batch, n_ctx, n_state] = *x.shape();
         let target_dims = [n_batch, n_ctx, self.n_head, n_state / self.n_head];
         x.reshape(target_dims).transpose(1, 2)
@@ -102,14 +103,14 @@ impl MultiHeadAttention {
 
     fn qkv_attention(
         &self,
-        q: &Tensor<3, f32>,
-        k: &Tensor<3, f32>,
-        v: &Tensor<3, f32>,
-        mask: Option<&AttentionMask>,
-        attention_output: Option<&mut TensorCache<4, f32>>,
-    ) -> Result<Tensor<3, f32>> {
+        q: &Tensor<3, half::f16>,
+        k: &Tensor<3, half::f16>,
+        v: &Tensor<3, half::f16>,
+        mask: Option<&AttentionMask<half::f16>>,
+        attention_output: Option<&mut TensorCache<4, half::f16>>,
+    ) -> Result<Tensor<3, half::f16>> {
         let [_, _, n_state] = *q.shape();
-        let scale = ((n_state / self.n_head) as f64).powf(-0.25) as f32;
+        let scale = half::f16::from_f64(((n_state / self.n_head) as f64).powf(-0.25));
         let q = self.reshape_head(q) * scale;
         let k = self.reshape_head(k).transpose(2, 3) * scale;
         let v = self.reshape_head(v);
@@ -139,17 +140,17 @@ impl MultiHeadAttention {
 
 struct ResidualAttentionBlockCache {
     attn: MultiHeadAttentionCache,
-    feature_attn_cache: Option<(Tensor<3, f32>, Tensor<3, f32>)>,
+    feature_attn_cache: Option<(Tensor<3, half::f16>, Tensor<3, half::f16>)>,
 }
 
 // https://github.com/openai/whisper/blob/f572f2161ba831bae131364c3bffdead7af6d210/whisper/model.py#L111
 struct ResidualAttentionBlock {
     attn: MultiHeadAttention,
-    attn_ln: LayerNorm<1>,
-    cross_attn: Option<(MultiHeadAttention, LayerNorm<1>)>,
-    mlp_linear1: Linear,
-    mlp_linear2: Linear,
-    mlp_ln: LayerNorm<1>,
+    attn_ln: LayerNorm<1, half::f16>,
+    cross_attn: Option<(MultiHeadAttention, LayerNorm<1, half::f16>)>,
+    mlp_linear1: Linear<half::f16>,
+    mlp_linear2: Linear<half::f16>,
+    mlp_ln: LayerNorm<1, half::f16>,
     span: tracing::Span,
 }
 
@@ -182,12 +183,12 @@ impl ResidualAttentionBlock {
 
     fn forward(
         &mut self,
-        audio_features_kv: Option<(Tensor<3, f32>, Tensor<3, f32>)>,
-        x: &Tensor<3, f32>,
-        mask: Option<&AttentionMask>,
+        audio_features_kv: Option<(Tensor<3, half::f16>, Tensor<3, half::f16>)>,
+        x: &Tensor<3, half::f16>,
+        mask: Option<&AttentionMask<half::f16>>,
         mut cache: Option<&mut ResidualAttentionBlockCache>,
-        attention_output: Option<&mut TensorCache<4, f32>>,
-    ) -> Result<Tensor<3, f32>> {
+        attention_output: Option<&mut TensorCache<4, half::f16>>,
+    ) -> Result<Tensor<3, half::f16>> {
         let _enter = self.span.enter();
 
         let attn_ln_x = self.attn_ln.forward(x);
@@ -207,15 +208,16 @@ impl ResidualAttentionBlock {
     }
 }
 
-fn sinusoids(length: usize, channels: usize, device: &Device) -> Tensor<2, f32> {
+fn sinusoids(length: usize, channels: usize, device: &Device) -> Tensor<2, half::f16> {
     let max_timescale = 10000f32;
-    let log_timescale_increment = max_timescale.ln() / (channels / 2 - 1) as f32;
+    let log_timescale_increment =
+        half::f16::from_f32(max_timescale.ln()) / half::f16::from_f32((channels / 2 - 1) as f32);
     let inv_timescales: Vec<_> = (0..channels / 2)
-        .map(|i| (i as f32 * (-log_timescale_increment)).exp())
+        .map(|i| (half::f16::from_f32(i as f32) * (-log_timescale_increment)).exp())
         .collect();
     let inv_timescales = Tensor::new(device, inv_timescales.as_slice()).unsqueeze(0);
     let arange = Tensor::arange(device, 0, length as u32)
-        .cast::<f32>()
+        .cast::<half::f16>()
         .unsqueeze(1);
     let sh = [length, channels / 2];
     let scaled_time = arange.broadcast_as(sh) * inv_timescales.broadcast_as(sh);
@@ -224,11 +226,11 @@ fn sinusoids(length: usize, channels: usize, device: &Device) -> Tensor<2, f32> 
 
 // https://github.com/openai/whisper/blob/f572f2161ba831bae131364c3bffdead7af6d210/whisper/model.py#L143
 pub struct AudioEncoder {
-    conv1: Conv1d,
-    conv2: Conv1d,
-    positional_embedding: Tensor<2, f32>,
+    conv1: Conv1d<half::f16>,
+    conv2: Conv1d<half::f16>,
+    positional_embedding: Tensor<2, half::f16>,
     blocks: Vec<ResidualAttentionBlock>,
-    ln_post: LayerNorm<1>,
+    ln_post: LayerNorm<1, half::f16>,
     span: tracing::Span,
     conv1_span: tracing::Span,
     conv2_span: tracing::Span,
@@ -280,7 +282,7 @@ impl AudioEncoder {
         })
     }
 
-    pub fn forward(&mut self, x: &Tensor<3, f32>) -> Result<Tensor<3, f32>> {
+    pub fn forward(&mut self, x: &Tensor<3, half::f16>) -> Result<Tensor<3, half::f16>> {
         let _enter = self.span.enter();
         let x = {
             let _enter = self.conv1_span.enter();
@@ -316,12 +318,12 @@ impl TextDecoderCache {
 
 // https://github.com/openai/whisper/blob/f572f2161ba831bae131364c3bffdead7af6d210/whisper/model.py#L176
 pub struct TextDecoder {
-    token_embedding: Embedding,
-    positional_embedding: Tensor<2, f32>,
+    token_embedding: Embedding<half::f16>,
+    positional_embedding: Tensor<2, half::f16>,
     blocks: Vec<ResidualAttentionBlock>,
-    ln: LayerNorm<1>,
+    ln: LayerNorm<1, half::f16>,
     max_target_positions: usize,
-    mask_cache: Arc<MaskCache>,
+    mask_cache: Arc<MaskCache<half::f16>>,
     span: tracing::Span,
     span_final: tracing::Span,
 }
@@ -360,10 +362,10 @@ impl TextDecoder {
     pub fn forward(
         &mut self,
         tokens: &[u32],
-        audio_features: &Tensor<2, f32>,
+        audio_features: &Tensor<2, half::f16>,
         cache: &mut TextDecoderCache,
-        mut attention_output: Option<&mut [TensorCache<4, f32>]>,
-    ) -> Result<Tensor<3, f32>> {
+        mut attention_output: Option<&mut [TensorCache<4, half::f16>]>,
+    ) -> Result<Tensor<3, half::f16>> {
         let index_pos = cache.tokens.len();
         cache.tokens.extend_from_slice(tokens);
         let seq_len = tokens.len();
@@ -405,7 +407,7 @@ impl TextDecoder {
         Ok(out)
     }
 
-    pub fn final_linear(&self, x: &Tensor<3, f32>) -> Result<Tensor<3, f32>> {
+    pub fn final_linear(&self, x: &Tensor<3, half::f16>) -> Result<Tensor<3, half::f16>> {
         let embeddings = self.token_embedding.embeddings_quantized();
         let logits = {
             let _enter = self.span_final.enter();
@@ -442,8 +444,8 @@ impl Whisper {
         filter_width: NonZeroUsize,
         n_frames: usize,
         mask: Vec<Vec<bool>>,
-        attention_output: &[TensorCache<4, f32>],
-    ) -> Result<Vec<Vec<f32>>> {
+        attention_output: &[TensorCache<4, half::f16>],
+    ) -> Result<Vec<Vec<half::f16>>> {
         let Some(attention_heads) = attention_heads else {
             panic!(
                 "The attention heads for word-level timestamps are not available for this model",

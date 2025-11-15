@@ -1,4 +1,4 @@
-use crate::{Device, Result, Tensor, VarBuilder};
+use crate::{DataType, Device, Result, Tensor, VarBuilder};
 
 /// Configuration for Conv1d layer
 #[derive(Debug, Clone, Copy)]
@@ -26,18 +26,18 @@ impl Default for Conv1dConfig {
 /// Input shape: (batch, in_channels, length)
 /// Output shape: (batch, out_channels, out_length)
 /// where out_length = (length + 2*padding - kernel_size) / stride + 1
-pub struct Conv1d {
-    weight: Tensor<3, f32>,       // (out_channels, in_channels, kernel_size)
-    bias: Option<Tensor<1, f32>>, // (out_channels,)
+pub struct Conv1d<T> {
+    weight: Tensor<3, T>,       // (out_channels, in_channels, kernel_size)
+    bias: Option<Tensor<1, T>>, // (out_channels,)
     config: Conv1dConfig,
     in_channels: usize,
     out_channels: usize,
     kernel_size: usize,
 }
 
-impl Conv1d {
+impl<T: DataType> Conv1d<T> {
     /// Create a new Conv1d layer with given weights and configuration
-    pub fn new(weight: Tensor<3, f32>, bias: Option<Tensor<1, f32>>, config: Conv1dConfig) -> Self {
+    pub fn new(weight: Tensor<3, T>, bias: Option<Tensor<1, T>>, config: Conv1dConfig) -> Self {
         let shape = weight.shape();
         let out_channels = shape[0];
         let in_channels = shape[1];
@@ -106,7 +106,7 @@ impl Conv1d {
     ///
     /// This is a special case of the generic conv_with_linear_channels method with DIFF=1
     /// (one spatial dimension).
-    pub fn forward(&self, input: &Tensor<3, f32>) -> Tensor<3, f32> {
+    pub fn forward(&self, input: &Tensor<3, T>) -> Tensor<3, T> {
         // Conv1d is just multi-channel convolution with DIFF=1 (one spatial dimension)
         // Input: (batch, in_channels, length) - rank R=3
         // Weight: (out_channels, in_channels, kernel_size) - rank WEIGHT_RANK=3

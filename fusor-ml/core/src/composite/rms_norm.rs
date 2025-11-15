@@ -1,5 +1,4 @@
-use crate::{CastTensor, DataType, LastRank, MaxRank, NextRankInner, Tensor, TensorSlice};
-use std::fmt::Debug;
+use crate::{CastTensor, DataType, LastRank, MaxRank, NextRankInner, Tensor};
 
 impl<const N: usize, T> Tensor<N, T> {
     pub fn layer_norm<const R: usize, const N2: usize>(
@@ -17,7 +16,6 @@ impl<const N: usize, T> Tensor<N, T> {
         (Tensor<N, f32>, Tensor<N, f32>): MaxRank<N, f32>,
         Tensor<N, f32>: LastRank<N2, f32>,
         Tensor<N2, f32>: NextRankInner<NextRank = Tensor<N, f32>>,
-        TensorSlice<N, f32>: Debug,
     {
         let self_shape = *self.shape();
         let hidden_size = self_shape.last().copied().unwrap();
