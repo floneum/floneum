@@ -90,6 +90,7 @@ impl ReduceOperation {
         device: &crate::Device,
     ) {
         let dtype = self.function.datatype();
+        let input_dtype = self.pre_element_wise.input_datatype();
         let out_datatype = self.out_datatype();
         let output_rank = self.rank() - 1;
         let large_reduction = self.shape[self.axis] > 256;
@@ -101,7 +102,7 @@ impl ReduceOperation {
         // We also can't synchronize among workgroups without atomics. storageBarrier() is a barrier for
         // the storage memory only inside the workgroup.
         // This kernel just uses one workgroup per reduction unit like the MLX kernel
-        let input_tensor = kernel.add_tensor_input(output_rank, false, self.reduce_datatype());
+        let input_tensor = kernel.add_tensor_input(output_rank, false, input_dtype);
         let output_tensor = kernel.add_tensor_input(output_rank, true, out_datatype);
         let reduce_size = kernel.add_integer_input();
         let reduce_stride = kernel.add_integer_input();
@@ -167,7 +168,7 @@ impl ReduceOperation {
         if large_reduction {
             writeln!(kernel, "while (index + 4u <= end_axis_index) {{").unwrap();
             // Load the chunk of 4 elements at once
-            write!(kernel, "let data = vec4<{dtype}>(").unwrap();
+            write!(kernel, "let data = vec4<{input_dtype}>(").unwrap();
             for i in 0..4 {
                 if i > 0 {
                     write!(kernel, ", ").unwrap();
@@ -405,6 +406,7 @@ impl Operation for ReduceOperation {
     fn inputs(&self, nodes: &crate::compute_graph::ComputeGraphInner) -> Vec<MirValue> {
         let dim = self.axis;
         let tensor = nodes.cached_results.get(&self.value).unwrap();
+        assert_eq!(self.pre_element_wise.input_datatype(), tensor.datatype());
         let layout = tensor.layout();
         let shape = layout.shape();
         let new_tensor_shape = shape
@@ -709,6 +711,41 @@ async fn test_reduce_const_sum_then_add_fused() {
     assert_eq!(output[[0]], 1. + 3.);
     assert_eq!(output[[1]], 1. + 7.);
     assert_eq!(output[[2]], 1. + 11.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_reduce_const_sum_then_cast_fused() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+
+    let output = tensor.sum(0).cast::<half::f16>();
+
+    let output = output.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert_eq!(output[[0]], half::f16::from_f32(9.));
+    assert_eq!(output[[1]], half::f16::from_f32(12.));
+}
+#[cfg(test)]
+#[tokio::test]
+async fn test_cast_then_reduce_const_sum_fused() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data).cast::<half::f16>();
+
+    let output = tensor.sum(0);
+
+    let output = output.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert_eq!(output[[0]], half::f16::from_f32(9.));
+    assert_eq!(output[[1]], half::f16::from_f32(12.));
 }
 
 impl<const N: usize, D: DataType> Tensor<N, D> {
