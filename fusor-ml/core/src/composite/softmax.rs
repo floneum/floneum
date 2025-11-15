@@ -6,6 +6,7 @@ use std::{
 use crate::{
     DataType, DataTypeEnum, LastRank, Layout, Tensor, TensorData,
     compute_graph::AnyComputeKey,
+    min_for_dtype,
     mir::{
         globals::KernelGlobalSpace,
         inputs::MirValue,
@@ -162,7 +163,7 @@ impl SoftmaxOperation {
         writeln!(kernel, ";").unwrap();
         writeln!(kernel).unwrap();
 
-        writeln!(kernel, "var m_lane = {dtype}(-3.40282e+38);").unwrap();
+        writeln!(kernel, "var m_lane = {};", min_for_dtype(dtype)).unwrap();
         writeln!(kernel, "var d_lane = {dtype}(0.0);").unwrap();
 
         // First merge values on each thread individually. We divide the column allocated to the thread group into equal sized buckets
@@ -286,7 +287,7 @@ impl SoftmaxOperation {
             writeln!(kernel, "d_lane = {local_d_data}[{subgroup_local_id}];").unwrap();
             writeln!(kernel, "}}").unwrap();
             writeln!(kernel, "else {{").unwrap();
-            writeln!(kernel, "m_lane = {dtype}(-3.40282e+38);").unwrap();
+            writeln!(kernel, "m_lane = {};", min_for_dtype(dtype)).unwrap();
             writeln!(kernel, "d_lane = {dtype}(0.0);").unwrap();
             writeln!(kernel, "}}").unwrap();
 

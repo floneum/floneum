@@ -768,7 +768,7 @@ impl<const N: usize, D: DataType> Tensor<N, D> {
 fn max_fn<D: DataType>() -> ReduceFunction {
     ReduceFunction::new(
         "let output = max(a, b);".to_string(),
-        "-3.40282e+38",
+        min_for_dtype(D::WGSL_TYPE),
         D::WGSL_TYPE,
     )
     .with_name("max")
@@ -803,7 +803,7 @@ async fn test_reduce_max() {
 fn min_fn<D: DataType>() -> ReduceFunction {
     ReduceFunction::new(
         "let output = min(a, b);".to_string(),
-        "3.40282e+38",
+        max_for_dtype(D::WGSL_TYPE),
         D::WGSL_TYPE,
     )
     .with_name("min")
@@ -823,6 +823,22 @@ impl<const N: usize, D: DataType> Tensor<N, D> {
         <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
     {
         self.min(dim).unsqueeze(dim)
+    }
+}
+
+pub(crate) fn min_for_dtype(dtype: DataTypeEnum) -> &'static str {
+    match dtype {
+        DataTypeEnum::F32 => "-3.40282e+38",
+        DataTypeEnum::F16 => "f16(-65504.0)",
+        DataTypeEnum::U32 => "0",
+    }
+}
+
+pub(crate) fn max_for_dtype(dtype: DataTypeEnum) -> &'static str {
+    match dtype {
+        DataTypeEnum::F32 => "3.40282e+38",
+        DataTypeEnum::F16 => "f16(65504.0)",
+        DataTypeEnum::U32 => "4294967295",
     }
 }
 
