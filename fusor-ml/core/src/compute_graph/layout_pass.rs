@@ -2,16 +2,16 @@ use rustc_hash::FxHashMap;
 
 use crate::{Layout, TensorLayoutInfo, index_select::IndexSelectOperation};
 
-use super::{AnyComputeKey, queue::ComputeQueue};
+use super::{NodeIndex, queue::ComputeQueue};
 
 #[derive(Default)]
 pub(crate) struct LayoutPass {
     queue: ComputeQueue,
-    pub(crate) output_layout: FxHashMap<AnyComputeKey, TensorLayoutInfo>,
+    pub(crate) output_layout: FxHashMap<NodeIndex, TensorLayoutInfo>,
 }
 
 impl LayoutPass {
-    pub fn visit(&mut self, graph: &super::ComputeGraphInner, key: AnyComputeKey) {
+    pub fn visit(&mut self, graph: &super::ComputeGraphInner, key: NodeIndex) {
         self.queue.push_back(key);
 
         while let Some(node) = self.queue.pop_front() {
@@ -23,18 +23,18 @@ impl LayoutPass {
                 continue;
             }
             match node {
-                AnyComputeKey::ElementWise(key) => self.visit_element_wise(graph, key),
-                AnyComputeKey::PairWise(key) => self.visit_pair_wise(graph, key),
-                AnyComputeKey::MatMul(key) => self.visit_mat_mul(graph, key),
-                AnyComputeKey::QMatMul(key) => self.visit_q_mat_mul(graph, key),
-                AnyComputeKey::Reduce(key) => self.visit_reduce(graph, key),
-                AnyComputeKey::MapLayout(key) => self.visit_map_layout(graph, key),
-                AnyComputeKey::Resize(key) => self.visit_resize(graph, key),
-                AnyComputeKey::SliceAssign(key) => self.visit_slice_assign(graph, key),
-                AnyComputeKey::Tensor(key) => self.visit_tensor(graph, key),
-                AnyComputeKey::Dequantize(key) => self.visit_dequantize(graph, key),
-                AnyComputeKey::IndexSelect(key) => self.visit_index_select(graph, key),
-                AnyComputeKey::Custom(key) => self.visit_custom(graph, key),
+                NodeIndex::ElementWise(key) => self.visit_element_wise(graph, key),
+                NodeIndex::PairWise(key) => self.visit_pair_wise(graph, key),
+                NodeIndex::MatMul(key) => self.visit_mat_mul(graph, key),
+                NodeIndex::QMatMul(key) => self.visit_q_mat_mul(graph, key),
+                NodeIndex::Reduce(key) => self.visit_reduce(graph, key),
+                NodeIndex::MapLayout(key) => self.visit_map_layout(graph, key),
+                NodeIndex::Resize(key) => self.visit_resize(graph, key),
+                NodeIndex::SliceAssign(key) => self.visit_slice_assign(graph, key),
+                NodeIndex::Tensor(key) => self.visit_tensor(graph, key),
+                NodeIndex::Dequantize(key) => self.visit_dequantize(graph, key),
+                NodeIndex::IndexSelect(key) => self.visit_index_select(graph, key),
+                NodeIndex::Custom(key) => self.visit_custom(graph, key),
             }
         }
     }

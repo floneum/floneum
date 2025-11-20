@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     DataType, Device, Tensor, TensorData,
-    compute_graph::AnyComputeKey,
+    compute_graph::NodeIndex,
     layout::TILE_SIZE,
     mir::{
         inputs::MirValue, kernel::GenericKernel, operation::Operation,
@@ -40,9 +40,9 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 
 #[derive(Debug, Clone)]
 struct WhereCondOperation {
-    pub(crate) condition: AnyComputeKey,
-    pub(crate) on_true: AnyComputeKey,
-    pub(crate) on_false: AnyComputeKey,
+    pub(crate) condition: NodeIndex,
+    pub(crate) on_true: NodeIndex,
+    pub(crate) on_false: NodeIndex,
     pub(crate) condition_datatype: DataTypeEnum,
     pub(crate) output_datatype: DataTypeEnum,
     pub(crate) shape: Box<[usize]>,
@@ -50,9 +50,9 @@ struct WhereCondOperation {
 
 impl WhereCondOperation {
     pub fn new(
-        condition: AnyComputeKey,
-        on_true: AnyComputeKey,
-        on_false: AnyComputeKey,
+        condition: NodeIndex,
+        on_true: NodeIndex,
+        on_false: NodeIndex,
         condition_datatype: DataTypeEnum,
         output_datatype: DataTypeEnum,
         shape: &[usize],
@@ -130,7 +130,7 @@ impl Operation for WhereCondOperation {
         titled_map_dispatch_size(TILE_SIZE, *workgroup_shape, &inputs)
     }
 
-    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
+    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
         f(self.condition);
         f(self.on_true);
         f(self.on_false);
@@ -178,7 +178,7 @@ impl Operation for WhereCondOperation {
 
     fn output_layout(
         &self,
-        layouts: &rustc_hash::FxHashMap<AnyComputeKey, crate::TensorLayoutInfo>,
+        layouts: &rustc_hash::FxHashMap<NodeIndex, crate::TensorLayoutInfo>,
     ) -> crate::TensorLayoutInfo {
         let on_true = layouts.get(&self.on_true).unwrap();
         on_true.clone()

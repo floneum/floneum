@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use crate::{
     DataTypeEnum, SmallerRank, TILE_SIZE, Tensor, TensorData,
-    compute_graph::AnyComputeKey,
+    compute_graph::NodeIndex,
     map_layout::MapLayoutOperation,
     mir::{
         kernel::GenericKernel,
@@ -15,7 +15,7 @@ const BLOCKSIZE: u32 = 256;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ResizeOperation {
-    pub(crate) input: AnyComputeKey,
+    pub(crate) input: NodeIndex,
     pub(crate) current_shape: Box<[usize]>,
     pub(crate) new_shape: Box<[usize]>,
     pub(crate) fill_shape: Box<[usize]>,
@@ -23,7 +23,7 @@ pub(crate) struct ResizeOperation {
 
 impl ResizeOperation {
     pub fn new(
-        input: AnyComputeKey,
+        input: NodeIndex,
         current_shape: Box<[usize]>,
         new_shape: Box<[usize]>,
         fill_shape: Box<[usize]>,
@@ -171,7 +171,7 @@ impl Operation for ResizeOperation {
         ]
     }
 
-    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
+    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
         f(self.input);
     }
 

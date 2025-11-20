@@ -13,7 +13,7 @@ use wgpu::{COPY_BUFFER_ALIGNMENT, util::DownloadBuffer};
 use crate::{
     Device, ElementWiseOperation, MatMulOperation, MatMulParams, PairWiseFunction,
     PairWiseOperation, ReduceFunction, ReduceOperation,
-    compute_graph::{AnyComputeKey, ComputeGraph},
+    compute_graph::{NodeIndex, ComputeGraph},
     index_select::IndexSelectOperation,
     layout::Layout,
     map_layout::MapLayoutOperation,
@@ -202,7 +202,7 @@ pub(crate) struct LazyTensorData {
     device: Device,
     info: TensorInfo,
     graph: ComputeGraph,
-    key: AnyComputeKey,
+    key: NodeIndex,
 }
 
 impl Clone for LazyTensorData {
@@ -242,7 +242,7 @@ impl LazyTensorData {
         device: Device,
         graph: ComputeGraph,
         info: TensorInfo,
-        key: AnyComputeKey,
+        key: NodeIndex,
     ) -> Self {
         Self {
             device,
@@ -948,7 +948,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         Tensor::from_parts(self.data.map_layout(op))
     }
 
-    pub(crate) fn key(&self) -> AnyComputeKey {
+    pub(crate) fn key(&self) -> NodeIndex {
         self.data.key
     }
 

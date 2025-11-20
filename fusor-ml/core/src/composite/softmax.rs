@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     DataType, DataTypeEnum, LastRank, Layout, Tensor, TensorData,
-    compute_graph::AnyComputeKey,
+    compute_graph::NodeIndex,
     min_for_dtype,
     mir::{
         globals::KernelGlobalSpace,
@@ -80,14 +80,14 @@ fn combine(
 
 #[derive(Debug, Clone)]
 struct SoftmaxOperation {
-    pub(crate) value: AnyComputeKey,
+    pub(crate) value: NodeIndex,
     pub(crate) axis: usize,
     pub(crate) shape: Box<[usize]>,
     pub(crate) datatype: DataTypeEnum,
 }
 
 impl SoftmaxOperation {
-    pub fn new(value: AnyComputeKey, datatype: DataTypeEnum, axis: usize, shape: &[usize]) -> Self {
+    pub fn new(value: NodeIndex, datatype: DataTypeEnum, axis: usize, shape: &[usize]) -> Self {
         Self {
             value,
             axis,
@@ -432,7 +432,7 @@ impl Operation for SoftmaxOperation {
         [workgroup_size, 1, 1]
     }
 
-    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
+    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
         f(self.value);
     }
 
@@ -497,7 +497,7 @@ impl Operation for SoftmaxOperation {
 
     fn output_layout(
         &self,
-        map: &rustc_hash::FxHashMap<AnyComputeKey, crate::TensorLayoutInfo>,
+        map: &rustc_hash::FxHashMap<NodeIndex, crate::TensorLayoutInfo>,
     ) -> crate::TensorLayoutInfo {
         let input_layout = map.get(&self.value).unwrap();
         input_layout.clone()

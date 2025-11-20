@@ -1,6 +1,6 @@
 use crate::{
     DataTypeEnum, ElementWiseFunctions, TILE_SIZE, Tensor, TensorData,
-    compute_graph::AnyComputeKey,
+    compute_graph::NodeIndex,
     mir::{kernel::GenericKernel, operation::Operation},
     padded_tensor_size,
 };
@@ -8,8 +8,8 @@ use std::fmt::Write;
 
 #[derive(Debug)]
 pub(crate) struct IndexSelectOperation {
-    pub(crate) input: AnyComputeKey,
-    pub(crate) indexes: AnyComputeKey,
+    pub(crate) input: NodeIndex,
+    pub(crate) indexes: NodeIndex,
     pub(crate) datatype: DataTypeEnum,
     pub(crate) dimension: usize,
     pub(crate) tile_size: u32,
@@ -21,8 +21,8 @@ pub(crate) struct IndexSelectOperation {
 
 impl IndexSelectOperation {
     pub fn new(
-        input: AnyComputeKey,
-        indexes: AnyComputeKey,
+        input: NodeIndex,
+        indexes: NodeIndex,
         datatype: DataTypeEnum,
         dimension: usize,
         value_shape: &[usize],
@@ -220,7 +220,7 @@ impl Operation for IndexSelectOperation {
         [workgroup_size_x, workgroup_size_y, workgroup_size_z]
     }
 
-    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
+    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
         f(self.input);
         f(self.indexes);
     }

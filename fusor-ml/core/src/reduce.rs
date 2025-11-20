@@ -10,14 +10,14 @@ use crate::{
 };
 use crate::{
     Layout, Tensor,
-    compute_graph::AnyComputeKey,
+    compute_graph::NodeIndex,
     mir::{function::Function, inputs::MirValue, kernel::GenericKernel},
     tensor::{DataType, DataTypeEnum, TensorData},
 };
 
 #[derive(Debug, Clone)]
 pub(crate) struct ReduceOperation {
-    pub(crate) value: AnyComputeKey,
+    pub(crate) value: NodeIndex,
     pre_element_wise: ElementWiseFunctions,
     pub(crate) function: ReduceFunction,
     post_element_wise: ElementWiseFunctions,
@@ -27,7 +27,7 @@ pub(crate) struct ReduceOperation {
 
 impl ReduceOperation {
     pub fn new(
-        value: AnyComputeKey,
+        value: NodeIndex,
         function: ReduceFunction,
         axis: usize,
         shape: &[usize],
@@ -399,7 +399,7 @@ impl Operation for ReduceOperation {
         [workgroup_size, 1, 1]
     }
 
-    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
+    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
         f(self.value);
     }
 

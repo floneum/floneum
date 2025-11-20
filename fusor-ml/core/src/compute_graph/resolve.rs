@@ -21,7 +21,7 @@ use crate::{
 };
 
 use super::{
-    AnyComputeKey, ComputeGraphInner, DequantizeComputeKey, ElementWiseComputeNodeKey,
+    NodeIndex, ComputeGraphInner, DequantizeComputeKey, ElementWiseComputeNodeKey,
     IndexSelectComputeNodeKey, MapLayoutComputeNodeKey, MatMulComputeNodeKey,
     PairWiseComputeNodeKey, QMatMulComputeNodeKey, ReduceComputeNodeKey, ResizeComputeNodeKey,
     SliceAssignComputeNodeKey, TensorComputeNodeKey, dependency_map::visit_dependencies,
@@ -31,16 +31,16 @@ use super::{
 pub(crate) struct Resolver<'a> {
     graph: &'a mut ComputeGraphInner,
     command_encoder: &'a mut CommandEncoder,
-    queued_operations: Vec<(AnyComputeKey, Arc<dyn Operation>)>,
-    target: AnyComputeKey,
+    queued_operations: Vec<(NodeIndex, Arc<dyn Operation>)>,
+    target: NodeIndex,
     queue: ComputeQueue,
-    resolved_set: FxHashSet<AnyComputeKey>,
+    resolved_set: FxHashSet<NodeIndex>,
 }
 
 impl<'a> Resolver<'a> {
     pub(crate) fn new(
         graph: &'a mut ComputeGraphInner,
-        target: AnyComputeKey,
+        target: NodeIndex,
         command_encoder: &'a mut CommandEncoder,
     ) -> Self {
         let resolved_set = graph.cached_results.keys().cloned().collect();
@@ -95,12 +95,12 @@ impl<'a> Resolver<'a> {
                 current_constraints = constraint;
             }
             // Map layout isn't really a kernel. Resolve it immediately
-            let map_layout = if let AnyComputeKey::MapLayout(key) = node {
+            let map_layout = if let NodeIndex::MapLayout(key) = node {
                 let map_layout = self.graph.nodes.map_layout[&key].clone();
                 Some(map_layout)
             }
             // Try to lower the resize immediately
-            else if let AnyComputeKey::Resize(key) = node {
+            else if let NodeIndex::Resize(key) = node {
                 let resize = self.graph.nodes.resize[&key].clone();
                 resize.lower(self.graph)
             } else {
@@ -151,11 +151,11 @@ impl<'a> Resolver<'a> {
         &mut self,
         new_inputs: Vec<MirValue>,
         kernel: &mut GenericKernel,
-        key: AnyComputeKey,
+        key: NodeIndex,
         operation: Arc<dyn Operation>,
         inputs: &mut Vec<Vec<MirValue>>,
         all_input_values: &mut Vec<KernelInputValue>,
-        queued_operations: &mut Vec<(AnyComputeKey, Arc<dyn Operation>)>,
+        queued_operations: &mut Vec<(NodeIndex, Arc<dyn Operation>)>,
     ) {
         for input in &new_inputs {
             input.visit_input_values(|value| {
@@ -180,7 +180,7 @@ impl<'a> Resolver<'a> {
     fn flush_operations(
         &mut self,
         mut kernel: &mut GenericKernel,
-        queued_operations: &[(AnyComputeKey, Arc<dyn Operation>)],
+        queued_operations: &[(NodeIndex, Arc<dyn Operation>)],
         inputs: &[Vec<MirValue>],
         all_input_values: &[KernelInputValue],
         workgroup_shape: workgroup_shape::WorkgroupShape,
@@ -188,7 +188,7 @@ impl<'a> Resolver<'a> {
         let mut max_dispatch_size = [0; 3];
         for ((key, operation), inputs) in queued_operations.iter().zip(inputs) {
             // Map layout isn't really a kernel. Skip it
-            if matches!(key, AnyComputeKey::MapLayout(_)) {
+            if matches!(key, NodeIndex::MapLayout(_)) {
                 continue;
             }
 
@@ -239,41 +239,41 @@ impl<'a> Resolver<'a> {
             }
 
             let resolved = match node {
-                AnyComputeKey::ElementWise(element_wise_compute_node_key) => {
+                NodeIndex::ElementWise(element_wise_compute_node_key) => {
                     self.resolve_element_wise(element_wise_compute_node_key)
                 }
-                AnyComputeKey::PairWise(pair_wise_compute_node_key) => {
+                NodeIndex::PairWise(pair_wise_compute_node_key) => {
                     self.resolve_pair_wise(pair_wise_compute_node_key)
                 }
-                AnyComputeKey::MatMul(mat_mul_compute_node_key) => {
+                NodeIndex::MatMul(mat_mul_compute_node_key) => {
                     self.resolve_mat_mul(mat_mul_compute_node_key)
                 }
-                AnyComputeKey::Reduce(reduce_compute_node_key) => {
+                NodeIndex::Reduce(reduce_compute_node_key) => {
                     self.resolve_reduce(reduce_compute_node_key)
                 }
-                AnyComputeKey::Tensor(tensor_compute_node_key) => {
+                NodeIndex::Tensor(tensor_compute_node_key) => {
                     self.resolve_tensor(tensor_compute_node_key);
                     continue;
                 }
-                AnyComputeKey::MapLayout(slice_compute_node_key) => {
+                NodeIndex::MapLayout(slice_compute_node_key) => {
                     self.resolve_map_layout(slice_compute_node_key)
                 }
-                AnyComputeKey::Resize(resize_compute_node_key) => {
+                NodeIndex::Resize(resize_compute_node_key) => {
                     self.resolve_resize(resize_compute_node_key)
                 }
-                AnyComputeKey::SliceAssign(slice_assign_compute_node_key) => {
+                NodeIndex::SliceAssign(slice_assign_compute_node_key) => {
                     self.resolve_slice_assign(slice_assign_compute_node_key)
                 }
-                AnyComputeKey::IndexSelect(index_select_compute_node_key) => {
+                NodeIndex::IndexSelect(index_select_compute_node_key) => {
                     self.resolve_index_select(index_select_compute_node_key)
                 }
-                AnyComputeKey::QMatMul(q_mat_mul_compute_node_key) => {
+                NodeIndex::QMatMul(q_mat_mul_compute_node_key) => {
                     self.resolve_q_mat_mul(q_mat_mul_compute_node_key)
                 }
-                AnyComputeKey::Dequantize(dequantize_compute_node_key) => {
+                NodeIndex::Dequantize(dequantize_compute_node_key) => {
                     self.resolve_dequantize(dequantize_compute_node_key)
                 }
-                AnyComputeKey::Custom(custom_compute_key) => {
+                NodeIndex::Custom(custom_compute_key) => {
                     self.resolve_custom(custom_compute_key)
                 }
             };
@@ -301,10 +301,10 @@ impl<'a> Resolver<'a> {
 
     fn collect_element_wise_ops(&mut self, key: ElementWiseComputeNodeKey) -> ElementWiseOperation {
         let mut functions = Vec::new();
-        let mut current_key = AnyComputeKey::ElementWise(key);
+        let mut current_key = NodeIndex::ElementWise(key);
         let mut ty = DataTypeEnum::F32;
         let mut shape = Box::new([]) as Box<[usize]>;
-        while let AnyComputeKey::ElementWise(key) = current_key {
+        while let NodeIndex::ElementWise(key) = current_key {
             // If the result is already cached, stop collecting element wise ops
             if let Some(cached) = self.graph.cached_results.get(&current_key) {
                 ty = cached.datatype();
@@ -329,19 +329,19 @@ impl<'a> Resolver<'a> {
 
         if !input_cached {
             // Merge into the output of the reduce kernel if possible and it isn't already cached
-            if let AnyComputeKey::Reduce(key) = input {
+            if let NodeIndex::Reduce(key) = input {
                 return self.resolve_reduce_then(key, Some(functions));
             }
             // Merge into the output of the pair wise kernel if possible and it isn't already cached
-            if let AnyComputeKey::PairWise(key) = input {
+            if let NodeIndex::PairWise(key) = input {
                 return self.resolve_pair_wise_then(key, Some(functions));
             }
             // Merge into the output of the mat mul kernel if possible and it isn't already cached
-            if let AnyComputeKey::MatMul(key) = input {
+            if let NodeIndex::MatMul(key) = input {
                 return self.resolve_mat_mul_then(key, Some(functions));
             }
             // Merge into the output of the dequantize kernel if possible and it isn't already cached
-            if let AnyComputeKey::Dequantize(key) = input {
+            if let NodeIndex::Dequantize(key) = input {
                 return self.resolve_dequantize_then(key, Some(functions));
             }
         }
@@ -369,14 +369,14 @@ impl<'a> Resolver<'a> {
         let first_pre_element_wise = operation.pre_element_wise[0].clone();
         let mut second_input = operation.second;
         let second_pre_element_wise = operation.pre_element_wise[1].clone();
-        let first_pre_element_wise = if let AnyComputeKey::ElementWise(key) = first_input {
+        let first_pre_element_wise = if let NodeIndex::ElementWise(key) = first_input {
             let functions = self.collect_element_wise_ops(key);
             first_input = functions.value;
             functions.functions
         } else {
             first_pre_element_wise
         };
-        let second_pre_element_wise = if let AnyComputeKey::ElementWise(key) = second_input {
+        let second_pre_element_wise = if let NodeIndex::ElementWise(key) = second_input {
             let functions = self.collect_element_wise_ops(key);
             second_input = functions.value;
             functions.functions
@@ -413,14 +413,14 @@ impl<'a> Resolver<'a> {
         let second_pre_element_wise = operation.pre_element_wise[1].clone();
         let parameters = operation.parameters.clone();
 
-        let first_pre_element_wise = if let AnyComputeKey::ElementWise(key) = first {
+        let first_pre_element_wise = if let NodeIndex::ElementWise(key) = first {
             let functions = self.collect_element_wise_ops(key);
             first = functions.value;
             functions.functions
         } else {
             first_pre_element_wise
         };
-        let second_pre_element_wise = if let AnyComputeKey::ElementWise(key) = second {
+        let second_pre_element_wise = if let NodeIndex::ElementWise(key) = second {
             let functions = self.collect_element_wise_ops(key);
             second = functions.value;
             functions.functions
@@ -488,7 +488,7 @@ impl<'a> Resolver<'a> {
         let operation = self.graph.nodes.reduce[&key].clone();
         let mut input_key = operation.value;
 
-        let element_wise_before = if let AnyComputeKey::ElementWise(key) = operation.value {
+        let element_wise_before = if let NodeIndex::ElementWise(key) = operation.value {
             let functions = self.collect_element_wise_ops(key);
             input_key = functions.value;
             functions.functions
@@ -547,7 +547,7 @@ impl<'a> Resolver<'a> {
         let mut indexes = operation.indexes;
         let value_shape = operation.value_shape.clone();
         let indexes_shape = operation.indexes_shape.clone();
-        let mut input_pre_element_wise = if let AnyComputeKey::ElementWise(key) = input {
+        let mut input_pre_element_wise = if let NodeIndex::ElementWise(key) = input {
             let functions = self.collect_element_wise_ops(key);
             input = functions.value;
             functions
@@ -564,7 +564,7 @@ impl<'a> Resolver<'a> {
                 input_pre_element_wise.functions.push(function.clone());
             }
         }
-        let indexes_pre_element_wise = if let AnyComputeKey::ElementWise(key) = indexes {
+        let indexes_pre_element_wise = if let NodeIndex::ElementWise(key) = indexes {
             let functions = self.collect_element_wise_ops(key);
             indexes = functions.value;
             functions
@@ -595,7 +595,7 @@ impl<'a> Resolver<'a> {
 
         self.graph.cached_results.insert(key.into(), tensor);
         // Mark this node as resolved
-        self.resolved_set.insert(AnyComputeKey::Tensor(key));
+        self.resolved_set.insert(NodeIndex::Tensor(key));
     }
 
     fn resolve_custom(&mut self, key: CustomComputeKey) -> Arc<dyn Operation + Send + Sync> {

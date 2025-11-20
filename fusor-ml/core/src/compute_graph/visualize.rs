@@ -5,7 +5,7 @@ use crate::compute_graph::CustomComputeKey;
 use super::dependency_map::visit_dependencies;
 use super::queue::ComputeQueue;
 use super::{
-    AnyComputeKey, ComputeGraphInner, ComputeGraphNodes, DequantizeComputeKey,
+    NodeIndex, ComputeGraphInner, ComputeGraphNodes, DequantizeComputeKey,
     ElementWiseComputeNodeKey, IndexSelectComputeNodeKey, MapLayoutComputeNodeKey,
     MatMulComputeNodeKey, PairWiseComputeNodeKey, QMatMulComputeNodeKey, ReduceComputeNodeKey,
     ResizeComputeNodeKey, SliceAssignComputeNodeKey, TensorComputeNodeKey, layout_pass,
@@ -17,7 +17,7 @@ use tabbycat::{Edge, GraphBuilder, GraphType, Identity, Stmt, StmtList};
 struct GraphVisPass {
     queued: ComputeQueue,
     layout_pass: layout_pass::LayoutPass,
-    identities: FxHashMap<AnyComputeKey, Identity>,
+    identities: FxHashMap<NodeIndex, Identity>,
     statements: Vec<Stmt>,
 }
 
@@ -239,7 +239,7 @@ impl GraphVisPass {
 }
 
 impl ComputeGraphInner {
-    pub(crate) fn graphvis(&self, root: AnyComputeKey) -> Graph {
+    pub(crate) fn graphvis(&self, root: NodeIndex) -> Graph {
         let mut layout_pass = layout_pass::LayoutPass::default();
         layout_pass.visit(self, root);
         let mut graph_vis_pass = GraphVisPass {
@@ -278,18 +278,18 @@ impl ComputeGraphInner {
             }
             let nodes = &self.nodes;
             match node {
-                AnyComputeKey::ElementWise(key) => graph_vis_pass.visit_element_wise(key, nodes),
-                AnyComputeKey::PairWise(key) => graph_vis_pass.visit_pair_wise(key, nodes),
-                AnyComputeKey::MatMul(key) => graph_vis_pass.visit_mat_mul(key, nodes),
-                AnyComputeKey::QMatMul(key) => graph_vis_pass.visit_q_mat_mul(key, nodes),
-                AnyComputeKey::Reduce(key) => graph_vis_pass.visit_reduce(key, nodes),
-                AnyComputeKey::MapLayout(key) => graph_vis_pass.visit_map_layout(key, nodes),
-                AnyComputeKey::Resize(key) => graph_vis_pass.visit_resize(key, nodes),
-                AnyComputeKey::SliceAssign(key) => graph_vis_pass.visit_slice_assign(key, nodes),
-                AnyComputeKey::Tensor(key) => graph_vis_pass.visit_tensor(key, nodes),
-                AnyComputeKey::Dequantize(key) => graph_vis_pass.visit_dequantize(key, nodes),
-                AnyComputeKey::IndexSelect(key) => graph_vis_pass.visit_index_select(key, nodes),
-                AnyComputeKey::Custom(key) => graph_vis_pass.visit_custom(key, nodes),
+                NodeIndex::ElementWise(key) => graph_vis_pass.visit_element_wise(key, nodes),
+                NodeIndex::PairWise(key) => graph_vis_pass.visit_pair_wise(key, nodes),
+                NodeIndex::MatMul(key) => graph_vis_pass.visit_mat_mul(key, nodes),
+                NodeIndex::QMatMul(key) => graph_vis_pass.visit_q_mat_mul(key, nodes),
+                NodeIndex::Reduce(key) => graph_vis_pass.visit_reduce(key, nodes),
+                NodeIndex::MapLayout(key) => graph_vis_pass.visit_map_layout(key, nodes),
+                NodeIndex::Resize(key) => graph_vis_pass.visit_resize(key, nodes),
+                NodeIndex::SliceAssign(key) => graph_vis_pass.visit_slice_assign(key, nodes),
+                NodeIndex::Tensor(key) => graph_vis_pass.visit_tensor(key, nodes),
+                NodeIndex::Dequantize(key) => graph_vis_pass.visit_dequantize(key, nodes),
+                NodeIndex::IndexSelect(key) => graph_vis_pass.visit_index_select(key, nodes),
+                NodeIndex::Custom(key) => graph_vis_pass.visit_custom(key, nodes),
             }
         }
 

@@ -3,7 +3,7 @@ use crate::matmul::sgemv_params::gemv_parameters;
 use crate::mir::operation::Operation;
 use crate::{
     Device, ElementWiseFunctions, Tensor,
-    compute_graph::AnyComputeKey,
+    compute_graph::NodeIndex,
     mir::kernel::GenericKernel,
     tensor::{DataType, DataTypeEnum, TensorData},
 };
@@ -29,8 +29,8 @@ pub enum MatMulParams {
 #[derive(Debug, Clone)]
 pub(crate) struct MatMulOperation {
     pub(crate) datatype: DataTypeEnum,
-    pub(crate) first: AnyComputeKey,
-    pub(crate) second: AnyComputeKey,
+    pub(crate) first: NodeIndex,
+    pub(crate) second: NodeIndex,
     pub(crate) first_shape: Box<[usize]>,
     pub(crate) second_shape: Box<[usize]>,
     pub(crate) out_shape: Box<[usize]>,
@@ -42,8 +42,8 @@ pub(crate) struct MatMulOperation {
 impl MatMulOperation {
     pub fn new(
         datatype: DataTypeEnum,
-        first: AnyComputeKey,
-        second: AnyComputeKey,
+        first: NodeIndex,
+        second: NodeIndex,
         first_shape: &[usize],
         second_shape: &[usize],
         parameters: Option<MatMulParams>,
@@ -67,8 +67,8 @@ impl MatMulOperation {
 
     pub(crate) fn new_with_parameters(
         datatype: DataTypeEnum,
-        first: AnyComputeKey,
-        second: AnyComputeKey,
+        first: NodeIndex,
+        second: NodeIndex,
         first_shape: &[usize],
         second_shape: &[usize],
         parameters: MatMulParams,
@@ -168,7 +168,7 @@ impl Operation for MatMulOperation {
         }
     }
 
-    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
+    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
         f(self.first);
         f(self.second);
     }

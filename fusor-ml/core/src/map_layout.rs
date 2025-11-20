@@ -1,7 +1,7 @@
 use std::{fmt::Debug, ops::Range, sync::Arc};
 
 use crate::{
-    DataType, Layout, MaxRank, Tensor, TensorData, compute_graph::AnyComputeKey,
+    DataType, Layout, MaxRank, Tensor, TensorData, compute_graph::NodeIndex,
     mir::operation::Operation, slice_shape, slice_strides,
 };
 
@@ -10,7 +10,7 @@ type MapStride = Arc<dyn Fn(usize, &[usize]) -> (usize, Box<[usize]>) + Send + S
 
 #[derive(Clone)]
 pub(crate) struct MapLayoutOperation {
-    pub(crate) input: AnyComputeKey,
+    pub(crate) input: NodeIndex,
     pub(crate) map_size: MapSize,
     pub(crate) map_stride: MapStride,
 }
@@ -25,7 +25,7 @@ impl Debug for MapLayoutOperation {
 
 impl MapLayoutOperation {
     pub fn new(
-        input: AnyComputeKey,
+        input: NodeIndex,
         map_size: impl Fn(&[usize]) -> Box<[usize]> + Send + Sync + 'static,
         map_stride: impl Fn(usize, &[usize]) -> (usize, Box<[usize]>) + Send + Sync + 'static,
     ) -> Self {
@@ -72,7 +72,7 @@ impl Operation for MapLayoutOperation {
         [1, 1, 1]
     }
 
-    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
+    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
         f(self.input);
     }
 

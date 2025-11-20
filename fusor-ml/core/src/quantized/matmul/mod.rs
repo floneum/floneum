@@ -1,6 +1,6 @@
 use crate::{
     DataType, DataTypeEnum, Device, Tensor, TensorData,
-    compute_graph::AnyComputeKey,
+    compute_graph::NodeIndex,
     mir::{inputs::MirValue, kernel::GenericKernel, operation::Operation},
 };
 
@@ -14,7 +14,7 @@ pub use sgemm::{ChunkedSgemmConfig, GeneralSgemmConfig};
 #[derive(Debug)]
 pub(crate) struct QMatMulOperation {
     pub(crate) input_datatype: DataTypeEnum,
-    pub(crate) input: AnyComputeKey,
+    pub(crate) input: NodeIndex,
     pub(crate) matrix: QMatrix,
     pub(crate) in_shape: Box<[usize]>,
     pub(crate) out_shape: Box<[usize]>,
@@ -26,7 +26,7 @@ impl QMatMulOperation {
     pub(crate) fn new(
         input_datatype: DataTypeEnum,
         input_shape: &[usize],
-        input: AnyComputeKey,
+        input: NodeIndex,
         matrix: QMatrix,
     ) -> Self {
         let last_dim = input_shape.len() - 1;
@@ -687,7 +687,7 @@ impl Operation for QMatMulOperation {
         }
     }
 
-    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
+    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
         f(self.input);
     }
 

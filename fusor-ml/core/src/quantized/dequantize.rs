@@ -63,7 +63,7 @@ impl Operation for DequantizeOperation {
         })
     }
 
-    fn visit_dependencies(&self, _: &mut dyn FnMut(crate::compute_graph::AnyComputeKey)) {}
+    fn visit_dependencies(&self, _: &mut dyn FnMut(crate::compute_graph::NodeIndex)) {}
 
     fn inputs(&self, nodes: &crate::compute_graph::ComputeGraphInner) -> Vec<MirValue> {
         let shape = &self.matrix.shape;
