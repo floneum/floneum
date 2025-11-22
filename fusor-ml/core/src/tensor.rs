@@ -234,16 +234,8 @@ impl LazyTensorData {
         }
     }
 
-    pub(crate) fn from_parts(
-        device: Device,
-        info: TensorInfo,
-        key: NodeIndex,
-    ) -> Self {
-        Self {
-            device,
-            info,
-            key,
-        }
+    pub(crate) fn from_parts(device: Device, info: TensorInfo, key: NodeIndex) -> Self {
+        Self { device, info, key }
     }
 
     pub(crate) fn custom(&self, custom: Arc<dyn Operation + Send + Sync>) -> Self {
@@ -251,11 +243,7 @@ impl LazyTensorData {
         let info = self.info.clone();
         let key = device.compute_graph().create_custom(custom);
 
-        Self {
-            device,
-            info,
-            key,
-        }
+        Self::from_parts(device, info, key)
     }
 
     pub(crate) fn element_wise(&self, function: ElementWiseOperation) -> Self {
@@ -264,11 +252,7 @@ impl LazyTensorData {
         info.datatype = function.functions.out_datatype();
         let key = device.compute_graph().create_element_wise(function);
 
-        Self {
-            device,
-            info,
-            key,
-        }
+        Self::from_parts(device, info, key)
     }
 
     pub(crate) fn pair_wise(&self, function: PairWiseOperation) -> Self {
@@ -276,11 +260,7 @@ impl LazyTensorData {
         let info = self.info.clone();
         let key = device.compute_graph().create_pair_wise(function);
 
-        Self {
-            device,
-            info,
-            key,
-        }
+        Self::from_parts(device, info, key)
     }
 
     pub(crate) fn mat_mul(&self, function: MatMulOperation) -> Self {
@@ -289,11 +269,7 @@ impl LazyTensorData {
         info.shape = function.out_shape.clone();
         let key = device.compute_graph().create_mat_mul(function);
 
-        Self {
-            device,
-            info,
-            key,
-        }
+        Self::from_parts(device, info, key)
     }
 
     pub(crate) fn q_mat_mul(&self, function: QMatMulOperation) -> Self {
@@ -302,11 +278,7 @@ impl LazyTensorData {
         info.shape = function.out_shape.clone();
         let key = device.compute_graph().create_q_mat_mul(function);
 
-        Self {
-            device,
-            info,
-            key,
-        }
+        Self::from_parts(device, info, key)
     }
 
     pub(crate) fn reduce(&self, function: ReduceOperation) -> Self {
@@ -323,11 +295,7 @@ impl LazyTensorData {
         info = TensorInfo::new(new_shape, info.datatype());
         let key = device.compute_graph().create_reduce(function);
 
-        Self {
-            device,
-            info,
-            key,
-        }
+        Self::from_parts(device, info, key)
     }
 
     pub(crate) fn map_layout(&self, op: MapLayoutOperation) -> Self {
@@ -335,11 +303,7 @@ impl LazyTensorData {
         let info = TensorInfo::new((op.map_size)(self.info.shape()), self.info.datatype());
         let key = device.compute_graph().create_map_layout(op);
 
-        Self {
-            device,
-            info,
-            key,
-        }
+        Self::from_parts(device, info, key)
     }
 
     pub(crate) fn resize(&self, op: ResizeOperation) -> Self {
@@ -347,11 +311,7 @@ impl LazyTensorData {
         let info = TensorInfo::new(op.new_shape.clone(), self.info.datatype());
         let key = device.compute_graph().create_resize(op);
 
-        Self {
-            device,
-            info,
-            key,
-        }
+        Self::from_parts(device, info, key)
     }
 
     pub(crate) fn slice_assign(&self, op: SliceAssignOperation) -> Self {
@@ -359,11 +319,7 @@ impl LazyTensorData {
         let info = self.info.clone();
         let key = device.compute_graph().create_slice_assign(op);
 
-        Self {
-            device,
-            info,
-            key,
-        }
+        Self::from_parts(device, info, key)
     }
 
     pub(crate) fn index_select(&self, op: IndexSelectOperation) -> Self {
@@ -372,11 +328,7 @@ impl LazyTensorData {
         info.shape = op.output_shape();
         let key = device.compute_graph().create_index_select(op);
 
-        Self {
-            device,
-            info,
-            key,
-        }
+        Self::from_parts(device, info, key)
     }
 
     pub(crate) fn materialize(&self) -> TensorData {

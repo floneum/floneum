@@ -180,7 +180,7 @@ impl ComputeGraphInner {
     fn create_node(&mut self, node: ComputeGraphNodeVariant) -> NodeIndex {
         let node = self.nodes.nodes.add_node(ComputeGraphNode {
             variant: node,
-            reference_count: 0,
+            reference_count: 1,
             cached: None,
         });
         self.add_dependency_edges(node);
