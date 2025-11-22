@@ -64,7 +64,7 @@ impl Operation for SliceAssignOperation {
     }
 
     fn inputs(&self, nodes: &ComputeGraphInner) -> Vec<crate::mir::inputs::MirValue> {
-        let input = nodes.cached_results.get(&self.input).unwrap();
+        let input = nodes.get_cached_result(self.input).unwrap();
         let input = input.slice(&self.slices);
         let value = nodes.get_result_or_qmatrix(self.value).unwrap();
 

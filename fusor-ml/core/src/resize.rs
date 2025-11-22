@@ -49,7 +49,7 @@ impl ResizeOperation {
             return None;
         }
 
-        let input = graph.cached_results.get(&self.input)?;
+        let input = graph.get_cached_result(self.input)?;
         let input_layout = input.layout();
 
         // Find the chunks of strides that are contiguous in the input
@@ -179,7 +179,7 @@ impl Operation for ResizeOperation {
         &self,
         nodes: &crate::compute_graph::ComputeGraphInner,
     ) -> Vec<crate::mir::inputs::MirValue> {
-        let input = nodes.cached_results.get(&self.input).unwrap().clone();
+        let input = nodes.get_cached_result(self.input).unwrap().clone();
         let output = TensorData::new_for_shape(input.device(), &self.new_shape, input.datatype());
         let output_sliced =
             output.slice(&self.fill_shape.iter().map(|x| 0..*x).collect::<Vec<_>>());

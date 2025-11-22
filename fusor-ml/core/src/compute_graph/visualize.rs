@@ -283,7 +283,8 @@ impl ComputeGraphInner {
             if graph_vis_pass.identities.contains_key(&node) {
                 continue;
             }
-            if let Some(data) = self.cached_results.get(&node) {
+            let node_data = self.nodes.nodes.node_weight(node);
+            if let Some(data) = node_data.and_then(|n| n.cached.as_ref()) {
                 let id = Identity::quoted(format!("cached ({}) #{:?}", data.info(), node));
                 graph_vis_pass.statements.push(Stmt::Node {
                     id: id.clone(),

@@ -38,7 +38,11 @@ impl<'a> Resolver<'a> {
         target: NodeIndex,
         command_encoder: &'a mut CommandEncoder,
     ) -> Self {
-        let resolved_set = graph.cached_results.keys().cloned().collect();
+        let resolved_set = graph.nodes.nodes.node_indices()
+            .filter(|&idx| graph.nodes.nodes.node_weight(idx)
+                .map(|n| n.cached.is_some())
+                .unwrap_or(false))
+            .collect();
         Self {
             command_encoder,
             target,
@@ -102,7 +106,7 @@ impl<'a> Resolver<'a> {
             if let Some(map_layout) = map_layout {
                 let result = map_layout.run(graph);
                 // Cache the result
-                graph.cached_results.insert(node, result);
+                graph.set_cached_result(node, result);
             } else {
                 self.push_operation(
                     graph,
@@ -133,7 +137,7 @@ impl<'a> Resolver<'a> {
             );
         }
 
-        graph.cached_results[&self.target].clone()
+        graph.get_result(self.target).expect("Target result not cached")
     }
 
     fn should_extend_kernel(&mut self, _: Vec<MirValue>, _: &[Vec<MirValue>]) -> bool {
@@ -168,7 +172,7 @@ impl<'a> Resolver<'a> {
             panic!("Kernel input value is not a tensor");
         };
         // Cache the result
-        graph.cached_results.insert(key, resolved);
+        graph.set_cached_result(key, resolved);
         inputs.push(new_inputs);
         queued_operations.push((key, operation));
     }
@@ -321,7 +325,7 @@ impl<'a> Resolver<'a> {
         while let Some(node) = graph.nodes.nodes.node_weight(current_key) {
             if let ComputeGraphNodeVariant::ElementWise(operation) = &node.variant {
                 // If the result is already cached, stop collecting element wise ops
-                if let Some(cached) = graph.cached_results.get(&current_key) {
+                if let Some(cached) = &node.cached {
                     ty = cached.datatype();
                     shape = cached.layout().shape().into();
                     break;
@@ -715,7 +719,7 @@ impl<'a> Resolver<'a> {
         key: NodeIndex,
         operation: &TensorData,
     ) {
-        graph.cached_results.insert(key, operation.clone());
+        graph.set_cached_result(key, operation.clone());
         // Mark this node as resolved
         self.resolved_set.insert(key);
     }

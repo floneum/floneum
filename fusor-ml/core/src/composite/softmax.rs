@@ -438,7 +438,7 @@ impl Operation for SoftmaxOperation {
 
     fn inputs(&self, nodes: &crate::compute_graph::ComputeGraphInner) -> Vec<MirValue> {
         let dim = self.axis;
-        let tensor = nodes.cached_results.get(&self.value).unwrap();
+        let tensor = nodes.get_cached_result(self.value).unwrap();
         let layout = tensor.layout();
         let shape = layout.shape();
         let output_type = self.out_datatype();

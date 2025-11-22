@@ -136,9 +136,9 @@ impl Operation for WhereCondOperation {
         &self,
         nodes: &crate::compute_graph::ComputeGraphInner,
     ) -> Vec<crate::mir::inputs::MirValue> {
-        let condition = nodes.cached_results.get(&self.condition).unwrap();
-        let on_true = nodes.cached_results.get(&self.on_true).unwrap();
-        let on_false = nodes.cached_results.get(&self.on_false).unwrap();
+        let condition = nodes.get_cached_result(self.condition).unwrap();
+        let on_true = nodes.get_cached_result(self.on_true).unwrap();
+        let on_false = nodes.get_cached_result(self.on_false).unwrap();
 
         let output_tensor = TensorData::new_for_shape(
             condition.device(),

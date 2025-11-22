@@ -1,11 +1,9 @@
 use std::sync::Arc;
 
-use arc_swap::ArcSwap;
 use parking_lot::RwLock;
 pub(crate) use petgraph::graph::NodeIndex;
 use petgraph::prelude::StableGraph;
 use resolve::Resolver;
-use rustc_hash::FxHashMap;
 use tabbycat::Graph;
 use wgpu::CommandEncoderDescriptor;
 
@@ -24,20 +22,17 @@ use crate::{
 
 #[derive(Clone)]
 pub(crate) struct ComputeGraph {
-    inner: Arc<ArcSwap<Arc<RwLock<ComputeGraphInner>>>>,
+    inner: Arc<RwLock<ComputeGraphInner>>,
 }
 
 impl ComputeGraph {
     pub(crate) fn new(device: Device) -> Self {
-        let inner_arc = Arc::new(RwLock::new(ComputeGraphInner::new(device)));
-        Self {
-            inner: Arc::new(ArcSwap::from_pointee(inner_arc)),
-        }
+        let inner = Arc::new(RwLock::new(ComputeGraphInner::new(device)));
+        Self { inner }
     }
 
     fn with_mut<R, F: FnOnce(&mut ComputeGraphInner) -> R>(&self, f: F) -> R {
-        let inner_arc = self.inner.load_full();
-        let mut inner = inner_arc.write();
+        let mut inner = self.inner.write();
         let result = f(&mut inner);
         #[cfg(feature = "extra_assertions")]
         {
@@ -46,136 +41,58 @@ impl ComputeGraph {
         result
     }
 
-    pub(crate) fn create_element_wise(&self, function: ElementWiseOperation) -> NodeIndex {
-        self.with_mut(|inner| {
-            let node = ComputeGraphNode {
-                variant: ComputeGraphNodeVariant::ElementWise(function),
-            };
-            let id = inner.nodes.nodes.add_node(node);
-            inner.add_reference(id);
-            id
-        })
+    fn create_node(&self, node: ComputeGraphNodeVariant) -> NodeIndex {
+        self.with_mut(|inner| inner.create_node(node))
     }
 
-    pub(crate) fn create_pair_wise(&self, function: PairWiseOperation) -> NodeIndex {
-        self.with_mut(|inner| {
-            let node = ComputeGraphNode {
-                variant: ComputeGraphNodeVariant::PairWise(function),
-            };
-            let id = inner.nodes.nodes.add_node(node);
-            inner.add_reference(id);
-            id
-        })
+    pub(crate) fn create_element_wise(&self, op: ElementWiseOperation) -> NodeIndex {
+        self.create_node(ComputeGraphNodeVariant::ElementWise(op))
     }
 
-    pub(crate) fn create_mat_mul(&self, function: MatMulOperation) -> NodeIndex {
-        self.with_mut(|inner| {
-            let node = ComputeGraphNode {
-                variant: ComputeGraphNodeVariant::MatMul(function),
-            };
-            let id = inner.nodes.nodes.add_node(node);
-            inner.add_reference(id);
-            id
-        })
+    pub(crate) fn create_pair_wise(&self, op: PairWiseOperation) -> NodeIndex {
+        self.create_node(ComputeGraphNodeVariant::PairWise(op))
     }
 
-    pub(crate) fn create_q_mat_mul(&self, function: QMatMulOperation) -> NodeIndex {
-        self.with_mut(|inner| {
-            let node = ComputeGraphNode {
-                variant: ComputeGraphNodeVariant::QMatMul(function),
-            };
-            let id = inner.nodes.nodes.add_node(node);
-            inner.add_reference(id);
-            id
-        })
+    pub(crate) fn create_mat_mul(&self, op: MatMulOperation) -> NodeIndex {
+        self.create_node(ComputeGraphNodeVariant::MatMul(op))
     }
 
-    pub(crate) fn create_reduce(&self, function: ReduceOperation) -> NodeIndex {
-        self.with_mut(|inner| {
-            let node = ComputeGraphNode {
-                variant: ComputeGraphNodeVariant::Reduce(function),
-            };
-            let id = inner.nodes.nodes.add_node(node);
-            inner.add_reference(id);
-            id
-        })
+    pub(crate) fn create_q_mat_mul(&self, op: QMatMulOperation) -> NodeIndex {
+        self.create_node(ComputeGraphNodeVariant::QMatMul(op))
+    }
+
+    pub(crate) fn create_reduce(&self, op: ReduceOperation) -> NodeIndex {
+        self.create_node(ComputeGraphNodeVariant::Reduce(op))
     }
 
     pub(crate) fn create_map_layout(&self, op: MapLayoutOperation) -> NodeIndex {
-        self.with_mut(|inner| {
-            let node = ComputeGraphNode {
-                variant: ComputeGraphNodeVariant::MapLayout(op),
-            };
-            let id = inner.nodes.nodes.add_node(node);
-            inner.add_reference(id);
-            id
-        })
+        self.create_node(ComputeGraphNodeVariant::MapLayout(op))
     }
 
     pub(crate) fn create_resize(&self, op: ResizeOperation) -> NodeIndex {
-        self.with_mut(|inner| {
-            let node = ComputeGraphNode {
-                variant: ComputeGraphNodeVariant::Resize(op),
-            };
-            let id = inner.nodes.nodes.add_node(node);
-            inner.add_reference(id);
-            id
-        })
+        self.create_node(ComputeGraphNodeVariant::Resize(op))
     }
 
     pub(crate) fn create_slice_assign(&self, op: SliceAssignOperation) -> NodeIndex {
-        self.with_mut(|inner| {
-            let node = ComputeGraphNode {
-                variant: ComputeGraphNodeVariant::SliceAssign(op),
-            };
-            let id = inner.nodes.nodes.add_node(node);
-            inner.add_reference(id);
-            id
-        })
+        self.create_node(ComputeGraphNodeVariant::SliceAssign(op))
     }
 
     pub(crate) fn create_index_select(&self, op: IndexSelectOperation) -> NodeIndex {
-        self.with_mut(|inner| {
-            let node = ComputeGraphNode {
-                variant: ComputeGraphNodeVariant::IndexSelect(op),
-            };
-            let id = inner.nodes.nodes.add_node(node);
-            inner.add_reference(id);
-            id
-        })
+        self.create_node(ComputeGraphNodeVariant::IndexSelect(op))
     }
 
-    pub(crate) fn create_tensor(&self, info: TensorData) -> NodeIndex {
-        self.with_mut(|inner| {
-            let node = ComputeGraphNode {
-                variant: ComputeGraphNodeVariant::Tensor(info),
-            };
-            let id = inner.nodes.nodes.add_node(node);
-            inner.add_reference(id);
-            id
-        })
+    pub(crate) fn create_tensor(&self, op: TensorData) -> NodeIndex {
+        self.create_node(ComputeGraphNodeVariant::Tensor(op))
     }
 
     pub(crate) fn dequantize(&self, matrix: QMatrix, ty: DataTypeEnum) -> NodeIndex {
-        self.with_mut(|inner| {
-            let node = ComputeGraphNode {
-                variant: ComputeGraphNodeVariant::Dequantize(DequantizeOperation::new(matrix, ty)),
-            };
-            let id = inner.nodes.nodes.add_node(node);
-            inner.add_reference(id);
-            id
-        })
+        self.create_node(ComputeGraphNodeVariant::Dequantize(
+            DequantizeOperation::new(matrix, ty),
+        ))
     }
 
-    pub(crate) fn create_custom(&self, operation: Arc<dyn Operation + Send + Sync>) -> NodeIndex {
-        self.with_mut(|inner| {
-            let node = ComputeGraphNode {
-                variant: ComputeGraphNodeVariant::Custom(operation),
-            };
-            let id = inner.nodes.nodes.add_node(node);
-            inner.add_reference(id);
-            id
-        })
+    pub(crate) fn create_custom(&self, op: Arc<dyn Operation + Send + Sync>) -> NodeIndex {
+        self.create_node(ComputeGraphNodeVariant::Custom(op))
     }
 
     pub(crate) fn resolve(&self, key: NodeIndex, device: &Device) -> TensorData {
@@ -225,11 +142,10 @@ pub(crate) struct ComputeGraphNodes {
     pub(crate) nodes: StableGraph<ComputeGraphNode, ()>,
 }
 
-impl ComputeGraphNodes {
-}
-
 pub(crate) struct ComputeGraphNode {
     variant: ComputeGraphNodeVariant,
+    reference_count: u32,
+    cached: Option<TensorData>,
 }
 
 #[derive(Clone)]
@@ -251,8 +167,6 @@ pub(crate) enum ComputeGraphNodeVariant {
 pub(crate) struct ComputeGraphInner {
     pub(crate) device: Device,
     pub(crate) nodes: ComputeGraphNodes,
-    pub(crate) cached_results: FxHashMap<NodeIndex, TensorData>,
-    reference_count: FxHashMap<NodeIndex, usize>,
 }
 
 impl ComputeGraphInner {
@@ -260,22 +174,23 @@ impl ComputeGraphInner {
         Self {
             device,
             nodes: ComputeGraphNodes::default(),
-            cached_results: FxHashMap::default(),
-            reference_count: FxHashMap::default(),
         }
     }
 
+    fn create_node(&mut self, node: ComputeGraphNodeVariant) -> NodeIndex {
+        let node = self.nodes.nodes.add_node(ComputeGraphNode {
+            variant: node,
+            reference_count: 0,
+            cached: None,
+        });
+        self.add_dependency_edges(node);
+        node
+    }
+
     fn add_reference(&mut self, key: NodeIndex) {
-        match self.reference_count.get_mut(&key) {
-            Some(count) => {
-                *count += 1;
-            }
-            None => {
-                self.reference_count.insert(key, 1);
-                // Add edges from dependencies to this node
-                self.add_dependency_edges(key);
-            }
-        }
+        let node = self.nodes.nodes.node_weight_mut(key).unwrap();
+
+        node.reference_count += 1;
     }
 
     fn add_dependency_edges(&mut self, key: NodeIndex) {
@@ -324,38 +239,42 @@ impl ComputeGraphInner {
     }
 
     fn remove_reference(&mut self, key: NodeIndex) {
-        if let Some(count) = self.reference_count.get_mut(&key)
-            && *count > 0
-        {
-            *count -= 1;
-            // Remove the node if it is dead
-            self.check_life(key);
-        }
+        let node = self.nodes.nodes.node_weight_mut(key).unwrap();
+        node.reference_count = node.reference_count.saturating_sub(1);
+        self.check_life(key);
     }
 
     fn check_life(&mut self, key: NodeIndex) {
-        if let Some(count) = self.reference_count.get(&key) {
-            if *count > 0 {
+        // Check the reference count
+        let ref_count = self.nodes.nodes.node_weight(key).map(|n| n.reference_count);
+        match ref_count {
+            Some(count) if count > 0 => {
                 // The node still has references, so it is alive
                 return;
             }
-        } else {
-            // The node is already dead
-            return;
+            None => {
+                // The node is already dead
+                return;
+            }
+            _ => {}
         }
 
         // Check if any of the nodes that depend on this key are alive
-        let dependents: Vec<_> = self.nodes.nodes
+        let dependents: Vec<_> = self
+            .nodes
+            .nodes
             .neighbors_directed(key, petgraph::Direction::Outgoing)
             .collect();
 
         for dependant in dependents {
             // If the dependant still exists and it hasn't been computed yet
             // keep this node alive
-            let alive = self.reference_count.contains_key(&dependant);
-            let computed = self.cached_results.contains_key(&dependant);
-            if alive && !computed {
-                return;
+            if let Some(dep_node) = self.nodes.nodes.node_weight(dependant) {
+                let alive = dep_node.reference_count > 0;
+                let computed = dep_node.cached.is_some();
+                if alive && !computed {
+                    return;
+                }
             }
         }
 
@@ -375,9 +294,6 @@ impl ComputeGraphInner {
     }
 
     fn remove_key(&mut self, key: NodeIndex) {
-        // Remove the cached result if it exists
-        self.cached_results.remove(&key);
-        self.reference_count.remove(&key);
         // Remove the node from the graph (this also removes all edges)
         self.nodes.nodes.remove_node(key);
     }
@@ -389,29 +305,37 @@ impl ComputeGraphInner {
         {
             return Some(op.matrix.clone().into());
         }
-        // Otherwise, get from cached results
-        self.cached_results.get(&key).map(|t| t.clone().into())
+        // Otherwise, get from cached results on the node
+        self.nodes
+            .nodes
+            .node_weight(key)
+            .and_then(|n| n.cached.as_ref())
+            .map(|t| t.clone().into())
     }
 
     pub(crate) fn get_result(&self, key: NodeIndex) -> Option<TensorData> {
-        self.cached_results.get(&key).cloned()
+        self.get_cached_result(key).cloned()
+    }
+
+    pub(crate) fn set_cached_result(&mut self, key: NodeIndex, data: TensorData) {
+        let node = self.nodes.nodes.node_weight_mut(key).unwrap();
+        node.cached = Some(data);
+    }
+
+    pub(crate) fn get_cached_result(&self, key: NodeIndex) -> Option<&TensorData> {
+        self.nodes
+            .nodes
+            .node_weight(key)
+            .and_then(|n| n.cached.as_ref())
     }
 
     #[cfg(feature = "extra_assertions")]
     fn contains_key(&self, key: NodeIndex) -> bool {
-        self.cached_results.contains_key(&key) || self.nodes.nodes.contains_node(key)
+        self.nodes.nodes.contains_node(key)
     }
 
     #[cfg(feature = "extra_assertions")]
     fn verify_integrity(&self) {
-        // Check that all node references exist in the graph
-        for key in self.reference_count.keys() {
-            assert!(
-                self.contains_key(*key),
-                "{key:?} does not exist in the reference map"
-            );
-        }
-
         // Check that all edges point to existing nodes
         for key in self.nodes.nodes.node_indices() {
             for neighbor in self.nodes.nodes.neighbors(key) {
@@ -424,7 +348,13 @@ impl ComputeGraphInner {
 
         // Check that all dependencies of non-cached nodes exist
         for key in self.nodes.nodes.node_indices() {
-            if self.cached_results.contains_key(&key) {
+            let is_cached = self
+                .nodes
+                .nodes
+                .node_weight(key)
+                .map(|n| n.cached.is_some())
+                .unwrap_or(false);
+            if is_cached {
                 continue;
             }
             self.visit_dependencies(key, &mut |dependency| {

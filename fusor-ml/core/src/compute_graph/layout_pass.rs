@@ -18,11 +18,11 @@ impl LayoutPass {
             if self.output_layout.contains_key(&node) {
                 continue;
             }
-            if let Some(resolved) = graph.cached_results.get(&node) {
+            let node_data = graph.nodes.nodes.node_weight(node).expect("Node not found");
+            if let Some(resolved) = &node_data.cached {
                 self.output_layout.insert(node, resolved.info().clone());
                 continue;
             }
-            let node_data = graph.nodes.nodes.node_weight(node).expect("Node not found");
             match &node_data.variant {
                 ComputeGraphNodeVariant::ElementWise(op) => self.visit_element_wise(node, op),
                 ComputeGraphNodeVariant::PairWise(op) => self.visit_pair_wise(node, op),

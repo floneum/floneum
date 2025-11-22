@@ -405,7 +405,7 @@ impl Operation for ReduceOperation {
 
     fn inputs(&self, nodes: &crate::compute_graph::ComputeGraphInner) -> Vec<MirValue> {
         let dim = self.axis;
-        let tensor = nodes.cached_results.get(&self.value).unwrap();
+        let tensor = nodes.get_cached_result(self.value).unwrap();
         assert_eq!(self.pre_element_wise.input_datatype(), tensor.datatype());
         let layout = tensor.layout();
         let shape = layout.shape();

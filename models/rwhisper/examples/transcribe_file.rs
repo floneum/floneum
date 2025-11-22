@@ -18,7 +18,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let rate = audio.sample_rate() as f32;
 
     // Transcribe the source audio into text
-    let mut text = model.transcribe(audio).timestamped();
+    let mut text = model.transcribe(audio);
 
     // As the model transcribes the audio, print the text to the console
     while let Some(segment) = text.next().await {
