@@ -11,7 +11,7 @@ mod sgemv;
 
 pub use sgemm::{ChunkedSgemmConfig, GeneralSgemmConfig};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct QMatMulOperation {
     pub(crate) input_datatype: DataTypeEnum,
     pub(crate) input: NodeIndex,

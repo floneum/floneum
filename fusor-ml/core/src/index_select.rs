@@ -6,7 +6,7 @@ use crate::{
 };
 use std::fmt::Write;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct IndexSelectOperation {
     pub(crate) input: NodeIndex,
     pub(crate) indexes: NodeIndex,

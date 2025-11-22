@@ -20,10 +20,6 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
     where
         D2: DataType,
     {
-        // Merge all compute graphs to ensure all tensors are in the same graph
-        self.graph().merge(on_true.graph());
-        self.graph().merge(on_false.graph());
-
         let operation = WhereCondOperation::new(
             self.key(),
             on_true.key(),

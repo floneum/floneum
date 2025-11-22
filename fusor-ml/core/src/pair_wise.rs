@@ -117,12 +117,8 @@ impl Operation for PairWiseOperation {
     }
 
     fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
-        if !matches!(self.first, NodeIndex::Dequantize(_)) {
-            f(self.first);
-        }
-        if !matches!(self.second, NodeIndex::Dequantize(_)) {
-            f(self.second);
-        }
+        f(self.first);
+        f(self.second);
     }
 
     fn inputs(

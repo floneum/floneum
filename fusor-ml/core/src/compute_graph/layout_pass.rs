@@ -2,7 +2,7 @@ use rustc_hash::FxHashMap;
 
 use crate::{Layout, TensorLayoutInfo, index_select::IndexSelectOperation};
 
-use super::{NodeIndex, queue::ComputeQueue};
+use super::{NodeIndex, ComputeGraphNodeVariant, queue::ComputeQueue};
 
 #[derive(Default)]
 pub(crate) struct LayoutPass {
@@ -22,19 +22,20 @@ impl LayoutPass {
                 self.output_layout.insert(node, resolved.info().clone());
                 continue;
             }
-            match node {
-                NodeIndex::ElementWise(key) => self.visit_element_wise(graph, key),
-                NodeIndex::PairWise(key) => self.visit_pair_wise(graph, key),
-                NodeIndex::MatMul(key) => self.visit_mat_mul(graph, key),
-                NodeIndex::QMatMul(key) => self.visit_q_mat_mul(graph, key),
-                NodeIndex::Reduce(key) => self.visit_reduce(graph, key),
-                NodeIndex::MapLayout(key) => self.visit_map_layout(graph, key),
-                NodeIndex::Resize(key) => self.visit_resize(graph, key),
-                NodeIndex::SliceAssign(key) => self.visit_slice_assign(graph, key),
-                NodeIndex::Tensor(key) => self.visit_tensor(graph, key),
-                NodeIndex::Dequantize(key) => self.visit_dequantize(graph, key),
-                NodeIndex::IndexSelect(key) => self.visit_index_select(graph, key),
-                NodeIndex::Custom(key) => self.visit_custom(graph, key),
+            let node_data = graph.nodes.nodes.node_weight(node).expect("Node not found");
+            match &node_data.variant {
+                ComputeGraphNodeVariant::ElementWise(_) => self.visit_element_wise(graph, node),
+                ComputeGraphNodeVariant::PairWise(_) => self.visit_pair_wise(graph, node),
+                ComputeGraphNodeVariant::MatMul(_) => self.visit_mat_mul(graph, node),
+                ComputeGraphNodeVariant::QMatMul(_) => self.visit_q_mat_mul(graph, node),
+                ComputeGraphNodeVariant::Reduce(_) => self.visit_reduce(graph, node),
+                ComputeGraphNodeVariant::MapLayout(_) => self.visit_map_layout(graph, node),
+                ComputeGraphNodeVariant::Resize(_) => self.visit_resize(graph, node),
+                ComputeGraphNodeVariant::SliceAssign(_) => self.visit_slice_assign(graph, node),
+                ComputeGraphNodeVariant::Tensor(_) => self.visit_tensor(graph, node),
+                ComputeGraphNodeVariant::Dequantize(_) => self.visit_dequantize(graph, node),
+                ComputeGraphNodeVariant::IndexSelect(_) => self.visit_index_select(graph, node),
+                ComputeGraphNodeVariant::Custom(_) => self.visit_custom(graph, node),
             }
         }
     }
@@ -42,61 +43,73 @@ impl LayoutPass {
     fn visit_element_wise(
         &mut self,
         graph: &super::ComputeGraphInner,
-        key: super::ElementWiseComputeNodeKey,
+        key: NodeIndex,
     ) {
-        let operation = graph.nodes.element_wise.get(&key).unwrap();
+        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
+        let operation = match &node.variant {
+            ComputeGraphNodeVariant::ElementWise(op) => op,
+            _ => panic!("Expected ElementWise node"),
+        };
         let input = operation.value;
         let Some(input_layout) = self.output_layout.get(&input) else {
             self.queue.push_back(input);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let output_layout = TensorLayoutInfo::new(
             input_layout.layout().clone(),
             operation.functions.out_datatype(),
         );
-        self.output_layout.insert(key.into(), output_layout);
+        self.output_layout.insert(key, output_layout);
     }
 
     fn visit_pair_wise(
         &mut self,
         graph: &super::ComputeGraphInner,
-        key: super::PairWiseComputeNodeKey,
+        key: NodeIndex,
     ) {
-        let operation = graph.nodes.pair_wise.get(&key).unwrap();
+        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
+        let operation = match &node.variant {
+            ComputeGraphNodeVariant::PairWise(op) => op,
+            _ => panic!("Expected PairWise node"),
+        };
         let Some(first_layout) = self.output_layout.get(&operation.first) else {
             self.queue.push_back(operation.first);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let Some(_) = self.output_layout.get(&operation.second) else {
             self.queue.push_back(operation.second);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
-        self.output_layout.insert(key.into(), first_layout.clone());
+        self.output_layout.insert(key, first_layout.clone());
     }
 
     fn visit_mat_mul(
         &mut self,
         graph: &super::ComputeGraphInner,
-        key: super::MatMulComputeNodeKey,
+        key: NodeIndex,
     ) {
-        let operation = graph.nodes.mat_mul.get(&key).unwrap();
+        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
+        let operation = match &node.variant {
+            ComputeGraphNodeVariant::MatMul(op) => op,
+            _ => panic!("Expected MatMul node"),
+        };
         let Some(first_layout) = self.output_layout.get(&operation.first) else {
             self.queue.push_back(operation.first);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let Some(_) = self.output_layout.get(&operation.second) else {
             self.queue.push_back(operation.second);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let output_shape = &operation.out_shape;
         let output_layout = Layout::contiguous(output_shape);
         self.output_layout.insert(
-            key.into(),
+            key,
             TensorLayoutInfo::new(output_layout, first_layout.datatype()),
         );
     }
@@ -104,27 +117,35 @@ impl LayoutPass {
     fn visit_q_mat_mul(
         &mut self,
         graph: &super::ComputeGraphInner,
-        key: super::QMatMulComputeNodeKey,
+        key: NodeIndex,
     ) {
-        let operation = graph.nodes.q_mat_mul.get(&key).unwrap();
+        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
+        let operation = match &node.variant {
+            ComputeGraphNodeVariant::QMatMul(op) => op,
+            _ => panic!("Expected QMatMul node"),
+        };
         let Some(first_layout) = self.output_layout.get(&operation.input) else {
             self.queue.push_back(operation.input);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let output_layout = Layout::contiguous(&operation.out_shape);
         self.output_layout.insert(
-            key.into(),
+            key,
             TensorLayoutInfo::new(output_layout, first_layout.datatype()),
         );
     }
 
-    fn visit_reduce(&mut self, graph: &super::ComputeGraphInner, key: super::ReduceComputeNodeKey) {
-        let operation = graph.nodes.reduce.get(&key).unwrap();
+    fn visit_reduce(&mut self, graph: &super::ComputeGraphInner, key: NodeIndex) {
+        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
+        let operation = match &node.variant {
+            ComputeGraphNodeVariant::Reduce(op) => op,
+            _ => panic!("Expected Reduce node"),
+        };
         let dim = operation.axis;
         let Some(input_layout) = self.output_layout.get(&operation.value) else {
             self.queue.push_back(operation.value);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let new_shape = input_layout
@@ -136,7 +157,7 @@ impl LayoutPass {
             .collect::<Vec<_>>();
         let new_layout = Layout::contiguous(&new_shape);
         self.output_layout.insert(
-            key.into(),
+            key,
             TensorLayoutInfo::new(new_layout, input_layout.datatype()),
         );
     }
@@ -144,31 +165,39 @@ impl LayoutPass {
     fn visit_map_layout(
         &mut self,
         graph: &super::ComputeGraphInner,
-        key: super::MapLayoutComputeNodeKey,
+        key: NodeIndex,
     ) {
-        let operation = graph.nodes.map_layout.get(&key).unwrap();
+        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
+        let operation = match &node.variant {
+            ComputeGraphNodeVariant::MapLayout(op) => op,
+            _ => panic!("Expected MapLayout node"),
+        };
         let Some(input_layout) = self.output_layout.get(&operation.input) else {
             self.queue.push_back(operation.input);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let new_layout = operation.map_layout(input_layout.layout());
         self.output_layout.insert(
-            key.into(),
+            key,
             TensorLayoutInfo::new(new_layout, input_layout.datatype()),
         );
     }
 
-    fn visit_resize(&mut self, graph: &super::ComputeGraphInner, key: super::ResizeComputeNodeKey) {
-        let operation = graph.nodes.resize.get(&key).unwrap();
+    fn visit_resize(&mut self, graph: &super::ComputeGraphInner, key: NodeIndex) {
+        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
+        let operation = match &node.variant {
+            ComputeGraphNodeVariant::Resize(op) => op,
+            _ => panic!("Expected Resize node"),
+        };
         let Some(input_layout) = self.output_layout.get(&operation.input) else {
             self.queue.push_back(operation.input);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let new_layout = Layout::contiguous(&operation.new_shape);
         self.output_layout.insert(
-            key.into(),
+            key,
             TensorLayoutInfo::new(new_layout, input_layout.datatype()),
         );
     }
@@ -176,38 +205,50 @@ impl LayoutPass {
     fn visit_slice_assign(
         &mut self,
         graph: &super::ComputeGraphInner,
-        key: super::SliceAssignComputeNodeKey,
+        key: NodeIndex,
     ) {
-        let operation = graph.nodes.slice_assign.get(&key).unwrap();
+        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
+        let operation = match &node.variant {
+            ComputeGraphNodeVariant::SliceAssign(op) => op,
+            _ => panic!("Expected SliceAssign node"),
+        };
         let Some(input_layout) = self.output_layout.get(&operation.input) else {
             self.queue.push_back(operation.input);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let Some(_) = self.output_layout.get(&operation.value) else {
             self.queue.push_back(operation.value);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
-        self.output_layout.insert(key.into(), input_layout.clone());
+        self.output_layout.insert(key, input_layout.clone());
     }
 
-    fn visit_tensor(&mut self, graph: &super::ComputeGraphInner, key: super::TensorComputeNodeKey) {
-        let operation = graph.nodes.tensor.get(&key).unwrap();
+    fn visit_tensor(&mut self, graph: &super::ComputeGraphInner, key: NodeIndex) {
+        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
+        let operation = match &node.variant {
+            ComputeGraphNodeVariant::Tensor(data) => data,
+            _ => panic!("Expected Tensor node"),
+        };
         let info = operation.info();
-        self.output_layout.insert(key.into(), info.clone());
+        self.output_layout.insert(key, info.clone());
     }
 
     fn visit_dequantize(
         &mut self,
         graph: &super::ComputeGraphInner,
-        key: super::DequantizeComputeKey,
+        key: NodeIndex,
     ) {
-        let operation = graph.nodes.dequantize.get(&key).unwrap();
+        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
+        let operation = match &node.variant {
+            ComputeGraphNodeVariant::Dequantize(op) => op,
+            _ => panic!("Expected Dequantize node"),
+        };
         let matrix = &operation.matrix;
         let new_layout = Layout::contiguous(matrix.shape());
         self.output_layout.insert(
-            key.into(),
+            key,
             TensorLayoutInfo::new(new_layout, operation.datatype),
         );
     }
@@ -215,17 +256,21 @@ impl LayoutPass {
     fn visit_index_select(
         &mut self,
         graph: &super::ComputeGraphInner,
-        key: super::IndexSelectComputeNodeKey,
+        key: NodeIndex,
     ) {
-        let operation = graph.nodes.index_select.get(&key).unwrap();
+        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
+        let operation = match &node.variant {
+            ComputeGraphNodeVariant::IndexSelect(op) => op,
+            _ => panic!("Expected IndexSelect node"),
+        };
         let Some(indexes_shape) = self.output_layout.get(&operation.indexes) else {
             self.queue.push_back(operation.indexes);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let Some(input_shape) = self.output_layout.get(&operation.input) else {
             self.queue.push_back(operation.input);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let shape = IndexSelectOperation::calc_output_shape(
@@ -235,13 +280,17 @@ impl LayoutPass {
         );
         let new_layout = Layout::contiguous(&shape);
         self.output_layout.insert(
-            key.into(),
+            key,
             TensorLayoutInfo::new(new_layout, operation.datatype),
         );
     }
 
-    fn visit_custom(&mut self, graph: &super::ComputeGraphInner, key: super::CustomComputeKey) {
-        let operation = graph.nodes.custom.get(&key).unwrap();
+    fn visit_custom(&mut self, graph: &super::ComputeGraphInner, key: NodeIndex) {
+        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
+        let operation = match &node.variant {
+            ComputeGraphNodeVariant::Custom(op) => op,
+            _ => panic!("Expected Custom node"),
+        };
         let mut dependencies = Vec::new();
         operation.visit_dependencies(&mut |dep| {
             dependencies.push(dep);
@@ -250,11 +299,11 @@ impl LayoutPass {
         for dependency in dependencies {
             if !self.output_layout.contains_key(&dependency) {
                 self.queue.push_back(dependency);
-                self.queue.push_back(key.into());
+                self.queue.push_back(key);
                 return;
             }
         }
         self.output_layout
-            .insert(key.into(), operation.output_layout(&self.output_layout));
+            .insert(key, operation.output_layout(&self.output_layout));
     }
 }

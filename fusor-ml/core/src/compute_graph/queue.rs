@@ -1,6 +1,8 @@
 use rustc_hash::FxHashSet;
 use std::collections::VecDeque;
 
+use super::NodeIndex;
+
 #[derive(Default, Debug)]
 pub(crate) struct ComputeQueue {
     nodes: VecDeque<NodeIndex>,
