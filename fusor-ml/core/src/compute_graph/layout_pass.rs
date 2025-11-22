@@ -24,32 +24,27 @@ impl LayoutPass {
             }
             let node_data = graph.nodes.nodes.node_weight(node).expect("Node not found");
             match &node_data.variant {
-                ComputeGraphNodeVariant::ElementWise(_) => self.visit_element_wise(graph, node),
-                ComputeGraphNodeVariant::PairWise(_) => self.visit_pair_wise(graph, node),
-                ComputeGraphNodeVariant::MatMul(_) => self.visit_mat_mul(graph, node),
-                ComputeGraphNodeVariant::QMatMul(_) => self.visit_q_mat_mul(graph, node),
-                ComputeGraphNodeVariant::Reduce(_) => self.visit_reduce(graph, node),
-                ComputeGraphNodeVariant::MapLayout(_) => self.visit_map_layout(graph, node),
-                ComputeGraphNodeVariant::Resize(_) => self.visit_resize(graph, node),
-                ComputeGraphNodeVariant::SliceAssign(_) => self.visit_slice_assign(graph, node),
-                ComputeGraphNodeVariant::Tensor(_) => self.visit_tensor(graph, node),
-                ComputeGraphNodeVariant::Dequantize(_) => self.visit_dequantize(graph, node),
-                ComputeGraphNodeVariant::IndexSelect(_) => self.visit_index_select(graph, node),
-                ComputeGraphNodeVariant::Custom(_) => self.visit_custom(graph, node),
+                ComputeGraphNodeVariant::ElementWise(op) => self.visit_element_wise(node, op),
+                ComputeGraphNodeVariant::PairWise(op) => self.visit_pair_wise(node, op),
+                ComputeGraphNodeVariant::MatMul(op) => self.visit_mat_mul(node, op),
+                ComputeGraphNodeVariant::QMatMul(op) => self.visit_q_mat_mul(node, op),
+                ComputeGraphNodeVariant::Reduce(op) => self.visit_reduce(node, op),
+                ComputeGraphNodeVariant::MapLayout(op) => self.visit_map_layout(node, op),
+                ComputeGraphNodeVariant::Resize(op) => self.visit_resize(node, op),
+                ComputeGraphNodeVariant::SliceAssign(op) => self.visit_slice_assign(node, op),
+                ComputeGraphNodeVariant::Tensor(op) => self.visit_tensor(node, op),
+                ComputeGraphNodeVariant::Dequantize(op) => self.visit_dequantize(node, op),
+                ComputeGraphNodeVariant::IndexSelect(op) => self.visit_index_select(node, op),
+                ComputeGraphNodeVariant::Custom(op) => self.visit_custom(node, op),
             }
         }
     }
 
     fn visit_element_wise(
         &mut self,
-        graph: &super::ComputeGraphInner,
         key: NodeIndex,
+        operation: &crate::ElementWiseOperation,
     ) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::ElementWise(op) => op,
-            _ => panic!("Expected ElementWise node"),
-        };
         let input = operation.value;
         let Some(input_layout) = self.output_layout.get(&input) else {
             self.queue.push_back(input);
@@ -65,14 +60,9 @@ impl LayoutPass {
 
     fn visit_pair_wise(
         &mut self,
-        graph: &super::ComputeGraphInner,
         key: NodeIndex,
+        operation: &crate::PairWiseOperation,
     ) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::PairWise(op) => op,
-            _ => panic!("Expected PairWise node"),
-        };
         let Some(first_layout) = self.output_layout.get(&operation.first) else {
             self.queue.push_back(operation.first);
             self.queue.push_back(key);
@@ -88,14 +78,9 @@ impl LayoutPass {
 
     fn visit_mat_mul(
         &mut self,
-        graph: &super::ComputeGraphInner,
         key: NodeIndex,
+        operation: &crate::MatMulOperation,
     ) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::MatMul(op) => op,
-            _ => panic!("Expected MatMul node"),
-        };
         let Some(first_layout) = self.output_layout.get(&operation.first) else {
             self.queue.push_back(operation.first);
             self.queue.push_back(key);
@@ -116,14 +101,9 @@ impl LayoutPass {
 
     fn visit_q_mat_mul(
         &mut self,
-        graph: &super::ComputeGraphInner,
         key: NodeIndex,
+        operation: &crate::quantized::matmul::QMatMulOperation,
     ) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::QMatMul(op) => op,
-            _ => panic!("Expected QMatMul node"),
-        };
         let Some(first_layout) = self.output_layout.get(&operation.input) else {
             self.queue.push_back(operation.input);
             self.queue.push_back(key);
@@ -136,12 +116,11 @@ impl LayoutPass {
         );
     }
 
-    fn visit_reduce(&mut self, graph: &super::ComputeGraphInner, key: NodeIndex) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::Reduce(op) => op,
-            _ => panic!("Expected Reduce node"),
-        };
+    fn visit_reduce(
+        &mut self,
+        key: NodeIndex,
+        operation: &crate::ReduceOperation,
+    ) {
         let dim = operation.axis;
         let Some(input_layout) = self.output_layout.get(&operation.value) else {
             self.queue.push_back(operation.value);
@@ -164,14 +143,9 @@ impl LayoutPass {
 
     fn visit_map_layout(
         &mut self,
-        graph: &super::ComputeGraphInner,
         key: NodeIndex,
+        operation: &crate::map_layout::MapLayoutOperation,
     ) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::MapLayout(op) => op,
-            _ => panic!("Expected MapLayout node"),
-        };
         let Some(input_layout) = self.output_layout.get(&operation.input) else {
             self.queue.push_back(operation.input);
             self.queue.push_back(key);
@@ -184,12 +158,11 @@ impl LayoutPass {
         );
     }
 
-    fn visit_resize(&mut self, graph: &super::ComputeGraphInner, key: NodeIndex) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::Resize(op) => op,
-            _ => panic!("Expected Resize node"),
-        };
+    fn visit_resize(
+        &mut self,
+        key: NodeIndex,
+        operation: &crate::resize::ResizeOperation,
+    ) {
         let Some(input_layout) = self.output_layout.get(&operation.input) else {
             self.queue.push_back(operation.input);
             self.queue.push_back(key);
@@ -204,14 +177,9 @@ impl LayoutPass {
 
     fn visit_slice_assign(
         &mut self,
-        graph: &super::ComputeGraphInner,
         key: NodeIndex,
+        operation: &crate::slice_assign::SliceAssignOperation,
     ) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::SliceAssign(op) => op,
-            _ => panic!("Expected SliceAssign node"),
-        };
         let Some(input_layout) = self.output_layout.get(&operation.input) else {
             self.queue.push_back(operation.input);
             self.queue.push_back(key);
@@ -225,26 +193,20 @@ impl LayoutPass {
         self.output_layout.insert(key, input_layout.clone());
     }
 
-    fn visit_tensor(&mut self, graph: &super::ComputeGraphInner, key: NodeIndex) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::Tensor(data) => data,
-            _ => panic!("Expected Tensor node"),
-        };
+    fn visit_tensor(
+        &mut self,
+        key: NodeIndex,
+        operation: &crate::tensor::TensorData,
+    ) {
         let info = operation.info();
         self.output_layout.insert(key, info.clone());
     }
 
     fn visit_dequantize(
         &mut self,
-        graph: &super::ComputeGraphInner,
         key: NodeIndex,
+        operation: &crate::dequantize::DequantizeOperation,
     ) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::Dequantize(op) => op,
-            _ => panic!("Expected Dequantize node"),
-        };
         let matrix = &operation.matrix;
         let new_layout = Layout::contiguous(matrix.shape());
         self.output_layout.insert(
@@ -255,14 +217,9 @@ impl LayoutPass {
 
     fn visit_index_select(
         &mut self,
-        graph: &super::ComputeGraphInner,
         key: NodeIndex,
+        operation: &crate::index_select::IndexSelectOperation,
     ) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::IndexSelect(op) => op,
-            _ => panic!("Expected IndexSelect node"),
-        };
         let Some(indexes_shape) = self.output_layout.get(&operation.indexes) else {
             self.queue.push_back(operation.indexes);
             self.queue.push_back(key);
@@ -285,12 +242,11 @@ impl LayoutPass {
         );
     }
 
-    fn visit_custom(&mut self, graph: &super::ComputeGraphInner, key: NodeIndex) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::Custom(op) => op,
-            _ => panic!("Expected Custom node"),
-        };
+    fn visit_custom(
+        &mut self,
+        key: NodeIndex,
+        operation: &std::sync::Arc<dyn crate::mir::operation::Operation + Send + Sync>,
+    ) {
         let mut dependencies = Vec::new();
         operation.visit_dependencies(&mut |dep| {
             dependencies.push(dep);

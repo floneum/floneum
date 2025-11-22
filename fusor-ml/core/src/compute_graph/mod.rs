@@ -184,7 +184,10 @@ impl ComputeGraph {
             .create_command_encoder(&CommandEncoderDescriptor {
                 label: Some("ComputeGraph Encoder"),
             });
-        let data = self.with_mut(|inner| Resolver::new(inner, key, &mut encoder).run());
+        let data = self.with_mut(|inner| {
+            let mut resolver = Resolver::new(inner, key, &mut encoder);
+            resolver.run(inner)
+        });
         device.wgpu_queue().submit(Some(encoder.finish()));
         // Reset the written flag on all buffers
         device.reset_initialized_buffers();
@@ -204,8 +207,8 @@ impl ComputeGraph {
         data
     }
 
-    pub(crate) fn graphvis(&self, key: NodeIndex) -> Graph {
-        self.with_mut(|inner| inner.graphvis(key))
+    pub(crate) fn graphvis(&self, root: NodeIndex) -> Graph {
+        self.with_mut(|inner| inner.graphvis(root))
     }
 
     pub(crate) fn add_reference(&self, key: NodeIndex) {
@@ -321,12 +324,12 @@ impl ComputeGraphInner {
     }
 
     fn remove_reference(&mut self, key: NodeIndex) {
-        if let Some(count) = self.reference_count.get_mut(&key) {
-            if *count > 0 {
-                *count -= 1;
-                // Remove the node if it is dead
-                self.check_life(key);
-            }
+        if let Some(count) = self.reference_count.get_mut(&key)
+            && *count > 0
+        {
+            *count -= 1;
+            // Remove the node if it is dead
+            self.check_life(key);
         }
     }
 
@@ -381,10 +384,10 @@ impl ComputeGraphInner {
 
     pub(crate) fn get_result_or_qmatrix(&self, key: NodeIndex) -> Option<MaybeQData> {
         // Check if this is a Dequantize node
-        if let Some(node) = self.nodes.nodes.node_weight(key) {
-            if let ComputeGraphNodeVariant::Dequantize(op) = &node.variant {
-                return Some(op.matrix.clone().into());
-            }
+        if let Some(node) = self.nodes.nodes.node_weight(key)
+            && let ComputeGraphNodeVariant::Dequantize(op) = &node.variant
+        {
+            return Some(op.matrix.clone().into());
         }
         // Otherwise, get from cached results
         self.cached_results.get(&key).map(|t| t.clone().into())

@@ -16,12 +16,11 @@ struct GraphVisPass {
 }
 
 impl GraphVisPass {
-    fn visit_element_wise(&mut self, key: NodeIndex, graph: &ComputeGraphInner) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::ElementWise(op) => op,
-            _ => panic!("Expected ElementWise node"),
-        };
+    fn visit_element_wise(
+        &mut self,
+        key: NodeIndex,
+        operation: &crate::ElementWiseOperation,
+    ) {
         let input = self.identities.get(&operation.value).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
         let id = Identity::quoted(format!(
@@ -41,12 +40,11 @@ impl GraphVisPass {
         self.identities.insert(key, id.clone());
     }
 
-    fn visit_pair_wise(&mut self, key: NodeIndex, graph: &ComputeGraphInner) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::PairWise(op) => op,
-            _ => panic!("Expected PairWise node"),
-        };
+    fn visit_pair_wise(
+        &mut self,
+        key: NodeIndex,
+        operation: &crate::PairWiseOperation,
+    ) {
         let first = self.identities.get(&operation.first).unwrap();
         let second = self.identities.get(&operation.second).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
@@ -70,12 +68,11 @@ impl GraphVisPass {
         self.identities.insert(key, id.clone());
     }
 
-    fn visit_mat_mul(&mut self, key: NodeIndex, graph: &ComputeGraphInner) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::MatMul(op) => op,
-            _ => panic!("Expected MatMul node"),
-        };
+    fn visit_mat_mul(
+        &mut self,
+        key: NodeIndex,
+        operation: &crate::MatMulOperation,
+    ) {
         let first = self.identities.get(&operation.first).unwrap();
         let second = self.identities.get(&operation.second).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
@@ -94,12 +91,11 @@ impl GraphVisPass {
         self.identities.insert(key, id.clone());
     }
 
-    fn visit_q_mat_mul(&mut self, key: NodeIndex, graph: &ComputeGraphInner) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::QMatMul(op) => op,
-            _ => panic!("Expected QMatMul node"),
-        };
+    fn visit_q_mat_mul(
+        &mut self,
+        key: NodeIndex,
+        operation: &crate::quantized::matmul::QMatMulOperation,
+    ) {
         let input = self.identities.get(&operation.input).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
         let id = Identity::quoted(format!("qmatmul ({}) #{:?}", output_layout, key));
@@ -114,12 +110,11 @@ impl GraphVisPass {
         self.identities.insert(key, id.clone());
     }
 
-    fn visit_reduce(&mut self, key: NodeIndex, graph: &ComputeGraphInner) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::Reduce(op) => op,
-            _ => panic!("Expected Reduce node"),
-        };
+    fn visit_reduce(
+        &mut self,
+        key: NodeIndex,
+        operation: &crate::ReduceOperation,
+    ) {
         let input = self.identities.get(&operation.value).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
         let id = Identity::quoted(format!(
@@ -139,12 +134,11 @@ impl GraphVisPass {
         self.identities.insert(key, id.clone());
     }
 
-    fn visit_map_layout(&mut self, key: NodeIndex, graph: &ComputeGraphInner) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::MapLayout(op) => op,
-            _ => panic!("Expected MapLayout node"),
-        };
+    fn visit_map_layout(
+        &mut self,
+        key: NodeIndex,
+        operation: &crate::map_layout::MapLayoutOperation,
+    ) {
         let input = self.identities.get(&operation.input).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
         let id = Identity::quoted(format!("map_layout ({}) #{:?}", output_layout, key));
@@ -159,12 +153,11 @@ impl GraphVisPass {
         self.identities.insert(key, id.clone());
     }
 
-    fn visit_resize(&mut self, key: NodeIndex, graph: &ComputeGraphInner) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::Resize(op) => op,
-            _ => panic!("Expected Resize node"),
-        };
+    fn visit_resize(
+        &mut self,
+        key: NodeIndex,
+        operation: &crate::resize::ResizeOperation,
+    ) {
         let input = self.identities.get(&operation.input).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
         let id = Identity::quoted(format!("resize ({}) #{:?}", output_layout, key));
@@ -179,12 +172,11 @@ impl GraphVisPass {
         self.identities.insert(key, id.clone());
     }
 
-    fn visit_slice_assign(&mut self, key: NodeIndex, graph: &ComputeGraphInner) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::SliceAssign(op) => op,
-            _ => panic!("Expected SliceAssign node"),
-        };
+    fn visit_slice_assign(
+        &mut self,
+        key: NodeIndex,
+        operation: &crate::slice_assign::SliceAssignOperation,
+    ) {
         let input = self.identities.get(&operation.input).unwrap();
         let value = self.identities.get(&operation.value).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
@@ -203,12 +195,11 @@ impl GraphVisPass {
         self.identities.insert(key, id.clone());
     }
 
-    fn visit_index_select(&mut self, key: NodeIndex, graph: &ComputeGraphInner) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::IndexSelect(op) => op,
-            _ => panic!("Expected IndexSelect node"),
-        };
+    fn visit_index_select(
+        &mut self,
+        key: NodeIndex,
+        operation: &crate::index_select::IndexSelectOperation,
+    ) {
         let input = self.identities.get(&operation.input).unwrap();
         let value = self.identities.get(&operation.indexes).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
@@ -227,7 +218,11 @@ impl GraphVisPass {
         self.identities.insert(key, id.clone());
     }
 
-    fn visit_dequantize(&mut self, key: NodeIndex, _: &ComputeGraphInner) {
+    fn visit_dequantize(
+        &mut self,
+        key: NodeIndex,
+        _operation: &crate::dequantize::DequantizeOperation,
+    ) {
         let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
         let id = Identity::quoted(format!("dequantize ({}) #{:?}", output_layout, key));
         self.statements.push(Stmt::Node {
@@ -238,7 +233,11 @@ impl GraphVisPass {
         self.identities.insert(key, id.clone());
     }
 
-    fn visit_tensor(&mut self, key: NodeIndex, _: &ComputeGraphInner) {
+    fn visit_tensor(
+        &mut self,
+        key: NodeIndex,
+        _operation: &crate::tensor::TensorData,
+    ) {
         let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
         let id = Identity::quoted(format!("tensor ({}) #{:?}", output_layout, key));
         self.statements.push(Stmt::Node {
@@ -249,12 +248,11 @@ impl GraphVisPass {
         self.identities.insert(key, id.clone());
     }
 
-    fn visit_custom(&mut self, key: NodeIndex, graph: &ComputeGraphInner) {
-        let node = graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::Custom(op) => op,
-            _ => panic!("Expected Custom node"),
-        };
+    fn visit_custom(
+        &mut self,
+        key: NodeIndex,
+        operation: &std::sync::Arc<dyn crate::mir::operation::Operation + Send + Sync>,
+    ) {
         let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
         let id = Identity::quoted(format!("custom ({}) #{:?}", output_layout, key));
         self.statements.push(Stmt::Node {
@@ -313,18 +311,18 @@ impl ComputeGraphInner {
 
             let node_data = self.nodes.nodes.node_weight(node).expect("Node not found");
             match &node_data.variant {
-                ComputeGraphNodeVariant::ElementWise(_) => graph_vis_pass.visit_element_wise(node, self),
-                ComputeGraphNodeVariant::PairWise(_) => graph_vis_pass.visit_pair_wise(node, self),
-                ComputeGraphNodeVariant::MatMul(_) => graph_vis_pass.visit_mat_mul(node, self),
-                ComputeGraphNodeVariant::QMatMul(_) => graph_vis_pass.visit_q_mat_mul(node, self),
-                ComputeGraphNodeVariant::Reduce(_) => graph_vis_pass.visit_reduce(node, self),
-                ComputeGraphNodeVariant::MapLayout(_) => graph_vis_pass.visit_map_layout(node, self),
-                ComputeGraphNodeVariant::Resize(_) => graph_vis_pass.visit_resize(node, self),
-                ComputeGraphNodeVariant::SliceAssign(_) => graph_vis_pass.visit_slice_assign(node, self),
-                ComputeGraphNodeVariant::Tensor(_) => graph_vis_pass.visit_tensor(node, self),
-                ComputeGraphNodeVariant::Dequantize(_) => graph_vis_pass.visit_dequantize(node, self),
-                ComputeGraphNodeVariant::IndexSelect(_) => graph_vis_pass.visit_index_select(node, self),
-                ComputeGraphNodeVariant::Custom(_) => graph_vis_pass.visit_custom(node, self),
+                ComputeGraphNodeVariant::ElementWise(op) => graph_vis_pass.visit_element_wise(node, op),
+                ComputeGraphNodeVariant::PairWise(op) => graph_vis_pass.visit_pair_wise(node, op),
+                ComputeGraphNodeVariant::MatMul(op) => graph_vis_pass.visit_mat_mul(node, op),
+                ComputeGraphNodeVariant::QMatMul(op) => graph_vis_pass.visit_q_mat_mul(node, op),
+                ComputeGraphNodeVariant::Reduce(op) => graph_vis_pass.visit_reduce(node, op),
+                ComputeGraphNodeVariant::MapLayout(op) => graph_vis_pass.visit_map_layout(node, op),
+                ComputeGraphNodeVariant::Resize(op) => graph_vis_pass.visit_resize(node, op),
+                ComputeGraphNodeVariant::SliceAssign(op) => graph_vis_pass.visit_slice_assign(node, op),
+                ComputeGraphNodeVariant::Tensor(op) => graph_vis_pass.visit_tensor(node, op),
+                ComputeGraphNodeVariant::Dequantize(op) => graph_vis_pass.visit_dequantize(node, op),
+                ComputeGraphNodeVariant::IndexSelect(op) => graph_vis_pass.visit_index_select(node, op),
+                ComputeGraphNodeVariant::Custom(op) => graph_vis_pass.visit_custom(node, op),
             }
         }
 

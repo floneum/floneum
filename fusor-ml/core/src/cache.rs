@@ -170,7 +170,7 @@ impl<T: FloatDataType> AttentionMask<T> {
         let mut mask_data = vec![T::zero(); seq_len * seq_len];
         for i in 0..seq_len {
             for j in (i + 1)..seq_len {
-                mask_data[i * seq_len + j] = T::from_f32(std::f32::NEG_INFINITY);
+                mask_data[i * seq_len + j] = T::from_f32(f32::NEG_INFINITY);
             }
         }
 

@@ -25,7 +25,6 @@ use super::{
 };
 
 pub(crate) struct Resolver<'a> {
-    graph: &'a mut ComputeGraphInner,
     command_encoder: &'a mut CommandEncoder,
     queued_operations: Vec<(NodeIndex, Arc<dyn Operation>)>,
     target: NodeIndex,
@@ -35,13 +34,12 @@ pub(crate) struct Resolver<'a> {
 
 impl<'a> Resolver<'a> {
     pub(crate) fn new(
-        graph: &'a mut ComputeGraphInner,
+        graph: &mut ComputeGraphInner,
         target: NodeIndex,
         command_encoder: &'a mut CommandEncoder,
     ) -> Self {
         let resolved_set = graph.cached_results.keys().cloned().collect();
         Self {
-            graph,
             command_encoder,
             target,
             queued_operations: Vec::new(),
@@ -50,9 +48,9 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    pub(crate) fn run(&mut self) -> TensorData {
-        let limits = self.graph.device.limits();
-        self.queue_operations();
+    pub(crate) fn run(&mut self, graph: &mut ComputeGraphInner) -> TensorData {
+        let limits = graph.device.limits();
+        self.queue_operations(graph);
         let queued_operations = std::mem::take(&mut self.queued_operations);
 
         // Find runs of compatible dispatch shapes
@@ -63,8 +61,8 @@ impl<'a> Resolver<'a> {
         let mut kernel = GenericKernel::new();
 
         for (node, operation) in queued_operations {
-            let new_inputs = operation.inputs(self.graph);
-            let constraint = operation.workgroup_shape_constraints(&self.graph.device);
+            let new_inputs = operation.inputs(graph);
+            let constraint = operation.workgroup_shape_constraints(&graph.device);
             let mut new_merged = current_constraints.clone();
             new_merged.merge(&constraint);
             let old_best = current_constraints.solve(&limits).unwrap_or_else(|| {
@@ -78,6 +76,7 @@ impl<'a> Resolver<'a> {
                 current_constraints = new_merged;
             } else {
                 self.flush_operations(
+                    graph,
                     &mut kernel,
                     &pending_operations,
                     &inputs,
@@ -91,21 +90,22 @@ impl<'a> Resolver<'a> {
                 current_constraints = constraint;
             }
             // Map layout isn't really a kernel. Resolve it immediately
-            let map_layout = if let Some(node_data) = self.graph.nodes.nodes.node_weight(node) {
+            let map_layout = if let Some(node_data) = graph.nodes.nodes.node_weight(node) {
                 match &node_data.variant {
                     ComputeGraphNodeVariant::MapLayout(map_layout) => Some(map_layout.clone()),
-                    ComputeGraphNodeVariant::Resize(resize) => resize.lower(self.graph),
+                    ComputeGraphNodeVariant::Resize(resize) => resize.lower(graph),
                     _ => None,
                 }
             } else {
                 None
             };
             if let Some(map_layout) = map_layout {
-                let result = map_layout.run(self.graph);
+                let result = map_layout.run(graph);
                 // Cache the result
-                self.graph.cached_results.insert(node, result);
+                graph.cached_results.insert(node, result);
             } else {
                 self.push_operation(
+                    graph,
                     new_inputs,
                     &mut kernel,
                     node,
@@ -124,6 +124,7 @@ impl<'a> Resolver<'a> {
                 )
             });
             self.flush_operations(
+                graph,
                 &mut kernel,
                 &pending_operations,
                 &inputs,
@@ -132,7 +133,7 @@ impl<'a> Resolver<'a> {
             );
         }
 
-        self.graph.cached_results[&self.target].clone()
+        graph.cached_results[&self.target].clone()
     }
 
     fn should_extend_kernel(&mut self, _: Vec<MirValue>, _: &[Vec<MirValue>]) -> bool {
@@ -143,6 +144,7 @@ impl<'a> Resolver<'a> {
     #[allow(clippy::too_many_arguments)]
     fn push_operation(
         &mut self,
+        graph: &mut ComputeGraphInner,
         new_inputs: Vec<MirValue>,
         kernel: &mut GenericKernel,
         key: NodeIndex,
@@ -161,18 +163,19 @@ impl<'a> Resolver<'a> {
                 }
             });
         }
-        let result = operation.output(self.graph, &new_inputs);
+        let result = operation.output(graph, &new_inputs);
         let MirValue::Tensor(resolved) = result else {
             panic!("Kernel input value is not a tensor");
         };
         // Cache the result
-        self.graph.cached_results.insert(key, resolved);
+        graph.cached_results.insert(key, resolved);
         inputs.push(new_inputs);
         queued_operations.push((key, operation));
     }
 
     fn flush_operations(
         &mut self,
+        graph: &mut ComputeGraphInner,
         mut kernel: &mut GenericKernel,
         queued_operations: &[(NodeIndex, Arc<dyn Operation>)],
         inputs: &[Vec<MirValue>],
@@ -182,10 +185,10 @@ impl<'a> Resolver<'a> {
         let mut max_dispatch_size = [0; 3];
         for ((key, operation), inputs) in queued_operations.iter().zip(inputs) {
             // Map layout isn't really a kernel. Skip it
-            if let Some(node) = self.graph.nodes.nodes.node_weight(*key) {
-                if matches!(node.variant, ComputeGraphNodeVariant::MapLayout(_)) {
-                    continue;
-                }
+            if let Some(node) = graph.nodes.nodes.node_weight(*key)
+                && matches!(node.variant, ComputeGraphNodeVariant::MapLayout(_))
+            {
+                continue;
             }
 
             let dispatch_size = operation.dispatch_size(&workgroup_shape, inputs);
@@ -197,7 +200,7 @@ impl<'a> Resolver<'a> {
             } else {
                 writeln!(&mut kernel, "{{").unwrap();
             }
-            operation.build_kernel(self.graph, &workgroup_shape, inputs, kernel);
+            operation.build_kernel(graph, &workgroup_shape, inputs, kernel);
             let name = kernel.name_mut();
             if !name.is_empty() {
                 *name += "->";
@@ -210,23 +213,23 @@ impl<'a> Resolver<'a> {
             }
             // Check if that makes any of this node's dependencies dead
             let mut dependencies = Vec::new();
-            self.graph.visit_dependencies(*key, &mut |dependent_key| {
+            graph.visit_dependencies(*key, &mut |dependent_key| {
                 dependencies.push(dependent_key);
             });
             for dependency in dependencies {
-                self.graph.check_life(dependency);
+                graph.check_life(dependency);
             }
         }
         kernel.set_workgroup_size(workgroup_shape);
         kernel.run(
-            &self.graph.device,
+            &graph.device,
             all_input_values,
             self.command_encoder,
             max_dispatch_size,
         );
     }
 
-    pub(crate) fn queue_operations(&mut self) {
+    pub(crate) fn queue_operations(&mut self, graph: &mut ComputeGraphInner) {
         self.queue.push_back(self.target);
 
         while let Some(node) = self.queue.pop_front() {
@@ -234,44 +237,45 @@ impl<'a> Resolver<'a> {
                 continue;
             }
 
-            let node_data = self.graph.nodes.nodes.node_weight(node).expect("Node not found in graph");
-            let resolved = match &node_data.variant {
-                ComputeGraphNodeVariant::ElementWise(_) => {
-                    self.resolve_element_wise(node)
+            let node_data = graph.nodes.nodes.node_weight(node).expect("Node not found in graph");
+            let variant = node_data.variant.clone();
+            let resolved = match variant {
+                ComputeGraphNodeVariant::ElementWise(op) => {
+                    self.resolve_element_wise(graph, node, &op)
                 }
-                ComputeGraphNodeVariant::PairWise(_) => {
-                    self.resolve_pair_wise(node)
+                ComputeGraphNodeVariant::PairWise(op) => {
+                    self.resolve_pair_wise(graph, &op)
                 }
-                ComputeGraphNodeVariant::MatMul(_) => {
-                    self.resolve_mat_mul(node)
+                ComputeGraphNodeVariant::MatMul(op) => {
+                    self.resolve_mat_mul(graph, &op)
                 }
-                ComputeGraphNodeVariant::Reduce(_) => {
-                    self.resolve_reduce(node)
+                ComputeGraphNodeVariant::Reduce(op) => {
+                    self.resolve_reduce(graph, &op)
                 }
-                ComputeGraphNodeVariant::Tensor(_) => {
-                    self.resolve_tensor(node);
+                ComputeGraphNodeVariant::Tensor(op) => {
+                    self.resolve_tensor(graph, node, &op);
                     continue;
                 }
-                ComputeGraphNodeVariant::MapLayout(_) => {
-                    self.resolve_map_layout(node)
+                ComputeGraphNodeVariant::MapLayout(op) => {
+                    self.resolve_map_layout(&op)
                 }
-                ComputeGraphNodeVariant::Resize(_) => {
-                    self.resolve_resize(node)
+                ComputeGraphNodeVariant::Resize(op) => {
+                    self.resolve_resize(&op)
                 }
-                ComputeGraphNodeVariant::SliceAssign(_) => {
-                    self.resolve_slice_assign(node)
+                ComputeGraphNodeVariant::SliceAssign(op) => {
+                    self.resolve_slice_assign(&op)
                 }
-                ComputeGraphNodeVariant::IndexSelect(_) => {
-                    self.resolve_index_select(node)
+                ComputeGraphNodeVariant::IndexSelect(op) => {
+                    self.resolve_index_select(graph, &op)
                 }
-                ComputeGraphNodeVariant::QMatMul(_) => {
-                    self.resolve_q_mat_mul(node)
+                ComputeGraphNodeVariant::QMatMul(op) => {
+                    self.resolve_q_mat_mul(&op)
                 }
-                ComputeGraphNodeVariant::Dequantize(_) => {
-                    self.resolve_dequantize(node)
+                ComputeGraphNodeVariant::Dequantize(op) => {
+                    self.resolve_dequantize(&op)
                 }
-                ComputeGraphNodeVariant::Custom(_) => {
-                    self.resolve_custom(node)
+                ComputeGraphNodeVariant::Custom(op) => {
+                    self.resolve_custom(&op)
                 }
             };
             let mut dependencies = Vec::new();
@@ -296,16 +300,28 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    fn collect_element_wise_ops(&mut self, key: NodeIndex) -> ElementWiseOperation {
+    fn collect_element_wise_ops(
+        &mut self,
+        graph: &mut ComputeGraphInner,
+        key: NodeIndex,
+        initial_op: Option<&ElementWiseOperation>,
+    ) -> ElementWiseOperation {
         let mut functions = Vec::new();
         let mut current_key = key;
         let mut ty = DataTypeEnum::F32;
         let mut shape = Box::new([]) as Box<[usize]>;
 
-        while let Some(node) = self.graph.nodes.nodes.node_weight(current_key) {
+        if let Some(op) = initial_op {
+            ty = op.input_datatype();
+            shape = op.shape().into();
+            functions.extend(op.functions.iter().cloned());
+            current_key = op.value;
+        }
+
+        while let Some(node) = graph.nodes.nodes.node_weight(current_key) {
             if let ComputeGraphNodeVariant::ElementWise(operation) = &node.variant {
                 // If the result is already cached, stop collecting element wise ops
-                if let Some(cached) = self.graph.cached_results.get(&current_key) {
+                if let Some(cached) = graph.cached_results.get(&current_key) {
                     ty = cached.datatype();
                     shape = cached.layout().shape().into();
                     break;
@@ -322,30 +338,37 @@ impl<'a> Resolver<'a> {
         ElementWiseOperation::from_element_wise(current_key, functions, shape)
     }
 
-    fn resolve_element_wise(&mut self, key: NodeIndex) -> Arc<dyn Operation> {
+    fn resolve_element_wise(
+        &mut self,
+        graph: &mut ComputeGraphInner,
+        key: NodeIndex,
+        operation: &ElementWiseOperation,
+    ) -> Arc<dyn Operation> {
         // First collect all element wise ops in this chain
-        let functions = self.collect_element_wise_ops(key);
+        let functions = self.collect_element_wise_ops(graph, key, Some(operation));
         let input = functions.value;
         let input_cached = self.resolved_set.contains(&input);
 
         if !input_cached {
-            if let Some(node) = self.graph.nodes.nodes.node_weight(input) {
-                match &node.variant {
+            let variant = graph.nodes.nodes.node_weight(input).map(|node| node.variant.clone());
+
+            if let Some(variant) = variant {
+                match variant {
                     // Merge into the output of the reduce kernel if possible and it isn't already cached
-                    ComputeGraphNodeVariant::Reduce(_) => {
-                        return self.resolve_reduce_then(input, Some(functions));
+                    ComputeGraphNodeVariant::Reduce(op) => {
+                        return self.resolve_reduce_then(graph, &op, Some(functions));
                     }
                     // Merge into the output of the pair wise kernel if possible and it isn't already cached
-                    ComputeGraphNodeVariant::PairWise(_) => {
-                        return self.resolve_pair_wise_then(input, Some(functions));
+                    ComputeGraphNodeVariant::PairWise(op) => {
+                        return self.resolve_pair_wise_then(graph, &op, Some(functions));
                     }
                     // Merge into the output of the mat mul kernel if possible and it isn't already cached
-                    ComputeGraphNodeVariant::MatMul(_) => {
-                        return self.resolve_mat_mul_then(input, Some(functions));
+                    ComputeGraphNodeVariant::MatMul(op) => {
+                        return self.resolve_mat_mul_then(graph, &op, Some(functions));
                     }
                     // Merge into the output of the dequantize kernel if possible and it isn't already cached
-                    ComputeGraphNodeVariant::Dequantize(_) => {
-                        return self.resolve_dequantize_then(input, Some(functions));
+                    ComputeGraphNodeVariant::Dequantize(op) => {
+                        return self.resolve_dequantize_then(&op, Some(functions));
                     }
                     _ => {}
                 }
@@ -358,20 +381,20 @@ impl<'a> Resolver<'a> {
         Arc::new(kernel)
     }
 
-    fn resolve_pair_wise(&mut self, key: NodeIndex) -> Arc<dyn Operation> {
-        self.resolve_pair_wise_then(key, None)
+    fn resolve_pair_wise(
+        &mut self,
+        graph: &mut ComputeGraphInner,
+        operation: &PairWiseOperation,
+    ) -> Arc<dyn Operation> {
+        self.resolve_pair_wise_then(graph, operation, None)
     }
 
     fn resolve_pair_wise_then(
         &mut self,
-        key: NodeIndex,
+        graph: &mut ComputeGraphInner,
+        operation: &PairWiseOperation,
         then: Option<ElementWiseOperation>,
     ) -> Arc<dyn Operation> {
-        let node = self.graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::PairWise(op) => op,
-            _ => panic!("Expected PairWise node"),
-        };
         let function = operation.function.clone();
         let shape: Box<[usize]> = operation.shape().into();
 
@@ -380,28 +403,38 @@ impl<'a> Resolver<'a> {
         let mut second_input = operation.second;
         let second_pre_element_wise = operation.pre_element_wise[1].clone();
 
-        let first_pre_element_wise = if let Some(node) = self.graph.nodes.nodes.node_weight(first_input) {
-            if let ComputeGraphNodeVariant::ElementWise(_) = &node.variant {
-                let functions = self.collect_element_wise_ops(first_input);
+        let first_pre_element_wise = {
+            let op = graph.nodes.nodes.node_weight(first_input).and_then(|node| {
+                if let ComputeGraphNodeVariant::ElementWise(op) = &node.variant {
+                    Some(op.clone())
+                } else {
+                    None
+                }
+            });
+            if let Some(op) = op {
+                let functions = self.collect_element_wise_ops(graph, first_input, Some(&op));
                 first_input = functions.value;
                 functions.functions
             } else {
                 first_pre_element_wise
             }
-        } else {
-            first_pre_element_wise
         };
 
-        let second_pre_element_wise = if let Some(node) = self.graph.nodes.nodes.node_weight(second_input) {
-            if let ComputeGraphNodeVariant::ElementWise(_) = &node.variant {
-                let functions = self.collect_element_wise_ops(second_input);
+        let second_pre_element_wise = {
+            let op = graph.nodes.nodes.node_weight(second_input).and_then(|node| {
+                if let ComputeGraphNodeVariant::ElementWise(op) = &node.variant {
+                    Some(op.clone())
+                } else {
+                    None
+                }
+            });
+            if let Some(op) = op {
+                let functions = self.collect_element_wise_ops(graph, second_input, Some(&op));
                 second_input = functions.value;
                 functions.functions
             } else {
                 second_pre_element_wise
             }
-        } else {
-            second_pre_element_wise
         };
 
         let mut kernel = PairWiseOperation::new(function, first_input, second_input, &shape);
@@ -415,20 +448,20 @@ impl<'a> Resolver<'a> {
         Arc::new(kernel)
     }
 
-    fn resolve_mat_mul(&mut self, key: NodeIndex) -> Arc<dyn Operation> {
-        self.resolve_mat_mul_then(key, None)
+    fn resolve_mat_mul(
+        &mut self,
+        graph: &mut ComputeGraphInner,
+        operation: &MatMulOperation,
+    ) -> Arc<dyn Operation> {
+        self.resolve_mat_mul_then(graph, operation, None)
     }
 
     fn resolve_mat_mul_then(
         &mut self,
-        key: NodeIndex,
+        graph: &mut ComputeGraphInner,
+        operation: &MatMulOperation,
         then: Option<ElementWiseOperation>,
     ) -> Arc<dyn Operation> {
-        let node = self.graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::MatMul(op) => op,
-            _ => panic!("Expected MatMul node"),
-        };
         let mut first = operation.first;
         let first_shape = operation.first_shape.clone();
         let first_pre_element_wise = operation.pre_element_wise[0].clone();
@@ -437,28 +470,38 @@ impl<'a> Resolver<'a> {
         let second_pre_element_wise = operation.pre_element_wise[1].clone();
         let parameters = operation.parameters.clone();
 
-        let first_pre_element_wise = if let Some(node) = self.graph.nodes.nodes.node_weight(first) {
-            if let ComputeGraphNodeVariant::ElementWise(_) = &node.variant {
-                let functions = self.collect_element_wise_ops(first);
+        let first_pre_element_wise = {
+            let op = graph.nodes.nodes.node_weight(first).and_then(|node| {
+                if let ComputeGraphNodeVariant::ElementWise(op) = &node.variant {
+                    Some(op.clone())
+                } else {
+                    None
+                }
+            });
+            if let Some(op) = op {
+                let functions = self.collect_element_wise_ops(graph, first, Some(&op));
                 first = functions.value;
                 functions.functions
             } else {
                 first_pre_element_wise
             }
-        } else {
-            first_pre_element_wise
         };
 
-        let second_pre_element_wise = if let Some(node) = self.graph.nodes.nodes.node_weight(second) {
-            if let ComputeGraphNodeVariant::ElementWise(_) = &node.variant {
-                let functions = self.collect_element_wise_ops(second);
+        let second_pre_element_wise = {
+            let op = graph.nodes.nodes.node_weight(second).and_then(|node| {
+                if let ComputeGraphNodeVariant::ElementWise(op) = &node.variant {
+                    Some(op.clone())
+                } else {
+                    None
+                }
+            }   );
+            if let Some(op) = op {
+                let functions = self.collect_element_wise_ops(graph, second, Some(&op));
                 second = functions.value;
                 functions.functions
             } else {
                 second_pre_element_wise
             }
-        } else {
-            second_pre_element_wise
         };
 
         let mut kernel = MatMulOperation::new_with_parameters(
@@ -479,12 +522,10 @@ impl<'a> Resolver<'a> {
         Arc::new(kernel)
     }
 
-    fn resolve_q_mat_mul(&mut self, key: NodeIndex) -> Arc<dyn Operation> {
-        let node = self.graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::QMatMul(op) => op,
-            _ => panic!("Expected QMatMul node"),
-        };
+    fn resolve_q_mat_mul(
+        &mut self,
+        operation: &QMatMulOperation,
+    ) -> Arc<dyn Operation> {
         let input = operation.input;
         let matrix = operation.matrix.clone();
 
@@ -494,21 +535,18 @@ impl<'a> Resolver<'a> {
         Arc::new(kernel)
     }
 
-    fn resolve_dequantize(&mut self, key: NodeIndex) -> Arc<dyn Operation> {
-        self.resolve_dequantize_then(key, None)
+    fn resolve_dequantize(
+        &mut self,
+        operation: &DequantizeOperation,
+    ) -> Arc<dyn Operation> {
+        self.resolve_dequantize_then(operation, None)
     }
 
     fn resolve_dequantize_then(
         &mut self,
-        key: NodeIndex,
+        operation: &DequantizeOperation,
         then: Option<ElementWiseOperation>,
     ) -> Arc<dyn Operation> {
-        let node = self.graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::Dequantize(op) => op,
-            _ => panic!("Expected Dequantize node"),
-        };
-
         let mut kernel = DequantizeOperation::new(operation.matrix.clone(), operation.datatype);
         if let Some(then) = then {
             kernel.set_post_element_wise(then.functions);
@@ -517,37 +555,42 @@ impl<'a> Resolver<'a> {
         Arc::new(kernel)
     }
 
-    fn resolve_reduce(&mut self, key: NodeIndex) -> Arc<dyn Operation> {
-        self.resolve_reduce_then(key, None)
+    fn resolve_reduce(
+        &mut self,
+        graph: &mut ComputeGraphInner,
+        operation: &ReduceOperation,
+    ) -> Arc<dyn Operation> {
+        self.resolve_reduce_then(graph, operation, None)
     }
 
     fn resolve_reduce_then(
         &mut self,
-        key: NodeIndex,
+        graph: &mut ComputeGraphInner,
+        operation: &ReduceOperation,
         then: Option<ElementWiseOperation>,
     ) -> Arc<dyn Operation> {
-        let node = self.graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::Reduce(op) => op.clone(),
-            _ => panic!("Expected Reduce node"),
-        };
         let mut input_key = operation.value;
 
-        let element_wise_before = if let Some(node) = self.graph.nodes.nodes.node_weight(operation.value) {
-            if let ComputeGraphNodeVariant::ElementWise(_) = &node.variant {
-                let functions = self.collect_element_wise_ops(operation.value);
+        let element_wise_before = {
+            let op = graph.nodes.nodes.node_weight(operation.value).and_then(|node| {
+                if let ComputeGraphNodeVariant::ElementWise(op) = &node.variant {
+                    Some(op.clone())
+                } else {
+                    None
+                }
+            }   );
+            if let Some(op) = op {
+                let functions = self.collect_element_wise_ops(graph, operation.value, Some(&op));
                 input_key = functions.value;
                 functions.functions
             } else {
                 ElementWiseFunctions::empty(operation.reduce_datatype())
             }
-        } else {
-            ElementWiseFunctions::empty(operation.reduce_datatype())
         };
 
         let mut kernel = ReduceOperation::new(
             input_key,
-            operation.function,
+            operation.function.clone(),
             operation.axis,
             &operation.shape,
         );
@@ -560,51 +603,41 @@ impl<'a> Resolver<'a> {
         Arc::new(kernel)
     }
 
-    fn resolve_map_layout(&mut self, key: NodeIndex) -> Arc<dyn Operation> {
-        let node = self.graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let kernel = match &node.variant {
-            ComputeGraphNodeVariant::MapLayout(op) => op,
-            _ => panic!("Expected MapLayout node"),
-        };
-
-        Arc::new(kernel.clone())
+    fn resolve_map_layout(
+        &mut self,
+        operation: &crate::map_layout::MapLayoutOperation,
+    ) -> Arc<dyn Operation> {
+        Arc::new(operation.clone())
     }
 
-    fn resolve_resize(&mut self, key: NodeIndex) -> Arc<dyn Operation> {
-        let node = self.graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let kernel = match &node.variant {
-            ComputeGraphNodeVariant::Resize(op) => op,
-            _ => panic!("Expected Resize node"),
-        };
-
-        Arc::new(kernel.clone())
+    fn resolve_resize(
+        &mut self,
+        operation: &crate::resize::ResizeOperation,
+    ) -> Arc<dyn Operation> {
+        Arc::new(operation.clone())
     }
 
-    fn resolve_slice_assign(&mut self, key: NodeIndex) -> Arc<dyn Operation> {
-        let node = self.graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let kernel = match &node.variant {
-            ComputeGraphNodeVariant::SliceAssign(op) => op,
-            _ => panic!("Expected SliceAssign node"),
-        };
-
-        Arc::new(kernel.clone())
+    fn resolve_slice_assign(
+        &mut self,
+        operation: &crate::slice_assign::SliceAssignOperation,
+    ) -> Arc<dyn Operation> {
+        Arc::new(operation.clone())
     }
 
-    fn resolve_index_select(&mut self, key: NodeIndex) -> Arc<dyn Operation> {
-        self.resolve_index_select_then(key, None)
+    fn resolve_index_select(
+        &mut self,
+        graph: &mut ComputeGraphInner,
+        operation: &IndexSelectOperation,
+    ) -> Arc<dyn Operation> {
+        self.resolve_index_select_then(graph, operation, None)
     }
 
     fn resolve_index_select_then(
         &mut self,
-        key: NodeIndex,
+        graph: &mut ComputeGraphInner,
+        operation: &IndexSelectOperation,
         then: Option<ElementWiseOperation>,
     ) -> Arc<dyn Operation> {
-        let node = self.graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let operation = match &node.variant {
-            ComputeGraphNodeVariant::IndexSelect(op) => op,
-            _ => panic!("Expected IndexSelect node"),
-        };
-
         let dimension = operation.dimension;
         let mut input = operation.input;
         let input_datatype = operation.input_datatype();
@@ -613,9 +646,16 @@ impl<'a> Resolver<'a> {
         let value_shape = operation.value_shape.clone();
         let indexes_shape = operation.indexes_shape.clone();
 
-        let mut input_pre_element_wise = if let Some(node) = self.graph.nodes.nodes.node_weight(input) {
-            if let ComputeGraphNodeVariant::ElementWise(_) = &node.variant {
-                let functions = self.collect_element_wise_ops(input);
+        let mut input_pre_element_wise = {
+            let op = graph.nodes.nodes.node_weight(input).and_then(|node| {
+                if let ComputeGraphNodeVariant::ElementWise(op) = &node.variant {
+                    Some(op.clone())
+                } else {
+                    None
+                }
+            });
+            if let Some(op) = op {
+                let functions = self.collect_element_wise_ops(graph, input, Some(&op));
                 input = functions.value;
                 functions
             } else {
@@ -625,12 +665,6 @@ impl<'a> Resolver<'a> {
                     value_shape.as_ref(),
                 )
             }
-        } else {
-            ElementWiseOperation::from_element_wise(
-                input,
-                ElementWiseFunctions::empty(input_datatype),
-                value_shape.as_ref(),
-            )
         };
 
         if let Some(then) = then {
@@ -640,9 +674,16 @@ impl<'a> Resolver<'a> {
             }
         }
 
-        let indexes_pre_element_wise = if let Some(node) = self.graph.nodes.nodes.node_weight(indexes) {
-            if let ComputeGraphNodeVariant::ElementWise(_) = &node.variant {
-                let functions = self.collect_element_wise_ops(indexes);
+        let indexes_pre_element_wise = {
+            let op = graph.nodes.nodes.node_weight(indexes).and_then(|node| {
+                if let ComputeGraphNodeVariant::ElementWise(op) = &node.variant {
+                    Some(op.clone())
+                } else {
+                    None
+                }
+            }   );
+            if let Some(op) = op {
+                let functions = self.collect_element_wise_ops(graph, indexes, Some(&op));
                 indexes = functions.value;
                 functions
             } else {
@@ -652,12 +693,6 @@ impl<'a> Resolver<'a> {
                     indexes_shape.as_ref(),
                 )
             }
-        } else {
-            ElementWiseOperation::from_element_wise(
-                indexes,
-                ElementWiseFunctions::empty(indexes_datatype),
-                indexes_shape.as_ref(),
-            )
         };
 
         let mut kernel = IndexSelectOperation::new(
@@ -674,23 +709,21 @@ impl<'a> Resolver<'a> {
         Arc::new(kernel)
     }
 
-    fn resolve_tensor(&mut self, key: NodeIndex) {
-        let node = self.graph.nodes.nodes.node_weight(key).expect("Node not found");
-        let tensor = match &node.variant {
-            ComputeGraphNodeVariant::Tensor(data) => data.clone(),
-            _ => panic!("Expected Tensor node"),
-        };
-
-        self.graph.cached_results.insert(key, tensor);
+    fn resolve_tensor(
+        &mut self,
+        graph: &mut ComputeGraphInner,
+        key: NodeIndex,
+        operation: &TensorData,
+    ) {
+        graph.cached_results.insert(key, operation.clone());
         // Mark this node as resolved
         self.resolved_set.insert(key);
     }
 
-    fn resolve_custom(&mut self, key: NodeIndex) -> Arc<dyn Operation + Send + Sync> {
-        let node = self.graph.nodes.nodes.node_weight(key).expect("Node not found");
-        match &node.variant {
-            ComputeGraphNodeVariant::Custom(op) => Arc::clone(op),
-            _ => panic!("Expected Custom node"),
-        }
+    fn resolve_custom(
+        &mut self,
+        operation: &Arc<dyn Operation + Send + Sync>,
+    ) -> Arc<dyn Operation + Send + Sync> {
+        Arc::clone(operation)
     }
 }
