@@ -184,7 +184,7 @@ fn test_vision_patch_embed() {
     .unwrap()
     .reshape(&dims)
     .unwrap();
-    let (weight_1, weight_2) = split_frames(&weight).unwrap();
+    let (weight_1, weight_2) = split_frames(&weight)?;
 
     let patch_embed = Qwen2_5VisionPatchEmbed::from_weight(
         patch_size,
@@ -216,7 +216,7 @@ fn test_vision_patch_embed() {
         .unwrap()
         .to_dtype(DType::F32)
         .unwrap();
-    let output_vec = output.to_vec2::<f32>().unwrap();
+    let output_vec = output.to_vec2::<f32>()?;
     println!("Output: {output_vec:?}");
     let expected_output = [[0.3058, 0.6866, -0.7391, -0.6952]];
     assert_2d_vec_eq(output_vec, expected_output, 1e-2);
