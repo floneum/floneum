@@ -88,7 +88,9 @@ impl Device {
 
         use wgpu::PipelineCacheDescriptor;
         let filename = wgpu::util::pipeline_cache_key(&adapter.get_info());
-        let (cache, cache_file) = if let Some(filename) = filename {
+        let (cache, cache_file) = if let Some(filename) =
+            filename.filter(|_| device.features().contains(wgpu::Features::PIPELINE_CACHE))
+        {
             let cache_dir: PathBuf = PathBuf::from(".fusor").join("pipeline_cache");
             let cache_path = cache_dir.join(&filename);
             let cache_data = std::fs::read(&cache_path).ok();
