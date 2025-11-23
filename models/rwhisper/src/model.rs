@@ -479,7 +479,7 @@ impl Decoder {
                 queued_tokens.push(token);
                 if let Some(timestamps) = &token_timestamps {
                     if timestamp_start.is_none() {
-                        timestamp_start = Some(timestamps[index].into());
+                        timestamp_start = Some(timestamps[index]);
                     }
                 }
                 let detokenized = self
@@ -491,13 +491,9 @@ impl Decoder {
                 {
                     let timestamp = token_timestamps.as_ref().map(|timestamps| {
                         let start = timestamp_start.unwrap();
-                        let end = timestamps
-                            .get(index)
-                            .copied()
-                            .map(|f| f.into())
-                            .unwrap_or_else(|| {
-                                n_frames as f32 * HOP_LENGTH as f32 / SAMPLE_RATE as f32
-                            });
+                        let end = timestamps.get(index).copied().unwrap_or_else(|| {
+                            n_frames as f32 * HOP_LENGTH as f32 / SAMPLE_RATE as f32
+                        });
                         timestamp_start = Some(end);
                         start..end
                     });
@@ -522,7 +518,7 @@ impl Decoder {
                     .map_err(WhisperError::Tokenizer)?;
                 let timestamp = token_timestamps.as_ref().map(|timestamps| {
                     let start = timestamp_start.unwrap();
-                    let end = (*timestamps.last().unwrap()).into();
+                    let end = *timestamps.last().unwrap();
                     start..end
                 });
                 let text_range = current_text.len()..current_text.len() + detokenized.len();

@@ -77,7 +77,12 @@ impl MultiHeadAttention {
         let value_states = self.value.forward(x);
         let (key_states, value_states) = match cache {
             None => (key_states, value_states),
-            Some(cache) => cache.kv_cache.append(&key_states, &value_states),
+            Some(cache) => {
+                let (k, v) = cache
+                    .kv_cache
+                    .append(&key_states.unsqueeze(2), &value_states.unsqueeze(2));
+                (k.squeeze(2), v.squeeze(2))
+            }
         };
         Ok((key_states, value_states))
     }
@@ -391,10 +396,7 @@ impl TextDecoder {
             return Err(Error::msg("exceeded max sequence length"));
         }
         let device = audio_features.device();
-        let mask = self
-            .mask_cache
-            .get_mask(seq_len, index_pos, None, device)
-            .map_err(Error::msg)?;
+        let mask = self.mask_cache.get_mask(seq_len, index_pos, None, device);
         let x = Tensor::new(device, tokens);
         // The model expects a batch dim but this inference loop does not handle
         // it so we add it at this point.
