@@ -120,7 +120,7 @@ fn test_get_window_index() {
     )
     .unwrap();
 
-    let window_index = window_index.to_vec1::<u32>()?;
+    let window_index = window_index.to_vec1::<u32>().unwrap();
     println!("Window Index: {window_index:?}");
     assert_eq!(
         window_index,
