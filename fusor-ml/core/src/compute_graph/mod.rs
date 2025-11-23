@@ -270,9 +270,8 @@ impl ComputeGraphInner {
             // If the dependant still exists and it hasn't been computed yet
             // keep this node alive
             if let Some(dep_node) = self.nodes.nodes.node_weight(dependant) {
-                let alive = dep_node.reference_count > 0;
                 let computed = dep_node.cached.is_some();
-                if alive && !computed {
+                if !computed {
                     return;
                 }
             }
