@@ -278,7 +278,10 @@ impl Decoder {
             .chain(std::iter::once(self.eot_token))
     }
 
-    fn encode(&mut self, mel: &Tensor<3, crate::WhisperDType>) -> fusor_core::Result<Tensor<3, crate::WhisperDType>> {
+    fn encode(
+        &mut self,
+        mel: &Tensor<3, crate::WhisperDType>,
+    ) -> fusor_core::Result<Tensor<3, crate::WhisperDType>> {
         let tensor = match &mut self.model {
             ModelType::Quantized(model) => model.encoder.forward(mel)?,
         };

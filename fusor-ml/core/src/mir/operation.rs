@@ -4,7 +4,7 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     Device, TensorLayoutInfo,
-    compute_graph::{NodeIndex, ComputeGraphInner},
+    compute_graph::{ComputeGraphInner, NodeIndex},
 };
 
 use super::{

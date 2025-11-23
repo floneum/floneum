@@ -111,21 +111,22 @@ impl<R: std::io::Read + std::io::Seek> ShardedVarBuilder<R> {
                 }
             }
         }
-        Err(crate::Error::VarBuilder(format!("Key '{}' not found in GGUF metadata", name)))
+        Err(crate::Error::VarBuilder(format!(
+            "Key '{}' not found in GGUF metadata",
+            name
+        )))
     }
 
     pub fn tensor(&mut self, name: &str, device: &Device) -> crate::Result<QMatrix> {
         for (content, r) in &mut self.contents {
             if let Some(tensor_info) = content.tensor_infos.get(name) {
-                let q_matrix = QMatrix::read(
-                    device,
-                    tensor_info,
-                    r,
-                    content.tensor_data_offset,
-                )?;
+                let q_matrix = QMatrix::read(device, tensor_info, r, content.tensor_data_offset)?;
                 return Ok(q_matrix);
             }
         }
-        Err(crate::Error::VarBuilder(format!("Key '{}' not found in GGUF metadata", name)))
+        Err(crate::Error::VarBuilder(format!(
+            "Key '{}' not found in GGUF metadata",
+            name
+        )))
     }
 }

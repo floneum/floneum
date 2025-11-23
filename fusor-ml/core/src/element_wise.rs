@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     Tensor,
-    compute_graph::{NodeIndex, ComputeGraphInner},
+    compute_graph::{ComputeGraphInner, NodeIndex},
     layout::TILE_SIZE,
     mir::{function::Function, inputs::MirValue, kernel::GenericKernel, operation::Operation},
     tensor::{DataType, DataTypeEnum, TensorData},

@@ -132,10 +132,16 @@ impl Device {
             compute_graph: OnceLock::new(),
         });
 
-        let device = Device { inner: inner.clone() };
+        let device = Device {
+            inner: inner.clone(),
+        };
 
         // Initialize the compute graph now that we have a valid device
-        inner.compute_graph.set(ComputeGraph::new(device.clone())).ok().expect("compute_graph should only be set once");
+        inner
+            .compute_graph
+            .set(ComputeGraph::new(device.clone()))
+            .ok()
+            .expect("compute_graph should only be set once");
 
         let device = Device { inner };
 
@@ -327,6 +333,9 @@ impl Device {
     }
 
     pub(crate) fn compute_graph(&self) -> &ComputeGraph {
-        self.inner.compute_graph.get().expect("compute_graph should be initialized")
+        self.inner
+            .compute_graph
+            .get()
+            .expect("compute_graph should be initialized")
     }
 }

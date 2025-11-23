@@ -175,7 +175,9 @@ impl QMatrix {
         }
 
         let device = self.device.clone();
-        let key = device.compute_graph().dequantize(self.clone(), T::WGSL_TYPE);
+        let key = device
+            .compute_graph()
+            .dequantize(self.clone(), T::WGSL_TYPE);
 
         let data = LazyTensorData::from_parts(
             device,

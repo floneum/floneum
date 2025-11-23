@@ -1,9 +1,7 @@
 use rustc_hash::FxHashMap;
 
 use super::queue::ComputeQueue;
-use super::{
-    NodeIndex, ComputeGraphInner, ComputeGraphNodeVariant, layout_pass,
-};
+use super::{ComputeGraphInner, ComputeGraphNodeVariant, NodeIndex, layout_pass};
 use tabbycat::Graph;
 use tabbycat::{Edge, GraphBuilder, GraphType, Identity, Stmt, StmtList};
 
@@ -16,11 +14,7 @@ struct GraphVisPass {
 }
 
 impl GraphVisPass {
-    fn visit_element_wise(
-        &mut self,
-        key: NodeIndex,
-        operation: &crate::ElementWiseOperation,
-    ) {
+    fn visit_element_wise(&mut self, key: NodeIndex, operation: &crate::ElementWiseOperation) {
         let input = self.identities.get(&operation.value).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
         let id = Identity::quoted(format!(
@@ -40,11 +34,7 @@ impl GraphVisPass {
         self.identities.insert(key, id.clone());
     }
 
-    fn visit_pair_wise(
-        &mut self,
-        key: NodeIndex,
-        operation: &crate::PairWiseOperation,
-    ) {
+    fn visit_pair_wise(&mut self, key: NodeIndex, operation: &crate::PairWiseOperation) {
         let first = self.identities.get(&operation.first).unwrap();
         let second = self.identities.get(&operation.second).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
@@ -68,11 +58,7 @@ impl GraphVisPass {
         self.identities.insert(key, id.clone());
     }
 
-    fn visit_mat_mul(
-        &mut self,
-        key: NodeIndex,
-        operation: &crate::MatMulOperation,
-    ) {
+    fn visit_mat_mul(&mut self, key: NodeIndex, operation: &crate::MatMulOperation) {
         let first = self.identities.get(&operation.first).unwrap();
         let second = self.identities.get(&operation.second).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
@@ -110,11 +96,7 @@ impl GraphVisPass {
         self.identities.insert(key, id.clone());
     }
 
-    fn visit_reduce(
-        &mut self,
-        key: NodeIndex,
-        operation: &crate::ReduceOperation,
-    ) {
+    fn visit_reduce(&mut self, key: NodeIndex, operation: &crate::ReduceOperation) {
         let input = self.identities.get(&operation.value).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
         let id = Identity::quoted(format!(
@@ -153,11 +135,7 @@ impl GraphVisPass {
         self.identities.insert(key, id.clone());
     }
 
-    fn visit_resize(
-        &mut self,
-        key: NodeIndex,
-        operation: &crate::resize::ResizeOperation,
-    ) {
+    fn visit_resize(&mut self, key: NodeIndex, operation: &crate::resize::ResizeOperation) {
         let input = self.identities.get(&operation.input).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
         let id = Identity::quoted(format!("resize ({}) #{:?}", output_layout, key));
@@ -233,11 +211,7 @@ impl GraphVisPass {
         self.identities.insert(key, id.clone());
     }
 
-    fn visit_tensor(
-        &mut self,
-        key: NodeIndex,
-        _operation: &crate::tensor::TensorData,
-    ) {
+    fn visit_tensor(&mut self, key: NodeIndex, _operation: &crate::tensor::TensorData) {
         let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
         let id = Identity::quoted(format!("tensor ({}) #{:?}", output_layout, key));
         self.statements.push(Stmt::Node {
@@ -312,17 +286,25 @@ impl ComputeGraphInner {
 
             let node_data = self.nodes.nodes.node_weight(node).expect("Node not found");
             match &node_data.variant {
-                ComputeGraphNodeVariant::ElementWise(op) => graph_vis_pass.visit_element_wise(node, op),
+                ComputeGraphNodeVariant::ElementWise(op) => {
+                    graph_vis_pass.visit_element_wise(node, op)
+                }
                 ComputeGraphNodeVariant::PairWise(op) => graph_vis_pass.visit_pair_wise(node, op),
                 ComputeGraphNodeVariant::MatMul(op) => graph_vis_pass.visit_mat_mul(node, op),
                 ComputeGraphNodeVariant::QMatMul(op) => graph_vis_pass.visit_q_mat_mul(node, op),
                 ComputeGraphNodeVariant::Reduce(op) => graph_vis_pass.visit_reduce(node, op),
                 ComputeGraphNodeVariant::MapLayout(op) => graph_vis_pass.visit_map_layout(node, op),
                 ComputeGraphNodeVariant::Resize(op) => graph_vis_pass.visit_resize(node, op),
-                ComputeGraphNodeVariant::SliceAssign(op) => graph_vis_pass.visit_slice_assign(node, op),
+                ComputeGraphNodeVariant::SliceAssign(op) => {
+                    graph_vis_pass.visit_slice_assign(node, op)
+                }
                 ComputeGraphNodeVariant::Tensor(op) => graph_vis_pass.visit_tensor(node, op),
-                ComputeGraphNodeVariant::Dequantize(op) => graph_vis_pass.visit_dequantize(node, op),
-                ComputeGraphNodeVariant::IndexSelect(op) => graph_vis_pass.visit_index_select(node, op),
+                ComputeGraphNodeVariant::Dequantize(op) => {
+                    graph_vis_pass.visit_dequantize(node, op)
+                }
+                ComputeGraphNodeVariant::IndexSelect(op) => {
+                    graph_vis_pass.visit_index_select(node, op)
+                }
                 ComputeGraphNodeVariant::Custom(op) => graph_vis_pass.visit_custom(node, op),
             }
         }

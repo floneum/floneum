@@ -26,12 +26,7 @@ pub(crate) struct ReduceOperation {
 }
 
 impl ReduceOperation {
-    pub fn new(
-        value: NodeIndex,
-        function: ReduceFunction,
-        axis: usize,
-        shape: &[usize],
-    ) -> Self {
+    pub fn new(value: NodeIndex, function: ReduceFunction, axis: usize, shape: &[usize]) -> Self {
         let datatype = function.datatype();
         Self {
             value,

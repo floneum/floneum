@@ -2,7 +2,7 @@ use rustc_hash::FxHashMap;
 
 use crate::{Layout, TensorLayoutInfo, index_select::IndexSelectOperation};
 
-use super::{NodeIndex, ComputeGraphNodeVariant, queue::ComputeQueue};
+use super::{ComputeGraphNodeVariant, NodeIndex, queue::ComputeQueue};
 
 #[derive(Default)]
 pub(crate) struct LayoutPass {
@@ -40,11 +40,7 @@ impl LayoutPass {
         }
     }
 
-    fn visit_element_wise(
-        &mut self,
-        key: NodeIndex,
-        operation: &crate::ElementWiseOperation,
-    ) {
+    fn visit_element_wise(&mut self, key: NodeIndex, operation: &crate::ElementWiseOperation) {
         let input = operation.value;
         let Some(input_layout) = self.output_layout.get(&input) else {
             self.queue.push_back(input);
@@ -58,11 +54,7 @@ impl LayoutPass {
         self.output_layout.insert(key, output_layout);
     }
 
-    fn visit_pair_wise(
-        &mut self,
-        key: NodeIndex,
-        operation: &crate::PairWiseOperation,
-    ) {
+    fn visit_pair_wise(&mut self, key: NodeIndex, operation: &crate::PairWiseOperation) {
         let Some(first_layout) = self.output_layout.get(&operation.first) else {
             self.queue.push_back(operation.first);
             self.queue.push_back(key);
@@ -76,11 +68,7 @@ impl LayoutPass {
         self.output_layout.insert(key, first_layout.clone());
     }
 
-    fn visit_mat_mul(
-        &mut self,
-        key: NodeIndex,
-        operation: &crate::MatMulOperation,
-    ) {
+    fn visit_mat_mul(&mut self, key: NodeIndex, operation: &crate::MatMulOperation) {
         let Some(first_layout) = self.output_layout.get(&operation.first) else {
             self.queue.push_back(operation.first);
             self.queue.push_back(key);
@@ -116,11 +104,7 @@ impl LayoutPass {
         );
     }
 
-    fn visit_reduce(
-        &mut self,
-        key: NodeIndex,
-        operation: &crate::ReduceOperation,
-    ) {
+    fn visit_reduce(&mut self, key: NodeIndex, operation: &crate::ReduceOperation) {
         let dim = operation.axis;
         let Some(input_layout) = self.output_layout.get(&operation.value) else {
             self.queue.push_back(operation.value);
@@ -158,11 +142,7 @@ impl LayoutPass {
         );
     }
 
-    fn visit_resize(
-        &mut self,
-        key: NodeIndex,
-        operation: &crate::resize::ResizeOperation,
-    ) {
+    fn visit_resize(&mut self, key: NodeIndex, operation: &crate::resize::ResizeOperation) {
         let Some(input_layout) = self.output_layout.get(&operation.input) else {
             self.queue.push_back(operation.input);
             self.queue.push_back(key);
@@ -193,11 +173,7 @@ impl LayoutPass {
         self.output_layout.insert(key, input_layout.clone());
     }
 
-    fn visit_tensor(
-        &mut self,
-        key: NodeIndex,
-        operation: &crate::tensor::TensorData,
-    ) {
+    fn visit_tensor(&mut self, key: NodeIndex, operation: &crate::tensor::TensorData) {
         let info = operation.info();
         self.output_layout.insert(key, info.clone());
     }
@@ -209,10 +185,8 @@ impl LayoutPass {
     ) {
         let matrix = &operation.matrix;
         let new_layout = Layout::contiguous(matrix.shape());
-        self.output_layout.insert(
-            key,
-            TensorLayoutInfo::new(new_layout, operation.datatype),
-        );
+        self.output_layout
+            .insert(key, TensorLayoutInfo::new(new_layout, operation.datatype));
     }
 
     fn visit_index_select(
@@ -236,10 +210,8 @@ impl LayoutPass {
             input_shape.shape(),
         );
         let new_layout = Layout::contiguous(&shape);
-        self.output_layout.insert(
-            key,
-            TensorLayoutInfo::new(new_layout, operation.datatype),
-        );
+        self.output_layout
+            .insert(key, TensorLayoutInfo::new(new_layout, operation.datatype));
     }
 
     fn visit_custom(

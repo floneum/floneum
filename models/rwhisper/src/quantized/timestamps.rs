@@ -87,9 +87,7 @@ pub(super) async fn extract_timestamps(
                 if is_jump {
                     Some(
                         time_index
-                            / 
-                                crate::WhisperDType::from((SAMPLE_RATE / (HOP_LENGTH * 2)) as f32)
-                            ,
+                            / crate::WhisperDType::from((SAMPLE_RATE / (HOP_LENGTH * 2)) as f32),
                     )
                 } else {
                     None

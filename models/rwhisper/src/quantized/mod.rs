@@ -13,7 +13,11 @@ use crate::config::Config;
 
 pub(crate) mod timestamps;
 
-fn conv1d(config: Conv1dConfig, device: &Device, vb: &mut VarBuilder) -> Result<Conv1d<crate::WhisperDType>> {
+fn conv1d(
+    config: Conv1dConfig,
+    device: &Device,
+    vb: &mut VarBuilder,
+) -> Result<Conv1d<crate::WhisperDType>> {
     let weight = vb.get("weight", device)?.dequantize();
     let bias = vb.get("bias", device)?.dequantize();
     Ok(Conv1d::new(weight, Some(bias), config))
@@ -65,7 +69,10 @@ impl MultiHeadAttention {
         &self,
         x: &Tensor<3, crate::WhisperDType>,
         cache: Option<&mut MultiHeadAttentionCache>,
-    ) -> Result<(Tensor<3, crate::WhisperDType>, Tensor<3, crate::WhisperDType>)> {
+    ) -> Result<(
+        Tensor<3, crate::WhisperDType>,
+        Tensor<3, crate::WhisperDType>,
+    )> {
         let key_states = self.key.forward(x);
         let value_states = self.value.forward(x);
         let (key_states, value_states) = match cache {
@@ -78,7 +85,10 @@ impl MultiHeadAttention {
     fn forward(
         &mut self,
         query: &Tensor<3, crate::WhisperDType>,
-        kv: (Tensor<3, crate::WhisperDType>, Tensor<3, crate::WhisperDType>),
+        kv: (
+            Tensor<3, crate::WhisperDType>,
+            Tensor<3, crate::WhisperDType>,
+        ),
         mask: Option<&AttentionMask<crate::WhisperDType>>,
         attention_output: Option<&mut TensorCache<4, crate::WhisperDType>>,
     ) -> Result<Tensor<3, crate::WhisperDType>> {
@@ -139,7 +149,10 @@ impl MultiHeadAttention {
 
 struct ResidualAttentionBlockCache {
     attn: MultiHeadAttentionCache,
-    feature_attn_cache: Option<(Tensor<3, crate::WhisperDType>, Tensor<3, crate::WhisperDType>)>,
+    feature_attn_cache: Option<(
+        Tensor<3, crate::WhisperDType>,
+        Tensor<3, crate::WhisperDType>,
+    )>,
 }
 
 // https://github.com/openai/whisper/blob/f572f2161ba831bae131364c3bffdead7af6d210/whisper/model.py#L111
@@ -182,7 +195,10 @@ impl ResidualAttentionBlock {
 
     fn forward(
         &mut self,
-        audio_features_kv: Option<(Tensor<3, crate::WhisperDType>, Tensor<3, crate::WhisperDType>)>,
+        audio_features_kv: Option<(
+            Tensor<3, crate::WhisperDType>,
+            Tensor<3, crate::WhisperDType>,
+        )>,
         x: &Tensor<3, crate::WhisperDType>,
         mask: Option<&AttentionMask<crate::WhisperDType>>,
         mut cache: Option<&mut ResidualAttentionBlockCache>,
@@ -209,8 +225,8 @@ impl ResidualAttentionBlock {
 
 fn sinusoids(length: usize, channels: usize, device: &Device) -> Tensor<2, crate::WhisperDType> {
     let max_timescale = 10000f32;
-    let log_timescale_increment =
-        crate::WhisperDType::from(max_timescale.ln()) / crate::WhisperDType::from((channels / 2 - 1) as f32);
+    let log_timescale_increment = crate::WhisperDType::from(max_timescale.ln())
+        / crate::WhisperDType::from((channels / 2 - 1) as f32);
     let inv_timescales: Vec<_> = (0..channels / 2)
         .map(|i| (crate::WhisperDType::from(i as f32) * (-log_timescale_increment)).exp())
         .collect();
@@ -281,7 +297,10 @@ impl AudioEncoder {
         })
     }
 
-    pub fn forward(&mut self, x: &Tensor<3, crate::WhisperDType>) -> Result<Tensor<3, crate::WhisperDType>> {
+    pub fn forward(
+        &mut self,
+        x: &Tensor<3, crate::WhisperDType>,
+    ) -> Result<Tensor<3, crate::WhisperDType>> {
         let _enter = self.span.enter();
         let x = {
             let _enter = self.conv1_span.enter();
@@ -406,7 +425,10 @@ impl TextDecoder {
         Ok(out)
     }
 
-    pub fn final_linear(&self, x: &Tensor<3, crate::WhisperDType>) -> Result<Tensor<3, crate::WhisperDType>> {
+    pub fn final_linear(
+        &self,
+        x: &Tensor<3, crate::WhisperDType>,
+    ) -> Result<Tensor<3, crate::WhisperDType>> {
         let embeddings = self.token_embedding.embeddings_quantized();
         let logits = {
             let _enter = self.span_final.enter();

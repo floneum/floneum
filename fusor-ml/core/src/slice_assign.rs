@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use crate::{
     TILE_SIZE, Tensor,
-    compute_graph::{NodeIndex, ComputeGraphInner},
+    compute_graph::{ComputeGraphInner, NodeIndex},
     mir::operation::Operation,
     visit_tiled::{
         MaybeQData, build_visit_tiled_kernel, titled_map_dispatch_size,
