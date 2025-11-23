@@ -10,11 +10,11 @@ use crate::config::{HOP_LENGTH, N_FRAMES, SAMPLE_RATE};
 pub(super) async fn extract_timestamps(
     // A list of (layer, head) pairs to use for timestamp determination
     alignment_heads: &[[usize; 2]],
-    cross_attentions: &[Tensor<4, half::f16>],
+    cross_attentions: &[Tensor<4, crate::WhisperDType>],
     filter_width: NonZeroUsize,
     n_frames: usize,
     mask: Vec<Vec<bool>>,
-) -> fusor_core::Result<Vec<Vec<half::f16>>> {
+) -> fusor_core::Result<Vec<Vec<crate::WhisperDType>>> {
     // Select relevant cross-attention heads
     let weights = Tensor::stack(
         alignment_heads.iter().copied().filter_map(|[layer, head]| {
@@ -51,7 +51,7 @@ pub(super) async fn extract_timestamps(
         let batch_index_cost_3d = (-cost.clone())
             .narrow(0, batch_idx, 1)
             .squeeze(0)
-            .cast::<half::f16>();
+            .cast::<crate::WhisperDType>();
         let batch_index_cost_slice = batch_index_cost_3d.as_slice().await?;
         let shape = batch_index_cost_slice.shape();
         let (rows, cols) = (shape[0], shape[1]);
@@ -80,16 +80,16 @@ pub(super) async fn extract_timestamps(
                 text_indices
                     .iter()
                     .zip(text_indices.iter().skip(1))
-                    .map(|(a, b)| (b - a).to_f32() as usize == 1),
+                    .map(|(a, b)| (b - a) as usize == 1),
             )
             .zip(time_indices)
             .filter_map(|(is_jump, time_index)| {
                 if is_jump {
                     Some(
                         time_index
-                            / const {
-                                half::f16::from_f32_const((SAMPLE_RATE / (HOP_LENGTH * 2)) as f32)
-                            },
+                            / 
+                                crate::WhisperDType::from((SAMPLE_RATE / (HOP_LENGTH * 2)) as f32)
+                            ,
                     )
                 } else {
                     None
@@ -103,8 +103,8 @@ pub(super) async fn extract_timestamps(
 
 /// Computes the lowest cost warping path through the provided cost matrix
 fn dynamic_time_warp(
-    matrix: Vec<Vec<half::f16>>,
-) -> fusor_core::Result<(Vec<half::f16>, Vec<half::f16>)> {
+    matrix: Vec<Vec<crate::WhisperDType>>,
+) -> fusor_core::Result<(Vec<crate::WhisperDType>, Vec<crate::WhisperDType>)> {
     #[derive(Debug, Clone, Copy)]
     enum Action {
         Match,
@@ -114,15 +114,15 @@ fn dynamic_time_warp(
 
     let n = matrix.len();
     let m = matrix[0].len();
-    // let mut cost = vec![vec![half::f16::INFINITY; m + 1]; n + 1];
+    // let mut cost = vec![vec![crate::WhisperDType::INFINITY; m + 1]; n + 1];
     let mut cost = (0..n + 1)
         .map(|i| {
             (0..m + 1)
                 .map(|j| {
                     if i == 0 && j == 0 {
-                        half::f16::ZERO
+                        crate::WhisperDType::from(0.0)
                     } else {
-                        half::f16::INFINITY
+                        crate::WhisperDType::INFINITY
                     }
                 })
                 .collect::<Box<[_]>>()
@@ -143,7 +143,7 @@ fn dynamic_time_warp(
         })
         .collect::<Box<[_]>>();
 
-    cost[0][0] = half::f16::ZERO;
+    cost[0][0] = crate::WhisperDType::from(0.0);
     for j in 1..m + 1 {
         for i in 1..n + 1 {
             let down_left = cost[i - 1][j - 1];
@@ -166,8 +166,8 @@ fn dynamic_time_warp(
 
     let (mut xs, mut ys) = (vec![], vec![]);
     while i > 0 || j > 0 {
-        xs.push(half::f16::from_f32(i.saturating_sub(1) as f32));
-        ys.push(half::f16::from_f32(j.saturating_sub(1) as f32));
+        xs.push(crate::WhisperDType::from(i.saturating_sub(1) as f32));
+        ys.push(crate::WhisperDType::from(j.saturating_sub(1) as f32));
         match trace[i as usize][j as usize] {
             Action::Match => {
                 i = i.saturating_sub(1);
@@ -191,8 +191,8 @@ fn dynamic_time_warp(
 
 fn median_filter(
     _filter_width: NonZeroUsize,
-    weights: Tensor<4, half::f16>,
-) -> fusor_core::Result<Tensor<4, half::f16>> {
+    weights: Tensor<4, crate::WhisperDType>,
+) -> fusor_core::Result<Tensor<4, crate::WhisperDType>> {
     // TODO: Implement proper median filtering for timestamp smoothing
     // For now, return the weights unchanged
     Ok(weights)

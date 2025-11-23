@@ -33,6 +33,8 @@
 
 #![warn(missing_docs)]
 
+type WhisperDType = f32;
+
 use cpal::FromSample;
 use futures_channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use kalosm_common::Cache;
