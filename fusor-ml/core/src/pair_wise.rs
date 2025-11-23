@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     ElementWiseFunction, ElementWiseFunctions, MaxRank, Tensor,
-    compute_graph::{AnyComputeKey, ComputeGraphInner},
+    compute_graph::{ComputeGraphInner, NodeIndex},
     layout::TILE_SIZE,
     mir::{function::Function, kernel::GenericKernel, operation::Operation},
     tensor::{DataType, DataTypeEnum, TensorData},
@@ -18,8 +18,8 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub(crate) struct PairWiseOperation {
-    pub(crate) first: AnyComputeKey,
-    pub(crate) second: AnyComputeKey,
+    pub(crate) first: NodeIndex,
+    pub(crate) second: NodeIndex,
     pub(crate) pre_element_wise: [ElementWiseFunctions; 2],
     pub(crate) function: PairWiseFunction,
     post_element_wise: ElementWiseFunctions,
@@ -29,8 +29,8 @@ pub(crate) struct PairWiseOperation {
 impl PairWiseOperation {
     pub fn new(
         function: PairWiseFunction,
-        first: AnyComputeKey,
-        second: AnyComputeKey,
+        first: NodeIndex,
+        second: NodeIndex,
         shape: &[usize],
     ) -> Self {
         let datatype = function.datatype;
@@ -116,13 +116,9 @@ impl Operation for PairWiseOperation {
         titled_map_dispatch_size(TILE_SIZE, *workgroup_shape, &inputs)
     }
 
-    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
-        if !matches!(self.first, AnyComputeKey::Dequantize(_)) {
-            f(self.first);
-        }
-        if !matches!(self.second, AnyComputeKey::Dequantize(_)) {
-            f(self.second);
-        }
+    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
+        f(self.first);
+        f(self.second);
     }
 
     fn inputs(

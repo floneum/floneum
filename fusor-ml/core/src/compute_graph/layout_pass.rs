@@ -2,129 +2,113 @@ use rustc_hash::FxHashMap;
 
 use crate::{Layout, TensorLayoutInfo, index_select::IndexSelectOperation};
 
-use super::{AnyComputeKey, queue::ComputeQueue};
+use super::{ComputeGraphNodeVariant, NodeIndex, queue::ComputeQueue};
 
 #[derive(Default)]
 pub(crate) struct LayoutPass {
     queue: ComputeQueue,
-    pub(crate) output_layout: FxHashMap<AnyComputeKey, TensorLayoutInfo>,
+    pub(crate) output_layout: FxHashMap<NodeIndex, TensorLayoutInfo>,
 }
 
 impl LayoutPass {
-    pub fn visit(&mut self, graph: &super::ComputeGraphInner, key: AnyComputeKey) {
+    pub fn visit(&mut self, graph: &super::ComputeGraphInner, key: NodeIndex) {
         self.queue.push_back(key);
 
         while let Some(node) = self.queue.pop_front() {
             if self.output_layout.contains_key(&node) {
                 continue;
             }
-            if let Some(resolved) = graph.cached_results.get(&node) {
+            let node_data = graph.nodes.nodes.node_weight(node).expect("Node not found");
+            if let Some(resolved) = &node_data.cached {
                 self.output_layout.insert(node, resolved.info().clone());
                 continue;
             }
-            match node {
-                AnyComputeKey::ElementWise(key) => self.visit_element_wise(graph, key),
-                AnyComputeKey::PairWise(key) => self.visit_pair_wise(graph, key),
-                AnyComputeKey::MatMul(key) => self.visit_mat_mul(graph, key),
-                AnyComputeKey::QMatMul(key) => self.visit_q_mat_mul(graph, key),
-                AnyComputeKey::Reduce(key) => self.visit_reduce(graph, key),
-                AnyComputeKey::MapLayout(key) => self.visit_map_layout(graph, key),
-                AnyComputeKey::Resize(key) => self.visit_resize(graph, key),
-                AnyComputeKey::SliceAssign(key) => self.visit_slice_assign(graph, key),
-                AnyComputeKey::Tensor(key) => self.visit_tensor(graph, key),
-                AnyComputeKey::Dequantize(key) => self.visit_dequantize(graph, key),
-                AnyComputeKey::IndexSelect(key) => self.visit_index_select(graph, key),
-                AnyComputeKey::Custom(key) => self.visit_custom(graph, key),
+            match &node_data.variant {
+                ComputeGraphNodeVariant::ElementWise(op) => self.visit_element_wise(node, op),
+                ComputeGraphNodeVariant::PairWise(op) => self.visit_pair_wise(node, op),
+                ComputeGraphNodeVariant::MatMul(op) => self.visit_mat_mul(node, op),
+                ComputeGraphNodeVariant::QMatMul(op) => self.visit_q_mat_mul(node, op),
+                ComputeGraphNodeVariant::Reduce(op) => self.visit_reduce(node, op),
+                ComputeGraphNodeVariant::MapLayout(op) => self.visit_map_layout(node, op),
+                ComputeGraphNodeVariant::Resize(op) => self.visit_resize(node, op),
+                ComputeGraphNodeVariant::SliceAssign(op) => self.visit_slice_assign(node, op),
+                ComputeGraphNodeVariant::Tensor(op) => self.visit_tensor(node, op),
+                ComputeGraphNodeVariant::Dequantize(op) => self.visit_dequantize(node, op),
+                ComputeGraphNodeVariant::IndexSelect(op) => self.visit_index_select(node, op),
+                ComputeGraphNodeVariant::Custom(op) => self.visit_custom(node, op),
             }
         }
     }
 
-    fn visit_element_wise(
-        &mut self,
-        graph: &super::ComputeGraphInner,
-        key: super::ElementWiseComputeNodeKey,
-    ) {
-        let operation = graph.nodes.element_wise.get(&key).unwrap();
+    fn visit_element_wise(&mut self, key: NodeIndex, operation: &crate::ElementWiseOperation) {
         let input = operation.value;
         let Some(input_layout) = self.output_layout.get(&input) else {
             self.queue.push_back(input);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let output_layout = TensorLayoutInfo::new(
             input_layout.layout().clone(),
             operation.functions.out_datatype(),
         );
-        self.output_layout.insert(key.into(), output_layout);
+        self.output_layout.insert(key, output_layout);
     }
 
-    fn visit_pair_wise(
-        &mut self,
-        graph: &super::ComputeGraphInner,
-        key: super::PairWiseComputeNodeKey,
-    ) {
-        let operation = graph.nodes.pair_wise.get(&key).unwrap();
+    fn visit_pair_wise(&mut self, key: NodeIndex, operation: &crate::PairWiseOperation) {
         let Some(first_layout) = self.output_layout.get(&operation.first) else {
             self.queue.push_back(operation.first);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let Some(_) = self.output_layout.get(&operation.second) else {
             self.queue.push_back(operation.second);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
-        self.output_layout.insert(key.into(), first_layout.clone());
+        self.output_layout.insert(key, first_layout.clone());
     }
 
-    fn visit_mat_mul(
-        &mut self,
-        graph: &super::ComputeGraphInner,
-        key: super::MatMulComputeNodeKey,
-    ) {
-        let operation = graph.nodes.mat_mul.get(&key).unwrap();
+    fn visit_mat_mul(&mut self, key: NodeIndex, operation: &crate::MatMulOperation) {
         let Some(first_layout) = self.output_layout.get(&operation.first) else {
             self.queue.push_back(operation.first);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let Some(_) = self.output_layout.get(&operation.second) else {
             self.queue.push_back(operation.second);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let output_shape = &operation.out_shape;
         let output_layout = Layout::contiguous(output_shape);
         self.output_layout.insert(
-            key.into(),
+            key,
             TensorLayoutInfo::new(output_layout, first_layout.datatype()),
         );
     }
 
     fn visit_q_mat_mul(
         &mut self,
-        graph: &super::ComputeGraphInner,
-        key: super::QMatMulComputeNodeKey,
+        key: NodeIndex,
+        operation: &crate::quantized::matmul::QMatMulOperation,
     ) {
-        let operation = graph.nodes.q_mat_mul.get(&key).unwrap();
         let Some(first_layout) = self.output_layout.get(&operation.input) else {
             self.queue.push_back(operation.input);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let output_layout = Layout::contiguous(&operation.out_shape);
         self.output_layout.insert(
-            key.into(),
+            key,
             TensorLayoutInfo::new(output_layout, first_layout.datatype()),
         );
     }
 
-    fn visit_reduce(&mut self, graph: &super::ComputeGraphInner, key: super::ReduceComputeNodeKey) {
-        let operation = graph.nodes.reduce.get(&key).unwrap();
+    fn visit_reduce(&mut self, key: NodeIndex, operation: &crate::ReduceOperation) {
         let dim = operation.axis;
         let Some(input_layout) = self.output_layout.get(&operation.value) else {
             self.queue.push_back(operation.value);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let new_shape = input_layout
@@ -136,96 +120,88 @@ impl LayoutPass {
             .collect::<Vec<_>>();
         let new_layout = Layout::contiguous(&new_shape);
         self.output_layout.insert(
-            key.into(),
+            key,
             TensorLayoutInfo::new(new_layout, input_layout.datatype()),
         );
     }
 
     fn visit_map_layout(
         &mut self,
-        graph: &super::ComputeGraphInner,
-        key: super::MapLayoutComputeNodeKey,
+        key: NodeIndex,
+        operation: &crate::map_layout::MapLayoutOperation,
     ) {
-        let operation = graph.nodes.map_layout.get(&key).unwrap();
         let Some(input_layout) = self.output_layout.get(&operation.input) else {
             self.queue.push_back(operation.input);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let new_layout = operation.map_layout(input_layout.layout());
         self.output_layout.insert(
-            key.into(),
+            key,
             TensorLayoutInfo::new(new_layout, input_layout.datatype()),
         );
     }
 
-    fn visit_resize(&mut self, graph: &super::ComputeGraphInner, key: super::ResizeComputeNodeKey) {
-        let operation = graph.nodes.resize.get(&key).unwrap();
+    fn visit_resize(&mut self, key: NodeIndex, operation: &crate::resize::ResizeOperation) {
         let Some(input_layout) = self.output_layout.get(&operation.input) else {
             self.queue.push_back(operation.input);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let new_layout = Layout::contiguous(&operation.new_shape);
         self.output_layout.insert(
-            key.into(),
+            key,
             TensorLayoutInfo::new(new_layout, input_layout.datatype()),
         );
     }
 
     fn visit_slice_assign(
         &mut self,
-        graph: &super::ComputeGraphInner,
-        key: super::SliceAssignComputeNodeKey,
+        key: NodeIndex,
+        operation: &crate::slice_assign::SliceAssignOperation,
     ) {
-        let operation = graph.nodes.slice_assign.get(&key).unwrap();
         let Some(input_layout) = self.output_layout.get(&operation.input) else {
             self.queue.push_back(operation.input);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let Some(_) = self.output_layout.get(&operation.value) else {
             self.queue.push_back(operation.value);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
-        self.output_layout.insert(key.into(), input_layout.clone());
+        self.output_layout.insert(key, input_layout.clone());
     }
 
-    fn visit_tensor(&mut self, graph: &super::ComputeGraphInner, key: super::TensorComputeNodeKey) {
-        let operation = graph.nodes.tensor.get(&key).unwrap();
+    fn visit_tensor(&mut self, key: NodeIndex, operation: &crate::tensor::TensorData) {
         let info = operation.info();
-        self.output_layout.insert(key.into(), info.clone());
+        self.output_layout.insert(key, info.clone());
     }
 
     fn visit_dequantize(
         &mut self,
-        graph: &super::ComputeGraphInner,
-        key: super::DequantizeComputeKey,
+        key: NodeIndex,
+        operation: &crate::dequantize::DequantizeOperation,
     ) {
-        let operation = graph.nodes.dequantize.get(&key).unwrap();
         let matrix = &operation.matrix;
         let new_layout = Layout::contiguous(matrix.shape());
-        self.output_layout.insert(
-            key.into(),
-            TensorLayoutInfo::new(new_layout, operation.datatype),
-        );
+        self.output_layout
+            .insert(key, TensorLayoutInfo::new(new_layout, operation.datatype));
     }
 
     fn visit_index_select(
         &mut self,
-        graph: &super::ComputeGraphInner,
-        key: super::IndexSelectComputeNodeKey,
+        key: NodeIndex,
+        operation: &crate::index_select::IndexSelectOperation,
     ) {
-        let operation = graph.nodes.index_select.get(&key).unwrap();
         let Some(indexes_shape) = self.output_layout.get(&operation.indexes) else {
             self.queue.push_back(operation.indexes);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let Some(input_shape) = self.output_layout.get(&operation.input) else {
             self.queue.push_back(operation.input);
-            self.queue.push_back(key.into());
+            self.queue.push_back(key);
             return;
         };
         let shape = IndexSelectOperation::calc_output_shape(
@@ -234,14 +210,15 @@ impl LayoutPass {
             input_shape.shape(),
         );
         let new_layout = Layout::contiguous(&shape);
-        self.output_layout.insert(
-            key.into(),
-            TensorLayoutInfo::new(new_layout, operation.datatype),
-        );
+        self.output_layout
+            .insert(key, TensorLayoutInfo::new(new_layout, operation.datatype));
     }
 
-    fn visit_custom(&mut self, graph: &super::ComputeGraphInner, key: super::CustomComputeKey) {
-        let operation = graph.nodes.custom.get(&key).unwrap();
+    fn visit_custom(
+        &mut self,
+        key: NodeIndex,
+        operation: &std::sync::Arc<dyn crate::mir::operation::Operation + Send + Sync>,
+    ) {
         let mut dependencies = Vec::new();
         operation.visit_dependencies(&mut |dep| {
             dependencies.push(dep);
@@ -250,11 +227,11 @@ impl LayoutPass {
         for dependency in dependencies {
             if !self.output_layout.contains_key(&dependency) {
                 self.queue.push_back(dependency);
-                self.queue.push_back(key.into());
+                self.queue.push_back(key);
                 return;
             }
         }
         self.output_layout
-            .insert(key.into(), operation.output_layout(&self.output_layout));
+            .insert(key, operation.output_layout(&self.output_layout));
     }
 }

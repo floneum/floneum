@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use crate::{
     DataTypeEnum, SmallerRank, TILE_SIZE, Tensor, TensorData,
-    compute_graph::AnyComputeKey,
+    compute_graph::NodeIndex,
     map_layout::MapLayoutOperation,
     mir::{
         kernel::GenericKernel,
@@ -15,7 +15,7 @@ const BLOCKSIZE: u32 = 256;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ResizeOperation {
-    pub(crate) input: AnyComputeKey,
+    pub(crate) input: NodeIndex,
     pub(crate) current_shape: Box<[usize]>,
     pub(crate) new_shape: Box<[usize]>,
     pub(crate) fill_shape: Box<[usize]>,
@@ -23,7 +23,7 @@ pub(crate) struct ResizeOperation {
 
 impl ResizeOperation {
     pub fn new(
-        input: AnyComputeKey,
+        input: NodeIndex,
         current_shape: Box<[usize]>,
         new_shape: Box<[usize]>,
         fill_shape: Box<[usize]>,
@@ -49,7 +49,7 @@ impl ResizeOperation {
             return None;
         }
 
-        let input = graph.cached_results.get(&self.input)?;
+        let input = graph.get_cached_result(self.input)?;
         let input_layout = input.layout();
 
         // Find the chunks of strides that are contiguous in the input
@@ -171,7 +171,7 @@ impl Operation for ResizeOperation {
         ]
     }
 
-    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
+    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
         f(self.input);
     }
 
@@ -179,7 +179,7 @@ impl Operation for ResizeOperation {
         &self,
         nodes: &crate::compute_graph::ComputeGraphInner,
     ) -> Vec<crate::mir::inputs::MirValue> {
-        let input = nodes.cached_results.get(&self.input).unwrap().clone();
+        let input = nodes.get_cached_result(self.input).unwrap().clone();
         let output = TensorData::new_for_shape(input.device(), &self.new_shape, input.datatype());
         let output_sliced =
             output.slice(&self.fill_shape.iter().map(|x| 0..*x).collect::<Vec<_>>());

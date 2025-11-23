@@ -18,14 +18,12 @@ async fn main() -> Result<(), anyhow::Error> {
     let rate = audio.sample_rate() as f32;
 
     // Transcribe the source audio into text
-    let mut text = model.transcribe(audio).timestamped();
+    let mut text = model.transcribe(audio);
 
     // As the model transcribes the audio, print the text to the console
     while let Some(segment) = text.next().await {
         for chunk in segment.chunks() {
-            let timestamp = chunk.timestamp().unwrap();
-            println!("{:0.2}..{:0.2}", timestamp.start, timestamp.end);
-            println!("{chunk}");
+            print!("{chunk}");
             // Play the audio chunk
             if let Some(timestamp) = chunk.timestamp() {
                 let start = timestamp.start;

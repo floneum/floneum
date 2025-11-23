@@ -10,14 +10,14 @@ use crate::{
 };
 use crate::{
     Layout, Tensor,
-    compute_graph::AnyComputeKey,
+    compute_graph::NodeIndex,
     mir::{function::Function, inputs::MirValue, kernel::GenericKernel},
     tensor::{DataType, DataTypeEnum, TensorData},
 };
 
 #[derive(Debug, Clone)]
 pub(crate) struct ReduceOperation {
-    pub(crate) value: AnyComputeKey,
+    pub(crate) value: NodeIndex,
     pre_element_wise: ElementWiseFunctions,
     pub(crate) function: ReduceFunction,
     post_element_wise: ElementWiseFunctions,
@@ -26,12 +26,7 @@ pub(crate) struct ReduceOperation {
 }
 
 impl ReduceOperation {
-    pub fn new(
-        value: AnyComputeKey,
-        function: ReduceFunction,
-        axis: usize,
-        shape: &[usize],
-    ) -> Self {
+    pub fn new(value: NodeIndex, function: ReduceFunction, axis: usize, shape: &[usize]) -> Self {
         let datatype = function.datatype();
         Self {
             value,
@@ -90,6 +85,7 @@ impl ReduceOperation {
         device: &crate::Device,
     ) {
         let dtype = self.function.datatype();
+        let input_dtype = self.pre_element_wise.input_datatype();
         let out_datatype = self.out_datatype();
         let output_rank = self.rank() - 1;
         let large_reduction = self.shape[self.axis] > 256;
@@ -101,7 +97,7 @@ impl ReduceOperation {
         // We also can't synchronize among workgroups without atomics. storageBarrier() is a barrier for
         // the storage memory only inside the workgroup.
         // This kernel just uses one workgroup per reduction unit like the MLX kernel
-        let input_tensor = kernel.add_tensor_input(output_rank, false, self.reduce_datatype());
+        let input_tensor = kernel.add_tensor_input(output_rank, false, input_dtype);
         let output_tensor = kernel.add_tensor_input(output_rank, true, out_datatype);
         let reduce_size = kernel.add_integer_input();
         let reduce_stride = kernel.add_integer_input();
@@ -167,7 +163,7 @@ impl ReduceOperation {
         if large_reduction {
             writeln!(kernel, "while (index + 4u <= end_axis_index) {{").unwrap();
             // Load the chunk of 4 elements at once
-            write!(kernel, "let data = vec4<{dtype}>(").unwrap();
+            write!(kernel, "let data = vec4<{input_dtype}>(").unwrap();
             for i in 0..4 {
                 if i > 0 {
                     write!(kernel, ", ").unwrap();
@@ -398,13 +394,14 @@ impl Operation for ReduceOperation {
         [workgroup_size, 1, 1]
     }
 
-    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
+    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
         f(self.value);
     }
 
     fn inputs(&self, nodes: &crate::compute_graph::ComputeGraphInner) -> Vec<MirValue> {
         let dim = self.axis;
-        let tensor = nodes.cached_results.get(&self.value).unwrap();
+        let tensor = nodes.get_cached_result(self.value).unwrap();
+        assert_eq!(self.pre_element_wise.input_datatype(), tensor.datatype());
         let layout = tensor.layout();
         let shape = layout.shape();
         let new_tensor_shape = shape
@@ -711,6 +708,41 @@ async fn test_reduce_const_sum_then_add_fused() {
     assert_eq!(output[[2]], 1. + 11.);
 }
 
+#[cfg(test)]
+#[tokio::test]
+async fn test_reduce_const_sum_then_cast_fused() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+
+    let output = tensor.sum(0).cast::<half::f16>();
+
+    let output = output.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert_eq!(output[[0]], half::f16::from_f32(9.));
+    assert_eq!(output[[1]], half::f16::from_f32(12.));
+}
+#[cfg(test)]
+#[tokio::test]
+async fn test_cast_then_reduce_const_sum_fused() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data).cast::<half::f16>();
+
+    let output = tensor.sum(0);
+
+    let output = output.as_slice().await.unwrap();
+    println!("{output:?}");
+    assert_eq!(output[[0]], half::f16::from_f32(9.));
+    assert_eq!(output[[1]], half::f16::from_f32(12.));
+}
+
 impl<const N: usize, D: DataType> Tensor<N, D> {
     pub fn max<const O: usize>(&self, dim: usize) -> Tensor<O, D>
     where
@@ -731,7 +763,7 @@ impl<const N: usize, D: DataType> Tensor<N, D> {
 fn max_fn<D: DataType>() -> ReduceFunction {
     ReduceFunction::new(
         "let output = max(a, b);".to_string(),
-        "-3.40282e+38",
+        min_for_dtype(D::WGSL_TYPE),
         D::WGSL_TYPE,
     )
     .with_name("max")
@@ -766,7 +798,7 @@ async fn test_reduce_max() {
 fn min_fn<D: DataType>() -> ReduceFunction {
     ReduceFunction::new(
         "let output = min(a, b);".to_string(),
-        "3.40282e+38",
+        max_for_dtype(D::WGSL_TYPE),
         D::WGSL_TYPE,
     )
     .with_name("min")
@@ -786,6 +818,22 @@ impl<const N: usize, D: DataType> Tensor<N, D> {
         <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
     {
         self.min(dim).unsqueeze(dim)
+    }
+}
+
+pub(crate) fn min_for_dtype(dtype: DataTypeEnum) -> &'static str {
+    match dtype {
+        DataTypeEnum::F32 => "-3.40282e+38",
+        DataTypeEnum::F16 => "f16(-65504.0)",
+        DataTypeEnum::U32 => "0",
+    }
+}
+
+pub(crate) fn max_for_dtype(dtype: DataTypeEnum) -> &'static str {
+    match dtype {
+        DataTypeEnum::F32 => "3.40282e+38",
+        DataTypeEnum::F16 => "f16(65504.0)",
+        DataTypeEnum::U32 => "4294967295",
     }
 }
 

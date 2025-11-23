@@ -1,18 +1,18 @@
-use crate::{Device, NextRank, QMatrix, Result, Tensor, VarBuilder};
+use crate::{DataType, Device, NextRank, QMatrix, Result, Tensor, VarBuilder};
 
 /// Embedding layer for token/position embeddings
 ///
 /// Maps integer indices to dense vectors.
 /// Embedding table shape: (num_embeddings, embedding_dim)
-#[derive(Clone, Debug)]
-pub struct Embedding {
+#[derive(Clone)]
+pub struct Embedding<T> {
     embeddings_quantized: Option<QMatrix>,
-    embeddings: Tensor<2, f32>,
+    embeddings: Tensor<2, T>,
     num_embeddings: usize,
     embedding_dim: usize,
 }
 
-impl Embedding {
+impl<T: DataType> Embedding<T> {
     /// Create a new embedding layer with the given embedding table
     pub fn new(embeddings_quantized: QMatrix) -> Self {
         let embeddings = embeddings_quantized.dequantize();
@@ -29,7 +29,7 @@ impl Embedding {
     }
 
     /// Create a new embedding layer with the given embedding table
-    pub fn new_from_tensor(embeddings: Tensor<2, f32>) -> Self {
+    pub fn new_from_tensor(embeddings: Tensor<2, T>) -> Self {
         let shape = embeddings.shape();
         let num_embeddings = shape[0];
         let embedding_dim = shape[1];
@@ -83,10 +83,7 @@ impl Embedding {
     /// Example:
     /// - Input: [batch, seq_len] with indices
     /// - Output: [batch, seq_len, embedding_dim] with embeddings
-    pub fn forward<const N: usize, const M: usize>(
-        &self,
-        indexes: &Tensor<N, u32>,
-    ) -> Tensor<M, f32>
+    pub fn forward<const N: usize, const M: usize>(&self, indexes: &Tensor<N, u32>) -> Tensor<M, T>
     where
         Tensor<N, u32>: NextRank<M, u32>,
     {
@@ -106,7 +103,7 @@ impl Embedding {
     }
 
     /// Get the embedding table
-    pub fn embeddings(&self) -> &Tensor<2, f32> {
+    pub fn embeddings(&self) -> &Tensor<2, T> {
         &self.embeddings
     }
 

@@ -5,7 +5,8 @@ use std::{
 
 use crate::{
     DataType, DataTypeEnum, LastRank, Layout, Tensor, TensorData,
-    compute_graph::AnyComputeKey,
+    compute_graph::NodeIndex,
+    min_for_dtype,
     mir::{
         globals::KernelGlobalSpace,
         inputs::MirValue,
@@ -79,14 +80,14 @@ fn combine(
 
 #[derive(Debug, Clone)]
 struct SoftmaxOperation {
-    pub(crate) value: AnyComputeKey,
+    pub(crate) value: NodeIndex,
     pub(crate) axis: usize,
     pub(crate) shape: Box<[usize]>,
     pub(crate) datatype: DataTypeEnum,
 }
 
 impl SoftmaxOperation {
-    pub fn new(value: AnyComputeKey, datatype: DataTypeEnum, axis: usize, shape: &[usize]) -> Self {
+    pub fn new(value: NodeIndex, datatype: DataTypeEnum, axis: usize, shape: &[usize]) -> Self {
         Self {
             value,
             axis,
@@ -162,7 +163,7 @@ impl SoftmaxOperation {
         writeln!(kernel, ";").unwrap();
         writeln!(kernel).unwrap();
 
-        writeln!(kernel, "var m_lane = {dtype}(-3.40282e+38);").unwrap();
+        writeln!(kernel, "var m_lane = {};", min_for_dtype(dtype)).unwrap();
         writeln!(kernel, "var d_lane = {dtype}(0.0);").unwrap();
 
         // First merge values on each thread individually. We divide the column allocated to the thread group into equal sized buckets
@@ -286,7 +287,7 @@ impl SoftmaxOperation {
             writeln!(kernel, "d_lane = {local_d_data}[{subgroup_local_id}];").unwrap();
             writeln!(kernel, "}}").unwrap();
             writeln!(kernel, "else {{").unwrap();
-            writeln!(kernel, "m_lane = {dtype}(-3.40282e+38);").unwrap();
+            writeln!(kernel, "m_lane = {};", min_for_dtype(dtype)).unwrap();
             writeln!(kernel, "d_lane = {dtype}(0.0);").unwrap();
             writeln!(kernel, "}}").unwrap();
 
@@ -431,13 +432,13 @@ impl Operation for SoftmaxOperation {
         [workgroup_size, 1, 1]
     }
 
-    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
+    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
         f(self.value);
     }
 
     fn inputs(&self, nodes: &crate::compute_graph::ComputeGraphInner) -> Vec<MirValue> {
         let dim = self.axis;
-        let tensor = nodes.cached_results.get(&self.value).unwrap();
+        let tensor = nodes.get_cached_result(self.value).unwrap();
         let layout = tensor.layout();
         let shape = layout.shape();
         let output_type = self.out_datatype();
@@ -496,7 +497,7 @@ impl Operation for SoftmaxOperation {
 
     fn output_layout(
         &self,
-        map: &rustc_hash::FxHashMap<AnyComputeKey, crate::TensorLayoutInfo>,
+        map: &rustc_hash::FxHashMap<NodeIndex, crate::TensorLayoutInfo>,
     ) -> crate::TensorLayoutInfo {
         let input_layout = map.get(&self.value).unwrap();
         input_layout.clone()

@@ -32,7 +32,7 @@ pub struct PhiFeedForward {
 
 impl PhiFeedForward {
     pub(crate) fn forward(&self, x: &Tensor) -> candle_core::Result<Tensor> {
-        let up_states = x.apply(&self.up).unwrap();
+        let up_states = x.apply(&self.up)?;
         let gate = up_states
             .narrow(D::Minus1, 0, self.feed_forward_length)
             .unwrap();
@@ -43,8 +43,8 @@ impl PhiFeedForward {
                 self.feed_forward_length,
             )
             .unwrap();
-        let gate = fast_cpu_silu(&gate).unwrap();
-        let up_states = (up_states * gate).unwrap();
+        let gate = fast_cpu_silu(&gate)?;
+        let up_states = (up_states * gate)?;
         up_states.apply(&self.down)
     }
 }
@@ -93,16 +93,16 @@ impl LlamaFeedForward {
         if matches!(device, Device::Cpu) {
             std::thread::scope(|scope| {
                 let w1 = scope.spawn(|| {
-                    let mut w1 = self.gate.forward(x).unwrap();
+                    let mut w1 = self.gate.forward(x)?;
                     if let Some(ref bias) = self.gate_bias {
-                        w1 = w1.broadcast_add(bias).unwrap();
+                        w1 = w1.broadcast_add(bias)?;
                     }
                     fast_cpu_silu(&w1)
                 });
 
-                let mut w3 = self.up.forward(x).unwrap();
+                let mut w3 = self.up.forward(x)?;
                 if let Some(ref bias) = self.up_bias {
-                    w3 = w3.broadcast_add(bias).unwrap();
+                    w3 = w3.broadcast_add(bias)?;
                 }
                 let w1 = w1
                     .join()
@@ -110,29 +110,29 @@ impl LlamaFeedForward {
                     .unwrap()
                     .unwrap();
 
-                let mut up = self.down.forward(&(&w1 * w3).unwrap()).unwrap();
+                let mut up = self.down.forward(&(&w1 * w3)?)?;
 
                 if let Some(ref bias) = self.down_bias {
-                    up = up.broadcast_add(bias).unwrap();
+                    up = up.broadcast_add(bias)?;
                 }
 
                 Ok(up)
             })
         } else {
-            let mut w1 = self.gate.forward(x).unwrap();
+            let mut w1 = self.gate.forward(x)?;
             if let Some(ref bias) = self.gate_bias {
-                w1 = w1.broadcast_add(bias).unwrap();
+                w1 = w1.broadcast_add(bias)?;
             }
-            let w1 = fast_cpu_silu(&w1).unwrap();
+            let w1 = fast_cpu_silu(&w1)?;
 
-            let mut w3 = self.up.forward(x).unwrap();
+            let mut w3 = self.up.forward(x)?;
             if let Some(ref bias) = self.up_bias {
-                w3 = w3.broadcast_add(bias).unwrap();
+                w3 = w3.broadcast_add(bias)?;
             }
 
-            let mut up = self.down.forward(&(&w1 * w3).unwrap()).unwrap();
+            let mut up = self.down.forward(&(&w1 * w3)?)?;
             if let Some(ref bias) = self.down_bias {
-                up = up.broadcast_add(bias).unwrap();
+                up = up.broadcast_add(bias)?;
             }
             Ok(up)
         }
@@ -161,9 +161,9 @@ impl AttentionBias {
 
     pub fn from_qtensor(q: &QTensor, k: &QTensor, v: &QTensor) -> candle_core::Result<Self> {
         Ok(Self::new(
-            q.dequantize(&q.device()).unwrap(),
-            k.dequantize(&k.device()).unwrap(),
-            v.dequantize(&v.device()).unwrap(),
+            q.dequantize(&q.device())?,
+            k.dequantize(&k.device())?,
+            v.dequantize(&v.device())?,
         ))
     }
 }
@@ -198,10 +198,10 @@ impl SeparateAttention {
             std::thread::scope(|s| -> Result<_, candle_core::Error> {
                 let query_states: std::thread::ScopedJoinHandle<'_, candle_core::Result<Tensor>> =
                     s.spawn(|| {
-                        let mut query_states = self.attention_wq.forward(hidden_states).unwrap();
+                        let mut query_states = self.attention_wq.forward(hidden_states)?;
 
                         if let Some(bias) = &self.bias {
-                            query_states = query_states.broadcast_add(&bias.bias_q).unwrap();
+                            query_states = query_states.broadcast_add(&bias.bias_q)?;
                         }
 
                         let mut query = query_states
@@ -211,17 +211,17 @@ impl SeparateAttention {
                             .unwrap();
 
                         if let Some(norm) = &self.attention_q_norm {
-                            query = norm.forward(&query.contiguous().unwrap()).unwrap();
+                            query = norm.forward(&query.contiguous()?)?;
                         }
 
                         Ok(query)
                     });
                 let key_states: std::thread::ScopedJoinHandle<'_, candle_core::Result<Tensor>> = s
                     .spawn(|| {
-                        let mut key_states = self.attention_wk.forward(hidden_states).unwrap();
+                        let mut key_states = self.attention_wk.forward(hidden_states)?;
 
                         if let Some(bias) = &self.bias {
-                            key_states = key_states.broadcast_add(&bias.bias_k).unwrap();
+                            key_states = key_states.broadcast_add(&bias.bias_k)?;
                         }
 
                         let mut key = key_states
@@ -231,16 +231,16 @@ impl SeparateAttention {
                             .unwrap();
 
                         if let Some(norm) = &self.attention_k_norm {
-                            key = norm.forward(&key.contiguous().unwrap()).unwrap();
+                            key = norm.forward(&key.contiguous()?)?;
                         }
 
                         Ok(key)
                     });
                 let value_states = s.spawn(|| {
-                    let mut value_states = self.attention_wv.forward(hidden_states).unwrap();
+                    let mut value_states = self.attention_wv.forward(hidden_states)?;
 
                     if let Some(bias) = &self.bias {
-                        value_states = value_states.broadcast_add(&bias.bias_v).unwrap();
+                        value_states = value_states.broadcast_add(&bias.bias_v)?;
                     }
 
                     value_states
@@ -280,10 +280,10 @@ impl SeparateAttention {
             })
         } else {
             let query_states = {
-                let mut query_states = self.attention_wq.forward(hidden_states).unwrap();
+                let mut query_states = self.attention_wq.forward(hidden_states)?;
 
                 if let Some(bias) = &self.bias {
-                    query_states = query_states.broadcast_add(&bias.bias_q).unwrap();
+                    query_states = query_states.broadcast_add(&bias.bias_q)?;
                 }
 
                 let mut query = query_states
@@ -293,16 +293,16 @@ impl SeparateAttention {
                     .unwrap();
 
                 if let Some(norm) = &self.attention_q_norm {
-                    query = norm.forward(&query.contiguous().unwrap()).unwrap();
+                    query = norm.forward(&query.contiguous()?)?;
                 }
 
                 query
             };
             let key_states = {
-                let mut key_states = self.attention_wk.forward(hidden_states).unwrap();
+                let mut key_states = self.attention_wk.forward(hidden_states)?;
 
                 if let Some(bias) = &self.bias {
-                    key_states = key_states.broadcast_add(&bias.bias_k).unwrap();
+                    key_states = key_states.broadcast_add(&bias.bias_k)?;
                 }
 
                 let mut key = key_states
@@ -312,16 +312,16 @@ impl SeparateAttention {
                     .unwrap();
 
                 if let Some(norm) = &self.attention_k_norm {
-                    key = norm.forward(&key.contiguous().unwrap()).unwrap();
+                    key = norm.forward(&key.contiguous()?)?;
                 }
 
                 key
             };
             let value_states = {
-                let mut value_states = self.attention_wv.forward(hidden_states).unwrap();
+                let mut value_states = self.attention_wv.forward(hidden_states)?;
 
                 if let Some(bias) = &self.bias {
-                    value_states = value_states.broadcast_add(&bias.bias_v).unwrap();
+                    value_states = value_states.broadcast_add(&bias.bias_v)?;
                 }
 
                 value_states
@@ -364,10 +364,10 @@ impl GroupedAttention {
     ) -> candle_core::Result<(Tensor, Tensor, Tensor)> {
         let b_sz = x.dims()[0];
         let seq_len = x.dims()[1];
-        let qkv = self.attention_qkv.forward(x).unwrap();
+        let qkv = self.attention_qkv.forward(x)?;
 
         let query_pos = num_heads * head_dim;
-        let query_states = qkv.narrow(D::Minus1, 0, query_pos).unwrap();
+        let query_states = qkv.narrow(D::Minus1, 0, query_pos)?;
         let key_states = qkv
             .narrow(D::Minus1, query_pos, num_key_value_heads * head_dim)
             .unwrap();
@@ -464,12 +464,12 @@ impl LlamaAttention {
         debug_assert_none_nan(&key_states);
         debug_assert_none_nan(&value_states);
 
-        let key_states = repeat_kv(key_states.clone(), num_key_value_groups).unwrap();
-        let value_states = repeat_kv(value_states, num_key_value_groups).unwrap();
+        let key_states = repeat_kv(key_states.clone(), num_key_value_groups)?;
+        let value_states = repeat_kv(value_states, num_key_value_groups)?;
 
         let (key_states, value_states) = match cache {
             None => (key_states, value_states),
-            Some(cache) => cache.append(&key_states, &value_states).unwrap(),
+            Some(cache) => cache.append(&key_states, &value_states)?,
         };
 
         forward_attention_qkv(
@@ -491,7 +491,7 @@ fn repeat_kv(x: Tensor, num_key_value_groups: usize) -> candle_core::Result<Tens
     if num_key_value_groups == 1 {
         Ok(x)
     } else {
-        let (b_sz, n_kv_head, seq_len, head_dim) = x.dims4().unwrap();
+        let (b_sz, n_kv_head, seq_len, head_dim) = x.dims4()?;
         Tensor::cat(&vec![&x; num_key_value_groups], 2)
             .unwrap()
             .reshape((b_sz, n_kv_head * num_key_value_groups, seq_len, head_dim))
@@ -513,19 +513,18 @@ pub(crate) fn forward_attention_qkv(
 ) -> candle_core::Result<Tensor> {
     let scale = 1. / (head_dim as f64).sqrt();
     let mut attn_output = {
-        let mut attn_weights =
-            (query_states.matmul(&key_states.t().unwrap()).unwrap() * scale).unwrap();
+        let mut attn_weights = (query_states.matmul(&key_states.t()?)? * scale)?;
         debug_assert_none_nan(&attn_weights);
 
         if let Some(attention_mask) = attention_mask {
-            attention_mask.forward(&mut attn_weights).unwrap();
+            attention_mask.forward(&mut attn_weights)?;
             debug_assert_none_nan(&attn_weights);
         }
 
-        attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights).unwrap();
+        attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
         debug_assert_none_nan(&attn_weights);
 
-        attn_weights.matmul(value_states).unwrap()
+        attn_weights.matmul(value_states)?
     };
 
     debug_assert_none_nan(&attn_output);
@@ -538,11 +537,11 @@ pub(crate) fn forward_attention_qkv(
         )));
     }
 
-    attn_output = attn_output.transpose(1, 2).unwrap();
+    attn_output = attn_output.transpose(1, 2)?;
 
-    attn_output = attn_output.reshape(&[bsz, q_len, hidden_size]).unwrap();
+    attn_output = attn_output.reshape(&[bsz, q_len, hidden_size])?;
 
-    attn_output = attention_wo.forward(&attn_output).unwrap();
+    attn_output = attention_wo.forward(&attn_output)?;
 
     debug_assert_none_nan(&attn_output);
 

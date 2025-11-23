@@ -1,7 +1,7 @@
 use std::{fmt::Debug, sync::Arc};
 
 use crate::{Device, QMatrix};
-use fusor_gguf::{GgufMetadata, GgufReadError};
+use fusor_gguf::{GgufMetadata, GgufReadError, GgufValue};
 
 trait ReadAndSeek: std::io::Read + std::io::Seek {}
 
@@ -81,5 +81,52 @@ impl<'a> VarBuilder<'a> {
             .keys()
             .map(|k| k.to_string())
             .collect()
+    }
+}
+
+pub struct ShardedVarBuilder<R: std::io::Read + std::io::Seek> {
+    contents: Vec<(GgufMetadata, R)>,
+}
+
+impl<R: std::io::Read + std::io::Seek> ShardedVarBuilder<R> {
+    pub fn new(contents: Vec<(GgufMetadata, R)>) -> Self {
+        Self { contents }
+    }
+
+    pub fn get(&self, name: &str) -> crate::Result<&GgufValue> {
+        if name.starts_with('.') {
+            if let Some(value) = self
+                .contents
+                .iter()
+                .flat_map(|(k, _)| k.metadata.iter().filter(|(k, _)| k.ends_with(name)))
+                .min_by_key(|(k, _)| k.len())
+                .map(|(_, v)| v)
+            {
+                return Ok(value);
+            }
+        } else {
+            for (content, _) in &self.contents {
+                if let Some(value) = content.metadata.get(name) {
+                    return Ok(value);
+                }
+            }
+        }
+        Err(crate::Error::VarBuilder(format!(
+            "Key '{}' not found in GGUF metadata",
+            name
+        )))
+    }
+
+    pub fn tensor(&mut self, name: &str, device: &Device) -> crate::Result<QMatrix> {
+        for (content, r) in &mut self.contents {
+            if let Some(tensor_info) = content.tensor_infos.get(name) {
+                let q_matrix = QMatrix::read(device, tensor_info, r, content.tensor_data_offset)?;
+                return Ok(q_matrix);
+            }
+        }
+        Err(crate::Error::VarBuilder(format!(
+            "Key '{}' not found in GGUF metadata",
+            name
+        )))
     }
 }

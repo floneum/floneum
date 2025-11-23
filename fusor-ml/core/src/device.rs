@@ -3,13 +3,15 @@ use std::{
     fmt::Debug,
     num::{NonZeroU64, NonZeroUsize},
     path::PathBuf,
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 use lru::LruCache;
 use parking_lot::RwLock;
 use rustc_hash::FxBuildHasher;
 use wgpu::{BindGroupLayout, BufferUsages, PipelineLayout, ShaderModule};
+
+use crate::compute_graph::ComputeGraph;
 
 #[derive(Debug)]
 struct CachedBuffer {
@@ -46,6 +48,8 @@ struct DeviceInner {
     // Cache for buffer allocations, keyed by size in bytes
     buffer_allocation_cache:
         RwLock<LruCache<(u64, BufferUsages), Vec<CachedBuffer>, FxBuildHasher>>,
+    // Single compute graph shared by all tensors on this device
+    compute_graph: OnceLock<ComputeGraph>,
 }
 
 impl Debug for DeviceInner {
@@ -116,20 +120,32 @@ impl Device {
             Default::default(),
         ));
 
-        let device = Self {
-            inner: Arc::new(DeviceInner {
-                device,
-                adapter,
-                queue,
-                cache,
-                cache_file,
-                bind_group_layout_cache,
-                pipeline_layout_cache,
-                shader_module_cache,
-                compute_pipeline_cache,
-                buffer_allocation_cache,
-            }),
+        let inner = Arc::new(DeviceInner {
+            device,
+            adapter,
+            queue,
+            cache,
+            cache_file,
+            bind_group_layout_cache,
+            pipeline_layout_cache,
+            shader_module_cache,
+            compute_pipeline_cache,
+            buffer_allocation_cache,
+            compute_graph: OnceLock::new(),
+        });
+
+        let device = Device {
+            inner: inner.clone(),
         };
+
+        // Initialize the compute graph now that we have a valid device
+        inner
+            .compute_graph
+            .set(ComputeGraph::new(device.clone()))
+            .ok()
+            .expect("compute_graph should only be set once");
+
+        let device = Device { inner };
 
         #[cfg(not(target_arch = "wasm32"))]
         std::thread::spawn({
@@ -316,5 +332,12 @@ impl Device {
             panic!("Failed to map buffer for writing");
         }
         buffer
+    }
+
+    pub(crate) fn compute_graph(&self) -> &ComputeGraph {
+        self.inner
+            .compute_graph
+            .get()
+            .expect("compute_graph should be initialized")
     }
 }

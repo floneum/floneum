@@ -6,13 +6,13 @@ use crate::mir::operation::Operation;
 use crate::mir::workgroup_shape::WorkgroupShapeConstraints;
 use crate::{
     DataType, DataTypeEnum, Device, ElementWiseFunctions, LazyTensorData, Tensor, TensorData,
-    TensorInfo, compute_graph::ComputeGraph, mir::kernel::GenericKernel,
+    TensorInfo, mir::kernel::GenericKernel,
 };
 use std::fmt::Write;
 
 use super::{QMatrix, dequantize_block};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct DequantizeOperation {
     pub(crate) matrix: QMatrix,
     pub(crate) datatype: DataTypeEnum,
@@ -63,7 +63,7 @@ impl Operation for DequantizeOperation {
         })
     }
 
-    fn visit_dependencies(&self, _: &mut dyn FnMut(crate::compute_graph::AnyComputeKey)) {}
+    fn visit_dependencies(&self, _: &mut dyn FnMut(crate::compute_graph::NodeIndex)) {}
 
     fn inputs(&self, nodes: &crate::compute_graph::ComputeGraphInner) -> Vec<MirValue> {
         let shape = &self.matrix.shape;
@@ -175,14 +175,14 @@ impl QMatrix {
         }
 
         let device = self.device.clone();
-        let graph = ComputeGraph::new(device.clone());
-        let key = graph.dequantize(self.clone(), T::WGSL_TYPE);
+        let key = device
+            .compute_graph()
+            .dequantize(self.clone(), T::WGSL_TYPE);
 
         let data = LazyTensorData::from_parts(
             device,
-            graph,
             TensorInfo::new(self.shape().into(), T::WGSL_TYPE),
-            key.into(),
+            key,
         );
 
         Tensor::from_parts(data)

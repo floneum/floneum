@@ -4,7 +4,7 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     Device, TensorLayoutInfo,
-    compute_graph::{AnyComputeKey, ComputeGraphInner},
+    compute_graph::{ComputeGraphInner, NodeIndex},
 };
 
 use super::{
@@ -18,7 +18,7 @@ pub(crate) trait Operation: Debug {
 
     fn dispatch_size(&self, workgroup_shape: &WorkgroupShape, inputs: &[MirValue]) -> [u32; 3];
 
-    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey));
+    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex));
 
     fn inputs(&self, nodes: &ComputeGraphInner) -> Vec<MirValue>;
 
@@ -34,7 +34,7 @@ pub(crate) trait Operation: Debug {
 
     fn name(&self) -> String;
 
-    fn output_layout(&self, _: &FxHashMap<AnyComputeKey, TensorLayoutInfo>) -> TensorLayoutInfo {
+    fn output_layout(&self, _: &FxHashMap<NodeIndex, TensorLayoutInfo>) -> TensorLayoutInfo {
         todo!()
     }
 }

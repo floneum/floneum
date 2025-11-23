@@ -27,7 +27,7 @@ thiserror.workspace = true
 accelerate-src = { version = "0.3.2", optional = true }
 intel-mkl-src = { version = "0.8.1", features = ["mkl-static-lp64-iomp"], optional = true }
 cudarc = { version = "0.9.14", features = ["f16"], optional = true }
-half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_distr"], optional = true }
+half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_distr"] }
 kalosm-common = { workspace = true }
 kalosm-model-types.workspace = true
 serde = { version = "1.0.209" }
@@ -40,7 +40,7 @@ rustfft = "6.4.1"
 tokio = ["kalosm-common/tokio"]
 
 [dev-dependencies]
-kalosm = { workspace = true, features = ["sound"], default-features = true }
+kalosm = { workspace = true, features = ["sound", "sound-source"], default-features = true }
 anyhow.workspace = true
 tracing-subscriber = "0.3.19"
 tokio = { version = "1.32.0", features = ["full"] }

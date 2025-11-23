@@ -1,19 +1,20 @@
-use crate::{Device, LastRank, MaxRank, NextRankInner, Result, Tensor, TensorSlice, VarBuilder};
-use std::fmt::Debug;
+use crate::{
+    CastTensor, DataType, Device, LastRank, MaxRank, NextRankInner, Result, Tensor, VarBuilder,
+};
 
 /// Layer Normalization
 ///
 /// Normalizes the input over the last dimension.
 /// Formula: output = (input - mean) / sqrt(variance + eps) * weight + bias
-pub struct LayerNorm<const N: usize> {
-    weight: Tensor<N, f32>,
-    bias: Option<Tensor<N, f32>>,
+pub struct LayerNorm<const N: usize, T> {
+    weight: Tensor<N, T>,
+    bias: Option<Tensor<N, T>>,
     eps: f32,
 }
 
-impl<const N: usize> LayerNorm<N> {
+impl<const N: usize, T: DataType> LayerNorm<N, T> {
     /// Create a new LayerNorm layer
-    pub fn new(weight: Tensor<N, f32>, bias: Option<Tensor<N, f32>>, eps: f32) -> Self {
+    pub fn new(weight: Tensor<N, T>, bias: Option<Tensor<N, T>>, eps: f32) -> Self {
         Self { weight, bias, eps }
     }
 
@@ -28,34 +29,35 @@ impl<const N: usize> LayerNorm<N> {
         Ok(Self::new(weight, bias, eps))
     }
 
-    /// Forward pass
-    ///
-    /// Normalizes the input over the last dimension
-    pub fn forward<const N2: usize, const N3: usize>(
-        &self,
-        input: &Tensor<N2, f32>,
-    ) -> Tensor<N2, f32>
-    where
-        Tensor<N2, f32>: LastRank<N3, f32>,
-        (Tensor<N2, f32>, Tensor<N, f32>): MaxRank<N2, f32>,
-        (Tensor<N2, f32>, Tensor<N2, f32>): MaxRank<N2, f32>,
-        Tensor<N3, f32>: NextRankInner<NextRank = Tensor<N2, f32>>,
-        TensorSlice<N2, f32>: Debug,
-    {
-        // remove_mean = true for standard LayerNorm (as opposed to RMSNorm)
-        input.layer_norm(&self.weight, self.bias.as_ref(), self.eps, true)
-    }
-
-    pub fn weight(&self) -> &Tensor<N, f32> {
+    pub fn weight(&self) -> &Tensor<N, T> {
         &self.weight
     }
 
-    pub fn bias(&self) -> Option<&Tensor<N, f32>> {
+    pub fn bias(&self) -> Option<&Tensor<N, T>> {
         self.bias.as_ref()
     }
 
     pub fn eps(&self) -> f32 {
         self.eps
+    }
+}
+
+impl<const R: usize, T> LayerNorm<R, T> {
+    /// Forward pass
+    ///
+    /// Normalizes the input over the last dimension
+    pub fn forward<const N: usize, const N2: usize>(&self, input: &Tensor<N, T>) -> Tensor<N, T>
+    where
+        T: DataType + CastTensor<f32>,
+        f32: CastTensor<T>,
+        (Tensor<N, f32>, Tensor<R, f32>): MaxRank<N, f32>,
+        (Tensor<N, T>, Tensor<R, T>): MaxRank<N, T>,
+        (Tensor<N, f32>, Tensor<N, f32>): MaxRank<N, f32>,
+        Tensor<N, f32>: LastRank<N2, f32>,
+        Tensor<N2, f32>: NextRankInner<NextRank = Tensor<N, f32>>,
+    {
+        // remove_mean = true for standard LayerNorm (as opposed to RMSNorm)
+        input.layer_norm(&self.weight, self.bias.as_ref(), self.eps, true)
     }
 }
 

@@ -15,7 +15,6 @@ futures = "0.3.31"
 futures-channel = "0.3.31"
 tabbycat = "0.1.3"
 half = { version = "2.4.1", features = ["bytemuck"] }
-arc-swap = "1.7.1"
 enumset = "1.1.5"
 fusor-gguf = { workspace = true }
 rustc-hash = "2.1.1"
@@ -24,6 +23,7 @@ parking_lot = "0.12.3"
 tracing = "0.1.41"
 lru = "0.14.0"
 pollster = "0.4.0"
+petgraph = "0.8.3"
 
 [features]
 extra_assertions = []

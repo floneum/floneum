@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use crate::{
     TILE_SIZE, Tensor,
-    compute_graph::{AnyComputeKey, ComputeGraphInner},
+    compute_graph::{ComputeGraphInner, NodeIndex},
     mir::operation::Operation,
     visit_tiled::{
         MaybeQData, build_visit_tiled_kernel, titled_map_dispatch_size,
@@ -12,13 +12,13 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub(crate) struct SliceAssignOperation {
-    pub(crate) input: AnyComputeKey,
-    pub(crate) value: AnyComputeKey,
+    pub(crate) input: NodeIndex,
+    pub(crate) value: NodeIndex,
     pub(crate) slices: Box<[Range<usize>]>,
 }
 
 impl SliceAssignOperation {
-    pub fn new(input: AnyComputeKey, value: AnyComputeKey, slices: Box<[Range<usize>]>) -> Self {
+    pub fn new(input: NodeIndex, value: NodeIndex, slices: Box<[Range<usize>]>) -> Self {
         Self {
             input,
             value,
@@ -58,13 +58,13 @@ impl Operation for SliceAssignOperation {
         titled_map_dispatch_size(TILE_SIZE, *workgroup_shape, &inputs)
     }
 
-    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
+    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
         f(self.value);
         f(self.input);
     }
 
     fn inputs(&self, nodes: &ComputeGraphInner) -> Vec<crate::mir::inputs::MirValue> {
-        let input = nodes.cached_results.get(&self.input).unwrap();
+        let input = nodes.get_cached_result(self.input).unwrap();
         let input = input.slice(&self.slices);
         let value = nodes.get_result_or_qmatrix(self.value).unwrap();
 

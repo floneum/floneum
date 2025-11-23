@@ -13,7 +13,7 @@ pub use tensor::*;
 pub(crate) use element_wise::*;
 pub use matmul::*;
 pub(crate) use pair_wise::*;
-pub use varbuilder::VarBuilder;
+pub use varbuilder::{ShardedVarBuilder, VarBuilder};
 
 pub mod cache;
 mod composite;

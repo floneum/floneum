@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     Tensor,
-    compute_graph::{AnyComputeKey, ComputeGraphInner},
+    compute_graph::{ComputeGraphInner, NodeIndex},
     layout::TILE_SIZE,
     mir::{function::Function, inputs::MirValue, kernel::GenericKernel, operation::Operation},
     tensor::{DataType, DataTypeEnum, TensorData},
@@ -80,7 +80,7 @@ impl ElementWiseFunctions {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ElementWiseOperation {
-    pub(crate) value: AnyComputeKey,
+    pub(crate) value: NodeIndex,
     pub(crate) functions: ElementWiseFunctions,
     pub(crate) shape: Box<[usize]>,
 }
@@ -88,7 +88,7 @@ pub(crate) struct ElementWiseOperation {
 impl ElementWiseOperation {
     pub fn new(
         input_datatype: DataTypeEnum,
-        value: AnyComputeKey,
+        value: NodeIndex,
         functions: ElementWiseFunction,
         shape: impl Into<Box<[usize]>>,
     ) -> Self {
@@ -103,7 +103,7 @@ impl ElementWiseOperation {
     }
 
     pub fn from_element_wise(
-        value: AnyComputeKey,
+        value: NodeIndex,
         functions: ElementWiseFunctions,
         shape: impl Into<Box<[usize]>>,
     ) -> Self {
@@ -161,7 +161,7 @@ impl Operation for ElementWiseOperation {
         titled_map_dispatch_size(TILE_SIZE, *workgroup_shape, &inputs)
     }
 
-    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
+    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
         f(self.value);
     }
 

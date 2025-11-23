@@ -33,6 +33,8 @@
 
 #![warn(missing_docs)]
 
+type WhisperDType = f32;
+
 use cpal::FromSample;
 use futures_channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use kalosm_common::Cache;
@@ -375,7 +377,7 @@ impl WhisperBuilder {
     ///     .build_with_loading_handler(|progress| match progress {
     ///         ModelLoadingProgress::Downloading { source, progress } => {
     ///             let progress_percent = (progress.progress * 100) as u32;
-    ///             let elapsed = progress.start_time.elapsed().as_secs_f32();
+    ///             let elapsed = progress.start_time.unwrap().elapsed().as_secs_f32();
     ///             println!("Downloading file {source} {progress_percent}% ({elapsed}s)");
     ///         }
     ///         ModelLoadingProgress::Loading { progress } => {

@@ -13,7 +13,7 @@ use wgpu::{COPY_BUFFER_ALIGNMENT, util::DownloadBuffer};
 use crate::{
     Device, ElementWiseOperation, MatMulOperation, MatMulParams, PairWiseFunction,
     PairWiseOperation, ReduceFunction, ReduceOperation,
-    compute_graph::{AnyComputeKey, ComputeGraph},
+    compute_graph::NodeIndex,
     index_select::IndexSelectOperation,
     layout::Layout,
     map_layout::MapLayoutOperation,
@@ -201,17 +201,15 @@ impl TensorInfo {
 pub(crate) struct LazyTensorData {
     device: Device,
     info: TensorInfo,
-    graph: ComputeGraph,
-    key: AnyComputeKey,
+    key: NodeIndex,
 }
 
 impl Clone for LazyTensorData {
     fn clone(&self) -> Self {
-        self.graph.add_reference(self.key);
+        self.device.compute_graph().add_reference(self.key);
         Self {
             device: self.device.clone(),
             info: self.info.clone(),
-            graph: self.graph.clone(),
             key: self.key,
         }
     }
@@ -219,114 +217,71 @@ impl Clone for LazyTensorData {
 
 impl Drop for LazyTensorData {
     fn drop(&mut self) {
-        self.graph.remove_reference(self.key);
+        self.device.compute_graph().remove_reference(self.key);
     }
 }
 
 impl LazyTensorData {
     pub(crate) fn new(data: TensorData) -> Self {
         let device = data.device.clone();
-        let graph = ComputeGraph::new(device.clone());
         let info = data.info.clone();
-        let key = graph.create_tensor(data);
+        let key = device.compute_graph().create_tensor(data);
 
         Self {
             device,
             info: TensorInfo::new(info.shape().into(), info.datatype()),
-            graph,
-            key: key.into(),
-        }
-    }
-
-    pub(crate) fn from_parts(
-        device: Device,
-        graph: ComputeGraph,
-        info: TensorInfo,
-        key: AnyComputeKey,
-    ) -> Self {
-        Self {
-            device,
-            info,
-            graph,
             key,
         }
     }
 
+    pub(crate) fn from_parts(device: Device, info: TensorInfo, key: NodeIndex) -> Self {
+        Self { device, info, key }
+    }
+
     pub(crate) fn custom(&self, custom: Arc<dyn Operation + Send + Sync>) -> Self {
-        let graph = self.graph.clone();
         let device = self.device.clone();
         let info = self.info.clone();
-        let key = graph.create_custom(custom);
+        let key = device.compute_graph().create_custom(custom);
 
-        Self {
-            device,
-            info,
-            graph,
-            key: key.into(),
-        }
+        Self::from_parts(device, info, key)
     }
 
     pub(crate) fn element_wise(&self, function: ElementWiseOperation) -> Self {
-        let graph = self.graph.clone();
         let device = self.device.clone();
         let mut info = self.info.clone();
         info.datatype = function.functions.out_datatype();
-        let key = graph.create_element_wise(function);
+        let key = device.compute_graph().create_element_wise(function);
 
-        Self {
-            device,
-            info,
-            graph,
-            key: key.into(),
-        }
+        Self::from_parts(device, info, key)
     }
 
     pub(crate) fn pair_wise(&self, function: PairWiseOperation) -> Self {
-        let graph = self.graph.clone();
         let device = self.device.clone();
         let info = self.info.clone();
-        let key = graph.create_pair_wise(function);
+        let key = device.compute_graph().create_pair_wise(function);
 
-        Self {
-            device,
-            info,
-            graph,
-            key: key.into(),
-        }
+        Self::from_parts(device, info, key)
     }
 
     pub(crate) fn mat_mul(&self, function: MatMulOperation) -> Self {
-        let graph = self.graph.clone();
         let device = self.device.clone();
         let mut info = self.info.clone();
         info.shape = function.out_shape.clone();
-        let key = graph.create_mat_mul(function);
+        let key = device.compute_graph().create_mat_mul(function);
 
-        Self {
-            device,
-            info,
-            graph,
-            key: key.into(),
-        }
+        Self::from_parts(device, info, key)
     }
 
     pub(crate) fn q_mat_mul(&self, function: QMatMulOperation) -> Self {
-        let graph = self.graph.clone();
         let device = self.device.clone();
         let mut info = self.info.clone();
         info.shape = function.out_shape.clone();
-        let key = graph.create_q_mat_mul(function);
+        let key = device.compute_graph().create_q_mat_mul(function);
 
-        Self {
-            device,
-            info,
-            graph,
-            key: key.into(),
-        }
+        Self::from_parts(device, info, key)
     }
 
     pub(crate) fn reduce(&self, function: ReduceOperation) -> Self {
-        let graph = self.graph.clone();
         let device = self.device.clone();
         let mut info = self.info.clone();
         let dim = function.axis;
@@ -338,79 +293,50 @@ impl LazyTensorData {
             .filter_map(|(i, x)| (i != dim).then_some(*x))
             .collect();
         info = TensorInfo::new(new_shape, info.datatype());
-        let key = graph.create_reduce(function);
+        let key = device.compute_graph().create_reduce(function);
 
-        Self {
-            device,
-            info,
-            graph,
-            key: key.into(),
-        }
+        Self::from_parts(device, info, key)
     }
 
     pub(crate) fn map_layout(&self, op: MapLayoutOperation) -> Self {
         let device = self.device.clone();
         let info = TensorInfo::new((op.map_size)(self.info.shape()), self.info.datatype());
-        let graph = self.graph.clone();
-        let key = self.graph.create_map_layout(op);
+        let key = device.compute_graph().create_map_layout(op);
 
-        Self {
-            device,
-            info,
-            graph,
-            key: key.into(),
-        }
+        Self::from_parts(device, info, key)
     }
 
     pub(crate) fn resize(&self, op: ResizeOperation) -> Self {
         let device = self.device.clone();
         let info = TensorInfo::new(op.new_shape.clone(), self.info.datatype());
-        let graph = self.graph.clone();
-        let key = self.graph.create_resize(op);
+        let key = device.compute_graph().create_resize(op);
 
-        Self {
-            device,
-            info,
-            graph,
-            key: key.into(),
-        }
+        Self::from_parts(device, info, key)
     }
 
     pub(crate) fn slice_assign(&self, op: SliceAssignOperation) -> Self {
         let device = self.device.clone();
         let info = self.info.clone();
-        let graph = self.graph.clone();
-        let key = self.graph.create_slice_assign(op);
+        let key = device.compute_graph().create_slice_assign(op);
 
-        Self {
-            device,
-            info,
-            graph,
-            key: key.into(),
-        }
+        Self::from_parts(device, info, key)
     }
 
     pub(crate) fn index_select(&self, op: IndexSelectOperation) -> Self {
         let device = self.device.clone();
         let mut info = self.info.clone();
         info.shape = op.output_shape();
-        let graph = self.graph.clone();
-        let key = self.graph.create_index_select(op);
+        let key = device.compute_graph().create_index_select(op);
 
-        Self {
-            device,
-            info,
-            graph,
-            key: key.into(),
-        }
+        Self::from_parts(device, info, key)
     }
 
     pub(crate) fn materialize(&self) -> TensorData {
-        self.graph.resolve(self.key, &self.device)
+        self.device.compute_graph().resolve(self.key, &self.device)
     }
 
     pub fn graphvis(&self) -> Graph {
-        self.graph.graphvis(self.key)
+        self.device.compute_graph().graphvis(self.key)
     }
 }
 
@@ -468,8 +394,13 @@ impl TensorData {
 
     pub(crate) fn new_splat<D: DataType>(device: &Device, shape: &[usize], data: D) -> Self {
         let datatype = D::WGSL_TYPE;
+        let raw_data = bytemuck::bytes_of(&data);
+        let unpadded_size = raw_data.len();
+        let size = padded_tensor_size(unpadded_size as u64) as usize;
+        let mut padded_data = vec![0u8; size];
+        padded_data[..unpadded_size].copy_from_slice(raw_data);
         let buffer = device.create_buffer_init(
-            bytemuck::bytes_of(&data),
+            &padded_data,
             wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_SRC
                 | wgpu::BufferUsages::COPY_DST,
@@ -500,14 +431,14 @@ impl TensorData {
                     | wgpu::BufferUsages::COPY_SRC
                     | wgpu::BufferUsages::COPY_DST,
             );
-            (buffer, size)
+            (buffer, padded_size)
         }
-        let (buffer, unpadded_size) = create_aligned_buffer(size_of::<D>() as u64, shape, device);
+        let (buffer, padded_size) = create_aligned_buffer(size_of::<D>() as u64, shape, device);
 
-        if let Some(unpadded_size) = NonZeroU64::new(unpadded_size) {
+        if let Some(padded_size) = NonZeroU64::new(padded_size) {
             let write = device
                 .wgpu_queue()
-                .write_buffer_with(&buffer, 0, unpadded_size);
+                .write_buffer_with(&buffer, 0, padded_size);
             if let Some(mut write) = write {
                 write
                     .iter_mut()
@@ -869,7 +800,6 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
             ));
         }
 
-        self.data.graph.merge(&other.data.graph);
         assert_eq!(self.shape(), other.shape());
         let operation =
             PairWiseOperation::new(function, self.data.key, other.data.key, self.shape());
@@ -877,7 +807,6 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
     }
 
     pub(crate) fn add_mat_mul(&self, other: &Self, parameters: Option<MatMulParams>) -> Self {
-        self.data.graph.merge(&other.data.graph);
         let operation = MatMulOperation::new(
             self.datatype(),
             self.data.key,
@@ -905,13 +834,11 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
     }
 
     pub(crate) fn add_slice_assign(&self, other: &Self, slices: [Range<usize>; R]) -> Self {
-        self.data.graph.merge(&other.data.graph);
         let op = SliceAssignOperation::new(self.data.key, other.data.key, slices.into());
         Self::from_parts(self.data.slice_assign(op))
     }
 
     pub(crate) fn add_index_select(&self, dimension: usize, indexes: &Tensor<1, u32>) -> Self {
-        self.data.graph.merge(&indexes.data.graph);
         let op = IndexSelectOperation::new(
             self.data.key,
             indexes.data.key,
@@ -943,7 +870,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         Tensor::from_parts(self.data.map_layout(op))
     }
 
-    pub(crate) fn key(&self) -> AnyComputeKey {
+    pub(crate) fn key(&self) -> NodeIndex {
         self.data.key
     }
 
@@ -975,16 +902,6 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
 
     pub(crate) fn data(&self) -> &LazyTensorData {
         &self.data
-    }
-
-    pub(crate) fn graph(&self) -> &ComputeGraph {
-        &self.data.graph
-    }
-
-    /// Returns a hash of the compute graph. The hash is sensitive to the structure of the
-    /// compute graph
-    pub fn graph_hash(&self) -> u64 {
-        self.data.graph.graph_hash(self.data.key)
     }
 }
 
@@ -1259,62 +1176,14 @@ async fn test_tensor() {
 
 #[cfg(test)]
 #[tokio::test]
-async fn test_graph_hash() {
+async fn test_zeros_f16() {
     let device = Device::new().await.unwrap();
 
-    // Create a tensor and use it in different operations
-    let data = [[1., 2.], [3., 4.]];
-    let tensor = Tensor::new(&device, &data);
+    let tensor: Tensor<2, half::f16> = Tensor::zeros(&device, [2, 2]);
 
-    // Create two identical computational graphs using the same tensor
-    let result1 = &tensor + &tensor; // Add tensor to itself
-    let result1 = result1 * 2.0; // Multiply by 2
-
-    let result2 = &tensor + &tensor; // Same operations
-    let result2 = result2 * 2.0;
-
-    // The hashes should be the same because the graph structure is identical
-    let hash1 = result1.graph_hash();
-    let hash2 = result2.graph_hash();
-    assert_eq!(hash1, hash2, "Identical graphs should have the same hash");
-
-    // Create a different graph with a different operation
-    let result3 = &tensor * &tensor; // Different operation (multiply instead of add)
-    let result3 = result3 * 2.0;
-    let hash3 = result3.graph_hash();
-    assert_ne!(
-        hash1, hash3,
-        "Different graphs should have different hashes"
-    );
-
-    // Create a graph with different ordering (should have different hash)
-    let result4 = tensor.clone() * 2.0; // Multiply first
-    let result4 = &result4 + &result4; // Then add
-    let hash4 = result4.graph_hash();
-    assert_ne!(
-        hash1, hash4,
-        "Graphs with different operation order should have different hashes"
-    );
-
-    // Test that using a different tensor with the same shape produces the same hash
-    let data2 = [[5., 6.], [7., 8.]]; // Different data, same shape
-    let tensor2 = Tensor::new(&device, &data2);
-    let result5 = &tensor2 + &tensor2;
-    let result5 = result5 * 2.0;
-    let hash5 = result5.graph_hash();
-    assert_eq!(
-        hash1, hash5,
-        "Graphs with different tensors but same shape should have the same hash"
-    );
-
-    // Test that different shapes produce different hashes
-    let data3 = [[1., 2., 3.], [4., 5., 6.]];
-    let tensor3 = Tensor::new(&device, &data3);
-    let result6 = &tensor3 + &tensor3;
-    let result6 = result6 * 2.0;
-    let hash6 = result6.graph_hash();
-    assert_ne!(
-        hash1, hash6,
-        "Graphs with different shapes should have different hashes"
-    );
+    let as_slice = tensor.as_slice().await.unwrap();
+    assert_eq!(as_slice[[0, 0]], half::f16::ZERO);
+    assert_eq!(as_slice[[0, 1]], half::f16::ZERO);
+    assert_eq!(as_slice[[1, 0]], half::f16::ZERO);
+    assert_eq!(as_slice[[1, 1]], half::f16::ZERO);
 }
