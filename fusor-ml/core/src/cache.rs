@@ -112,8 +112,8 @@ impl<const R: usize, D: DataType> TensorCache<R, D> {
 /// Manages key and value caches separately, growing them as needed
 #[derive(Clone)]
 pub struct KvCache<T> {
-    key: TensorCache<3, T>,
-    value: TensorCache<3, T>,
+    key: TensorCache<4, T>,
+    value: TensorCache<4, T>,
 }
 
 impl<T: DataType> KvCache<T> {
@@ -128,12 +128,12 @@ impl<T: DataType> KvCache<T> {
     }
 
     /// Get the current key data in the cache
-    pub fn k(&self) -> Option<&Tensor<3, T>> {
+    pub fn k(&self) -> Option<&Tensor<4, T>> {
         self.key.current_data()
     }
 
     /// Get the current value data in the cache
-    pub fn v(&self) -> Option<&Tensor<3, T>> {
+    pub fn v(&self) -> Option<&Tensor<4, T>> {
         self.value.current_data()
     }
 
@@ -146,7 +146,7 @@ impl<T: DataType> KvCache<T> {
     /// Append a new key/value pair to the cache
     ///
     /// Returns (full_keys, full_values) including the newly appended data
-    pub fn append(&mut self, k: &Tensor<3, T>, v: &Tensor<3, T>) -> (Tensor<3, T>, Tensor<3, T>) {
+    pub fn append(&mut self, k: &Tensor<4, T>, v: &Tensor<4, T>) -> (Tensor<4, T>, Tensor<4, T>) {
         let keys = self.key.append(k);
         let values = self.value.append(v);
         (keys, values)
@@ -230,7 +230,7 @@ impl<T: FloatDataType> MaskCache<T> {
         seqlen_offset: usize,
         sliding_window_size: Option<usize>,
         device: &crate::Device,
-    ) -> Result<AttentionMask<T>, String> {
+    ) -> AttentionMask<T> {
         let (seq_len, seqlen_offset) = if let Some(sliding_window_size) = sliding_window_size {
             // offset + seqlen_offset should not exceed sliding_window_size
             let offset = seqlen_offset.min(sliding_window_size.saturating_sub(seq_len));
@@ -268,9 +268,9 @@ impl<T: FloatDataType> MaskCache<T> {
             let zeros = Tensor::zeros(device, [shape[0], seqlen_offset]);
             // Concatenate along dimension 1 (columns)
             let padded_mask = Tensor::cat([zeros, mask_tensor.clone()], 1);
-            Ok(AttentionMask { mask: padded_mask })
+            AttentionMask { mask: padded_mask }
         } else {
-            Ok(mask)
+            mask
         }
     }
 
@@ -367,23 +367,23 @@ mod tests {
         let device = Device::new().await.unwrap();
         let mut cache = KvCache::new(1, 2);
 
-        let key_data = [[[1.0, 2.0]]];
-        let value_data = [[[3.0, 4.0]]];
+        let key_data = [[[[1.0, 2.0]]]];
+        let value_data = [[[[3.0, 4.0]]]];
         let key = Tensor::new(&device, &key_data);
         let value = Tensor::new(&device, &value_data);
 
         let (k_result, v_result) = cache.append(&key, &value);
 
-        assert_eq!(k_result.shape(), &[1, 1, 2]);
-        assert_eq!(v_result.shape(), &[1, 1, 2]);
+        assert_eq!(k_result.shape(), &[1, 1, 1, 2]);
+        assert_eq!(v_result.shape(), &[1, 1, 1, 2]);
 
         let k_output = k_result.as_slice().await.unwrap();
         let v_output = v_result.as_slice().await.unwrap();
 
-        assert_eq!(k_output[[0, 0, 0]], 1.0);
-        assert_eq!(k_output[[0, 0, 1]], 2.0);
-        assert_eq!(v_output[[0, 0, 0]], 3.0);
-        assert_eq!(v_output[[0, 0, 1]], 4.0);
+        assert_eq!(k_output[[0, 0, 0, 0]], 1.0);
+        assert_eq!(k_output[[0, 0, 0, 1]], 2.0);
+        assert_eq!(v_output[[0, 0, 0, 0]], 3.0);
+        assert_eq!(v_output[[0, 0, 0, 1]], 4.0);
     }
 
     #[tokio::test]
@@ -391,34 +391,34 @@ mod tests {
         let device = Device::new().await.unwrap();
         let mut cache = KvCache::new(1, 3);
 
-        let key_data1 = [[[1.0, 2.0]]];
-        let value_data1 = [[[3.0, 4.0]]];
+        let key_data1 = [[[[1.0, 2.0]]]];
+        let value_data1 = [[[[3.0, 4.0]]]];
         let key1 = Tensor::new(&device, &key_data1);
         let value1 = Tensor::new(&device, &value_data1);
 
         cache.append(&key1, &value1);
 
-        let key_data2 = [[[5.0, 6.0]]];
-        let value_data2 = [[[7.0, 8.0]]];
+        let key_data2 = [[[[5.0, 6.0]]]];
+        let value_data2 = [[[[7.0, 8.0]]]];
         let key2 = Tensor::new(&device, &key_data2);
         let value2 = Tensor::new(&device, &value_data2);
 
         let (k_result, v_result) = cache.append(&key2, &value2);
 
-        assert_eq!(k_result.shape(), &[1, 2, 2]);
-        assert_eq!(v_result.shape(), &[1, 2, 2]);
+        assert_eq!(k_result.shape(), &[1, 1, 2, 2]);
+        assert_eq!(v_result.shape(), &[1, 1, 2, 2]);
 
         let k_output = k_result.as_slice().await.unwrap();
         let v_output = v_result.as_slice().await.unwrap();
 
-        assert_eq!(k_output[[0, 0, 0]], 1.0);
-        assert_eq!(k_output[[0, 0, 1]], 2.0);
-        assert_eq!(k_output[[0, 1, 0]], 5.0);
-        assert_eq!(k_output[[0, 1, 1]], 6.0);
-        assert_eq!(v_output[[0, 0, 0]], 3.0);
-        assert_eq!(v_output[[0, 0, 1]], 4.0);
-        assert_eq!(v_output[[0, 1, 0]], 7.0);
-        assert_eq!(v_output[[0, 1, 1]], 8.0);
+        assert_eq!(k_output[[0, 0, 0, 0]], 1.0);
+        assert_eq!(k_output[[0, 0, 0, 1]], 2.0);
+        assert_eq!(k_output[[0, 0, 1, 0]], 5.0);
+        assert_eq!(k_output[[0, 0, 1, 1]], 6.0);
+        assert_eq!(v_output[[0, 0, 0, 0]], 3.0);
+        assert_eq!(v_output[[0, 0, 0, 1]], 4.0);
+        assert_eq!(v_output[[0, 0, 1, 0]], 7.0);
+        assert_eq!(v_output[[0, 0, 1, 1]], 8.0);
     }
 
     #[tokio::test]
@@ -426,8 +426,8 @@ mod tests {
         let device = Device::new().await.unwrap();
         let mut cache = KvCache::new(1, 3);
 
-        let key_data = [[[1.0, 2.0]]];
-        let value_data = [[[3.0, 4.0]]];
+        let key_data = [[[[1.0, 2.0]]]];
+        let value_data = [[[[3.0, 4.0]]]];
         let key = Tensor::new(&device, &key_data);
         let value = Tensor::new(&device, &value_data);
 
@@ -513,14 +513,14 @@ mod tests {
         let device = Device::new().await.unwrap();
         let cache: MaskCache<f32> = MaskCache::default();
 
-        let mask1 = cache.get_mask(3, 0, None, &device).unwrap();
-        let mask2 = cache.get_mask(3, 0, None, &device).unwrap();
+        let mask1 = cache.get_mask(3, 0, None, &device);
+        let mask2 = cache.get_mask(3, 0, None, &device);
 
         // Should be cached (same object)
         assert_eq!(mask1.mask().shape(), &[3, 3]);
         assert_eq!(mask2.mask().shape(), &[3, 3]);
 
-        let mask3 = cache.get_mask(5, 0, None, &device).unwrap();
+        let mask3 = cache.get_mask(5, 0, None, &device);
         assert_eq!(mask3.mask().shape(), &[5, 5]);
     }
 
@@ -530,7 +530,7 @@ mod tests {
         let cache: MaskCache<f32> = MaskCache::default();
 
         // Test with seqlen_offset
-        let mask = cache.get_mask(2, 3, None, &device).unwrap();
+        let mask = cache.get_mask(2, 3, None, &device);
         // Mask should be padded: [2, 3+2] = [2, 5]
         assert_eq!(mask.mask().shape(), &[2, 5]);
     }
@@ -540,7 +540,7 @@ mod tests {
         let device = Device::new().await.unwrap();
         let cache: MaskCache<f32> = MaskCache::default();
 
-        let mask = cache.get_mask(4, 0, Some(2), &device).unwrap();
+        let mask = cache.get_mask(4, 0, Some(2), &device);
         assert_eq!(mask.mask().shape(), &[4, 4]);
 
         let mask_data = mask.mask().as_slice().await.unwrap();

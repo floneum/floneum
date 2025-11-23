@@ -14,6 +14,10 @@ impl<T: DataType> Linear<T> {
         Ok(Self { weight, bias })
     }
 
+    pub fn new(weight: QMatrix, bias: Option<Tensor<1, T>>) -> Self {
+        Self { weight, bias }
+    }
+
     pub fn forward(&self, input: &Tensor<3, T>) -> Tensor<3, T> {
         let output = input.q_mat_mul(&self.weight);
         match &self.bias {
