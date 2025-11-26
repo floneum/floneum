@@ -8,6 +8,7 @@ mod mean;
 mod narrow;
 mod pool;
 mod relu;
+mod repeat;
 mod rms_norm;
 mod rope;
 mod silu;
