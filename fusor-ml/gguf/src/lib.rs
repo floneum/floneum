@@ -546,7 +546,7 @@ impl GgufValue {
 macro_rules! try_into_gguf_value {
     ($convert: ident, $variant:ident, $value:ty $(=> from $($from:ident)+)?) => {
         impl GgufValue {
-            #[doc = concat!("Convert the GGUF value to a ", stringify!($value), " if possible.")]
+            #[doc = concat!("Convert the GGUF value to a `", stringify!($value), "` if possible.")]
             pub fn $convert(&self) -> Result<$value, GgufReadError> {
                 self.try_into()
             }

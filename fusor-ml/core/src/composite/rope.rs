@@ -1,29 +1,29 @@
-use crate::{DataType, Tensor};
+use crate::{D, DataType, Tensor};
 
-fn rotate_half<const N: usize, D: DataType>(xs: Tensor<N, D>) -> Tensor<N, D> {
+fn rotate_half<const N: usize, T: DataType>(xs: Tensor<N, T>) -> Tensor<N, T> {
     let last_dim = xs.shape().last().unwrap();
-    let xs1 = xs.narrow(N - 1, 0, last_dim / 2);
-    let xs2 = xs.narrow(N - 1, last_dim / 2, last_dim - last_dim / 2);
-    Tensor::cat([-xs2, xs1], N - 1)
+    let xs1 = xs.narrow(D::Minus1, 0, last_dim / 2);
+    let xs2 = xs.narrow(D::Minus1, last_dim / 2, last_dim - last_dim / 2);
+    Tensor::cat([-xs2, xs1], D::Minus1)
 }
 
-impl<D: DataType> Tensor<3, D> {
-    pub fn rope(self, cos: Tensor<2, D>, sin: Tensor<2, D>) -> Tensor<3, D> {
+impl<D: DataType> Tensor<4, D> {
+    pub fn rope(&self, cos: &Tensor<2, D>, sin: &Tensor<2, D>) -> Tensor<4, D> {
         const LAST_DIM: usize = 2;
         let shape = *self.shape();
-        let [_height, sequence_length, _embed] = shape;
+        let [_height, sequence_length, _, _] = shape;
         let cos = Tensor::cat([cos.clone(), cos.clone()], LAST_DIM);
         let sin = Tensor::cat([sin.clone(), sin.clone()], LAST_DIM);
         let cos = cos.narrow(0, 0, sequence_length);
         let sin = sin.narrow(0, 0, sequence_length);
         let rotated = rotate_half(self.clone());
-        self * cos.broadcast_as(shape) + rotated * sin.broadcast_as(shape)
+        self.clone() * cos.broadcast_as(shape) + rotated * sin.broadcast_as(shape)
     }
 
-    pub fn rope_interleaved(self, cos: Tensor<2, D>, sin: Tensor<2, D>) -> Tensor<3, D> {
+    pub fn rope_interleaved(&self, cos: &Tensor<2, D>, sin: &Tensor<2, D>) -> Tensor<4, D> {
         const LAST_DIM: usize = 3;
         let shape = *self.shape();
-        let [height, sequence_length, embed] = shape;
+        let [height, sequence_length, embed, bz] = shape;
 
         let cos = cos
             .narrow(0, 0, sequence_length)
@@ -46,6 +46,6 @@ impl<D: DataType> Tensor<3, D> {
 
         let rope = Tensor::cat([y0, y1], LAST_DIM);
 
-        rope.reshape([height, sequence_length, embed])
+        rope.reshape([height, sequence_length, embed, bz])
     }
 }
