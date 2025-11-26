@@ -24,7 +24,10 @@ fn unchecked_unsqueeze<const R1: usize, const R2: usize, const DIFF: usize, D: D
 }
 
 impl<const R1: usize, D: DataType> Tensor<R1, D> {
-    pub fn unsqueeze<const R2: usize>(&self, axis: impl Dim<R2>) -> <Self as NextRankInner>::NextRank
+    pub fn unsqueeze<const R2: usize>(
+        &self,
+        axis: impl Dim<R2>,
+    ) -> <Self as NextRankInner>::NextRank
     where
         Self: NextRank<R2, D>,
     {

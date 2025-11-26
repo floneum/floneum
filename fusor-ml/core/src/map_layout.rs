@@ -1,7 +1,8 @@
 use std::{fmt::Debug, ops::Range, sync::Arc};
 
 use crate::{
-    D, DataType, Dim, Layout, MaxRank, Tensor, TensorData, compute_graph::NodeIndex, mir::operation::Operation, slice_shape, slice_strides
+    D, DataType, Dim, Layout, MaxRank, Tensor, TensorData, compute_graph::NodeIndex,
+    mir::operation::Operation, slice_shape, slice_strides,
 };
 
 type MapSize = Arc<dyn Fn(&[usize]) -> Box<[usize]> + Send + Sync>;

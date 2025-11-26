@@ -11,7 +11,16 @@ use tabbycat::Graph;
 use wgpu::{COPY_BUFFER_ALIGNMENT, util::DownloadBuffer};
 
 use crate::{
-    Device, Dim, ElementWiseOperation, MatMulOperation, MatMulParams, PairWiseFunction, PairWiseOperation, ReduceFunction, ReduceOperation, compute_graph::NodeIndex, index_select::IndexSelectOperation, layout::Layout, map_layout::MapLayoutOperation, mir::operation::Operation, quantized::{QMatrix, matmul::QMatMulOperation}, resize::ResizeOperation, slice_assign::SliceAssignOperation
+    Device, Dim, ElementWiseOperation, MatMulOperation, MatMulParams, PairWiseFunction,
+    PairWiseOperation, ReduceFunction, ReduceOperation,
+    compute_graph::NodeIndex,
+    index_select::IndexSelectOperation,
+    layout::Layout,
+    map_layout::MapLayoutOperation,
+    mir::operation::Operation,
+    quantized::{QMatrix, matmul::QMatMulOperation},
+    resize::ResizeOperation,
+    slice_assign::SliceAssignOperation,
 };
 
 pub trait DataType:

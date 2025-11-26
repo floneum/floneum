@@ -4,13 +4,16 @@ use std::{
 };
 
 use crate::{
-    D, DataType, DataTypeEnum, Dim, LastRank, Layout, Tensor, TensorData, compute_graph::NodeIndex, min_for_dtype, mir::{
+    D, DataType, DataTypeEnum, Dim, LastRank, Layout, Tensor, TensorData,
+    compute_graph::NodeIndex,
+    min_for_dtype,
+    mir::{
         globals::KernelGlobalSpace,
         inputs::MirValue,
         kernel::GenericKernel,
         operation::Operation,
         workgroup_shape::{Constraint, WorkgroupShape, WorkgroupShapeConstraints},
-    }
+    },
 };
 
 impl<const R: usize, T: DataType> Tensor<R, T> {
@@ -37,7 +40,8 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
     where
         Tensor<R, T>: LastRank<R2, T>,
     {
-        let operation = SoftmaxOperation::new(self.key(), self.datatype(), axis.resolve(), self.shape());
+        let operation =
+            SoftmaxOperation::new(self.key(), self.datatype(), axis.resolve(), self.shape());
         let data = self.data();
 
         Self::from_parts(data.custom(Arc::new(operation)))

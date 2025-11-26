@@ -1,11 +1,12 @@
 use std::fmt::{Display, Write};
 
 use crate::{
-    Dim, ElementWiseFunctions, LastRank, LastRankInner, NextRankInner, mir::{
+    Dim, ElementWiseFunctions, LastRank, LastRankInner, NextRankInner,
+    mir::{
         globals::KernelGlobalSpace,
         operation::Operation,
         workgroup_shape::{Constraint, WorkgroupShape, WorkgroupShapeConstraints},
-    }
+    },
 };
 use crate::{
     Layout, Tensor,

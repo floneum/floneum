@@ -309,14 +309,13 @@ impl<const R: usize> ShapeWithOneHole<R> for [usize; R] {
     }
 }
 
-
 impl ShapeWithOneHole<1> for ((),) {
     fn resolve_shape(&self, original_shape: &[usize]) -> [usize; 1] {
         [original_shape.iter().product()]
     }
 }
 
-trait IndexTuple<const INDEX: usize> {
+pub(crate) trait IndexTuple<const INDEX: usize> {
     type Output;
     fn const_index(&self) -> &Self::Output;
 }
