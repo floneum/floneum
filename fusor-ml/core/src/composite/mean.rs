@@ -1,16 +1,17 @@
-use crate::{FloatDataType, LastRank, LastRankInner, NextRankInner, Tensor};
+use crate::{Dim, FloatDataType, LastRank, LastRankInner, NextRankInner, Tensor};
 
 impl<const N: usize, D: FloatDataType> Tensor<N, D> {
-    pub fn mean<const O: usize>(&self, dim: usize) -> Tensor<O, D>
+    pub fn mean<const O: usize>(&self, dim: impl Dim<N>) -> Tensor<O, D>
     where
         Self: LastRank<O, D>,
     {
+        let dim = dim.resolve();
         let sum = self.sum(dim);
         let dim_size = self.shape()[dim] as f32;
         sum / D::from_f32(dim_size)
     }
 
-    pub fn mean_keepdim<const O: usize>(&self, dim: usize) -> Self
+    pub fn mean_keepdim<const O: usize>(&self, dim: impl Dim<N>) -> Self
     where
         Self: LastRank<O, D>,
         <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,

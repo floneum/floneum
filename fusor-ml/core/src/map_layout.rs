@@ -1,8 +1,7 @@
 use std::{fmt::Debug, ops::Range, sync::Arc};
 
 use crate::{
-    DataType, Layout, MaxRank, Tensor, TensorData, compute_graph::NodeIndex,
-    mir::operation::Operation, slice_shape, slice_strides,
+    D, DataType, Dim, Layout, MaxRank, Tensor, TensorData, compute_graph::NodeIndex, mir::operation::Operation, slice_shape, slice_strides
 };
 
 type MapSize = Arc<dyn Fn(&[usize]) -> Box<[usize]> + Send + Sync>;
@@ -137,7 +136,9 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
         ))
     }
 
-    pub fn transpose(&self, first_axis: usize, second_axis: usize) -> Tensor<R, T> {
+    pub fn transpose(&self, first_axis: impl Dim<R>, second_axis: impl Dim<R>) -> Tensor<R, T> {
+        let first_axis = first_axis.resolve();
+        let second_axis = second_axis.resolve();
         assert!(first_axis < self.rank());
         assert!(second_axis < self.rank());
         self.add_map_layout(MapLayoutOperation::new(
@@ -162,9 +163,7 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
                 "The tensor must have at least 2 dimensions to transpose"
             )
         };
-        let last_dim = self.rank() - 1;
-        let second_last_dim = self.rank() - 2;
-        self.transpose(last_dim, second_last_dim)
+        self.transpose(D::Minus1, D::Minus2)
     }
 
     pub fn broadcast_as<const R2: usize>(&self, out_shape: [usize; R2]) -> Tensor<R2, T> {

@@ -1,7 +1,8 @@
-use crate::{DataType, NextRank, Tensor};
+use crate::{DataType, Dim, NextRank, Tensor};
 
 impl<const R: usize, D: DataType> Tensor<R, D> {
-    pub fn cat(vectors: impl IntoIterator<Item = Self>, dim: usize) -> Self {
+    pub fn cat(vectors: impl IntoIterator<Item = Self>, dim: impl Dim<R>) -> Self {
+        let dim = dim.resolve();
         let vectors = vectors.into_iter().collect::<Vec<_>>();
         let mut shape = [0; R];
         for (i, v) in vectors[0].shape().iter().enumerate() {
@@ -44,11 +45,12 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 impl<const R1: usize, D: DataType> Tensor<R1, D> {
     pub fn stack<const R2: usize>(
         vectors: impl IntoIterator<Item = Self>,
-        dim: usize,
+        dim: impl Dim<R2>,
     ) -> Tensor<R2, D>
     where
         Self: NextRank<R2, D>,
     {
+        let dim = dim.resolve();
         Tensor::cat(vectors.into_iter().map(|t| t.unsqueeze(dim)), dim)
     }
 }

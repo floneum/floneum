@@ -1,12 +1,11 @@
 use std::fmt::{Display, Write};
 
 use crate::{
-    ElementWiseFunctions, LastRank, LastRankInner, NextRankInner,
-    mir::{
+    Dim, ElementWiseFunctions, LastRank, LastRankInner, NextRankInner, mir::{
         globals::KernelGlobalSpace,
         operation::Operation,
         workgroup_shape::{Constraint, WorkgroupShape, WorkgroupShapeConstraints},
-    },
+    }
 };
 use crate::{
     Layout, Tensor,
@@ -498,14 +497,14 @@ impl ReduceFunction {
 }
 
 impl<const N: usize, D: DataType> Tensor<N, D> {
-    pub fn sum<const O: usize>(&self, dim: usize) -> Tensor<O, D>
+    pub fn sum<const O: usize>(&self, dim: impl Dim<N>) -> Tensor<O, D>
     where
         Self: LastRank<O, D>,
     {
         self.reduce(sum_fn::<D>(), dim)
     }
 
-    pub fn sum_keepdim<const O: usize>(&self, dim: usize) -> Self
+    pub fn sum_keepdim<const O: usize>(&self, dim: impl Dim<N>) -> Self
     where
         Self: LastRank<O, D>,
         <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
@@ -743,17 +742,17 @@ async fn test_cast_then_reduce_const_sum_fused() {
     assert_eq!(output[[1]], half::f16::from_f32(12.));
 }
 
-impl<const N: usize, D: DataType> Tensor<N, D> {
-    pub fn max<const O: usize>(&self, dim: usize) -> Tensor<O, D>
+impl<const N: usize, T: DataType> Tensor<N, T> {
+    pub fn max<const O: usize>(&self, dim: impl Dim<N>) -> Tensor<O, T>
     where
-        Self: LastRank<O, D>,
+        Self: LastRank<O, T>,
     {
-        self.reduce(max_fn::<D>(), dim)
+        self.reduce(max_fn::<T>(), dim)
     }
 
-    pub fn max_keepdim<const O: usize>(&self, dim: usize) -> Self
+    pub fn max_keepdim<const O: usize>(&self, dim: impl Dim<N>) -> Self
     where
-        Self: LastRank<O, D>,
+        Self: LastRank<O, T>,
         <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
     {
         self.max(dim).unsqueeze(dim)
@@ -805,14 +804,14 @@ fn min_fn<D: DataType>() -> ReduceFunction {
 }
 
 impl<const N: usize, D: DataType> Tensor<N, D> {
-    pub fn min<const O: usize>(&self, dim: usize) -> Tensor<O, D>
+    pub fn min<const O: usize>(&self, dim: impl Dim<N>) -> Tensor<O, D>
     where
         Self: LastRank<O, D>,
     {
         self.reduce(min_fn::<D>(), dim)
     }
 
-    pub fn min_keepdim<const O: usize>(&self, dim: usize) -> Self
+    pub fn min_keepdim<const O: usize>(&self, dim: impl Dim<N>) -> Self
     where
         Self: LastRank<O, D>,
         <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
@@ -868,14 +867,14 @@ fn product_fn<D: DataType>() -> ReduceFunction {
 }
 
 impl<const N: usize, D: DataType> Tensor<N, D> {
-    pub fn product<const O: usize>(&self, dim: usize) -> Tensor<O, D>
+    pub fn product<const O: usize>(&self, dim: impl Dim<N>) -> Tensor<O, D>
     where
         Self: LastRank<O, D>,
     {
         self.reduce(product_fn::<D>(), dim)
     }
 
-    pub fn product_keepdim<const O: usize>(&self, dim: usize) -> Self
+    pub fn product_keepdim<const O: usize>(&self, dim: impl Dim<N>) -> Self
     where
         Self: LastRank<O, D>,
         <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,

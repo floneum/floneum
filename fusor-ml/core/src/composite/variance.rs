@@ -1,7 +1,7 @@
-use crate::{FloatDataType, LastRank, LastRankInner, NextRankInner, Tensor};
+use crate::{Dim, FloatDataType, LastRank, LastRankInner, NextRankInner, Tensor};
 
 impl<const N: usize, D: FloatDataType> Tensor<N, D> {
-    pub fn var<const O: usize>(&self, dim: usize) -> Tensor<O, D>
+    pub fn var<const O: usize>(&self, dim: impl Dim<N>) -> Tensor<O, D>
     where
         Self: LastRank<O, D>,
         <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
@@ -12,7 +12,7 @@ impl<const N: usize, D: FloatDataType> Tensor<N, D> {
         sq_diff.mean(dim)
     }
 
-    pub fn var_keepdim<const O: usize>(&self, dim: usize) -> Self
+    pub fn var_keepdim<const O: usize>(&self, dim: impl Dim<N>) -> Self
     where
         Self: LastRank<O, D>,
         <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,

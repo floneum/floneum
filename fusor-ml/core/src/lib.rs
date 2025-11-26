@@ -14,6 +14,7 @@ pub(crate) use element_wise::*;
 pub use matmul::*;
 pub(crate) use pair_wise::*;
 pub use varbuilder::{ShardedVarBuilder, VarBuilder};
+pub use resize::ShapeWithOneHole;
 
 pub mod cache;
 mod composite;
