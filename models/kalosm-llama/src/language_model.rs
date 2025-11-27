@@ -58,18 +58,18 @@ impl<S: Sampler + 'static> TextCompletionModel<S> for Llama {
         sampler: S,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> Result<(), Self::Error> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let (max_tokens, stop_on, seed) =
-            match (&sampler as &dyn Any).downcast_ref::<GenerationParameters>() {
-                Some(sampler) => (
-                    sampler.max_length(),
-                    sampler.stop_on().map(|s| s.to_string()),
-                    sampler.seed(),
-                ),
-                None => (u32::MAX, None, None),
-            };
-        let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
-        let on_token = Box::new(on_token);
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            let (max_tokens, stop_on, seed) =
+                match (&sampler as &dyn Any).downcast_ref::<GenerationParameters>() {
+                    Some(sampler) => (
+                        sampler.max_length(),
+                        sampler.stop_on().map(|s| s.to_string()),
+                        sampler.seed(),
+                    ),
+                    None => (u32::MAX, None, None),
+                };
+            let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
+            let on_token = Box::new(on_token);
         let text = msg.text();
         let msg = msg.resolve_media_sources().await?;
         let mut images = Vec::new();
@@ -81,25 +81,25 @@ impl<S: Sampler + 'static> TextCompletionModel<S> for Llama {
                 }
             }
         }
-        self.task_sender
-            .send(Task::UnstructuredGeneration(UnstructuredGenerationTask {
-                settings: InferenceSettings::new(
-                    text,
+            self.task_sender
+                .send(Task::UnstructuredGeneration(UnstructuredGenerationTask {
+                    settings: InferenceSettings::new(
+                        text,
                     images,
-                    session.clone(),
-                    sampler,
-                    max_tokens,
-                    stop_on,
-                    seed,
-                ),
-                on_token,
-                finished: tx,
-            }))
-            .map_err(|_| LlamaModelError::ModelStopped)?;
+                        session.clone(),
+                        sampler,
+                        max_tokens,
+                        stop_on,
+                        seed,
+                    ),
+                    on_token,
+                    finished: tx,
+                }))
+                .map_err(|_| LlamaModelError::ModelStopped)?;
 
-        rx.await.map_err(|_| LlamaModelError::ModelStopped)??;
+            rx.await.map_err(|_| LlamaModelError::ModelStopped)??;
 
-        Ok(())
+            Ok(())
     }
 }
 

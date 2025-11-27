@@ -7,45 +7,41 @@ fn rotate_half<const N: usize, T: DataType>(xs: Tensor<N, T>) -> Tensor<N, T> {
     Tensor::cat([-xs2, xs1], D::Minus1)
 }
 
-impl<D: DataType> Tensor<4, D> {
-    pub fn rope(&self, cos: &Tensor<2, D>, sin: &Tensor<2, D>) -> Tensor<4, D> {
-        const LAST_DIM: usize = 2;
+impl<T: DataType> Tensor<4, T> {
+    pub fn rope(&self, cos: &Tensor<2, T>, sin: &Tensor<2, T>) -> Tensor<4, T> {
         let shape = *self.shape();
-        let [_height, sequence_length, _, _] = shape;
-        let cos = Tensor::cat([cos.clone(), cos.clone()], LAST_DIM);
-        let sin = Tensor::cat([sin.clone(), sin.clone()], LAST_DIM);
+        let [_, _, sequence_length, _] = shape;
+
         let cos = cos.narrow(0, 0, sequence_length);
         let sin = sin.narrow(0, 0, sequence_length);
+
+        let cos = Tensor::cat([cos.clone(), cos.clone()], D::Minus1);
+        let sin = Tensor::cat([sin.clone(), sin.clone()], D::Minus1);
+
         let rotated = rotate_half(self.clone());
         self.clone() * cos.broadcast_as(shape) + rotated * sin.broadcast_as(shape)
     }
 
-    pub fn rope_interleaved(&self, cos: &Tensor<2, D>, sin: &Tensor<2, D>) -> Tensor<4, D> {
-        const LAST_DIM: usize = 3;
-        let shape = *self.shape();
-        let [height, sequence_length, embed, bz] = shape;
+    pub fn rope_interleaved(&self, cos: &Tensor<2, T>, sin: &Tensor<2, T>) -> Tensor<4, T> {
+        let [bz, height, sequence_length, embed] = *self.shape();
 
         let cos = cos
             .narrow(0, 0, sequence_length)
-            .reshape([sequence_length, embed / 2, 1])
-            .broadcast_as([height, sequence_length, embed / 2, 1]);
+            .reshape([1, 1, sequence_length, embed / 2, 1])
+            .broadcast_as([bz, height, sequence_length, embed / 2, 1]);
         let sin = sin
             .narrow(0, 0, sequence_length)
-            .reshape([sequence_length, embed / 2, 1])
-            .broadcast_as([height, sequence_length, embed / 2, 1]);
+            .reshape([1, 1, sequence_length, embed / 2, 1])
+            .broadcast_as([bz, height, sequence_length, embed / 2, 1]);
 
-        let x = self.reshape([height, sequence_length, embed / 2, 2]);
+        let x = self.reshape([bz, height, sequence_length, embed / 2, 2]);
 
-        let x0 = x.narrow(LAST_DIM, 0, 1);
-        let x1 = x.narrow(LAST_DIM, 1, 1);
+        let x0 = x.narrow(D::Minus1, 0, 1);
+        let x1 = x.narrow(D::Minus1, 1, 1);
 
-        let a = &x0 * &cos;
-        let b = &x1 * &sin;
-        let y0 = a - b;
+        let y0 = &x0 * &cos - &x1 * &sin;
         let y1 = &x0 * &sin + &x1 * &cos;
 
-        let rope = Tensor::cat([y0, y1], LAST_DIM);
-
-        rope.reshape([height, sequence_length, embed, bz])
+        Tensor::cat([y0, y1], D::Minus1).reshape([bz, height, sequence_length, embed])
     }
 }

@@ -16,7 +16,8 @@ pub trait TensorIndex<const R: usize, D: DataType, Priv = ()> {
     fn index(&self, tensor: &Tensor<R, D>) -> Self::Output;
 }
 
-struct PhantomConst<const N: usize, T = ()>(PhantomData<T>);
+#[doc(hidden)]
+pub struct PhantomConst<const N: usize, T = ()>(PhantomData<T>);
 
 impl<
     const R1: usize,

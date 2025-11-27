@@ -1,11 +1,13 @@
 use crate::gguf_tokenizer::get_pre_tokenizer;
 use crate::raw::cache::LlamaCache;
 use crate::raw::Model;
-use crate::raw::ShardedGguf;
 use crate::token_stream::TokenOutputStream;
 use crate::token_stream::TokenOutputStreamError;
 use crate::LlamaConfigJson;
-use kalosm_common::*;
+use fusor_core::Device;
+use fusor_core::ShardedVarBuilder;
+use fusor_gguf::GgufMetadata;
+use fusor_gguf::GgufValue;
 use kalosm_language_model::ImageFetchError;
 use kalosm_language_model::MediaHints;
 use kalosm_model_types::ModelLoadingProgress;
@@ -14,10 +16,6 @@ use serde::de::Error;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use candle_core::{
-    quantized::{ggml_file, gguf_file},
-    DType, Device,
-};
 use tokenizers::Tokenizer;
 
 use crate::{InferenceSettings, LlamaSourceError};
@@ -27,7 +25,7 @@ use crate::{InferenceSettings, LlamaSourceError};
 pub enum LlamaModelError {
     /// An error from candle while running the model.
     #[error("Candle error: {0}")]
-    Candle(#[from] candle_core::Error),
+    Candle(#[from] fusor_core::Error),
 
     /// An error from tokenizers while running the model.
     #[error("Tokenizer error: {0}")]
@@ -61,6 +59,10 @@ pub enum LlamaModelError {
     #[error("Error running the chat template: {0}")]
     ChatTemplateError(#[from] minijinja::Error),
 
+    /// Cannot run the model on an empty input
+    #[error("Cannot run the model on an empty input")]
+    EmptyInput,
+
     /// Failed to load images
     #[error("Failed to load images: {0}")]
     ImageLoadingError(#[from] ImageFetchError),
@@ -88,9 +90,9 @@ impl LlamaModel {
         cache: Option<&mut LlamaCache>,
         logits_vec: &mut Vec<f32>,
         #[allow(unused)] tokenizer: &Tokenizer,
-    ) -> candle_core::Result<()> {
+    ) -> Result<(), LlamaModelError> {
         if tokens.is_empty() {
-            candle_core::bail!("Cannot run model on empty input");
+            return Err(LlamaModelError::EmptyInput);
         }
 
         #[cfg(debug_assertions)]
@@ -101,10 +103,16 @@ impl LlamaModel {
             );
         }
 
-        let logits = model.forward(tokens, images, device, cache)?;
-
-        let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
-        copy_tensor_into_vec(&logits, logits_vec)?;
+        let logits = model.forward(tokens, images, device, cache)?.squeeze(0);
+        futures::executor::block_on(async move {
+            let len = logits.shape()[0];
+            let logits = logits.as_slice().await.unwrap();
+            logits_vec.clear();
+            for i in 0..len {
+                let logit = logits[[i]];
+                logits_vec.push(logit);
+            }
+        });
 
         Ok(())
     }
@@ -114,7 +122,7 @@ impl LlamaModel {
         builder: crate::LlamaBuilder,
         mut handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
     ) -> Result<Self, LlamaSourceError> {
-        let device = builder.get_device()?;
+        let device = builder.get_device().await?;
 
         // Download the model and tokenizer. These are relatively cheep operations that can be run in the async runtime
         let tokenizer_path = match &builder.source.tokenizer {
@@ -154,231 +162,147 @@ impl LlamaModel {
             .model(|progress| handler(create_progress(progress)))
             .await?;
 
-        let mut vision = None;
-        let mut vision_path = None;
-        if let Some(vision_source) = builder.source.vision_model {
-            let mut create_progress = ModelLoadingProgress::downloading_progress(format!(
-                "Vision model ({vision_source})"
-            ));
-            let path = builder
-                .source
-                .cache
-                .get(&vision_source, |progress| {
-                    handler(create_progress(progress))
-                })
-                .await?;
-            let mut vision_file = std::fs::File::open(&path)
-                .expect("The path returned by LlamaSource::model should be valid");
-            vision = Some(gguf_file::Content::read(&mut vision_file)?);
-            vision_path = Some(path);
-        }
-
         // Then actually load the model and tokenizer. This is expensive, so we do it in a blocking task
         let (model, tokenizer) = tokio::task::spawn_blocking({
             let device = device.clone();
             move || {
-                maybe_autoreleasepool(|| {
-                    let tokenizer = match tokenizer_path {
-                        Some(tokenizer_path) => {
-                            let tokenizer = Tokenizer::from_file(tokenizer_path)
-                                .map_err(LlamaSourceError::Tokenizer)?;
-                            Some(tokenizer)
-                        }
-                        None => None,
-                    };
-
-                    let config = match config_path {
-                        Some(config_path) => {
-                            let config = std::fs::read_to_string(config_path).map_err(|err| {
-                                LlamaSourceError::Config(serde_json::Error::custom(err))
-                            })?;
-                            let config: LlamaConfigJson =
-                                serde_json::from_str(&config).map_err(LlamaSourceError::Config)?;
-                            config.rope_scaling
-                        }
-                        None => None,
-                    };
-
-                    let first_file = &filename[0];
-                    let override_stop_token_string = builder.source.override_stop_token_string;
-                    let override_chat_template = builder.source.override_chat_template;
-                    match first_file.extension().and_then(|v| v.to_str()) {
-                        Some("gguf") => {
-                            let mut contents = Vec::new();
-                            for file in &filename {
-                                let mut file = std::fs::File::open(file).expect(
-                                    "The path returned by LlamaSource::model should be valid",
-                                );
-                                let model = gguf_file::Content::read(&mut file)?;
-                                contents.push((model, file));
-                            }
-                            let mut source = ShardedGguf::new(contents);
-                            let tokenizer = match tokenizer {
-                                Some(tokenizer) => tokenizer,
-                                None => {
-                                    let tokenizer_model = source
-                                        .get("tokenizer.ggml.model")
-                                        .ok()
-                                        .ok_or(LlamaSourceError::NoTokenizer)?
-                                        .to_string()
-                                        .map_err(|_| LlamaSourceError::NoTokenizer)?;
-                                    if tokenizer_model != "gpt2" {
-                                        return Err(LlamaSourceError::NoTokenizer);
-                                    }
-                                    let pre = source
-                                        .get("tokenizer.ggml.pre")
-                                        .ok()
-                                        .ok_or(LlamaSourceError::NoTokenizer)?
-                                        .to_string()
-                                        .map_err(|_| LlamaSourceError::NoTokenizer)?;
-                                    let add_bos_token = source
-                                        .get("tokenizer.ggml.add_bos_token")
-                                        .ok()
-                                        .and_then(|v| v.to_bool().ok());
-                                    let config = get_pre_tokenizer(pre, add_bos_token);
-
-                                    let tokens: Result<Vec<_>, _> = source
-                                        .get("tokenizer.ggml.tokens")
-                                        .ok()
-                                        .ok_or(LlamaSourceError::NoTokenizer)?
-                                        .to_vec()
-                                        .map_err(|_| LlamaSourceError::NoTokenizer)?
-                                        .iter()
-                                        .map(|v| v.to_string().map(|s| s.to_string()))
-                                        .collect();
-                                    let tokens =
-                                        tokens.map_err(|_| LlamaSourceError::NoTokenizer)?;
-                                    let types: Result<Vec<_>, _> = source
-                                        .get("tokenizer.ggml.token_type")
-                                        .ok()
-                                        .ok_or(LlamaSourceError::NoTokenizer)?
-                                        .to_vec()
-                                        .map_err(|_| LlamaSourceError::NoTokenizer)?
-                                        .iter()
-                                        .map(|v| {
-                                            v.to_i32()
-                                                .map(|v| v as u8)
-                                                .or_else(|_| v.to_i64().map(|v| v as u8))
-                                                .or_else(|_| v.to_i16().map(|v| v as u8))
-                                                .or_else(|_| v.to_i8().map(|v| v as u8))
-                                                .or_else(|_| v.to_u64().map(|v| v as u8))
-                                                .or_else(|_| v.to_u32().map(|v| v as u8))
-                                                .or_else(|_| v.to_u16().map(|v| v as u8))
-                                                .or_else(|_| v.to_u8())
-                                        })
-                                        .collect();
-                                    let types = types.map_err(|_| LlamaSourceError::NoTokenizer)?;
-                                    let vocab: HashMap<_, _> = tokens
-                                        .iter()
-                                        .enumerate()
-                                        .map(|(id, v)| (v.clone(), id as u32))
-                                        .collect();
-                                    let merges = source
-                                        .get("tokenizer.ggml.merges")
-                                        .ok()
-                                        .ok_or(LlamaSourceError::NoTokenizer)?;
-                                    let merges: Result<Vec<_>, _> = merges
-                                        .to_vec()
-                                        .map_err(|_| LlamaSourceError::NoTokenizer)?
-                                        .iter()
-                                        .map(|v| {
-                                            v.to_string()
-                                                .map_err(|_| LlamaSourceError::NoTokenizer)
-                                                .and_then(|v| {
-                                                    v.split_once(' ')
-                                                        .ok_or(LlamaSourceError::NoTokenizer)
-                                                })
-                                                .map(|(a, b)| (a.to_string(), b.to_string()))
-                                        })
-                                        .collect();
-                                    let merges =
-                                        merges.map_err(|_| LlamaSourceError::NoTokenizer)?;
-
-                                    let eos = source
-                                        .get("tokenizer.ggml.eos_token_id")
-                                        .ok()
-                                        .ok_or(LlamaSourceError::NoTokenizer)?;
-                                    let eos =
-                                        eos.to_u32().map_err(|_| LlamaSourceError::NoTokenizer)?;
-                                    let eos = &tokens[eos as usize];
-
-                                    let bos = source
-                                        .get("tokenizer.ggml.bos_token_id")
-                                        .ok()
-                                        .ok_or(LlamaSourceError::NoTokenizer)?;
-                                    let bos =
-                                        bos.to_u32().map_err(|_| LlamaSourceError::NoTokenizer)?;
-                                    let bos = &tokens[bos as usize];
-
-                                    config
-                                        .build(vocab, types, merges, bos, eos)
-                                        .map_err(LlamaSourceError::Tokenizer)?
-                                }
-                            };
-                            let model = Model::from_gguf(
-                                &mut source,
-                                vision,
-                                vision_path,
-                                &device,
-                                override_stop_token_string,
-                                override_chat_template,
-                                config,
-                            )?;
-                            Ok((model, tokenizer))
-                        }
-                        Some("ggml" | "bin") | Some(_) | None => {
-                            let mut file = std::fs::File::open(first_file)
-                                .expect("The path returned by LlamaSource::model should be valid");
-                            let model = ggml_file::Content::read(&mut file, &device)?;
-                            let tokenizer = tokenizer.ok_or(LlamaSourceError::NoTokenizer)?;
-
-                            let gqa = builder.source.group_query_attention;
-                            let vocab = tokenizer.get_vocab(true);
-                            let start_token_string = match vocab
-                                .get("<s>")
-                                .map(|v| (*v, "<s>".to_string()))
-                                .or_else(|| {
-                                    vocab
-                                        .get("<|start_of_text|>")
-                                        .map(|v| (*v, "<|start_of_text|>".to_string()))
-                                })
-                                .or_else(|| {
-                                    vocab
-                                        .get("<|startoftext|>")
-                                        .map(|v| (*v, "<|startoftext|>".to_string()))
-                                }) {
-                                Some((_, string)) => string,
-                                None => String::new(),
-                            };
-                            let (stop_token, stop_token_string) = match vocab
-                                .get("</s>")
-                                .map(|v| (*v, "</s>".to_string()))
-                                .or_else(|| {
-                                    vocab
-                                        .get("<|end_of_text|>")
-                                        .map(|v| (*v, "<|end_of_text|>".to_string()))
-                                })
-                                .or_else(|| {
-                                    vocab
-                                        .get("<|endoftext|>")
-                                        .map(|v| (*v, "<|endoftext|>".to_string()))
-                                }) {
-                                Some((token, string)) => (token, string),
-                                None => return Err(LlamaSourceError::NoStopToken),
-                            };
-                            let model = Model::from_ggml(
-                                model,
-                                gqa as usize,
-                                &device,
-                                start_token_string,
-                                stop_token,
-                                stop_token_string,
-                                config,
-                            )?;
-                            Ok((model, tokenizer))
-                        }
+                let tokenizer = match tokenizer_path {
+                    Some(tokenizer_path) => {
+                        let tokenizer = Tokenizer::from_file(tokenizer_path)
+                            .map_err(LlamaSourceError::Tokenizer)?;
+                        Some(tokenizer)
                     }
-                })
+                    None => None,
+                };
+
+                let config = match config_path {
+                    Some(config_path) => {
+                        let config = std::fs::read_to_string(config_path).map_err(|err| {
+                            LlamaSourceError::Config(serde_json::Error::custom(err))
+                        })?;
+                        let config: LlamaConfigJson =
+                            serde_json::from_str(&config).map_err(LlamaSourceError::Config)?;
+                        config.rope_scaling
+                    }
+                    None => None,
+                };
+
+                let override_stop_token_string = builder.source.override_stop_token_string;
+                let override_chat_template = builder.source.override_chat_template;
+
+                if filename.is_empty() {
+                    return Err(LlamaSourceError::InvalidGguf);
+                }
+
+                // Open all files and read metadata
+                let mut files_with_metadata = Vec::new();
+                for path in &filename {
+                    let mut file = std::fs::File::open(path)
+                        .expect("The path returned by LlamaSource::model should be valid");
+                    let metadata = GgufMetadata::read(&mut file)?;
+                    files_with_metadata.push((metadata, file));
+                }
+
+                let mut source = ShardedVarBuilder::new(files_with_metadata);
+                let tokenizer = match tokenizer {
+                    Some(tokenizer) => tokenizer,
+                    None => {
+                        let tokenizer_model: Box<str> = source
+                            .get("tokenizer.ggml.model")
+                            .map_err(|_| LlamaSourceError::NoTokenizer)?
+                            .clone()
+                            .try_into()
+                            .map_err(|_| LlamaSourceError::NoTokenizer)?;
+                        if &*tokenizer_model != "gpt2" {
+                            return Err(LlamaSourceError::NoTokenizer);
+                        }
+                        let pre: Box<str> = source
+                            .get("tokenizer.ggml.pre")
+                            .map_err(|_| LlamaSourceError::NoTokenizer)?
+                            .clone()
+                            .try_into()
+                            .map_err(|_| LlamaSourceError::NoTokenizer)?;
+                        let add_bos_token = source
+                            .get("tokenizer.ggml.add_bos_token")
+                            .ok()
+                            .cloned()
+                            .and_then(|v| v.try_into().ok());
+                        let config = get_pre_tokenizer(&pre, add_bos_token);
+
+                        let token_values: Box<[GgufValue]> = source
+                            .get("tokenizer.ggml.tokens")
+                            .map_err(|_| LlamaSourceError::NoTokenizer)?
+                            .clone()
+                            .try_into()
+                            .map_err(|_| LlamaSourceError::NoTokenizer)?;
+                        let tokens: Result<Vec<_>, _> =
+                            token_values.iter().map(|v| v.clone().try_into()).collect();
+                        let tokens: Vec<Box<str>> =
+                            tokens.map_err(|_| LlamaSourceError::NoTokenizer)?;
+                        let token_type_values: Box<[GgufValue]> = source
+                            .get("tokenizer.ggml.token_type")
+                            .map_err(|_| LlamaSourceError::NoTokenizer)?
+                            .clone()
+                            .try_into()
+                            .map_err(|_| LlamaSourceError::NoTokenizer)?;
+                        let types: Result<Vec<_>, _> = token_type_values
+                            .iter()
+                            .map(|v| v.to_u8().map_err(|_| LlamaSourceError::NoTokenizer))
+                            .collect();
+                        let types = types.map_err(|_| LlamaSourceError::NoTokenizer)?;
+                        let vocab: HashMap<_, _> = tokens
+                            .iter()
+                            .enumerate()
+                            .map(|(id, v)| (v.to_string(), id as u32))
+                            .collect();
+                        let merges: Box<[GgufValue]> = source
+                            .get("tokenizer.ggml.merges")
+                            .map_err(|_| LlamaSourceError::NoTokenizer)?
+                            .clone()
+                            .try_into()
+                            .map_err(|_| LlamaSourceError::NoTokenizer)?;
+                        let merges: Result<Vec<_>, _> = merges
+                            .iter()
+                            .map(|v| {
+                                let as_str: Box<str> = v
+                                    .clone()
+                                    .try_into()
+                                    .map_err(|_| LlamaSourceError::NoTokenizer)?;
+                                as_str
+                                    .split_once(' ')
+                                    .ok_or(LlamaSourceError::NoTokenizer)
+                                    .map(|(a, b)| (a.to_string(), b.to_string()))
+                            })
+                            .collect();
+                        let merges = merges.map_err(|_| LlamaSourceError::NoTokenizer)?;
+
+                        let eos = source
+                            .get("tokenizer.ggml.eos_token_id")
+                            .map_err(|_| LlamaSourceError::NoTokenizer)?;
+                        let eos: u32 = eos.try_into().map_err(|_| LlamaSourceError::NoTokenizer)?;
+                        let eos = &tokens[eos as usize];
+
+                        let bos = source
+                            .get("tokenizer.ggml.bos_token_id")
+                            .map_err(|_| LlamaSourceError::NoTokenizer)?;
+                        let bos: u32 = bos.try_into().map_err(|_| LlamaSourceError::NoTokenizer)?;
+                        let bos = &tokens[bos as usize];
+
+                        config
+                            .build(vocab, types, merges, bos, eos)
+                            .map_err(LlamaSourceError::Tokenizer)?
+                    }
+                };
+                let model = Model::from_gguf(
+                    &mut source,
+                    None,
+                    None,
+                    &device,
+                    override_stop_token_string,
+                    override_chat_template,
+                    config,
+                )?;
+                Ok((model, tokenizer))
             }
         })
         .await
