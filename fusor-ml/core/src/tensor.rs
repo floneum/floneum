@@ -370,9 +370,21 @@ impl TensorData {
         layout: Layout,
         datatype: DataTypeEnum,
     ) -> Self {
+        let buffer = buffer.into();
+        let buffer_len = buffer.size() / datatype.element_size() as u64;
+        assert!(
+            layout.offset()
+                + layout
+                    .strides()
+                    .iter()
+                    .zip(layout.shape().iter())
+                    .map(|(s, dim)| s * (*dim - 1))
+                    .sum::<usize>()
+                < buffer_len as usize
+        );
         Self {
             device: device.clone(),
-            buffer: buffer.into(),
+            buffer,
             info: TensorLayoutInfo::new(layout, datatype),
         }
     }
