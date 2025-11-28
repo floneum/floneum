@@ -149,16 +149,9 @@ impl Operation for ElementWiseOperation {
     fn dispatch_size(
         &self,
         workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[crate::mir::inputs::MirValue],
+        _: &[crate::mir::inputs::MirValue],
     ) -> [u32; 3] {
-        let inputs: Box<[_]> = inputs
-            .iter()
-            .map(|input| {
-                let tensor: MaybeQData = input.clone().try_into().unwrap();
-                tensor
-            })
-            .collect();
-        titled_map_dispatch_size(TILE_SIZE, *workgroup_shape, &inputs)
+        titled_map_dispatch_size(TILE_SIZE, *workgroup_shape, self.shape())
     }
 
     fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {

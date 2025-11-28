@@ -220,8 +220,9 @@ fn build_tiled_map_kernel(
         writeln!(kernel, "var remaining_z = {global_id}.z;").unwrap();
         for index in (0..rank).skip(2) {
             let size = first.shape_binding(index);
-            writeln!(kernel, "let z_{index} = remaining_z % {size};").unwrap();
-            writeln!(kernel, "remaining_z = remaining_z / {size};").unwrap();
+            writeln!(kernel, "let num_tiles_{index} = ({} + {}) / {};", size, scaled_tile_size - 1, scaled_tile_size).unwrap();
+            writeln!(kernel, "let z_{index} = remaining_z % num_tiles_{index};").unwrap();
+            writeln!(kernel, "remaining_z = remaining_z / num_tiles_{index};").unwrap();
             global_indexes.push(format!("z_{index}"));
         }
     }
@@ -412,11 +413,8 @@ pub(crate) fn titled_map_workgroup_size_constraints(
 pub(crate) fn titled_map_dispatch_size<'a>(
     tile_size: u32,
     workgroup_shape: WorkgroupShape,
-    tensors: impl IntoIterator<Item = &'a MaybeQData>,
+    shape: &[usize],
 ) -> [u32; 3] {
-    let mut tensors = tensors.into_iter();
-    let layout = tensors.next().unwrap().layout();
-    let shape = layout.shape();
     let scaled_tile_size = scaled_tile_size(shape, tile_size);
     let workgroup_size_x = shape
         .first()
