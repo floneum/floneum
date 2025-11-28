@@ -110,13 +110,13 @@ pub enum AttentionVariant {
 }
 
 pub struct AttentionBias {
-    bias_q: Tensor<2, f32>,
-    bias_k: Tensor<2, f32>,
-    bias_v: Tensor<2, f32>,
+    bias_q: Tensor<1, f32>,
+    bias_k: Tensor<1, f32>,
+    bias_v: Tensor<1, f32>,
 }
 
 impl AttentionBias {
-    pub fn new(q: Tensor<2, f32>, k: Tensor<2, f32>, v: Tensor<2, f32>) -> Self {
+    pub fn new(q: Tensor<1, f32>, k: Tensor<1, f32>, v: Tensor<1, f32>) -> Self {
         Self {
             bias_q: q,
             bias_k: k,

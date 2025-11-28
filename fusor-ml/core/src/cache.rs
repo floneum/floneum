@@ -405,20 +405,20 @@ mod tests {
 
         let (k_result, v_result) = cache.append(&key2, &value2);
 
-        assert_eq!(k_result.shape(), &[1, 1, 2, 2]);
-        assert_eq!(v_result.shape(), &[1, 1, 2, 2]);
+        assert_eq!(k_result.shape(), &[1, 2, 1, 2]);
+        assert_eq!(v_result.shape(), &[1, 2, 1, 2]);
 
         let k_output = k_result.as_slice().await.unwrap();
         let v_output = v_result.as_slice().await.unwrap();
 
         assert_eq!(k_output[[0, 0, 0, 0]], 1.0);
         assert_eq!(k_output[[0, 0, 0, 1]], 2.0);
-        assert_eq!(k_output[[0, 0, 1, 0]], 5.0);
-        assert_eq!(k_output[[0, 0, 1, 1]], 6.0);
+        assert_eq!(k_output[[0, 1, 0, 0]], 5.0);
+        assert_eq!(k_output[[0, 1, 0, 1]], 6.0);
         assert_eq!(v_output[[0, 0, 0, 0]], 3.0);
         assert_eq!(v_output[[0, 0, 0, 1]], 4.0);
-        assert_eq!(v_output[[0, 0, 1, 0]], 7.0);
-        assert_eq!(v_output[[0, 0, 1, 1]], 8.0);
+        assert_eq!(v_output[[0, 1, 0, 0]], 7.0);
+        assert_eq!(v_output[[0, 1, 0, 1]], 8.0);
     }
 
     #[tokio::test]
