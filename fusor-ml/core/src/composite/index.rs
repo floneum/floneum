@@ -119,6 +119,42 @@ impl<
     }
 }
 
+impl<
+    const R1: usize,
+    const R2: usize,
+    const R3: usize,
+    const R4: usize,
+    const R5: usize,
+    T1: TensorIndexComponent<R4, R5, D, Output = Tensor<R5, D>>,
+    T2: TensorIndexComponent<R3, R4, D, Output = Tensor<R4, D>>,
+    T3: TensorIndexComponent<R2, R3, D, Output = Tensor<R3, D>>,
+    T4: TensorIndexComponent<R1, R2, D, Output = Tensor<R2, D>>,
+    T5: TensorIndexComponent<5, R1, D, Output = Tensor<R1, D>>,
+    D: DataType,
+> TensorIndex<5, D, PhantomConst<R1, PhantomConst<R2, PhantomConst<R3, PhantomConst<R4, PhantomConst<R5>>>>>> for (T1, T2, T3, T4, T5)
+{
+    type Output = Tensor<R5, D>;
+
+    fn index(&self, tensor: &Tensor<5, D>) -> Self::Output {
+        let [t1_shape, t2_shape, t3_shape, t4_shape, t5_shape] = *tensor.shape();
+        let (t1, t2, t3, t4, t5) = self;
+        let slices = [
+            t1.range(t1_shape),
+            t2.range(t2_shape),
+            t3.range(t3_shape),
+            t4.range(t4_shape),
+            t5.range(t5_shape),
+        ];
+
+        let sliced = tensor.slice(slices);
+        let out = t5.squeeze(sliced, 4);
+        let out = t4.squeeze(out, 3);
+        let out = t3.squeeze(out, 2);
+        let out = t2.squeeze(out, 1);
+        t1.squeeze(out, 0)
+    }
+}
+
 trait TensorIndexComponent<const R: usize, const R2: usize, D> {
     // type Input<const R: usize, const R2: usize, D>: LastRank<R2, D>;
     type Output;
