@@ -87,3 +87,36 @@ async fn test_cat() {
     assert_eq!(output[[2, 2]], 5.);
     assert_eq!(output[[2, 3]], 6.);
 }
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_multi_dim_cat() {
+    use crate::{D, Device};
+
+    let device = Device::new().await.unwrap();
+
+    let data1 = vec![vec![vec![1f32; 32]; 11]; 3];
+    let tensor1 = Tensor::new(&device, &data1).reshape([1, 3, 11, 32, 1]);
+    let data2 = vec![vec![vec![2f32; 32]; 11]; 3];
+    let tensor2 = Tensor::new(&device, &data2).reshape([1, 3, 11, 32, 1]);
+
+    let tensor = Tensor::cat([tensor1, tensor2], D::Minus1);
+    println!("tensor shape: {:?}", tensor.shape());
+
+    assert_eq!(*tensor.shape(), [1, 3, 11, 32, 2]);
+
+    let output = tensor.i((0usize, .., .., .., ..)).as_slice().await.unwrap();
+    println!("{output:?}");
+
+    for i in 0..3 {
+        for j in 0..11 {
+            for k in 0..32 {
+                for l in 0..2 {
+                    let value = output[[i, j, k, l]];
+                    let expected = if l == 0 { 1f32 } else { 2f32 };
+                    assert_eq!(value, expected);
+                }
+            }
+        }
+    }
+}
