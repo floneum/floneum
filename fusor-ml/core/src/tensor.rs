@@ -378,7 +378,7 @@ impl TensorData {
                     .strides()
                     .iter()
                     .zip(layout.shape().iter())
-                    .map(|(s, dim)| s * (*dim - 1))
+                    .map(|(s, dim)| s * dim.saturating_sub(1))
                     .sum::<usize>()
                 < buffer_len as usize
         );
