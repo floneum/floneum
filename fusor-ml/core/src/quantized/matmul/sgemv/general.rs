@@ -39,7 +39,15 @@ pub(crate) fn general_sgemv(
     let device = &graph.device;
 
     // Handle batch dimensions
-    writeln!(kernel, "let batch_idx = {global_id}.z;").unwrap();
+    writeln!(kernel, "var batch_idx = {global_id}.z;").unwrap();
+
+    // Decompose the batch index for higher-dimensional tensors
+    for dim in (0..input_a.rank()).rev().skip(2) {
+        let shape = input_a.shape_binding(dim);
+        writeln!(kernel, "let batch_idx_{dim} = batch_idx % {shape};").unwrap();
+        writeln!(kernel, "batch_idx = batch_idx / {shape};").unwrap();
+    }
+
     // Handle M dimension - each workgroup handles one M value
     writeln!(kernel, "let m_idx = {global_id}.y;").unwrap();
 
@@ -84,14 +92,15 @@ pub(crate) fn general_sgemv(
             for i in 0..SGEMV_VECTOR_SIZE {
                 writeln!(kernel, "let input_a_{i}_index = index * {elements_per_block} + i * {SGEMV_VECTOR_SIZE} + {i};").unwrap();
                 write!(kernel, "let input_a_{i} = {input_a}[").unwrap();
-                input_a.strided_index(
-                    kernel,
-                    vec![
-                        "batch_idx".to_string(),
-                        "m_idx".to_string(),
-                        format!("input_a_{i}_index"),
-                    ],
-                );
+                let mut indices = Vec::new();
+                // Add batch indices first
+                for dim in (0..input_a.rank()).rev().skip(2) {
+                    indices.push(format!("batch_idx_{dim}"));
+                }
+                // Then add M and K indices
+                indices.push("m_idx".to_string());
+                indices.push(format!("input_a_{i}_index"));
+                input_a.strided_index(kernel, indices);
                 writeln!(kernel, "];").unwrap();
             }
             // The pack them into a vector and write to the cache
@@ -253,14 +262,15 @@ pub(crate) fn general_sgemv(
             writeln!(kernel, "let output_index = workgroup_offset;").unwrap();
         }
         write!(kernel, "{output}[").unwrap();
-        output.strided_index(
-            kernel,
-            vec![
-                "batch_idx".to_string(),
-                "m_idx".to_string(),
-                "output_index".to_string(),
-            ],
-        );
+        let mut output_indices = Vec::new();
+        // Add batch indices first
+        for dim in (0..output.rank()).rev().skip(2) {
+            output_indices.push(format!("batch_idx_{dim}"));
+        }
+        // Then add M and N indices
+        output_indices.push("m_idx".to_string());
+        output_indices.push("output_index".to_string());
+        output.strided_index(kernel, output_indices);
         writeln!(
             kernel,
             "] = {};",

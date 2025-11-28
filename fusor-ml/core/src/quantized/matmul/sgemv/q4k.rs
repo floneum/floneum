@@ -38,7 +38,15 @@ pub(crate) fn q4k_sgemv(
     let elements_per_block = op.elements_per_block();
 
     // Handle batch dimensions
-    writeln!(kernel, "let batch_idx = {global_id}.z;").unwrap();
+    writeln!(kernel, "var batch_idx = {global_id}.z;").unwrap();
+
+    // Decompose the batch index for higher-dimensional tensors
+    for dim in (0..input_a.rank()).rev().skip(2) {
+        let shape = input_a.shape_binding(dim);
+        writeln!(kernel, "let batch_idx_{dim} = batch_idx % {shape};").unwrap();
+        writeln!(kernel, "batch_idx = batch_idx / {shape};").unwrap();
+    }
+
     // Handle M dimension - each workgroup handles one M value
     writeln!(kernel, "let m_idx = {global_id}.y;").unwrap();
 
@@ -84,49 +92,19 @@ pub(crate) fn q4k_sgemv(
         // First load the values of a into the cache
         for j in 0..8 {
             // Load all 4 values using strided indexing
-            write!(kernel, "let a_val_{j}_0 = {input_a}[").unwrap();
-            input_a.strided_index(
-                kernel,
-                vec![
-                    "batch_idx".to_string(),
-                    "m_idx".to_string(),
-                    format!("vector_offset + {j} + 0"),
-                ],
-            );
-            writeln!(kernel, "];").unwrap();
-
-            write!(kernel, "let a_val_{j}_1 = {input_a}[").unwrap();
-            input_a.strided_index(
-                kernel,
-                vec![
-                    "batch_idx".to_string(),
-                    "m_idx".to_string(),
-                    format!("vector_offset + {j} + 32"),
-                ],
-            );
-            writeln!(kernel, "];").unwrap();
-
-            write!(kernel, "let a_val_{j}_2 = {input_a}[").unwrap();
-            input_a.strided_index(
-                kernel,
-                vec![
-                    "batch_idx".to_string(),
-                    "m_idx".to_string(),
-                    format!("vector_offset + {j} + 128"),
-                ],
-            );
-            writeln!(kernel, "];").unwrap();
-
-            write!(kernel, "let a_val_{j}_3 = {input_a}[").unwrap();
-            input_a.strided_index(
-                kernel,
-                vec![
-                    "batch_idx".to_string(),
-                    "m_idx".to_string(),
-                    format!("vector_offset + {j} + 160"),
-                ],
-            );
-            writeln!(kernel, "];").unwrap();
+            for (idx, offset) in [(0, 0), (1, 32), (2, 128), (3, 160)] {
+                write!(kernel, "let a_val_{j}_{idx} = {input_a}[").unwrap();
+                let mut indices = Vec::new();
+                // Add batch indices first
+                for dim in (0..input_a.rank()).rev().skip(2) {
+                    indices.push(format!("batch_idx_{dim}"));
+                }
+                // Then add M and K indices
+                indices.push("m_idx".to_string());
+                indices.push(format!("vector_offset + {j} + {offset}"));
+                input_a.strided_index(kernel, indices);
+                writeln!(kernel, "];").unwrap();
+            }
 
             writeln!(
                 kernel,
@@ -307,7 +285,14 @@ pub(crate) fn q4k_sgemv(
             // Write the output to the output tensor if this is the first thread in the workgroup
             write!(kernel, "{output}[").unwrap();
             let index = format!("row + {offset}");
-            let output_indices = vec!["batch_idx".to_string(), "m_idx".to_string(), index];
+            let mut output_indices = Vec::new();
+            // Add batch indices first
+            for dim in (0..output.rank()).rev().skip(2) {
+                output_indices.push(format!("batch_idx_{dim}"));
+            }
+            // Then add M and N indices
+            output_indices.push("m_idx".to_string());
+            output_indices.push(index);
             output.strided_index(kernel, output_indices);
             let indexed = maybe_vec_storage_index(Q4K_SGEMV_CHUNK_SIZE, "sum", offset);
             writeln!(kernel, "] = {indexed};").unwrap();
