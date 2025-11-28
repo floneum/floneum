@@ -136,7 +136,7 @@ pub(crate) fn build_visit_tiled_kernel(
 }
 
 fn build_tiled_map_kernel(
-    device: &Device,
+    _device: &Device,
     shape: &[usize],
     tile_size: u32,
     datatypes: &[VisitTiledInputType],
@@ -148,7 +148,6 @@ fn build_tiled_map_kernel(
         &[String],
     ) -> String,
 ) {
-    let global_id = kernel.global_id();
     let rank = shape.len() as u32;
     let tensors = datatypes
         .iter()
@@ -187,176 +186,203 @@ fn build_tiled_map_kernel(
         });
 
     let first = first_tensor_input(&tensors);
-    let mut global_indexes = Vec::new();
-    for index in ["x", "y"].iter().take(rank as usize) {
-        global_indexes.push(format!("{global_id}.{index}"));
-    }
-    // Handle the z dimension if the rank is greater than 2. We only need to handle
-    // the dimensions that are greater than 1.
-    let shape_dims_after_2_greater_than_1: Box<[_]> = shape
-        .iter()
-        .enumerate()
-        .skip(2)
-        .map(|(dim, shape)| (*shape > 1).then_some(dim))
-        .collect();
-    // If there is only one interesting dimension, just set that to the z index directly.
-    let interesting_extra_dims = shape_dims_after_2_greater_than_1
-        .iter()
-        .filter(|&x| x.is_some())
-        .count();
-    let less_than_two_interesting_extra_dims = interesting_extra_dims < 2;
 
-    let scaled_tile_size = scaled_tile_size(shape, tile_size);
+    // Compute flat global thread index
+    let num_workgroups = kernel.num_workgroups();
+    let workgroup_id = kernel.workgroup_index();
+    let local_id = kernel.workgroup_local_index();
 
-    if less_than_two_interesting_extra_dims {
-        for index in &shape_dims_after_2_greater_than_1 {
-            if index.is_some() {
-                global_indexes.push(format!("{global_id}.z"));
-            } else {
-                global_indexes.push("0u".to_string());
-            }
-        }
-    } else {
-        writeln!(kernel, "var remaining_z = {global_id}.z;").unwrap();
-        for index in (0..rank).skip(2) {
-            let size = first.shape_binding(index);
-            writeln!(kernel, "let num_tiles_{index} = ({} + {}) / {};", size, scaled_tile_size - 1, scaled_tile_size).unwrap();
-            writeln!(kernel, "let z_{index} = remaining_z % num_tiles_{index};").unwrap();
-            writeln!(kernel, "remaining_z = remaining_z / num_tiles_{index};").unwrap();
-            global_indexes.push(format!("z_{index}"));
-        }
-    }
+    writeln!(kernel, "// Compute flat global thread index").unwrap();
+    writeln!(kernel, "let workgroup_flat_id = {workgroup_id}.x + {workgroup_id}.y * {num_workgroups}.x + {workgroup_id}.z * {num_workgroups}.x * {num_workgroups}.y;").unwrap();
+    writeln!(
+        kernel,
+        "let global_thread_id = workgroup_flat_id * BLOCKSIZE + {local_id};"
+    )
+    .unwrap();
+    writeln!(kernel, "").unwrap();
 
     if let Some((quantized_type, quantized_input)) = quantized_block {
-        for (i, index) in global_indexes.iter().enumerate() {
-            let chunk_size = if i == rank as usize - 1 {
-                quantized_type.block_size() as u32
+        let block_size = quantized_type.block_size() as u32;
+
+        writeln!(
+            kernel,
+            "// Process {} elements per thread (quantized)",
+            tile_size
+        )
+        .unwrap();
+        writeln!(
+            kernel,
+            "for (var tile_offset = 0u; tile_offset < {}u; tile_offset++) {{",
+            tile_size
+        )
+        .unwrap();
+        writeln!(
+            kernel,
+            "let flat_index = global_thread_id * {}u + tile_offset;",
+            tile_size
+        )
+        .unwrap();
+        writeln!(kernel, "").unwrap();
+
+        // Convert flat index to multi-dimensional indices
+        writeln!(kernel, "// Convert flat index to multi-dimensional indices").unwrap();
+        writeln!(kernel, "var remaining_index = flat_index;").unwrap();
+
+        // Generate strides for all dimensions (row-major order)
+        for i in (0..rank).rev() {
+            let shape_binding = first.shape_binding(i);
+            if i == rank - 1 {
+                // Last dimension: need to account for block size in quantized case
+                writeln!(kernel, "let dim_{i} = remaining_index % {shape_binding};").unwrap();
+                writeln!(
+                    kernel,
+                    "remaining_index = remaining_index / {shape_binding};"
+                )
+                .unwrap();
             } else {
-                scaled_tile_size
-            };
-            writeln!(kernel, "let tile_index_{i} = {index} * {chunk_size};").unwrap();
+                writeln!(kernel, "let dim_{i} = remaining_index % {shape_binding};").unwrap();
+                writeln!(
+                    kernel,
+                    "remaining_index = remaining_index / {shape_binding};"
+                )
+                .unwrap();
+            }
         }
-        writeln!(kernel, "\n").unwrap();
+        writeln!(kernel, "").unwrap();
 
-        for i in 0..rank - 1 {
-            writeln!(kernel, "for (var local_index_{i} = 0u; local_index_{i} < {scaled_tile_size}; local_index_{i}++) {{").unwrap();
-            writeln!(
-                kernel,
-                "let merged_index_{i} = tile_index_{i} + local_index_{i};"
-            )
-            .unwrap();
-        }
+        // For quantized data, we need to handle block alignment for the last dimension
+        writeln!(
+            kernel,
+            "// Compute block-aligned indices for quantized data"
+        )
+        .unwrap();
+        writeln!(
+            kernel,
+            "let block_dim_{} = dim_{} / {};",
+            rank - 1,
+            rank - 1,
+            block_size
+        )
+        .unwrap();
+        writeln!(
+            kernel,
+            "let block_offset = dim_{} % {};",
+            rank - 1,
+            block_size
+        )
+        .unwrap();
 
+        // Compute chunk index
         write!(kernel, "let chunk_index = ").unwrap();
         quantized_input.strided_index(
             kernel,
             (0..rank - 1)
-                .map(|i| format!("merged_index_{i}"))
-                .chain(std::iter::once(format!("tile_index_{}", rank - 1))),
+                .map(|i| format!("dim_{i}"))
+                .chain(std::iter::once(format!("block_dim_{}", rank - 1))),
         );
         writeln!(kernel, ";").unwrap();
-        writeln!(kernel, "let chunk = {quantized_input}[chunk_index];").unwrap();
 
-        dequantize_block(
+        // Bounds check
+        first_tensor_input(&tensors).check_bounds(
             kernel,
-            *quantized_type,
-            "chunk".to_string(),
-            DataTypeEnum::F32,
-            |i, data, kernel| {
-                writeln!(
-                    kernel,
-                    "let merged_index_{} = tile_index_{} + {i};",
-                    rank - 1,
-                    rank - 1,
-                )
-                .unwrap();
-                first_tensor_input(&tensors).check_bounds(
-                    kernel,
-                    (0..rank).rev().map(|i| format!("merged_index_{i}")),
-                    |kernel| {
-                        let mut values = Vec::new();
-                        for (index, tensor) in tensors.iter().enumerate() {
-                            match tensor {
-                                MaybeQTensorInput::Tensor(tensor) => {
-                                    writeln!(kernel, "let index_{index} = ",).unwrap();
-                                    tensor.strided_index(
-                                        kernel,
-                                        (0..).map(|i| format!("merged_index_{i}")),
-                                    );
-                                    writeln!(kernel, ";").unwrap();
-                                    values.push(format!("{tensor}[index_{index}]"));
-                                }
-                                MaybeQTensorInput::QTensor(_) => {
-                                    values.push(data.clone());
-                                }
-                            }
-                        }
-                        let indexes = (0..datatypes.len())
-                            .map(|i| format!("index_{i}"))
-                            .collect::<Vec<_>>();
+            (0..rank).map(|i| format!("dim_{i}")),
+            |kernel| {
+                writeln!(kernel, "let chunk = {quantized_input}[chunk_index];").unwrap();
 
-                        let modify_data = modify_data(kernel, &indexes, &tensors, &values);
-                        writeln!(kernel, "{modify_data}").unwrap();
-                    },
-                );
+                // Dequantize the specific element from the block
+                write!(kernel, "let dequantized_value = ").unwrap();
+                // We need to extract just the one value at block_offset from the chunk
+                // This is a simplified version - we'll need to inline the dequantization logic
+                match *quantized_type {
+                    _ => {
+                        // For now, use a helper that dequantizes just one element
+                        dequantize_block(
+                            kernel,
+                            *quantized_type,
+                            "chunk".to_string(),
+                            DataTypeEnum::F32,
+                            |i, data, kernel| {
+                                writeln!(kernel, "if (block_offset == {i}u) {{").unwrap();
+
+                                let mut values = Vec::new();
+                                for (index, tensor) in tensors.iter().enumerate() {
+                                    match tensor {
+                                        MaybeQTensorInput::Tensor(tensor) => {
+                                            writeln!(kernel, "let index_{index} = ",).unwrap();
+                                            tensor.strided_index(
+                                                kernel,
+                                                (0..rank).map(|i| format!("dim_{i}")),
+                                            );
+                                            writeln!(kernel, ";").unwrap();
+                                            values.push(format!("{tensor}[index_{index}]"));
+                                        }
+                                        MaybeQTensorInput::QTensor(_) => {
+                                            values.push(data.clone());
+                                        }
+                                    }
+                                }
+                                let indexes = (0..datatypes.len())
+                                    .map(|i| format!("index_{i}"))
+                                    .collect::<Vec<_>>();
+
+                                let modify_data = modify_data(kernel, &indexes, &tensors, &values);
+                                writeln!(kernel, "{modify_data}").unwrap();
+                                writeln!(kernel, "}}").unwrap();
+                            },
+                        );
+                    }
+                }
             },
         );
 
-        for _ in 0..rank - 1 {
-            writeln!(kernel, "}}").unwrap();
-        }
+        writeln!(kernel, "}}").unwrap();
     } else {
-        for (i, index) in global_indexes.iter().enumerate() {
-            if i == 0 && device.subgroups_supported() {
-                let subgroup_size = kernel.subgroup_size();
-                let subgroup_local_id = kernel.subgroup_local_index();
+        writeln!(kernel, "// Process {} elements per thread", tile_size).unwrap();
+        writeln!(
+            kernel,
+            "for (var tile_offset = 0u; tile_offset < {}u; tile_offset++) {{",
+            tile_size
+        )
+        .unwrap();
+        writeln!(
+            kernel,
+            "let flat_index = global_thread_id * {}u + tile_offset;",
+            tile_size
+        )
+        .unwrap();
+        writeln!(kernel, "").unwrap();
+
+        // Convert flat index to multi-dimensional indices
+        writeln!(kernel, "// Convert flat index to multi-dimensional indices").unwrap();
+        writeln!(kernel, "var remaining_index = flat_index;").unwrap();
+
+        // Generate indices for all dimensions (row-major order)
+        for i in (0..rank).rev() {
+            let shape_binding = first.shape_binding(i);
+            writeln!(kernel, "let dim_{i} = remaining_index % {shape_binding};").unwrap();
+            if i > 0 {
                 writeln!(
                     kernel,
-                    "let tile_index_{i} = {subgroup_local_id} + (({index} / {subgroup_size}) * {subgroup_size}) * {scaled_tile_size};"
+                    "remaining_index = remaining_index / {shape_binding};"
                 )
                 .unwrap();
-            } else {
-                writeln!(kernel, "let tile_index_{i} = {index} * {scaled_tile_size};").unwrap();
             }
         }
-        writeln!(kernel, "\n").unwrap();
+        writeln!(kernel, "").unwrap();
 
-        for (i, shape) in shape.iter().enumerate() {
-            if *shape > 1 {
-                let local_tile_size = scaled_tile_size.min(*shape as _);
-                writeln!(kernel, "for (var local_index_{i} = 0u; local_index_{i} < {local_tile_size}; local_index_{i}++) {{").unwrap();
-                if i == 0 && device.subgroups_supported() {
-                    let subgroup_size = kernel.subgroup_size();
-                    writeln!(
-                        kernel,
-                        "let merged_index_{i} = tile_index_{i} + local_index_{i} * {subgroup_size};"
-                    )
-                    .unwrap();
-                } else {
-                    writeln!(
-                        kernel,
-                        "let merged_index_{i} = tile_index_{i} + local_index_{i};"
-                    )
-                    .unwrap();
-                }
-            } else {
-                writeln!(kernel, "let merged_index_{i} = tile_index_{i};").unwrap();
-            }
-        }
-
+        // Bounds check and data access
         first_tensor_input(&tensors).check_bounds(
             kernel,
-            (0..).map(|i| format!("merged_index_{i}")),
+            (0..rank).map(|i| format!("dim_{i}")),
             |kernel| {
                 for (index, tensor) in tensors.iter().enumerate() {
                     writeln!(kernel, "let index_{index} = ",).unwrap();
                     match tensor {
                         MaybeQTensorInput::Tensor(tensor) => {
-                            tensor.strided_index(kernel, (0..).map(|i| format!("merged_index_{i}")))
+                            tensor.strided_index(kernel, (0..rank).map(|i| format!("dim_{i}")))
                         }
                         MaybeQTensorInput::QTensor(_) => unreachable!(),
                     }
-
                     writeln!(kernel, ";").unwrap();
                 }
                 let indexes = (0..datatypes.len())
@@ -373,40 +399,24 @@ fn build_tiled_map_kernel(
             },
         );
 
-        for shape in shape {
-            if *shape > 1 {
-                writeln!(kernel, "}}").unwrap();
-            }
-        }
+        writeln!(kernel, "}}").unwrap();
     }
-}
-
-fn scaled_tile_size(shape: &[usize], tile_size: u32) -> u32 {
-    let effective_dims = shape.iter().filter(|&&x| x > 1).count().max(1);
-    // scaled_tile_size ^ effective_dims ~ tile_size
-    ((tile_size as f64).powf(1.0 / effective_dims as f64).round() as u32).max(1)
 }
 
 pub(crate) fn titled_map_workgroup_size_constraints(
-    shape: &[usize],
+    _shape: &[usize],
     device: &crate::Device,
 ) -> WorkgroupShapeConstraints {
     let mut constraints = WorkgroupShapeConstraints::new();
-    let effective_rank = shape.iter().filter(|&&x| x > 1).count() as u32;
-    for i in (0..effective_rank as usize).take(3) {
-        if i == 0 {
-            constraints.add_constraint(
-                i,
-                crate::mir::workgroup_shape::Constraint::more_than_or_equals(
-                    device.limits().min_subgroup_size,
-                ),
-            );
-        }
-        constraints.add_constraint(i, crate::mir::workgroup_shape::Constraint::LessThan(256));
-    }
-    for i in effective_rank as usize..3 {
-        constraints.add_constraint(i, crate::mir::workgroup_shape::Constraint::Equals(1));
-    }
+
+    // For flattened dispatch, we can use all three dimensions of the workgroup
+    constraints.add_constraint(
+        0,
+        crate::mir::workgroup_shape::Constraint::more_than_or_equals(
+            device.limits().min_subgroup_size,
+        ),
+    );
+
     constraints
 }
 
@@ -415,21 +425,27 @@ pub(crate) fn titled_map_dispatch_size<'a>(
     workgroup_shape: WorkgroupShape,
     shape: &[usize],
 ) -> [u32; 3] {
-    let scaled_tile_size = scaled_tile_size(shape, tile_size);
-    let workgroup_size_x = shape
-        .first()
-        .map(|x| (*x as u32).div_ceil(scaled_tile_size * workgroup_shape.x()))
-        .unwrap_or(1);
-    let workgroup_size_y = shape
-        .get(1)
-        .map(|x| (*x as u32).div_ceil(scaled_tile_size * workgroup_shape.y()))
-        .unwrap_or(1);
-    let workgroup_size_z = shape
-        .iter()
-        .skip(2)
-        .map(|x| (*x as u32).div_ceil(scaled_tile_size))
-        .product::<u32>()
-        .div_ceil(workgroup_shape.z())
+    // Calculate total number of elements
+    let total_elements: u64 = shape.iter().map(|&x| x as u64).product();
+
+    // Calculate total number of tiles needed (each thread processes tile_size elements)
+    let total_tiles = ((total_elements + tile_size as u64 - 1) / tile_size as u64) as u32;
+
+    // Calculate total workgroups needed
+    let workgroup_volume = workgroup_shape.x() * workgroup_shape.y() * workgroup_shape.z();
+    let total_workgroups = total_tiles.div_ceil(workgroup_volume);
+
+    // Distribute workgroups across x, y, z dimensions
+    // Try to keep it as flat as possible for better occupancy
+    let max_x = 65535u32; // WebGPU limit
+    let max_y = 65535u32;
+
+    let workgroup_size_x = total_workgroups.min(max_x);
+    let remaining = (total_workgroups + workgroup_size_x - 1) / workgroup_size_x;
+    let workgroup_size_y = remaining.min(max_y);
+    let workgroup_size_z = ((total_workgroups + workgroup_size_x * workgroup_size_y - 1)
+        / (workgroup_size_x * workgroup_size_y))
         .max(1);
+
     [workgroup_size_x, workgroup_size_y, workgroup_size_z]
 }

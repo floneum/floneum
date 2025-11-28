@@ -577,6 +577,8 @@ impl Model {
                 x = post_ffn_norm.forward(&x);
             }
             layer_in = x + residual;
+            use pollster::FutureExt;
+            layer_in.materialize().block_on();
         }
         let x = self.norm.forward(&layer_in);
         let x = x.i((.., seq_len - 1, ..));
