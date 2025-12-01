@@ -9,6 +9,9 @@ use surrealdb::{Connection, RecordId, RecordIdKey, Surreal};
 #[cfg(feature = "language")]
 pub(crate) mod document_table;
 
+#[cfg(feature = "language")]
+pub(crate) mod hybrid_search;
+
 /// An error that can occur when adding or searching for an embedding to the embedding indexed table.
 #[derive(Debug, thiserror::Error)]
 pub enum EmbeddedIndexedTableError {
