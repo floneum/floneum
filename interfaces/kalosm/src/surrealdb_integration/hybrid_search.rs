@@ -36,15 +36,11 @@ pub enum HybridSearchError {
 
 impl<E> From<DocumentTableSearchError<E>> for HybridSearchError
 where
-    // The inner error (E) MUST implement these traits for formatting and safe unwinding:
     E: std::fmt::Debug + std::fmt::Display + 'static,
 {
     fn from(error: DocumentTableSearchError<E>) -> Self {
         match error {
-            // DocumentTableSearchError::SearchTable converts directly to SemanticSearchError
             DocumentTableSearchError::SearchTable(err) => Self::SemanticSearchError(err),
-
-            // DocumentTableSearchError::EmbedQuery converts the error to a String
             DocumentTableSearchError::EmbedQuery(err) => {
                 Self::SemanticQueryError(format!("Embedding failed: {}", err))
             }
@@ -52,7 +48,125 @@ where
     }
 }
 
-/// Extension trait to help set up hybrid search capability.
+/// Normalize scores to 0-1 range using max normalization
+///
+/// Returns None if all scores are zero or negative
+pub fn normalize_scores(scores: &[f32]) -> Option<Vec<f32>> {
+    if scores.is_empty() {
+        return Some(vec![]);
+    }
+
+    let max_score = scores.iter().copied().fold(0.0f32, f32::max);
+
+    if max_score <= 0.0 {
+        // All scores are zero or negative - cannot normalize
+        return None;
+    }
+
+    Some(scores.iter().map(|&s| s / max_score).collect())
+}
+
+/// Convert distance to similarity score (1 - normalized_distance)
+///
+/// Returns None if max_distance is zero or negative
+pub fn distance_to_similarity(distance: f32, max_distance: f32) -> Option<f32> {
+    if max_distance <= 0.0 {
+        return None;
+    }
+
+    Some(1.0 - (distance / max_distance).min(1.0))
+}
+
+/// Calculate weighted combination of two scores
+pub fn calculate_weighted_score(
+    semantic_score: f32,
+    keyword_score: f32,
+    semantic_weight: f32,
+    keyword_weight: f32,
+) -> f32 {
+    semantic_score * semantic_weight + keyword_score * keyword_weight
+}
+
+/// Calculate RRF score for a given rank
+pub fn calculate_rrf_score(rank: usize, k: f32) -> f32 {
+    1.0 / (k + rank as f32 + 1.0)
+}
+
+/// Combine RRF scores from multiple sources
+pub fn combine_rrf_scores(
+    semantic_rank: Option<usize>,
+    keyword_rank: Option<usize>,
+    k: f32,
+) -> f32 {
+    let semantic_score = semantic_rank
+        .map(|r| calculate_rrf_score(r, k))
+        .unwrap_or(0.0);
+    let keyword_score = keyword_rank
+        .map(|r| calculate_rrf_score(r, k))
+        .unwrap_or(0.0);
+    semantic_score + keyword_score
+}
+
+/// Create a hash-based key from record content for deduplication
+pub fn create_content_hash<T: Hash>(record: &T) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    record.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// Merge and deduplicate results from two sources
+pub fn merge_results<R>(
+    semantic_map: HashMap<u64, (RecordIdKey, R, f32)>,
+    keyword_map: HashMap<u64, (R, f32)>,
+    combine_scores: impl Fn(f32, f32) -> f32,
+) -> Vec<(u64, RecordIdKey, R, f32, f32, f32)>
+where
+    R: Clone,
+{
+    let mut combined_results = Vec::new();
+    let mut seen_keys = HashSet::new();
+
+    let all_keys: Vec<u64> = semantic_map
+        .keys()
+        .chain(keyword_map.keys())
+        .copied()
+        .collect();
+
+    for key in all_keys {
+        if seen_keys.insert(key) {
+            let semantic_entry = semantic_map.get(&key);
+            let keyword_entry = keyword_map.get(&key);
+
+            let semantic_score = semantic_entry.map(|(_, _, s)| *s).unwrap_or(0.0);
+            let keyword_score = keyword_entry.map(|(_, s)| *s).unwrap_or(0.0);
+
+            let combined_score = combine_scores(semantic_score, keyword_score);
+
+            if let Some((record_id, record, _)) = semantic_entry {
+                combined_results.push((
+                    key,
+                    record_id.clone(),
+                    record.clone(),
+                    combined_score,
+                    semantic_score,
+                    keyword_score,
+                ));
+            } else if let Some((record, _)) = keyword_entry {
+                combined_results.push((
+                    key,
+                    RecordIdKey::from("keyword_only"),
+                    record.clone(),
+                    combined_score,
+                    semantic_score,
+                    keyword_score,
+                ));
+            }
+        }
+    }
+
+    combined_results
+}
+
 pub trait HybridSearchSetupExt<C: Connection> {
     /// Enable hybrid search on a table by creating the necessary full-text index.
     ///
@@ -80,7 +194,6 @@ impl<C: Connection> HybridSearchSetupExt<C> for Surreal<C> {
         );
 
         self.query(query).await?;
-
         Ok(())
     }
 }
@@ -178,16 +291,6 @@ struct KeywordResult<R> {
     keyword_score: f32,
 }
 
-/// Create a hash-based key from record content for deduplication
-fn create_content_hash<T>(record: &T) -> u64
-where
-    T: Hash,
-{
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    record.hash(&mut hasher);
-    hasher.finish()
-}
-
 impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R, M, K> {
     pub(crate) fn new(
         table: &'a DocumentTable<C, R, M, K>,
@@ -228,7 +331,7 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
         R: Serialize + DeserializeOwned + Clone + AsRef<Document> + Send + Sync + Hash,
         <M as Embedder>::Error: std::fmt::Debug + std::fmt::Display + 'static,
     {
-        // The problematic line:
+        // Perform semantic search
         let semantic_results = self
             .table
             .search(self.query.clone())
@@ -254,85 +357,60 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
             .take(0)
             .map_err(|e| HybridSearchError::KeywordSearchError(e.to_string()))?;
 
-        // Normalize scores to 0-1 range
-        let max_semantic = semantic_results
-            .first()
-            .map(|r| r.distance)
-            .unwrap_or(1.0)
-            .max(0.001);
+        // Normalize scores
+        let max_semantic = semantic_results.first().map(|r| r.distance).unwrap_or(1.0);
 
         let max_keyword = keyword_results
             .iter()
             .map(|r| r.keyword_score)
-            .fold(0.0f32, f32::max)
-            .max(0.001);
+            .fold(0.0f32, f32::max);
 
-        // Create score maps using record content as key
+        // Build score maps
         let mut semantic_map: HashMap<u64, (RecordIdKey, R, f32)> = HashMap::new();
         for result in semantic_results {
-            let normalized = 1.0 - (result.distance / max_semantic);
+            let normalized = distance_to_similarity(result.distance, max_semantic).unwrap_or(0.0); // If max_semantic is 0, treat as no similarity
             let key = create_content_hash(&result.record);
             semantic_map.insert(key, (result.record_id, result.record, normalized));
         }
 
         let mut keyword_map: HashMap<u64, (R, f32)> = HashMap::new();
         for result in keyword_results {
-            let normalized = result.keyword_score / max_keyword;
+            let normalized = if max_keyword > 0.0 {
+                result.keyword_score / max_keyword
+            } else {
+                0.0 // All keyword scores are 0
+            };
             let key = create_content_hash(&result.record);
             keyword_map.insert(key, (result.record, normalized));
         }
 
-        // Combine scores using weighted sum
-        let mut combined_results = Vec::new();
-        let mut seen_keys = HashSet::new();
+        // Merge using helper function
+        let combined = merge_results(semantic_map, keyword_map, |sem, key| {
+            calculate_weighted_score(sem, key, self.semantic_weight, self.keyword_weight)
+        });
 
-        // Collect all unique keys
-        let all_keys: Vec<u64> = semantic_map
-            .keys()
-            .chain(keyword_map.keys())
-            .copied()
+        // Convert to result type and sort
+        let mut results: Vec<HybridSearchResult<R>> = combined
+            .into_iter()
+            .map(
+                |(_, id, record, score, semantic_score, keyword_score)| HybridSearchResult {
+                    record,
+                    id,
+                    score,
+                    semantic_score,
+                    keyword_score,
+                },
+            )
             .collect();
 
-        for key in all_keys {
-            if seen_keys.insert(key) {
-                let semantic_score = semantic_map.get(&key).map(|(_, _, s)| *s).unwrap_or(0.0);
-                let keyword_score = keyword_map.get(&key).map(|(_, s)| *s).unwrap_or(0.0);
-
-                // Weighted combination
-                let combined_score =
-                    semantic_score * self.semantic_weight + keyword_score * self.keyword_weight;
-
-                // Get the record (prefer semantic result if available)
-                if let Some((record_id, record, _)) = semantic_map.get(&key) {
-                    combined_results.push(HybridSearchResult {
-                        record: record.clone(),
-                        id: record_id.clone(),
-                        score: combined_score,
-                        semantic_score,
-                        keyword_score,
-                    });
-                } else if let Some((record, _)) = keyword_map.get(&key) {
-                    // For keyword-only results
-                    combined_results.push(HybridSearchResult {
-                        record: record.clone(),
-                        id: RecordIdKey::from("keyword_only"),
-                        score: combined_score,
-                        semantic_score,
-                        keyword_score,
-                    });
-                }
-            }
-        }
-
-        // Sort by combined score and limit results
-        combined_results.sort_by(|a, b| {
+        results.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        combined_results.truncate(self.results);
+        results.truncate(self.results);
 
-        Ok(combined_results)
+        Ok(results)
     }
 
     /// Execute the hybrid search using Reciprocal Rank Fusion (RRF)
@@ -370,52 +448,77 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
             .take(0)
             .map_err(|e| HybridSearchError::KeywordSearchError(e.to_string()))?;
 
-        // RRF formula: score = sum(1 / (k + rank))
-        let mut rrf_scores: HashMap<u64, (R, f32, f32, f32, RecordIdKey)> = HashMap::new();
-
-        // Add semantic ranks
+        // Build rank maps
+        let mut semantic_ranks: HashMap<u64, usize> = HashMap::new();
         for (rank, result) in semantic_results.iter().enumerate() {
-            let rrf_score = 1.0 / (k + rank as f32 + 1.0);
             let key = create_content_hash(&result.record);
-            let normalized_semantic = 1.0 - result.distance;
-
-            rrf_scores
-                .entry(key)
-                .and_modify(|entry| {
-                    entry.1 += rrf_score;
-                    entry.2 = normalized_semantic;
-                })
-                .or_insert((
-                    result.record.clone(),
-                    rrf_score,
-                    normalized_semantic,
-                    0.0,
-                    result.record_id.clone(),
-                ));
+            semantic_ranks.insert(key, rank);
         }
 
-        // Add keyword ranks
+        let mut keyword_ranks: HashMap<u64, usize> = HashMap::new();
         for (rank, result) in keyword_results.iter().enumerate() {
-            let rrf_score = 1.0 / (k + rank as f32 + 1.0);
             let key = create_content_hash(&result.record);
-
-            rrf_scores
-                .entry(key.clone())
-                .and_modify(|entry| {
-                    entry.1 += rrf_score;
-                    entry.3 = result.keyword_score;
-                })
-                .or_insert((
-                    result.record.clone(),
-                    rrf_score,
-                    0.0,
-                    result.keyword_score,
-                    RecordIdKey::from("unknown"),
-                ));
+            keyword_ranks.insert(key, rank);
         }
 
-        // Convert to results and sort
-        let mut results: Vec<_> = rrf_scores
+        // Collect all unique keys
+        let all_keys: HashSet<u64> = semantic_ranks
+            .keys()
+            .chain(keyword_ranks.keys())
+            .copied()
+            .collect();
+
+        // Build result map with RRF scores
+        let mut rrf_results: HashMap<u64, (R, f32, f32, f32, RecordIdKey)> = HashMap::new();
+
+        for key in all_keys {
+            let semantic_rank = semantic_ranks.get(&key).copied();
+            let keyword_rank = keyword_ranks.get(&key).copied();
+
+            let rrf_score = combine_rrf_scores(semantic_rank, keyword_rank, k);
+
+            // Get normalized scores for display
+            let semantic_score = semantic_rank
+                .map(|r| {
+                    let result = &semantic_results[r];
+                    1.0 - result.distance
+                })
+                .unwrap_or(0.0);
+
+            let keyword_score = keyword_rank
+                .map(|r| keyword_results[r].keyword_score)
+                .unwrap_or(0.0);
+
+            // Get record and ID (prefer semantic)
+            if let Some(rank) = semantic_rank {
+                let result = &semantic_results[rank];
+                rrf_results.insert(
+                    key,
+                    (
+                        result.record.clone(),
+                        rrf_score,
+                        semantic_score,
+                        keyword_score,
+                        result.record_id.clone(),
+                    ),
+                );
+            } else if let Some(rank) = keyword_rank {
+                let result = &keyword_results[rank];
+                rrf_results.insert(
+                    key,
+                    (
+                        result.record.clone(),
+                        rrf_score,
+                        semantic_score,
+                        keyword_score,
+                        RecordIdKey::from("keyword_only"),
+                    ),
+                );
+            }
+        }
+
+        // Convert to result type and sort
+        let mut results: Vec<HybridSearchResult<R>> = rrf_results
             .into_iter()
             .map(
                 |(_, (record, score, semantic, keyword, id))| HybridSearchResult {
