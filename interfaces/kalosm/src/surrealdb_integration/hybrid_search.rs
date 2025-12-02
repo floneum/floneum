@@ -541,3 +541,59 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
         Ok(results)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use surrealdb::RecordIdKey;
+
+    #[test]
+    fn test_normalize_scores() {
+        // Test Empty
+        let scores = vec![];
+        let normalized = normalize_scores(&scores);
+        assert_eq!(normalized, Some(vec![]));
+
+        // Test Single Score
+        let scores = vec![5.0];
+        let normalized = normalize_scores(&scores);
+        assert_eq!(normalized, Some(vec![1.0]));
+
+        // Test zeros
+        let scores = vec![0.0, 0.0, 0.0];
+        let normalized = normalize_scores(&scores);
+
+        // Should return None - cannot normalize all zeros
+        assert_eq!(normalized, None);
+
+        // Test negatives
+        let scores = vec![-1.0, -2.0, -3.0];
+        let normalized = normalize_scores(&scores);
+
+        // All negative scores should return None
+        assert_eq!(normalized, None);
+    }
+
+    #[test]
+    fn test_normalize_scores_basic() {
+        let scores = vec![10.0, 5.0, 2.5];
+        let normalized = normalize_scores(&scores).unwrap();
+
+        // Max is 10.0, so: [10/10, 5/10, 2.5/10] = [1.0, 0.5, 0.25]
+        assert!((normalized[0] - 1.0).abs() < 0.001);
+        assert!((normalized[1] - 0.5).abs() < 0.001);
+        assert!((normalized[2] - 0.25).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_normalize_scores_range() {
+        let scores = vec![100.0, 50.0, 25.0, 10.0];
+        let normalized = normalize_scores(&scores).unwrap();
+
+        // All should be in [0, 1]
+        assert!(normalized.iter().all(|&n| n >= 0.0 && n <= 1.0));
+        // Max should be 1.0
+        assert!((normalized[0] - 1.0).abs() < 0.001);
+    }
+}
