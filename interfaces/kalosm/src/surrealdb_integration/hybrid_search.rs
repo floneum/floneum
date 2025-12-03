@@ -653,4 +653,67 @@ mod tests {
         let score = calculate_weighted_score(0.0, 0.0, 0.7, 0.3);
         assert!((score - 0.0).abs() < 0.001);
     }
+
+    #[test]
+    fn test_rrf_score() {
+        let k = 60.0;
+
+        // Test rank zero
+        let score = calculate_rrf_score(0, k);
+        // 1 / (60 + 0 + 1) = 1/61 ≈ 0.0164
+        assert!((score - 0.0164).abs() < 0.001);
+
+        // Test increasing rank
+        let score0 = calculate_rrf_score(0, k);
+        let score1 = calculate_rrf_score(1, k);
+        let score2 = calculate_rrf_score(2, k);
+
+        // Scores should decrease with rank
+        assert!(score0 > score1);
+        assert!(score1 > score2);
+
+        // Test with different k params
+        let rank = 0;
+        let score_k10 = calculate_rrf_score(rank, 10.0);
+        let score_k60 = calculate_rrf_score(rank, 60.0);
+        let score_k100 = calculate_rrf_score(rank, 100.0);
+
+        // Smaller k gives higher scores
+        assert!(score_k10 > score_k60);
+        assert!(score_k60 > score_k100);
+
+        // Test high rank
+        let score = calculate_rrf_score(1000, k);
+
+        // Even at high ranks, score should be positive
+        assert!(score > 0.0);
+        // But very small
+        assert!(score < 0.01);
+    }
+
+    #[test]
+    fn test_combine_rrf() {
+        let k = 60.0;
+        // Test for both scores present
+        let score = combine_rrf_scores(Some(0), Some(5), k);
+
+        let expected = calculate_rrf_score(0, k) + calculate_rrf_score(5, k);
+        assert!((score - expected).abs() < 0.0001);
+
+        // Test for only semantic
+        let score = combine_rrf_scores(Some(3), None, k);
+
+        let expected = calculate_rrf_score(3, k);
+        assert!((score - expected).abs() < 0.0001);
+
+        // Test for only keyword
+        let score = combine_rrf_scores(None, Some(7), k);
+
+        let expected = calculate_rrf_score(7, k);
+        assert!((score - expected).abs() < 0.0001);
+
+        // Test with neither present
+        let score = combine_rrf_scores(None, None, k);
+        assert_eq!(score, 0.0);
+    }
 }
