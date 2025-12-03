@@ -633,4 +633,24 @@ mod tests {
             "Expected None for negative max_distance"
         );
     }
+
+    #[test]
+    fn test_weighted_score() {
+        // Test pure semantic
+        let score = calculate_weighted_score(0.9, 0.3, 1.0, 0.0);
+        assert!((score - 0.9).abs() < 0.001);
+
+        // Test pure keyword
+        let score = calculate_weighted_score(0.9, 0.3, 0.0, 1.0);
+        assert!((score - 0.3).abs() < 0.001);
+
+        // Test balanced score
+        let score = calculate_weighted_score(0.8, 0.4, 0.5, 0.5);
+        // (0.8 + 0.4) / 2 = 0.6
+        assert!((score - 0.6).abs() < 0.001);
+
+        // Test zero weights - should return zero
+        let score = calculate_weighted_score(0.0, 0.0, 0.7, 0.3);
+        assert!((score - 0.0).abs() < 0.001);
+    }
 }
