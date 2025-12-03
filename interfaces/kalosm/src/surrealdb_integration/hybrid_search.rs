@@ -596,4 +596,41 @@ mod tests {
         // Max should be 1.0
         assert!((normalized[0] - 1.0).abs() < 0.001);
     }
+
+    #[test]
+    fn test_distance_to_similarity() {
+        // Test zero distance - should give max similarity
+        match distance_to_similarity(0.0, 10.0) {
+            Some(similarity) => assert!((similarity - 1.0).abs() < 0.001),
+            None => panic!("Expected Some for valid inputs (0.0, 10.0)"),
+        }
+
+        // Test max distance - should give zero similarity
+        let max = 5.0;
+        match distance_to_similarity(max, max) {
+            Some(similarity) => {
+                println!("Similarity for ({}, {}): {}", max, max, similarity);
+                assert!((similarity - 0.0).abs() < 0.001);
+            }
+            None => panic!("Expected Some for valid inputs ({}, {})", max, max),
+        }
+
+        // Test half distance
+        match distance_to_similarity(5.0, 10.0) {
+            Some(similarity) => assert!((similarity - 0.5).abs() < 0.001),
+            None => panic!("Expected Some for valid inputs (5.0, 10.0)"),
+        }
+
+        // Test zero max distance - should return None
+        assert!(
+            distance_to_similarity(0.0, 0.0).is_none(),
+            "Expected None for zero max_distance"
+        );
+
+        // Test negative max distance - should return None
+        assert!(
+            distance_to_similarity(1.0, -5.0).is_none(),
+            "Expected None for negative max_distance"
+        );
+    }
 }
