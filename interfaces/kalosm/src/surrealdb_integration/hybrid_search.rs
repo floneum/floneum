@@ -716,4 +716,122 @@ mod tests {
         let score = combine_rrf_scores(None, None, k);
         assert_eq!(score, 0.0);
     }
+
+    #[test]
+    fn test_merge_results_no_overlap() {
+        let mut semantic_map = HashMap::new();
+        let mut keyword_map = HashMap::new();
+
+        semantic_map.insert(1u64, (RecordIdKey::from("sem1"), "doc1".to_string(), 0.9));
+        keyword_map.insert(2u64, ("doc2".to_string(), 0.7));
+
+        let results = merge_results(semantic_map, keyword_map, |sem, key| sem * 0.7 + key * 0.3);
+
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_merge_results_with_overlap() {
+        let mut semantic_map = HashMap::new();
+        let mut keyword_map = HashMap::new();
+
+        let hash = 12345u64;
+        semantic_map.insert(hash, (RecordIdKey::from("id1"), "doc".to_string(), 0.9));
+        keyword_map.insert(hash, ("doc".to_string(), 0.7));
+
+        let results = merge_results(semantic_map, keyword_map, |sem, key| sem * 0.7 + key * 0.3);
+
+        // Should have only 1 result (deduplicated)
+        assert_eq!(results.len(), 1);
+
+        // Check the combined score
+        let (_, _, _, combined_score, sem_score, key_score) = &results[0];
+        assert!((sem_score - 0.9).abs() < 0.001);
+        assert!((key_score - 0.7).abs() < 0.001);
+
+        let expected = 0.9 * 0.7 + 0.7 * 0.3;
+        assert!((combined_score - expected).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_merge_results_prefers_semantic_id() {
+        let mut semantic_map = HashMap::new();
+        let mut keyword_map = HashMap::new();
+
+        let hash = 99999u64;
+        semantic_map.insert(
+            hash,
+            (RecordIdKey::from("semantic_id"), "doc".to_string(), 0.8),
+        );
+        keyword_map.insert(hash, ("doc".to_string(), 0.6));
+
+        let results = merge_results(semantic_map, keyword_map, |sem, key| sem + key);
+
+        assert_eq!(results.len(), 1);
+        let (_, id, _, _, _, _) = &results[0];
+
+        // Should prefer the semantic ID
+        assert_eq!(id.to_string(), "semantic_id");
+    }
+
+    #[test]
+    fn test_merge_results_keyword_only() {
+        let semantic_map = HashMap::new();
+        let mut keyword_map = HashMap::new();
+
+        keyword_map.insert(555u64, ("keyword_doc".to_string(), 0.5));
+
+        let results = merge_results(semantic_map, keyword_map, |sem, key| sem * 0.7 + key * 0.3);
+
+        assert_eq!(results.len(), 1);
+        let (_, id, _, combined_score, sem_score, key_score) = &results[0];
+
+        // Should have keyword-only ID
+        assert_eq!(id.to_string(), "keyword_only");
+
+        // Semantic score should be 0
+        assert_eq!(*sem_score, 0.0);
+
+        // Keyword score should be preserved
+        assert!((key_score - 0.5).abs() < 0.001);
+
+        // Combined should only use keyword
+        let expected = 0.0 * 0.7 + 0.5 * 0.3;
+        assert!((combined_score - expected).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_merge_results_empty_maps() {
+        let semantic_map: HashMap<u64, (RecordIdKey, String, f32)> = HashMap::new();
+        let keyword_map: HashMap<u64, (String, f32)> = HashMap::new();
+
+        let results = merge_results(semantic_map, keyword_map, |sem, key| sem + key);
+
+        assert_eq!(results.len(), 0);
+    }
+
+    #[test]
+    fn test_merge_results_multiple_docs() {
+        let mut semantic_map = HashMap::new();
+        let mut keyword_map = HashMap::new();
+
+        semantic_map.insert(1u64, (RecordIdKey::from("id1"), "doc1".to_string(), 0.9));
+        semantic_map.insert(2u64, (RecordIdKey::from("id2"), "doc2".to_string(), 0.7));
+
+        keyword_map.insert(2u64, ("doc2".to_string(), 0.8)); // Overlaps with doc2
+        keyword_map.insert(3u64, ("doc3".to_string(), 0.6));
+
+        let results = merge_results(semantic_map, keyword_map, |sem, key| sem * 0.5 + key * 0.5);
+
+        // Should have 3 unique documents
+        assert_eq!(results.len(), 3);
+
+        // Find the overlapping doc (hash 2)
+        let overlapping = results.iter().find(|(hash, _, _, _, _, _)| *hash == 2u64);
+        assert!(overlapping.is_some());
+
+        let (_, _, _, _, sem, key) = overlapping.unwrap();
+        assert!((sem - 0.7).abs() < 0.001);
+        assert!((key - 0.8).abs() < 0.001);
+    }
 }
