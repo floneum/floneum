@@ -198,7 +198,38 @@ impl<C: Connection> HybridSearchSetupExt<C> for Surreal<C> {
     }
 }
 
-/// Builder for creating document tables with hybrid search capability
+/// Extension trait to add `with_hybrid_search()` to DocumentTableBuilder
+pub trait DocumentTableBuilderHybridExt<C: Connection, E, K: Chunker> {
+    /// Enable hybrid search capability on this table
+    ///
+    /// # Arguments
+    /// * `field_name` - The field to index for full-text search
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// let table = db
+    ///     .document_table_builder("documents")
+    ///     .with_hybrid_search("body")
+    ///     .build::<Document>()
+    ///     .await?;
+    /// ```
+    fn with_hybrid_search(
+        self,
+        field_name: impl Into<String>,
+    ) -> HybridDocumentTableBuilder<C, E, K>;
+}
+
+impl<C: Connection, E, K: Chunker> DocumentTableBuilderHybridExt<C, E, K>
+    for DocumentTableBuilder<C, E, K>
+{
+    fn with_hybrid_search(
+        self,
+        field_name: impl Into<String>,
+    ) -> HybridDocumentTableBuilder<C, E, K> {
+        HybridDocumentTableBuilder::new(self, field_name)
+    }
+}
+
 pub struct HybridDocumentTableBuilder<C: Connection, E = Bert, K: Chunker = SemanticChunker> {
     inner: DocumentTableBuilder<C, E, K>,
     field_name: String,
@@ -272,6 +303,43 @@ pub struct HybridSearchResult<Doc> {
     pub score: f32,
     pub semantic_score: f32,
     pub keyword_score: f32,
+}
+
+/// Extension trait to add hybrid search capability to DocumentTable
+pub trait DocumentTableHybridSearchExt<C: Connection, R, M: Embedder, K: Chunker> {
+    /// Perform hybrid search combining semantic and keyword search
+    ///
+    /// # Arguments
+    /// * `query` - The search query
+    /// * `field_name` - The field to search for keywords (should match the indexed field)
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// let results = document_table
+    ///     .hybrid_search("rust async programming", "body")
+    ///     .with_results(5)
+    ///     .with_semantic_weight(0.6)
+    ///     .with_keyword_weight(0.4)
+    ///     .run_weighted()
+    ///     .await?;
+    /// ```
+    fn hybrid_search(
+        &self,
+        query: impl Into<String>,
+        field_name: impl Into<String>,
+    ) -> HybridSearchBuilder<'_, C, R, M, K>;
+}
+
+impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTableHybridSearchExt<C, R, M, K>
+    for DocumentTable<C, R, M, K>
+{
+    fn hybrid_search(
+        &self,
+        query: impl Into<String>,
+        field_name: impl Into<String>,
+    ) -> HybridSearchBuilder<'_, C, R, M, K> {
+        HybridSearchBuilder::new(self, query, field_name)
+    }
 }
 
 pub struct HybridSearchBuilder<'a, Conn: Connection, Doc, Model: Embedder, Chkr: Chunker> {
