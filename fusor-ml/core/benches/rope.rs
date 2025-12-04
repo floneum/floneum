@@ -25,86 +25,117 @@ const SIZES: [[usize; 4]; 8] = [
     [1, 8, 1024, 128],  // Fewer heads, larger dim
 ];
 
+async fn setup_fusor_tensors(device: &Device, batch: usize, heads: usize, seq_len: usize, head_dim: usize) -> (Tensor<4, f32>, Tensor<2, f32>, Tensor<2, f32>) {
+    let pos_shape = [seq_len * 2, head_dim / 2];
+    let cos_data = (0..pos_shape[0])
+        .map(|i| {
+            (0..pos_shape[1])
+                .map(|j| {
+                    ((i as f32) / 10000f32.powf((2 * (j / 2)) as f32 / head_dim as f32)).cos()
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let sin_data = (0..pos_shape[0])
+        .map(|i| {
+            (0..pos_shape[1])
+                .map(|j| {
+                    ((i as f32) / 10000f32.powf((2 * (j / 2)) as f32 / head_dim as f32)).sin()
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
+    let cos = Tensor::new(device, &cos_data);
+    let sin = Tensor::new(device, &sin_data);
+
+    let input_data: Vec<Vec<Vec<Vec<f32>>>> = (0..batch)
+        .map(|_| {
+            (0..heads)
+                .map(|_| {
+                    (0..seq_len)
+                        .map(|_| {
+                            (0..head_dim)
+                                .map(|_| 1.0f32)
+                                .collect()
+                        })
+                        .collect()
+                })
+                .collect()
+        })
+        .collect();
+    let input = Tensor::new(device, &input_data);
+    
+    // Ensure materialization
+    _ = input.as_slice().await.unwrap();
+    _ = cos.as_slice().await.unwrap();
+    _ = sin.as_slice().await.unwrap();
+    
+    (input, cos, sin)
+}
+
 fn rope_benchmark(c: &mut Criterion) {
-    // Benchmark fusor's rope_interleaved (original)
-    {
-        let mut group = c.benchmark_group("rope-fusor-wgpu");
+    let mut group = c.benchmark_group("rope-fusor-wgpu");
+    let device = block_on(Device::new()).unwrap();
 
-        let device = block_on(Device::new()).unwrap();
-
-        for [batch, heads, seq_len, head_dim] in SIZES {
-            let device = device.clone();
-            group.bench_with_input(
-                BenchmarkId::new("rope_interleaved", format!("{}x{}x{}x{}", batch, heads, seq_len, head_dim)),
-                &(batch, heads, seq_len, head_dim),
-                move |b, &(batch, heads, seq_len, head_dim)| {
+    for [batch, heads, seq_len, head_dim] in SIZES {
+        let device = device.clone();
+        
+        // Original Interleaved
+        let device_ref = device.clone();
+        group.bench_with_input(
+            BenchmarkId::new("rope_interleaved", format!("{}x{}x{}x{}", batch, heads, seq_len, head_dim)),
+            &(batch, heads, seq_len, head_dim),
+            move |b, &(batch, heads, seq_len, head_dim)| {
+                let device = device_ref.clone();
+                b.to_async(FuturesExecutor).iter_custom(|iters| {
                     let device = device.clone();
-                    b.to_async(FuturesExecutor).iter_custom(|iters| {
-                        let device = device.clone();
-                        async move {
-                            // Pre-compute cos and sin tables
-                            let pos_shape = [seq_len * 2, head_dim / 2];
-                            let cos_data = (0..pos_shape[0])
-                                .map(|i| {
-                                    (0..pos_shape[1])
-                                        .map(|j| {
-                                            ((i as f32) / 10000f32.powf((2 * (j / 2)) as f32 / head_dim as f32)).cos()
-                                        })
-                                        .collect::<Vec<_>>()
-                                })
-                                .collect::<Vec<_>>();
-                            let sin_data = (0..pos_shape[0])
-                                .map(|i| {
-                                    (0..pos_shape[1])
-                                        .map(|j| {
-                                            ((i as f32) / 10000f32.powf((2 * (j / 2)) as f32 / head_dim as f32)).sin()
-                                        })
-                                        .collect::<Vec<_>>()
-                                })
-                                .collect::<Vec<_>>();
+                    async move {
+                        let (input, cos, sin) = setup_fusor_tensors(&device, batch, heads, seq_len, head_dim).await;
 
-                            let cos = Tensor::new(&device, &cos_data);
-                            let sin = Tensor::new(&device, &sin_data);
-
-                            // Pre-create input tensor
-                            let input_data: Vec<Vec<Vec<Vec<f32>>>> = (0..batch)
-                                .map(|_| {
-                                    (0..heads)
-                                        .map(|_| {
-                                            (0..seq_len)
-                                                .map(|_| {
-                                                    (0..head_dim)
-                                                        .map(|_| 1.0f32)
-                                                        .collect()
-                                                })
-                                                .collect()
-                                        })
-                                        .collect()
-                                })
-                                .collect();
-                            let input = Tensor::new(&device, &input_data);
-
-                            // Ensure data is on GPU
-                            _ = input.as_slice().await.unwrap();
-                            _ = cos.as_slice().await.unwrap();
-                            _ = sin.as_slice().await.unwrap();
-
-                            let mut sum = Duration::ZERO;
-                            while sum.is_zero() {
-                                for _ in 0..iters {
-                                    let start = std::time::Instant::now();
-                                    let result = input.rope_interleaved(&cos, &sin);
-                                    result.materialize().await;
-                                    sum += start.elapsed();
-                                }
+                        let mut sum = Duration::ZERO;
+                        while sum.is_zero() {
+                            for _ in 0..iters {
+                                let start = std::time::Instant::now();
+                                let result = input.rope_interleaved(&cos, &sin);
+                                result.materialize().await;
+                                sum += start.elapsed();
                             }
-                            sum
                         }
-                    });
-                },
-            );
-        }
+                        sum
+                    }
+                });
+            },
+        );
+        
+        // Fused
+        let device_ref = device.clone();
+        group.bench_with_input(
+            BenchmarkId::new("rope_fused", format!("{}x{}x{}x{}", batch, heads, seq_len, head_dim)),
+            &(batch, heads, seq_len, head_dim),
+            move |b, &(batch, heads, seq_len, head_dim)| {
+                let device = device_ref.clone();
+                b.to_async(FuturesExecutor).iter_custom(|iters| {
+                    let device = device.clone();
+                    async move {
+                        let (input, cos, sin) = setup_fusor_tensors(&device, batch, heads, seq_len, head_dim).await;
+
+                        let mut sum = Duration::ZERO;
+                        while sum.is_zero() {
+                            for _ in 0..iters {
+                                let start = std::time::Instant::now();
+                                let result = input.rope_fused(&cos, &sin);
+                                result.materialize().await;
+                                sum += start.elapsed();
+                            }
+                        }
+                        sum
+                    }
+                });
+            },
+        );
     }
+    group.finish();
 
     // Benchmark candle's rope_i on Metal (macOS only)
     #[cfg(target_os = "macos")]

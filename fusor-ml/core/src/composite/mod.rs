@@ -11,6 +11,7 @@ mod relu;
 mod repeat;
 mod rms_norm;
 mod rope;
+mod rope_fused;
 mod silu;
 mod sliding_window_view;
 mod softmax;
