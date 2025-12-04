@@ -6,9 +6,10 @@ use surrealdb::{Connection, RecordIdKey, Surreal};
 use kalosm_language::prelude::*;
 
 use crate::language::{
-    DocumentTable, DocumentTableBuilder, DocumentTableCreationError, DocumentTableSearchError,
+    DocumentTable, DocumentTableBuilder, DocumentTableCreationError, DocumentTableModifyError,
+    DocumentTableSearchBuilder, DocumentTableSearchError,
 };
-use crate::EmbeddedIndexedTableError;
+use crate::{EmbeddedIndexedTableError, EmbeddingIndexedTable};
 
 #[derive(Debug, thiserror::Error)]
 pub enum HybridSearchError {
@@ -188,30 +189,43 @@ impl<C: Connection> HybridSearchSetupExt<C> for Surreal<C> {
     ) -> Result<(), HybridSearchError> {
         let index_name = format!("{}_fulltext_idx", table_name);
 
-        let query = format!(
+        // First define the analyzer (if not already defined)
+        let analyzer_query = "DEFINE ANALYZER simple TOKENIZERS blank,class FILTERS lowercase";
+        self.query(analyzer_query).await?;
+
+        // Then define the search index using BM25
+        let index_query = format!(
             "DEFINE INDEX {} ON TABLE {} FIELDS {} SEARCH ANALYZER simple BM25",
             index_name, table_name, field_name
         );
 
-        self.query(query).await?;
+        self.query(index_query).await?;
         Ok(())
     }
 }
 
 /// Extension trait to add `with_hybrid_search()` to DocumentTableBuilder
-pub trait DocumentTableBuilderHybridExt<C: Connection, E, K: Chunker> {
+pub trait DocumentTableBuilderHybridExt<C: Connection, E, K: Chunker>: Sized {
     /// Enable hybrid search capability on this table
     ///
     /// # Arguments
-    /// * `field_name` - The field to index for full-text search
+    /// * `field_name` - The field to index for full-text search (e.g., "body", "content", "text")
     ///
     /// # Example
     /// ```rust,no_run
-    /// let table = db
+    /// use kalosm::language::*;
+    ///
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let db = /* your database connection */;
+    /// let document_table = db
     ///     .document_table_builder("documents")
-    ///     .with_hybrid_search("body")
+    ///     .with_hybrid_search("body")  // 👈 Enable hybrid search
+    ///     .with_chunker(SemanticChunker::new())
+    ///     .at("./db/embeddings.db")
     ///     .build::<Document>()
     ///     .await?;
+    /// # Ok(())
+    /// # }
     /// ```
     fn with_hybrid_search(
         self,
@@ -230,6 +244,10 @@ impl<C: Connection, E, K: Chunker> DocumentTableBuilderHybridExt<C, E, K>
     }
 }
 
+/// Builder for creating document tables with hybrid search enabled
+///
+/// This builder is created by calling `.with_hybrid_search()` on a `DocumentTableBuilder`.
+/// It will automatically create the necessary full-text search index when `.build()` is called.
 pub struct HybridDocumentTableBuilder<C: Connection, E = Bert, K: Chunker = SemanticChunker> {
     inner: DocumentTableBuilder<C, E, K>,
     field_name: String,
@@ -248,7 +266,7 @@ impl<C: Connection, E, K: Chunker> HybridDocumentTableBuilder<C, E, K> {
         }
     }
 
-    /// Specify which field to use for full-text search
+    /// Change which field to use for full-text search (default is set in `with_hybrid_search()`)
     pub fn with_search_field(mut self, field: impl Into<String>) -> Self {
         self.field_name = field.into();
         self
@@ -277,9 +295,14 @@ impl<C: Connection, E, K: Chunker> HybridDocumentTableBuilder<C, E, K> {
     }
 
     /// Build the document table with hybrid search enabled
+    ///
+    /// This will:
+    /// 1. Create the underlying document table
+    /// 2. Create a full-text search index on the specified field
+    /// 3. Return a `HybridDocumentTable` that supports both semantic and keyword search
     pub async fn build<R: Serialize + DeserializeOwned>(
         self,
-    ) -> Result<DocumentTable<C, R, E, K>, HybridSearchError>
+    ) -> Result<HybridDocumentTable<C, R, E, K>, HybridSearchError>
     where
         E: Embedder,
     {
@@ -292,7 +315,121 @@ impl<C: Connection, E, K: Chunker> HybridDocumentTableBuilder<C, E, K> {
             .enable_hybrid_search(table.table().table(), &self.field_name)
             .await?;
 
-        Ok(table)
+        Ok(HybridDocumentTable {
+            inner: table,
+            field_name: self.field_name,
+        })
+    }
+}
+
+/// A document table with hybrid search capabilities enabled
+///
+/// This type is returned when building a table with `.with_hybrid_search()`.
+/// It provides both semantic search (via the inner `DocumentTable`) and
+/// hybrid search that combines semantic and keyword matching.
+pub struct HybridDocumentTable<C: Connection, R, E: Embedder, K: Chunker> {
+    inner: DocumentTable<C, R, E, K>,
+    field_name: String,
+}
+
+impl<C: Connection, R, E: Embedder, K: Chunker> HybridDocumentTable<C, R, E, K> {
+    /// Get a reference to the underlying document table
+    pub fn inner(&self) -> &DocumentTable<C, R, E, K> {
+        &self.inner
+    }
+
+    /// Get a mutable reference to the underlying document table
+    pub fn inner_mut(&mut self) -> &mut DocumentTable<C, R, E, K> {
+        &mut self.inner
+    }
+
+    /// Consume this hybrid table and return the underlying document table
+    pub fn into_inner(self) -> DocumentTable<C, R, E, K> {
+        self.inner
+    }
+
+    /// Get the field name used for keyword search
+    pub fn field_name(&self) -> &str {
+        &self.field_name
+    }
+}
+
+// For convenience, also support regular search operations
+impl<C: Connection, R, E: Embedder, K: Chunker> HybridDocumentTable<C, R, E, K> {
+    /// Perform hybrid search combining semantic and keyword search
+    ///
+    /// The field name for keyword search was already configured when building the table.
+    pub fn hybrid_search(&self, query: impl Into<String>) -> HybridSearchBuilder<'_, C, R, E, K> {
+        HybridSearchBuilder::new(&self.inner, query, &self.field_name)
+    }
+
+    /// Perform regular semantic search (without keyword matching)
+    pub fn search<Em>(&self, embedding: Em) -> DocumentTableSearchBuilder<'_, C, R, E, K, Em>
+    where
+        Em: IntoEmbedding,
+        R: DeserializeOwned,
+    {
+        self.inner.search(embedding)
+    }
+
+    /// Get a reference to the underlying embedding indexed table
+    pub fn table(&self) -> &EmbeddingIndexedTable<C, R> {
+        self.inner.table()
+    }
+
+    /// Get a reference to the embedding model
+    pub fn embedding_model(&self) -> &E {
+        self.inner.embedding_model()
+    }
+
+    /// Insert a new record into the table
+    pub async fn insert(
+        &self,
+        value: R,
+    ) -> Result<RecordIdKey, DocumentTableModifyError<K::Error<E::Error>>>
+    where
+        R: AsRef<Document> + Serialize + DeserializeOwned + 'static,
+    {
+        self.inner.insert(value).await
+    }
+
+    /// Extend the table with an iterator of new records
+    pub async fn extend<T: IntoIterator<Item = R> + Send>(
+        &self,
+        iter: T,
+    ) -> Result<Vec<RecordIdKey>, DocumentTableModifyError<K::Error<E::Error>>>
+    where
+        R: AsRef<Document> + Serialize + DeserializeOwned + 'static,
+        K: Sync,
+    {
+        self.inner.extend(iter).await
+    }
+
+    /// Select a record from the table
+    pub async fn select(&self, id: impl Into<RecordIdKey>) -> Result<R, EmbeddedIndexedTableError>
+    where
+        R: Serialize + DeserializeOwned + 'static,
+    {
+        self.inner.select(id).await
+    }
+
+    /// Delete a record from the table
+    pub async fn delete(
+        &self,
+        id: impl Into<RecordIdKey>,
+    ) -> Result<Option<R>, EmbeddedIndexedTableError>
+    where
+        R: Serialize + DeserializeOwned + 'static,
+    {
+        self.inner.delete(id).await
+    }
+
+    /// Select all records from the table
+    pub async fn select_all(&self) -> Result<Vec<R>, EmbeddedIndexedTableError>
+    where
+        R: Serialize + DeserializeOwned + 'static,
+    {
+        self.inner.select_all().await
     }
 }
 
@@ -303,43 +440,6 @@ pub struct HybridSearchResult<Doc> {
     pub score: f32,
     pub semantic_score: f32,
     pub keyword_score: f32,
-}
-
-/// Extension trait to add hybrid search capability to DocumentTable
-pub trait DocumentTableHybridSearchExt<C: Connection, R, M: Embedder, K: Chunker> {
-    /// Perform hybrid search combining semantic and keyword search
-    ///
-    /// # Arguments
-    /// * `query` - The search query
-    /// * `field_name` - The field to search for keywords (should match the indexed field)
-    ///
-    /// # Example
-    /// ```rust,no_run
-    /// let results = document_table
-    ///     .hybrid_search("rust async programming", "body")
-    ///     .with_results(5)
-    ///     .with_semantic_weight(0.6)
-    ///     .with_keyword_weight(0.4)
-    ///     .run_weighted()
-    ///     .await?;
-    /// ```
-    fn hybrid_search(
-        &self,
-        query: impl Into<String>,
-        field_name: impl Into<String>,
-    ) -> HybridSearchBuilder<'_, C, R, M, K>;
-}
-
-impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTableHybridSearchExt<C, R, M, K>
-    for DocumentTable<C, R, M, K>
-{
-    fn hybrid_search(
-        &self,
-        query: impl Into<String>,
-        field_name: impl Into<String>,
-    ) -> HybridSearchBuilder<'_, C, R, M, K> {
-        HybridSearchBuilder::new(self, query, field_name)
-    }
 }
 
 pub struct HybridSearchBuilder<'a, Conn: Connection, Doc, Model: Embedder, Chkr: Chunker> {
@@ -436,7 +536,7 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
         // Build score maps
         let mut semantic_map: HashMap<u64, (RecordIdKey, R, f32)> = HashMap::new();
         for result in semantic_results {
-            let normalized = distance_to_similarity(result.distance, max_semantic).unwrap_or(0.0); // If max_semantic is 0, treat as no similarity
+            let normalized = distance_to_similarity(result.distance, max_semantic).unwrap_or(0.0);
             let key = create_content_hash(&result.record);
             semantic_map.insert(key, (result.record_id, result.record, normalized));
         }
@@ -446,7 +546,7 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
             let normalized = if max_keyword > 0.0 {
                 result.keyword_score / max_keyword
             } else {
-                0.0 // All keyword scores are 0
+                0.0
             };
             let key = create_content_hash(&result.record);
             keyword_map.insert(key, (result.record, normalized));
