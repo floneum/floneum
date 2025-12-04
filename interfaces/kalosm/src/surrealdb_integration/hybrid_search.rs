@@ -834,4 +834,59 @@ mod tests {
         assert!((sem - 0.7).abs() < 0.001);
         assert!((key - 0.8).abs() < 0.001);
     }
+
+    #[test]
+    fn test_full_weighted_pipeline() {
+        // Simulate a full weighted hybrid search calculation
+        let raw_semantic_distances = vec![0.1, 0.3, 0.5];
+        let raw_keyword_scores = vec![10.0, 7.0, 3.0];
+
+        // Normalize
+        let max_semantic = 0.5;
+        let semantic_scores: Vec<f32> = raw_semantic_distances
+            .iter()
+            .filter_map(|&d| distance_to_similarity(d, max_semantic))
+            .collect();
+
+        let keyword_scores = normalize_scores(&raw_keyword_scores).unwrap();
+
+        // Combine
+        let combined: Vec<f32> = semantic_scores
+            .iter()
+            .zip(keyword_scores.iter())
+            .map(|(&sem, &key)| calculate_weighted_score(sem, key, 0.7, 0.3))
+            .collect();
+
+        // Verify all scores are valid
+        assert!(combined.iter().all(|&s| s >= 0.0 && s <= 1.0));
+
+        // First result should have highest score (smallest distance, highest keyword)
+        assert!(combined[0] > combined[1]);
+        assert!(combined[1] > combined[2]);
+    }
+
+    #[test]
+    fn test_full_rrf_pipeline() {
+        // Simulate RRF calculation
+        let k = 60.0;
+
+        // Document rankings: [semantic_rank, keyword_rank]
+        let rankings = vec![
+            (Some(0), Some(2)), // High in semantic, medium in keyword
+            (Some(5), Some(0)), // Medium in semantic, high in keyword
+            (Some(1), None),    // High in semantic, not in keyword
+        ];
+
+        let rrf_scores: Vec<f32> = rankings
+            .iter()
+            .map(|&(sem, key)| combine_rrf_scores(sem, key, k))
+            .collect();
+
+        // All scores should be positive
+        assert!(rrf_scores.iter().all(|&s| s > 0.0));
+
+        // Doc 0 (rank 0 semantic + rank 2 keyword) should score highest
+        assert!(rrf_scores[0] > rrf_scores[1]);
+        assert!(rrf_scores[0] > rrf_scores[2]);
+    }
 }
