@@ -179,35 +179,27 @@ impl FlashAttentionOperation {
             {
                 writeln!(kernel, "let local_seq = i / {head_dim};").unwrap();
                 writeln!(kernel, "let local_dim = i % {head_dim};").unwrap();
+                writeln!(kernel, "let global_seq = tile_start + local_seq;").unwrap();
                 writeln!(
                     kernel,
-                    "if local_seq < tile_size && local_dim < {head_dim} {{"
+                    "let kv_offset = batch_head_offset + global_seq * {head_dim} + local_dim;"
                 )
                 .unwrap();
-                {
-                    writeln!(kernel, "let global_seq = tile_start + local_seq;").unwrap();
-                    writeln!(
-                        kernel,
-                        "let kv_offset = batch_head_offset + global_seq * {head_dim} + local_dim;"
-                    )
-                    .unwrap();
-                    writeln!(
-                        kernel,
-                        "let shared_idx = local_seq * {head_dim} + local_dim;"
-                    )
-                    .unwrap();
-                    writeln!(
-                        kernel,
-                        "{shared_k_tile}[shared_idx] = {k_tensor}[kv_offset];"
-                    )
-                    .unwrap();
-                    writeln!(
-                        kernel,
-                        "{shared_v_tile}[shared_idx] = {v_tensor}[kv_offset];"
-                    )
-                    .unwrap();
-                }
-                writeln!(kernel, "}}").unwrap();
+                writeln!(
+                    kernel,
+                    "let shared_idx = local_seq * {head_dim} + local_dim;"
+                )
+                .unwrap();
+                writeln!(
+                    kernel,
+                    "{shared_k_tile}[shared_idx] = {k_tensor}[kv_offset];"
+                )
+                .unwrap();
+                writeln!(
+                    kernel,
+                    "{shared_v_tile}[shared_idx] = {v_tensor}[kv_offset];"
+                )
+                .unwrap();
             }
             writeln!(kernel, "}}").unwrap();
             writeln!(kernel, "workgroupBarrier();").unwrap();
