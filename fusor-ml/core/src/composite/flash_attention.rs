@@ -97,14 +97,12 @@ impl FlashAttentionOperation {
         // Check if subgroups are supported
         let use_subgroups = device.subgroups_supported();
 
-        // Optimized configuration - use 256 threads for better parallelization
+        // Optimized configuration - compute multiple output dimensions per workgroup
+        // Each subgroup (typically 32-64 threads) handles one output dimension
         let workgroup_size = workgroup_shape.x();
-        let threads_per_output = if workgroup_size >= 256 {
-            64u32
-        } else {
-            workgroup_size / 4
-        };
-        let outputs_per_workgroup = workgroup_size / threads_per_output;
+        let subgroup_size = if use_subgroups { 32u32 } else { 64u32 };
+        let outputs_per_workgroup = workgroup_size / subgroup_size;
+        let threads_per_output = subgroup_size;
 
         // Block size for tiling
         let block_size = 256u32;
@@ -127,15 +125,22 @@ impl FlashAttentionOperation {
         )
         .unwrap();
 
-        // Calculate global output index - each workgroup handles multiple outputs
+        // Calculate global output index - each workgroup handles multiple output dimensions
+        // We process multiple head_dim values in parallel
         writeln!(
             kernel,
-            "var global_idx = {} * {outputs_per_workgroup}u + local_output_id;",
-            workgroup_index
+            "let batch_head_seq = {} / {head_dim};",
+            workgroup_index,
         )
         .unwrap();
-        writeln!(kernel, "let out_dim = global_idx % {head_dim};").unwrap();
-        writeln!(kernel, "global_idx /= {head_dim};").unwrap();
+        writeln!(
+            kernel,
+            "let dim_offset = ({} % {head_dim}) * {outputs_per_workgroup}u;",
+            workgroup_index,
+        )
+        .unwrap();
+        writeln!(kernel, "let out_dim = dim_offset + local_output_id;").unwrap();
+        writeln!(kernel, "var global_idx = batch_head_seq;").unwrap();
         writeln!(kernel, "let seq_idx = global_idx % {seq_len};").unwrap();
         writeln!(kernel, "global_idx /= {seq_len};").unwrap();
         writeln!(kernel, "let head_idx = global_idx % {num_heads};").unwrap();
@@ -144,11 +149,11 @@ impl FlashAttentionOperation {
 
         // Calculate base offsets
         writeln!(kernel, "let batch_head_offset = batch_idx * {num_heads} * {seq_len} * {head_dim} + head_idx * {seq_len} * {head_dim};").unwrap();
-        writeln!(
-            kernel,
-            "let q_offset = batch_head_offset + seq_idx * {head_dim} + out_dim;"
-        )
-        .unwrap();
+
+        // Early exit if we're beyond valid dimensions
+        writeln!(kernel, "if out_dim >= {head_dim} {{").unwrap();
+        writeln!(kernel, "    return;").unwrap();
+        writeln!(kernel, "}}").unwrap();
 
         // Initialize online softmax variables
         writeln!(kernel, "var m = {};", min_for_dtype(dtype)).unwrap();
@@ -204,8 +209,8 @@ impl FlashAttentionOperation {
             writeln!(kernel, "}}").unwrap();
             writeln!(kernel, "workgroupBarrier();").unwrap();
 
-            // Get Q value once per tile
-            writeln!(kernel, "let q_val = {q_tensor}[q_offset];").unwrap();
+            // Get Q value once per tile for this output dimension
+            writeln!(kernel, "let q_val = {q_tensor}[batch_head_offset + seq_idx * {head_dim} + out_dim];").unwrap();
 
             // Parallel computation: each thread processes a subset of the tile
             writeln!(kernel, "// Parallel attention computation").unwrap();
@@ -250,73 +255,71 @@ impl FlashAttentionOperation {
             }
             writeln!(kernel, "}}").unwrap();
 
-            // Store partial results for reduction
-            writeln!(kernel, "// Store partial results").unwrap();
-            writeln!(kernel, "if thread_in_output == 0u {{").unwrap();
-            {
-                writeln!(kernel, "d = d_partial;").unwrap();
-                writeln!(kernel, "acc = acc_partial;").unwrap();
+            // Reduction within each subgroup/output group
+            writeln!(kernel, "// Reduce partial results within subgroup").unwrap();
+
+            if use_subgroups {
+                writeln!(kernel, "var m_reduced = m_partial;").unwrap();
+                writeln!(kernel, "var d_reduced = d_partial;").unwrap();
+                writeln!(kernel, "var acc_reduced = acc_partial;").unwrap();
+
+                writeln!(kernel, "for (var offset = {threads_per_output}u / 2u; offset > 0u; offset /= 2u) {{").unwrap();
+                {
+                    writeln!(kernel, "let m_peer = subgroupShuffleDown(m_reduced, offset);").unwrap();
+                    writeln!(kernel, "let d_peer = subgroupShuffleDown(d_reduced, offset);").unwrap();
+                    writeln!(
+                        kernel,
+                        "let acc_peer = subgroupShuffleDown(acc_reduced, offset);"
+                    )
+                    .unwrap();
+                    writeln!(kernel, "let original_m = m_reduced;").unwrap();
+                    writeln!(kernel, "m_reduced = max(m_reduced, m_peer);").unwrap();
+                    writeln!(kernel, "let exp_original_m_diff = exp(original_m - m_reduced);").unwrap();
+                    writeln!(kernel, "let exp_m_peer_diff = exp(m_peer - m_reduced);").unwrap();
+                    writeln!(kernel, "d_reduced = d_reduced * exp_original_m_diff + d_peer * exp_m_peer_diff;").unwrap();
+                    writeln!(kernel, "acc_reduced = acc_reduced * exp_original_m_diff + acc_peer * exp_m_peer_diff;").unwrap();
+                }
+                writeln!(kernel, "}}").unwrap();
+
+                // Merge into global state
+                writeln!(kernel, "let original_m = m;").unwrap();
+                writeln!(kernel, "m = max(m, m_reduced);").unwrap();
+                writeln!(kernel, "let exp_original_m_diff = exp(original_m - m);").unwrap();
+                writeln!(kernel, "let exp_m_reduced_diff = exp(m_reduced - m);").unwrap();
+                writeln!(kernel, "d = d * exp_original_m_diff + d_reduced * exp_m_reduced_diff;").unwrap();
+                writeln!(kernel, "acc = acc * exp_original_m_diff + acc_reduced * exp_m_reduced_diff;").unwrap();
+            } else {
+                // Simple merge for non-subgroup case
+                writeln!(kernel, "let original_m = m;").unwrap();
+                writeln!(kernel, "m = max(m, m_partial);").unwrap();
+                writeln!(kernel, "let exp_original_m_diff = exp(original_m - m);").unwrap();
+                writeln!(kernel, "let exp_m_partial_diff = exp(m_partial - m);").unwrap();
+                writeln!(kernel, "d = d * exp_original_m_diff + d_partial * exp_m_partial_diff;").unwrap();
+                writeln!(kernel, "acc = acc * exp_original_m_diff + acc_partial * exp_m_partial_diff;").unwrap();
             }
-            writeln!(kernel, "}}").unwrap();
 
             writeln!(kernel, "workgroupBarrier();").unwrap();
         }
         writeln!(kernel, "}}").unwrap();
 
-        // Final reduction and output
-        writeln!(kernel, "// Final reduction").unwrap();
-
-        if use_subgroups {
-            // Use subgroup operations for reduction
-            let subgroup_local_index = kernel.subgroup_local_index();
-            let subgroup_size = kernel.subgroup_size();
-
-            writeln!(kernel, "if local_output_id == 0u {{").unwrap();
-            {
-                writeln!(kernel, "var m_final = m;").unwrap();
-                writeln!(kernel, "var d_final = d;").unwrap();
-                writeln!(kernel, "var acc_final = acc;").unwrap();
-
-                // Subgroup reduction
-                writeln!(kernel, "var offset = {} / 2u;", subgroup_size).unwrap();
-                writeln!(kernel, "while (offset > 0u) {{").unwrap();
-                {
-                    writeln!(kernel, "let m_peer = subgroupShuffleDown(m_final, offset);").unwrap();
-                    writeln!(kernel, "let d_peer = subgroupShuffleDown(d_final, offset);").unwrap();
-                    writeln!(
-                        kernel,
-                        "let acc_peer = subgroupShuffleDown(acc_final, offset);"
-                    )
-                    .unwrap();
-                    writeln!(kernel, "let original_m = m_final;").unwrap();
-                    writeln!(kernel, "m_final = max(m_final, m_peer);").unwrap();
-                    writeln!(kernel, "let exp_original_m_diff = exp(original_m - m_final);").unwrap();
-                    writeln!(kernel, "let exp_m_peer_diff = exp(m_peer - m_final);").unwrap();
-                    writeln!(kernel, "d_final = d_final * exp_original_m_diff + d_peer * exp_m_peer_diff;").unwrap();
-                    writeln!(kernel, "acc_final = acc_final * exp_original_m_diff + acc_peer * exp_m_peer_diff;").unwrap();
-                    writeln!(kernel, "offset /= 2u;").unwrap();
-                }
-                writeln!(kernel, "}}").unwrap();
-
+        // Final output - first thread in each subgroup writes result
+        writeln!(kernel, "// Final output").unwrap();
+        writeln!(kernel, "if thread_in_output == 0u {{").unwrap();
+        {
+            if use_subgroups {
+                let subgroup_local_index = kernel.subgroup_local_index();
                 writeln!(kernel, "if {} == 0u {{", subgroup_local_index).unwrap();
                 {
-                    writeln!(kernel, "{output_tensor}[q_offset] = acc_final / d_final;").unwrap();
+                    writeln!(kernel, "let out_offset = batch_head_offset + seq_idx * {head_dim} + out_dim;").unwrap();
+                    writeln!(kernel, "{output_tensor}[out_offset] = acc / d;").unwrap();
                 }
                 writeln!(kernel, "}}").unwrap();
+            } else {
+                writeln!(kernel, "let out_offset = batch_head_offset + seq_idx * {head_dim} + out_dim;").unwrap();
+                writeln!(kernel, "{output_tensor}[out_offset] = acc / d;").unwrap();
             }
-            writeln!(kernel, "}}").unwrap();
-        } else {
-            // Simple reduction using thread 0
-            writeln!(
-                kernel,
-                "if local_output_id == 0u && thread_in_output == 0u {{"
-            )
-            .unwrap();
-            {
-                writeln!(kernel, "{output_tensor}[q_offset] = acc / d;").unwrap();
-            }
-            writeln!(kernel, "}}").unwrap();
         }
+        writeln!(kernel, "}}").unwrap();
     }
 }
 
@@ -334,15 +337,22 @@ impl Operation for FlashAttentionOperation {
 
     fn dispatch_size(
         &self,
-        _: &crate::mir::workgroup_shape::WorkgroupShape,
+        workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
         inputs: &[MirValue],
     ) -> [u32; 3] {
         let q_tensor = inputs[0].as_tensor().unwrap();
         let shape = q_tensor.layout().shape();
 
-        // Dispatch per batch * heads * sequence
-        let workgroup_size = (shape[0] * shape[1] * shape[2]) as u32;
-        [workgroup_size, 1, 1]
+        let workgroup_size = workgroup_shape.x();
+        let subgroup_size = 32u32; // Conservative estimate
+        let outputs_per_workgroup = workgroup_size / subgroup_size;
+
+        // Dispatch per batch * heads * sequence * ceil(head_dim / outputs_per_workgroup)
+        let head_dim = shape[3] as u32;
+        let num_dim_groups = (head_dim + outputs_per_workgroup - 1) / outputs_per_workgroup;
+        let total_workgroups = (shape[0] * shape[1] * shape[2]) as u32 * num_dim_groups;
+
+        [total_workgroups, 1, 1]
     }
 
     fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
