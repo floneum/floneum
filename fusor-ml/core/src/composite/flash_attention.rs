@@ -40,6 +40,7 @@ struct FlashAttentionOperation {
     pub(crate) v: NodeIndex,
     pub(crate) datatype: DataTypeEnum,
     pub(crate) scale: f32,
+    pub(crate) vec_width: u32, // Number of values to process per subgroup (1, 2, or 4)
 }
 
 impl FlashAttentionOperation {
@@ -51,12 +52,15 @@ impl FlashAttentionOperation {
         _shape: &[usize],
         scale: f32,
     ) -> Self {
+        // Use vec4 for vectorization (4 values per subgroup)
+        let vec_width = 4;
         Self {
             q,
             k,
             v,
             datatype,
             scale,
+            vec_width,
         }
     }
 
@@ -97,11 +101,20 @@ impl FlashAttentionOperation {
         // Check if subgroups are supported
         let use_subgroups = device.subgroups_supported();
 
+        // Vectorization configuration
+        let vec_width = self.vec_width;
+        let vec_type = match vec_width {
+            1 => format!("{dtype}"),
+            2 => format!("vec2<{dtype}>"),
+            4 => format!("vec4<{dtype}>"),
+            _ => panic!("Unsupported vectorization width: {}", vec_width),
+        };
+
         // Optimized configuration - compute multiple output dimensions per workgroup
-        // Each subgroup (typically 32-64 threads) handles one output dimension
+        // Each subgroup handles vec_width output dimensions using vectorized operations
         let workgroup_size = workgroup_shape.x();
         let subgroup_size = if use_subgroups { 32u32 } else { 64u32 };
-        let outputs_per_workgroup = workgroup_size / subgroup_size;
+        let outputs_per_workgroup = (workgroup_size / subgroup_size) * vec_width;
         let threads_per_output = subgroup_size;
 
         // Block size for tiling
@@ -126,7 +139,7 @@ impl FlashAttentionOperation {
         .unwrap();
 
         // Calculate global output index - each workgroup handles multiple output dimensions
-        // We process multiple head_dim values in parallel
+        // With vectorization, each subgroup processes vec_width values
         writeln!(
             kernel,
             "let batch_head_seq = {} / {head_dim};",
@@ -139,7 +152,12 @@ impl FlashAttentionOperation {
             workgroup_index,
         )
         .unwrap();
-        writeln!(kernel, "let out_dim = dim_offset + local_output_id;").unwrap();
+        writeln!(
+            kernel,
+            "let out_dim_base = dim_offset + local_output_id * {}u;",
+            vec_width
+        )
+        .unwrap();
         writeln!(kernel, "var global_idx = batch_head_seq;").unwrap();
         writeln!(kernel, "let seq_idx = global_idx % {seq_len};").unwrap();
         writeln!(kernel, "global_idx /= {seq_len};").unwrap();
@@ -151,14 +169,18 @@ impl FlashAttentionOperation {
         writeln!(kernel, "let batch_head_offset = batch_idx * {num_heads} * {seq_len} * {head_dim} + head_idx * {seq_len} * {head_dim};").unwrap();
 
         // Early exit if we're beyond valid dimensions
-        writeln!(kernel, "if out_dim >= {head_dim} {{").unwrap();
+        writeln!(kernel, "if out_dim_base >= {head_dim} {{").unwrap();
         writeln!(kernel, "    return;").unwrap();
         writeln!(kernel, "}}").unwrap();
 
-        // Initialize online softmax variables
+        // Initialize online softmax variables (vectorized)
         writeln!(kernel, "var m = {};", min_for_dtype(dtype)).unwrap();
         writeln!(kernel, "var d = {dtype}(0.0);").unwrap();
-        writeln!(kernel, "var acc = {dtype}(0.0);").unwrap();
+        if vec_width == 1 {
+            writeln!(kernel, "var acc = {dtype}(0.0);").unwrap();
+        } else {
+            writeln!(kernel, "var acc = {}(0.0);", vec_type).unwrap();
+        }
 
         // Process sequence in tiles
         writeln!(
@@ -209,8 +231,19 @@ impl FlashAttentionOperation {
             writeln!(kernel, "}}").unwrap();
             writeln!(kernel, "workgroupBarrier();").unwrap();
 
-            // Get Q value once per tile for this output dimension
-            writeln!(kernel, "let q_val = {q_tensor}[batch_head_offset + seq_idx * {head_dim} + out_dim];").unwrap();
+            // Get Q values once per tile for this output dimension (vectorized)
+            if vec_width == 1 {
+                writeln!(kernel, "let q_val = {q_tensor}[batch_head_offset + seq_idx * {head_dim} + out_dim_base];").unwrap();
+            } else {
+                writeln!(kernel, "var q_val = {}(", vec_type).unwrap();
+                for i in 0..vec_width {
+                    if i > 0 {
+                        write!(kernel, ", ").unwrap();
+                    }
+                    write!(kernel, "{q_tensor}[batch_head_offset + seq_idx * {head_dim} + out_dim_base + {i}u]").unwrap();
+                }
+                writeln!(kernel, ");").unwrap();
+            }
 
             // Parallel computation: each thread processes a subset of the tile
             writeln!(kernel, "// Parallel attention computation").unwrap();
@@ -228,17 +261,59 @@ impl FlashAttentionOperation {
 
             writeln!(kernel, "var m_partial = {};", min_for_dtype(dtype)).unwrap();
             writeln!(kernel, "var d_partial = {dtype}(0.0);").unwrap();
-            writeln!(kernel, "var acc_partial = {dtype}(0.0);").unwrap();
+            if vec_width == 1 {
+                writeln!(kernel, "var acc_partial = {dtype}(0.0);").unwrap();
+            } else {
+                writeln!(kernel, "var acc_partial = {}(0.0);", vec_type).unwrap();
+            }
 
             writeln!(kernel, "for (var i = start_idx; i < end_idx; i++) {{").unwrap();
             {
                 writeln!(kernel, "let k_shared_start = i * {head_dim};").unwrap();
                 writeln!(kernel, "let v_shared_start = i * {head_dim};").unwrap();
-                writeln!(
-                    kernel,
-                    "var score = q_val * {shared_k_tile}[k_shared_start + out_dim];"
-                )
-                .unwrap();
+
+                // Load K and V values (vectorized)
+                if vec_width == 1 {
+                    writeln!(kernel, "let k_val = {shared_k_tile}[k_shared_start + out_dim_base];").unwrap();
+                    writeln!(kernel, "let v_val = {shared_v_tile}[v_shared_start + out_dim_base];").unwrap();
+                } else {
+                    writeln!(kernel, "var k_val = {}(", vec_type).unwrap();
+                    for i in 0..vec_width {
+                        if i > 0 {
+                            write!(kernel, ", ").unwrap();
+                        }
+                        write!(kernel, "{shared_k_tile}[k_shared_start + out_dim_base + {i}u]").unwrap();
+                    }
+                    writeln!(kernel, ");").unwrap();
+
+                    writeln!(kernel, "var v_val = {}(", vec_type).unwrap();
+                    for i in 0..vec_width {
+                        if i > 0 {
+                            write!(kernel, ", ").unwrap();
+                        }
+                        write!(kernel, "{shared_v_tile}[v_shared_start + out_dim_base + {i}u]").unwrap();
+                    }
+                    writeln!(kernel, ");").unwrap();
+                }
+
+                // Compute attention score (vectorized dot product)
+                if vec_width == 1 {
+                    writeln!(kernel, "var score = q_val * k_val;").unwrap();
+                } else {
+                    writeln!(kernel, "var score_vec = q_val * k_val;").unwrap();
+                    // Sum components for scalar score
+                    write!(kernel, "var score = score_vec.x").unwrap();
+                    for i in 1..vec_width {
+                        let component = match i {
+                            1 => "y",
+                            2 => "z",
+                            3 => "w",
+                            _ => panic!("Unsupported vec component"),
+                        };
+                        write!(kernel, " + score_vec.{}", component).unwrap();
+                    }
+                    writeln!(kernel, ";").unwrap();
+                }
                 writeln!(kernel, "score = score * {};", self.scale).unwrap();
 
                 // Online softmax update for partial results
@@ -251,7 +326,9 @@ impl FlashAttentionOperation {
                     "d_partial = d_partial * exp_original_m_diff + exp_score_diff;"
                 )
                 .unwrap();
-                writeln!(kernel, "acc_partial = acc_partial * exp_original_m_diff + exp_score_diff * {shared_v_tile}[v_shared_start + out_dim];").unwrap();
+
+                // Accumulate V values (works for both scalar and vector types)
+                writeln!(kernel, "acc_partial = acc_partial * exp_original_m_diff + exp_score_diff * v_val;").unwrap();
             }
             writeln!(kernel, "}}").unwrap();
 
@@ -261,7 +338,11 @@ impl FlashAttentionOperation {
             if use_subgroups {
                 writeln!(kernel, "var m_reduced = m_partial;").unwrap();
                 writeln!(kernel, "var d_reduced = d_partial;").unwrap();
-                writeln!(kernel, "var acc_reduced = acc_partial;").unwrap();
+                if vec_width == 1 {
+                    writeln!(kernel, "var acc_reduced = acc_partial;").unwrap();
+                } else {
+                    writeln!(kernel, "var acc_reduced: {} = acc_partial;", vec_type).unwrap();
+                }
 
                 // Unrolled subgroup reduction - threads_per_output is a compile-time constant
                 let mut offset = threads_per_output;
@@ -301,7 +382,7 @@ impl FlashAttentionOperation {
         }
         writeln!(kernel, "}}").unwrap();
 
-        // Final output - first thread in each subgroup writes result
+        // Final output - first thread in each subgroup writes result(s)
         writeln!(kernel, "// Final output").unwrap();
         writeln!(kernel, "if thread_in_output == 0u {{").unwrap();
         {
@@ -309,13 +390,47 @@ impl FlashAttentionOperation {
                 let subgroup_local_index = kernel.subgroup_local_index();
                 writeln!(kernel, "if {} == 0u {{", subgroup_local_index).unwrap();
                 {
-                    writeln!(kernel, "let out_offset = batch_head_offset + seq_idx * {head_dim} + out_dim;").unwrap();
-                    writeln!(kernel, "{output_tensor}[out_offset] = acc / d;").unwrap();
+                    if vec_width == 1 {
+                        writeln!(kernel, "let out_offset = batch_head_offset + seq_idx * {head_dim} + out_dim_base;").unwrap();
+                        writeln!(kernel, "{output_tensor}[out_offset] = acc / d;").unwrap();
+                    } else {
+                        writeln!(kernel, "let result = acc / d;").unwrap();
+                        for i in 0..vec_width {
+                            let component = match i {
+                                0 => "x",
+                                1 => "y",
+                                2 => "z",
+                                3 => "w",
+                                _ => panic!("Unsupported vec component"),
+                            };
+                            writeln!(kernel, "if out_dim_base + {}u < {head_dim} {{", i).unwrap();
+                            writeln!(kernel, "    let out_offset = batch_head_offset + seq_idx * {head_dim} + out_dim_base + {}u;", i).unwrap();
+                            writeln!(kernel, "    {output_tensor}[out_offset] = result.{};", component).unwrap();
+                            writeln!(kernel, "}}").unwrap();
+                        }
+                    }
                 }
                 writeln!(kernel, "}}").unwrap();
             } else {
-                writeln!(kernel, "let out_offset = batch_head_offset + seq_idx * {head_dim} + out_dim;").unwrap();
-                writeln!(kernel, "{output_tensor}[out_offset] = acc / d;").unwrap();
+                if vec_width == 1 {
+                    writeln!(kernel, "let out_offset = batch_head_offset + seq_idx * {head_dim} + out_dim_base;").unwrap();
+                    writeln!(kernel, "{output_tensor}[out_offset] = acc / d;").unwrap();
+                } else {
+                    writeln!(kernel, "let result = acc / d;").unwrap();
+                    for i in 0..vec_width {
+                        let component = match i {
+                            0 => "x",
+                            1 => "y",
+                            2 => "z",
+                            3 => "w",
+                            _ => panic!("Unsupported vec component"),
+                        };
+                        writeln!(kernel, "if out_dim_base + {}u < {head_dim} {{", i).unwrap();
+                        writeln!(kernel, "    let out_offset = batch_head_offset + seq_idx * {head_dim} + out_dim_base + {}u;", i).unwrap();
+                        writeln!(kernel, "    {output_tensor}[out_offset] = result.{};", component).unwrap();
+                        writeln!(kernel, "}}").unwrap();
+                    }
+                }
             }
         }
         writeln!(kernel, "}}").unwrap();
@@ -344,7 +459,8 @@ impl Operation for FlashAttentionOperation {
 
         let workgroup_size = workgroup_shape.x();
         let subgroup_size = 32u32; // Conservative estimate
-        let outputs_per_workgroup = workgroup_size / subgroup_size;
+        // With vectorization, each subgroup processes vec_width values
+        let outputs_per_workgroup = (workgroup_size / subgroup_size) * self.vec_width;
 
         // Dispatch per batch * heads * sequence * ceil(head_dim / outputs_per_workgroup)
         let head_dim = shape[3] as u32;
@@ -394,7 +510,7 @@ impl Operation for FlashAttentionOperation {
     }
 
     fn name(&self) -> String {
-        format!("flash_attention_{}_{}", self.rank(), self.datatype)
+        format!("flash_attention_{}_{}_{}", self.rank(), self.datatype, self.vec_width)
     }
 
     fn output_layout(
