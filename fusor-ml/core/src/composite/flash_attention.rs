@@ -165,9 +165,6 @@ impl FlashAttentionOperation {
         writeln!(kernel, "global_idx /= {num_heads};").unwrap();
         writeln!(kernel, "let batch_idx = global_idx % {batch_size};").unwrap();
 
-        // Calculate base offsets
-        writeln!(kernel, "let batch_head_offset = batch_idx * {num_heads} * {seq_len} * {head_dim} + head_idx * {seq_len} * {head_dim};").unwrap();
-
         // Early exit if we're beyond valid dimensions
         writeln!(kernel, "if out_dim_base >= {head_dim} {{").unwrap();
         writeln!(kernel, "    return;").unwrap();
@@ -207,11 +204,14 @@ impl FlashAttentionOperation {
                 writeln!(kernel, "let local_seq = i / {head_dim};").unwrap();
                 writeln!(kernel, "let local_dim = i % {head_dim};").unwrap();
                 writeln!(kernel, "let global_seq = tile_start + local_seq;").unwrap();
-                writeln!(
-                    kernel,
-                    "let kv_offset = batch_head_offset + global_seq * {head_dim} + local_dim;"
-                )
-                .unwrap();
+                // Use strided indexing for K tensor (supports non-contiguous tensors)
+                write!(kernel, "let k_idx = ").unwrap();
+                k_tensor.strided_index(kernel, ["batch_idx", "head_idx", "global_seq", "local_dim"]);
+                writeln!(kernel, ";").unwrap();
+                // Use strided indexing for V tensor (supports non-contiguous tensors)
+                write!(kernel, "let v_idx = ").unwrap();
+                v_tensor.strided_index(kernel, ["batch_idx", "head_idx", "global_seq", "local_dim"]);
+                writeln!(kernel, ";").unwrap();
                 writeln!(
                     kernel,
                     "let shared_idx = local_seq * {head_dim} + local_dim;"
@@ -219,12 +219,12 @@ impl FlashAttentionOperation {
                 .unwrap();
                 writeln!(
                     kernel,
-                    "{shared_k_tile}[shared_idx] = {k_tensor}[kv_offset];"
+                    "{shared_k_tile}[shared_idx] = {k_tensor}[k_idx];"
                 )
                 .unwrap();
                 writeln!(
                     kernel,
-                    "{shared_v_tile}[shared_idx] = {v_tensor}[kv_offset];"
+                    "{shared_v_tile}[shared_idx] = {v_tensor}[v_idx];"
                 )
                 .unwrap();
             }
@@ -233,14 +233,23 @@ impl FlashAttentionOperation {
 
             // Get Q values once per tile for this output dimension (vectorized)
             if vec_width == 1 {
-                writeln!(kernel, "let q_val = {q_tensor}[batch_head_offset + seq_idx * {head_dim} + out_dim_base];").unwrap();
+                // Use strided indexing for Q tensor (supports non-contiguous tensors)
+                write!(kernel, "let q_idx = ").unwrap();
+                q_tensor.strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", "out_dim_base"]);
+                writeln!(kernel, ";").unwrap();
+                writeln!(kernel, "let q_val = {q_tensor}[q_idx];").unwrap();
             } else {
                 writeln!(kernel, "var q_val = {}(", vec_type).unwrap();
                 for i in 0..vec_width {
                     if i > 0 {
                         write!(kernel, ", ").unwrap();
                     }
-                    write!(kernel, "{q_tensor}[batch_head_offset + seq_idx * {head_dim} + out_dim_base + {i}u]").unwrap();
+                    writeln!(kernel, "").unwrap();
+                    write!(kernel, "    ").unwrap();
+                    // Use strided indexing for Q tensor (supports non-contiguous tensors)
+                    write!(kernel, "{q_tensor}[").unwrap();
+                    q_tensor.strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", &format!("out_dim_base + {i}u")]);
+                    write!(kernel, "]").unwrap();
                 }
                 writeln!(kernel, ");").unwrap();
             }
@@ -391,7 +400,10 @@ impl FlashAttentionOperation {
                 writeln!(kernel, "if {} == 0u {{", subgroup_local_index).unwrap();
                 {
                     if vec_width == 1 {
-                        writeln!(kernel, "let out_offset = batch_head_offset + seq_idx * {head_dim} + out_dim_base;").unwrap();
+                        // Use strided indexing for output tensor (supports non-contiguous tensors)
+                        write!(kernel, "let out_offset = ").unwrap();
+                        output_tensor.strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", "out_dim_base"]);
+                        writeln!(kernel, ";").unwrap();
                         writeln!(kernel, "{output_tensor}[out_offset] = acc / d;").unwrap();
                     } else {
                         writeln!(kernel, "let result = acc / d;").unwrap();
@@ -404,7 +416,11 @@ impl FlashAttentionOperation {
                                 _ => panic!("Unsupported vec component"),
                             };
                             writeln!(kernel, "if out_dim_base + {}u < {head_dim} {{", i).unwrap();
-                            writeln!(kernel, "    let out_offset = batch_head_offset + seq_idx * {head_dim} + out_dim_base + {}u;", i).unwrap();
+                            writeln!(kernel, "    let out_dim_i = out_dim_base + {}u;", i).unwrap();
+                            // Use strided indexing for output tensor (supports non-contiguous tensors)
+                            write!(kernel, "    let out_offset = ").unwrap();
+                            output_tensor.strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", "out_dim_i"]);
+                            writeln!(kernel, ";").unwrap();
                             writeln!(kernel, "    {output_tensor}[out_offset] = result.{};", component).unwrap();
                             writeln!(kernel, "}}").unwrap();
                         }
@@ -413,7 +429,10 @@ impl FlashAttentionOperation {
                 writeln!(kernel, "}}").unwrap();
             } else {
                 if vec_width == 1 {
-                    writeln!(kernel, "let out_offset = batch_head_offset + seq_idx * {head_dim} + out_dim_base;").unwrap();
+                    // Use strided indexing for output tensor (supports non-contiguous tensors)
+                    write!(kernel, "let out_offset = ").unwrap();
+                    output_tensor.strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", "out_dim_base"]);
+                    writeln!(kernel, ";").unwrap();
                     writeln!(kernel, "{output_tensor}[out_offset] = acc / d;").unwrap();
                 } else {
                     writeln!(kernel, "let result = acc / d;").unwrap();
@@ -426,7 +445,11 @@ impl FlashAttentionOperation {
                             _ => panic!("Unsupported vec component"),
                         };
                         writeln!(kernel, "if out_dim_base + {}u < {head_dim} {{", i).unwrap();
-                        writeln!(kernel, "    let out_offset = batch_head_offset + seq_idx * {head_dim} + out_dim_base + {}u;", i).unwrap();
+                        writeln!(kernel, "    let out_dim_i = out_dim_base + {}u;", i).unwrap();
+                        // Use strided indexing for output tensor (supports non-contiguous tensors)
+                        write!(kernel, "    let out_offset = ").unwrap();
+                        output_tensor.strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", "out_dim_i"]);
+                        writeln!(kernel, ";").unwrap();
                         writeln!(kernel, "    {output_tensor}[out_offset] = result.{};", component).unwrap();
                         writeln!(kernel, "}}").unwrap();
                     }
