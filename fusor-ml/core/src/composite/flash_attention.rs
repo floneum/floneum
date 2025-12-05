@@ -348,7 +348,7 @@ impl Operation for FlashAttentionOperation {
 
         // Dispatch per batch * heads * sequence * ceil(head_dim / outputs_per_workgroup)
         let head_dim = shape[3] as u32;
-        let num_dim_groups = (head_dim + outputs_per_workgroup - 1) / outputs_per_workgroup;
+        let num_dim_groups = head_dim.div_ceil(outputs_per_workgroup);
         let total_workgroups = (shape[0] * shape[1] * shape[2]) as u32 * num_dim_groups;
 
         [total_workgroups, 1, 1]
