@@ -85,10 +85,10 @@ impl FlashAttentionOperation {
         let output_tensor = kernel.add_tensor_input(4, true, out_datatype);
 
         // Dimensions
-        let batch_size = kernel.add_integer_input();
-        let num_heads = kernel.add_integer_input();
-        let seq_len = kernel.add_integer_input();
-        let head_dim = kernel.add_integer_input();
+        let batch_size = q_tensor.shape_binding(0);
+        let num_heads = q_tensor.shape_binding(1);
+        let seq_len = q_tensor.shape_binding(2);
+        let head_dim = q_tensor.shape_binding(3);
 
         // Workgroup indices
         let workgroup_index = workgroup_shape.linearized_workgroup_index(kernel);
@@ -369,10 +369,6 @@ impl Operation for FlashAttentionOperation {
             MirValue::Tensor(k_tensor.clone()),
             MirValue::Tensor(v_tensor.clone()),
             MirValue::Tensor(output_tensor.clone()),
-            MirValue::Integer(shape[0] as u32), // batch_size
-            MirValue::Integer(shape[1] as u32), // num_heads
-            MirValue::Integer(shape[2] as u32), // seq_len
-            MirValue::Integer(shape[3] as u32), // head_dim
         ]
     }
 
