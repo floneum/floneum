@@ -76,7 +76,7 @@ fn kernel(
         workgroup_shape: &WorkgroupShape,
         _blocksize: u32,
         kernel: &mut GenericKernel,
-        _device: &crate::Device,
+        device: &crate::Device,
     ) {
         let dtype = self.datatype;
         let out_datatype = self.out_datatype();
@@ -97,15 +97,44 @@ fn kernel(
         let workgroup_index = workgroup_shape.linearized_workgroup_index(kernel);
         let workgroup_local_index = kernel.workgroup_local_index();
         
-        // OPTIMIZATION 3: Simplified approach - one output element per thread with shared memory
+        // Check if subgroups are supported
+        let use_subgroups = device.subgroups_supported();
+        
+        // Optimized configuration - use 256 threads for better parallelization
+        let workgroup_size = workgroup_shape.x();
+        let threads_per_output = if workgroup_size >= 256 { 64u32 } else { workgroup_size / 4 };
+        let outputs_per_workgroup = workgroup_size / threads_per_output;
+        
+        // Block size for tiling
         let block_size = 256u32;
         
         // Shared memory for K and V tiles
         let shared_k_tile = kernel.add_global_array(KernelGlobalSpace::Workgroup, dtype, block_size.to_string());
         let shared_v_tile = kernel.add_global_array(KernelGlobalSpace::Workgroup, dtype, block_size.to_string());
         
-        // Each thread computes one output element
-        writeln!(kernel, "var global_idx = {};", workgroup_index).unwrap();
+        // Shared memory for partial results when using multiple threads per output
+        let shared_partial_m = if threads_per_output > 1 {
+            Some(kernel.add_global_array(KernelGlobalSpace::Workgroup, dtype, outputs_per_workgroup.to_string()))
+        } else {
+            None
+        };
+        let shared_partial_d = if threads_per_output > 1 {
+            Some(kernel.add_global_array(KernelGlobalSpace::Workgroup, dtype, outputs_per_workgroup.to_string()))
+        } else {
+            None
+        };
+        let shared_partial_acc = if threads_per_output > 1 {
+            Some(kernel.add_global_array(KernelGlobalSpace::Workgroup, dtype, outputs_per_workgroup.to_string()))
+        } else {
+            None
+        };
+        
+        // Calculate which output element this thread is working on
+        writeln!(kernel, "let local_output_id = {workgroup_local_index} / {threads_per_output}u;").unwrap();
+        writeln!(kernel, "let thread_in_output = {workgroup_local_index} % {threads_per_output}u;").unwrap();
+        
+        // Calculate global output index - each workgroup handles multiple outputs
+        writeln!(kernel, "var global_idx = {} * {outputs_per_workgroup}u + local_output_id;", workgroup_index).unwrap();
         writeln!(kernel, "let out_dim = global_idx % {head_dim};").unwrap();
         writeln!(kernel, "global_idx /= {head_dim};").unwrap();
         writeln!(kernel, "let seq_idx = global_idx % {seq_len};").unwrap();
@@ -118,7 +147,7 @@ fn kernel(
         writeln!(kernel, "let batch_head_offset = batch_idx * {num_heads} * {seq_len} * {head_dim} + head_idx * {seq_len} * {head_dim};").unwrap();
         writeln!(kernel, "let q_offset = batch_head_offset + seq_idx * {head_dim} + out_dim;").unwrap();
         
-        // Initialize online softmax
+        // Initialize online softmax variables
         writeln!(kernel, "var m = {};", min_for_dtype(dtype)).unwrap();
         writeln!(kernel, "var d = {dtype}(0.0);").unwrap();
         writeln!(kernel, "var acc = {dtype}(0.0);").unwrap();
@@ -130,7 +159,7 @@ fn kernel(
         
         // Load K and V tiles cooperatively
         writeln!(kernel, "    let local_idx = {workgroup_local_index};").unwrap();
-        writeln!(kernel, "    for (var i = local_idx; i < tile_size * {head_dim}; i += {block_size}) {{").unwrap();
+        writeln!(kernel, "    for (var i = local_idx; i < tile_size * {head_dim}; i += {workgroup_size}u) {{").unwrap();
         writeln!(kernel, "        let local_seq = i / {head_dim};").unwrap();
         writeln!(kernel, "        let local_dim = i % {head_dim};").unwrap();
         writeln!(kernel, "        if local_seq < tile_size && local_dim < {head_dim} {{").unwrap();
@@ -143,26 +172,107 @@ fn kernel(
         writeln!(kernel, "    }}").unwrap();
         writeln!(kernel, "    workgroupBarrier();").unwrap();
         
-        // Compute attention scores for this tile
+        // Get Q value once per tile
         writeln!(kernel, "    let q_val = {q_tensor}[q_offset];").unwrap();
-        writeln!(kernel, "    for (var i = 0u; i < tile_size; i += 1u) {{").unwrap();
-        writeln!(kernel, "        let k_shared_start = i * {head_dim};").unwrap();
-        writeln!(kernel, "        let v_shared_start = i * {head_dim};").unwrap();
-        writeln!(kernel, "        var score = q_val * {shared_k_tile}[k_shared_start + out_dim];").unwrap();
-        writeln!(kernel, "        score = score * {};", self.scale).unwrap();
         
-        // Online softmax update
-        writeln!(kernel, "        let original_m = m;").unwrap();
-        writeln!(kernel, "        m = max(m, score);").unwrap();
-        writeln!(kernel, "        d = d * exp(original_m - m) + exp(score - m);").unwrap();
-        writeln!(kernel, "        acc = acc * exp(original_m - m) + exp(score - m) * {shared_v_tile}[v_shared_start + out_dim];").unwrap();
-        writeln!(kernel, "    }}").unwrap();
-        
-        writeln!(kernel, "    workgroupBarrier();").unwrap();
+        if threads_per_output > 1 {
+            // Parallel computation: each thread processes a subset of the tile
+            writeln!(kernel, "    // Parallel attention computation").unwrap();
+            writeln!(kernel, "    let chunk_size = (tile_size + {threads_per_output}u - 1u) / {threads_per_output}u;").unwrap();
+            writeln!(kernel, "    let start_idx = thread_in_output * chunk_size;").unwrap();
+            writeln!(kernel, "    let end_idx = min(start_idx + chunk_size, tile_size);").unwrap();
+            
+            writeln!(kernel, "    var m_partial = {};", min_for_dtype(dtype)).unwrap();
+            writeln!(kernel, "    var d_partial = {dtype}(0.0);").unwrap();
+            writeln!(kernel, "    var acc_partial = {dtype}(0.0);").unwrap();
+            
+            writeln!(kernel, "    for (var i = start_idx; i < end_idx; i++) {{").unwrap();
+            writeln!(kernel, "        let k_shared_start = i * {head_dim};").unwrap();
+            writeln!(kernel, "        let v_shared_start = i * {head_dim};").unwrap();
+            writeln!(kernel, "        var score = q_val * {shared_k_tile}[k_shared_start + out_dim];").unwrap();
+            writeln!(kernel, "        score = score * {};", self.scale).unwrap();
+            
+            // Online softmax update for partial results
+            writeln!(kernel, "        let original_m = m_partial;").unwrap();
+            writeln!(kernel, "        m_partial = max(m_partial, score);").unwrap();
+            writeln!(kernel, "        d_partial = d_partial * exp(original_m - m_partial) + exp(score - m_partial);").unwrap();
+            writeln!(kernel, "        acc_partial = acc_partial * exp(original_m - m_partial) + exp(score - m_partial) * {shared_v_tile}[v_shared_start + out_dim];").unwrap();
+            writeln!(kernel, "    }}").unwrap();
+            
+            // Store partial results for reduction
+            if let (Some(shared_m), Some(shared_d), Some(shared_acc)) = (&shared_partial_m, &shared_partial_d, &shared_partial_acc) {
+                writeln!(kernel, "    // Store partial results").unwrap();
+                writeln!(kernel, "    if thread_in_output == 0u {{").unwrap();
+                writeln!(kernel, "        {}[local_output_id] = m_partial;", shared_m).unwrap();
+                writeln!(kernel, "        {}[local_output_id] = d_partial;", shared_d).unwrap();
+                writeln!(kernel, "        {}[local_output_id] = acc_partial;", shared_acc).unwrap();
+                writeln!(kernel, "    }}").unwrap();
+            }
+            
+            writeln!(kernel, "    workgroupBarrier();").unwrap();
+        } else {
+            // Sequential computation (original approach)
+            writeln!(kernel, "    // Sequential attention computation").unwrap();
+            writeln!(kernel, "    for (var i = 0u; i < tile_size; i += 1u) {{").unwrap();
+            writeln!(kernel, "        let k_shared_start = i * {head_dim};").unwrap();
+            writeln!(kernel, "        let v_shared_start = i * {head_dim};").unwrap();
+            writeln!(kernel, "        var score = q_val * {shared_k_tile}[k_shared_start + out_dim];").unwrap();
+            writeln!(kernel, "        score = score * {};", self.scale).unwrap();
+            
+            // Online softmax update
+            writeln!(kernel, "        let original_m = m;").unwrap();
+            writeln!(kernel, "        m = max(m, score);").unwrap();
+            writeln!(kernel, "        d = d * exp(original_m - m) + exp(score - m);").unwrap();
+            writeln!(kernel, "        acc = acc * exp(original_m - m) + exp(score - m) * {shared_v_tile}[v_shared_start + out_dim];").unwrap();
+            writeln!(kernel, "    }}").unwrap();
+            
+            writeln!(kernel, "    workgroupBarrier();").unwrap();
+        }
         writeln!(kernel, "}}").unwrap();
         
-        // Write final output
-        writeln!(kernel, "{output_tensor}[q_offset] = acc / d;").unwrap();
+        // Final reduction and output
+        if threads_per_output > 1 {
+            if let (Some(shared_m), Some(shared_d), Some(shared_acc)) = (&shared_partial_m, &shared_partial_d, &shared_partial_acc) {
+                writeln!(kernel, "// Final reduction").unwrap();
+                
+                if use_subgroups {
+                    // Use subgroup operations for reduction
+                    let subgroup_local_index = kernel.subgroup_local_index();
+                    let subgroup_size = kernel.subgroup_size();
+                    
+                    writeln!(kernel, "if local_output_id == 0u {{").unwrap();
+                    writeln!(kernel, "    var m_final = {dtype}({}[0]);", shared_m).unwrap();
+                    writeln!(kernel, "    var d_final = {dtype}({}[0]);", shared_d).unwrap();
+                    writeln!(kernel, "    var acc_final = {dtype}({}[0]);", shared_acc).unwrap();
+                    
+                    // Subgroup reduction
+                    writeln!(kernel, "    var offset = {} / 2u;", subgroup_size).unwrap();
+                    writeln!(kernel, "    while (offset > 0u) {{").unwrap();
+                    writeln!(kernel, "        let m_peer = subgroupShuffleDown(m_final, offset);").unwrap();
+                    writeln!(kernel, "        let d_peer = subgroupShuffleDown(d_final, offset);").unwrap();
+                    writeln!(kernel, "        let acc_peer = subgroupShuffleDown(acc_final, offset);").unwrap();
+                    writeln!(kernel, "        let original_m = m_final;").unwrap();
+                    writeln!(kernel, "        m_final = max(m_final, m_peer);").unwrap();
+                    writeln!(kernel, "        d_final = d_final * exp(original_m - m_final) + d_peer * exp(m_peer - m_final);").unwrap();
+                    writeln!(kernel, "        acc_final = acc_final * exp(original_m - m_final) + acc_peer * exp(m_peer - m_final);").unwrap();
+                    writeln!(kernel, "        offset /= 2u;").unwrap();
+                    writeln!(kernel, "    }}").unwrap();
+                    
+                    writeln!(kernel, "    if {} == 0u {{", subgroup_local_index).unwrap();
+                    writeln!(kernel, "        {output_tensor}[q_offset] = acc_final / d_final;").unwrap();
+                    writeln!(kernel, "    }}").unwrap();
+                    writeln!(kernel, "}}").unwrap();
+                } else {
+                    // Simple reduction using thread 0
+                    writeln!(kernel, "if local_output_id == 0u && thread_in_output == 0u {{").unwrap();
+                    writeln!(kernel, "    {output_tensor}[q_offset] = {dtype}({}[0]) / {dtype}({}[0]);", shared_acc, shared_d).unwrap();
+                    writeln!(kernel, "}}").unwrap();
+                }
+            }
+        } else {
+            // Write final output for sequential case
+            writeln!(kernel, "{output_tensor}[q_offset] = acc / d;").unwrap();
+        }
     }
     
     
