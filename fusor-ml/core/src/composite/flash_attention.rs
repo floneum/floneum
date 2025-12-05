@@ -263,23 +263,22 @@ impl FlashAttentionOperation {
                 writeln!(kernel, "var d_reduced = d_partial;").unwrap();
                 writeln!(kernel, "var acc_reduced = acc_partial;").unwrap();
 
-                writeln!(kernel, "for (var offset = {threads_per_output}u / 2u; offset > 0u; offset /= 2u) {{").unwrap();
-                {
-                    writeln!(kernel, "let m_peer = subgroupShuffleDown(m_reduced, offset);").unwrap();
-                    writeln!(kernel, "let d_peer = subgroupShuffleDown(d_reduced, offset);").unwrap();
-                    writeln!(
-                        kernel,
-                        "let acc_peer = subgroupShuffleDown(acc_reduced, offset);"
-                    )
-                    .unwrap();
-                    writeln!(kernel, "let original_m = m_reduced;").unwrap();
-                    writeln!(kernel, "m_reduced = max(m_reduced, m_peer);").unwrap();
-                    writeln!(kernel, "let exp_original_m_diff = exp(original_m - m_reduced);").unwrap();
-                    writeln!(kernel, "let exp_m_peer_diff = exp(m_peer - m_reduced);").unwrap();
-                    writeln!(kernel, "d_reduced = d_reduced * exp_original_m_diff + d_peer * exp_m_peer_diff;").unwrap();
-                    writeln!(kernel, "acc_reduced = acc_reduced * exp_original_m_diff + acc_peer * exp_m_peer_diff;").unwrap();
+                // Unrolled subgroup reduction - threads_per_output is a compile-time constant
+                let mut offset = threads_per_output;
+                while offset > 1 {
+                    offset /= 2;
+                    writeln!(kernel, "{{").unwrap();
+                    writeln!(kernel, "    let m_peer = subgroupShuffleDown(m_reduced, {offset}u);").unwrap();
+                    writeln!(kernel, "    let d_peer = subgroupShuffleDown(d_reduced, {offset}u);").unwrap();
+                    writeln!(kernel, "    let acc_peer = subgroupShuffleDown(acc_reduced, {offset}u);").unwrap();
+                    writeln!(kernel, "    let original_m = m_reduced;").unwrap();
+                    writeln!(kernel, "    m_reduced = max(m_reduced, m_peer);").unwrap();
+                    writeln!(kernel, "    let exp_original_m_diff = exp(original_m - m_reduced);").unwrap();
+                    writeln!(kernel, "    let exp_m_peer_diff = exp(m_peer - m_reduced);").unwrap();
+                    writeln!(kernel, "    d_reduced = d_reduced * exp_original_m_diff + d_peer * exp_m_peer_diff;").unwrap();
+                    writeln!(kernel, "    acc_reduced = acc_reduced * exp_original_m_diff + acc_peer * exp_m_peer_diff;").unwrap();
+                    writeln!(kernel, "}}").unwrap();
                 }
-                writeln!(kernel, "}}").unwrap();
 
                 // Merge into global state
                 writeln!(kernel, "let original_m = m;").unwrap();
