@@ -2,6 +2,7 @@ mod arange;
 mod cat;
 mod chunk;
 mod conv;
+mod flash_attention;
 mod gelu;
 mod index;
 mod mean;

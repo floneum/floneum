@@ -91,3 +91,7 @@ harness = false
 [[bench]]
 name = "attention"
 harness = false
+
+[[bench]]
+name = "flash_attention"
+harness = false
