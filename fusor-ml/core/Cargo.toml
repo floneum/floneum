@@ -89,9 +89,5 @@ name = "rope"
 harness = false
 
 [[bench]]
-name = "attention"
-harness = false
-
-[[bench]]
-name = "flash_attention"
+name = "attention_comparison"
 harness = false
