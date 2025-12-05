@@ -239,12 +239,14 @@ impl FlashAttentionOperation {
                 // Online softmax update for partial results
                 writeln!(kernel, "let original_m = m_partial;").unwrap();
                 writeln!(kernel, "m_partial = max(m_partial, score);").unwrap();
+                writeln!(kernel, "let exp_original_m_diff = exp(original_m - m_partial);").unwrap();
+                writeln!(kernel, "let exp_score_diff = exp(score - m_partial);").unwrap();
                 writeln!(
                     kernel,
-                    "d_partial = d_partial * exp(original_m - m_partial) + exp(score - m_partial);"
+                    "d_partial = d_partial * exp_original_m_diff + exp_score_diff;"
                 )
                 .unwrap();
-                writeln!(kernel, "acc_partial = acc_partial * exp(original_m - m_partial) + exp(score - m_partial) * {shared_v_tile}[v_shared_start + out_dim];").unwrap();
+                writeln!(kernel, "acc_partial = acc_partial * exp_original_m_diff + exp_score_diff * {shared_v_tile}[v_shared_start + out_dim];").unwrap();
             }
             writeln!(kernel, "}}").unwrap();
 
@@ -288,8 +290,10 @@ impl FlashAttentionOperation {
                     .unwrap();
                     writeln!(kernel, "let original_m = m_final;").unwrap();
                     writeln!(kernel, "m_final = max(m_final, m_peer);").unwrap();
-                    writeln!(kernel, "d_final = d_final * exp(original_m - m_final) + d_peer * exp(m_peer - m_final);").unwrap();
-                    writeln!(kernel, "acc_final = acc_final * exp(original_m - m_final) + acc_peer * exp(m_peer - m_final);").unwrap();
+                    writeln!(kernel, "let exp_original_m_diff = exp(original_m - m_final);").unwrap();
+                    writeln!(kernel, "let exp_m_peer_diff = exp(m_peer - m_final);").unwrap();
+                    writeln!(kernel, "d_final = d_final * exp_original_m_diff + d_peer * exp_m_peer_diff;").unwrap();
+                    writeln!(kernel, "acc_final = acc_final * exp_original_m_diff + acc_peer * exp_m_peer_diff;").unwrap();
                     writeln!(kernel, "offset /= 2u;").unwrap();
                 }
                 writeln!(kernel, "}}").unwrap();
