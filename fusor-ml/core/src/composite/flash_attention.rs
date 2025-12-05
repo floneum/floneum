@@ -115,23 +115,6 @@ impl FlashAttentionOperation {
         let shared_v_tile =
             kernel.add_global_array(KernelGlobalSpace::Workgroup, dtype, block_size.to_string());
 
-        // Shared memory for partial results when using multiple threads per output
-        let shared_partial_m = kernel.add_global_array(
-            KernelGlobalSpace::Workgroup,
-            dtype,
-            outputs_per_workgroup.to_string(),
-        );
-        let shared_partial_d = kernel.add_global_array(
-            KernelGlobalSpace::Workgroup,
-            dtype,
-            outputs_per_workgroup.to_string(),
-        );
-        let shared_partial_acc = kernel.add_global_array(
-            KernelGlobalSpace::Workgroup,
-            dtype,
-            outputs_per_workgroup.to_string(),
-        );
-
         // Calculate which output element this thread is working on
         writeln!(
             kernel,
@@ -202,11 +185,7 @@ impl FlashAttentionOperation {
                 )
                 .unwrap();
                 {
-                    writeln!(
-                        kernel,
-                        "let global_seq = tile_start + local_seq;"
-                    )
-                    .unwrap();
+                    writeln!(kernel, "let global_seq = tile_start + local_seq;").unwrap();
                     writeln!(
                         kernel,
                         "let kv_offset = batch_head_offset + global_seq * {head_dim} + local_dim;"
@@ -281,14 +260,8 @@ impl FlashAttentionOperation {
             writeln!(kernel, "// Store partial results").unwrap();
             writeln!(kernel, "if thread_in_output == 0u {{").unwrap();
             {
-                writeln!(kernel, "{}[local_output_id] = m_partial;", shared_partial_m).unwrap();
-                writeln!(kernel, "{}[local_output_id] = d_partial;", shared_partial_d).unwrap();
-                writeln!(
-                    kernel,
-                    "{}[local_output_id] = acc_partial;",
-                    shared_partial_acc
-                )
-                .unwrap();
+                writeln!(kernel, "d = d_partial;").unwrap();
+                writeln!(kernel, "acc = acc_partial;").unwrap();
             }
             writeln!(kernel, "}}").unwrap();
 
@@ -306,24 +279,16 @@ impl FlashAttentionOperation {
 
             writeln!(kernel, "if local_output_id == 0u {{").unwrap();
             {
-                writeln!(kernel, "var m_final = {dtype}({}[0]);", shared_partial_m).unwrap();
-                writeln!(kernel, "var d_final = {dtype}({}[0]);", shared_partial_d).unwrap();
-                writeln!(kernel, "var acc_final = {dtype}({}[0]);", shared_partial_acc).unwrap();
+                writeln!(kernel, "var m_final = m;").unwrap();
+                writeln!(kernel, "var d_final = d;").unwrap();
+                writeln!(kernel, "var acc_final = acc;").unwrap();
 
                 // Subgroup reduction
                 writeln!(kernel, "var offset = {} / 2u;", subgroup_size).unwrap();
                 writeln!(kernel, "while (offset > 0u) {{").unwrap();
                 {
-                    writeln!(
-                        kernel,
-                        "let m_peer = subgroupShuffleDown(m_final, offset);"
-                    )
-                    .unwrap();
-                    writeln!(
-                        kernel,
-                        "let d_peer = subgroupShuffleDown(d_final, offset);"
-                    )
-                    .unwrap();
+                    writeln!(kernel, "let m_peer = subgroupShuffleDown(m_final, offset);").unwrap();
+                    writeln!(kernel, "let d_peer = subgroupShuffleDown(d_final, offset);").unwrap();
                     writeln!(
                         kernel,
                         "let acc_peer = subgroupShuffleDown(acc_final, offset);"
@@ -339,11 +304,7 @@ impl FlashAttentionOperation {
 
                 writeln!(kernel, "if {} == 0u {{", subgroup_local_index).unwrap();
                 {
-                    writeln!(
-                        kernel,
-                        "{output_tensor}[q_offset] = acc_final / d_final;"
-                    )
-                    .unwrap();
+                    writeln!(kernel, "{output_tensor}[q_offset] = acc_final / d_final;").unwrap();
                 }
                 writeln!(kernel, "}}").unwrap();
             }
@@ -356,12 +317,7 @@ impl FlashAttentionOperation {
             )
             .unwrap();
             {
-                writeln!(
-                    kernel,
-                    "{output_tensor}[q_offset] = {dtype}({}[0]) / {dtype}({}[0]);",
-                    shared_partial_acc, shared_partial_d
-                )
-                .unwrap();
+                writeln!(kernel, "{output_tensor}[q_offset] = acc / d;").unwrap();
             }
             writeln!(kernel, "}}").unwrap();
         }
