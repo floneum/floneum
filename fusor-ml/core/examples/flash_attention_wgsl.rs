@@ -5,9 +5,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let device = Device::new().await?;
 
     // Simple test case - 4D tensors [batch, heads, seq, dim]
-    let q_data = [vec![vec![vec![1.0f32; 64]; 128]; 8]]; // [1, 8, 128, 64]
-    let k_data = [vec![vec![vec![1.0f32; 64]; 128]; 8]]; // [1, 8, 128, 64]
-    let v_data = [vec![vec![vec![1.0f32; 64]; 128]; 8]]; // [1, 8, 128, 64]
+    let q_data = [vec![vec![vec![1.0f32; 64]; 1]; 8]]; // [1, 8, 128, 64]
+    let k_data = [vec![vec![vec![1.0f32; 64]; 1]; 8]]; // [1, 8, 128, 64]
+    let v_data = [vec![vec![vec![1.0f32; 64]; 1]; 8]]; // [1, 8, 128, 64]
 
     let q = Tensor::new(&device, &q_data);
     let k = Tensor::new(&device, &k_data);

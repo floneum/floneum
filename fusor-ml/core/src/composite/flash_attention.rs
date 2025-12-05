@@ -53,7 +53,7 @@ impl FlashAttentionOperation {
         scale: f32,
     ) -> Self {
         // Use vec4 for vectorization (4 values per subgroup)
-        let vec_width = 4;
+        let vec_width = 1;
         Self {
             q,
             k,
