@@ -352,15 +352,21 @@ pub(crate) fn forward_attention_qkv(
 ) -> Tensor<3, f32> {
     let scale = 1. / (head_dim as f64).sqrt();
     let attn_output = {
-        let mut attn_weights = query_states.mat_mul(&key_states.t()) * scale as f32;
+        // let mut attn_weights = query_states.mat_mul(&key_states.t()) * scale as f32;
 
-        if let Some(attention_mask) = attention_mask {
-            attention_mask.forward(&mut attn_weights);
-        }
+        // if let Some(attention_mask) = attention_mask {
+        //     attention_mask.forward(&mut attn_weights);
+        // }
 
-        attn_weights = attn_weights.softmax_last_dim();
+        // attn_weights = attn_weights.softmax_last_dim();
 
-        attn_weights.mat_mul(value_states)
+        // attn_weights.mat_mul(value_states)
+        query_states.flash_attention(
+            key_states,
+            value_states,
+            scale as f32,
+            attention_mask.map(|m| m.mask()),
+        )
     };
 
     let attn_output = attn_output.transpose(1, 2);

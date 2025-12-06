@@ -19,7 +19,7 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
     ///   - k: Key tensor of same shape as self
     ///   - v: Value tensor of same shape as self
     ///   - scale: Scale factor (typically 1/sqrt(head_dim))
-    pub fn flash_attention<const R2: usize>(&self, k: &Self, v: &Self, scale: f32) -> Self
+    pub fn flash_attention<const R2: usize>(&self, k: &Self, v: &Self, scale: f32, mask: Option<&Tensor<2, T>>) -> Self
     where
         Tensor<R, T>: LastRank<R2, T>,
         T: crate::FloatDataType,
@@ -28,41 +28,7 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
             self.key(),
             k.key(),
             v.key(),
-            None,
-            self.datatype(),
-            self.shape(),
-            scale,
-        );
-        let data = self.data();
-
-        Self::from_parts(data.custom(Arc::new(operation)))
-    }
-
-    /// Computes flash attention with an attention mask.
-    /// 
-    /// Args:
-    ///   - k: Key tensor of same shape as self
-    ///   - v: Value tensor of same shape as self  
-    ///   - mask: Attention mask tensor of shape [seq_len, seq_len]. Values are added to
-    ///           attention scores before softmax. Use 0 for positions to attend to and
-    ///           -inf (or large negative) for positions to mask out.
-    ///   - scale: Scale factor (typically 1/sqrt(head_dim))
-    pub fn flash_attention_masked<const R2: usize>(
-        &self,
-        k: &Self,
-        v: &Self,
-        mask: &Tensor<2, T>,
-        scale: f32,
-    ) -> Self
-    where
-        Tensor<R, T>: LastRank<R2, T>,
-        T: crate::FloatDataType,
-    {
-        let operation = FlashAttentionOperation::new(
-            self.key(),
-            k.key(),
-            v.key(),
-            Some(mask.key()),
+            mask.map(|m| m.key()),
             self.datatype(),
             self.shape(),
             scale,
@@ -358,7 +324,7 @@ async fn test_flash_attention() {
     let scale = 1.0 / (2.0_f32.sqrt());
 
     // Test flash attention
-    let output = q.flash_attention(&k, &v, scale);
+    let output = q.flash_attention(&k, &v, scale, None);
     let result = output.as_slice().await.unwrap();
 
     // Compare with standard attention (non-fused implementation)
@@ -410,7 +376,7 @@ async fn test_flash_attention_causal_mask() {
     let scale = 1.0 / (2.0_f32.sqrt());
 
     // Test flash attention with causal mask
-    let output = q.flash_attention_masked(&k, &v, &causal_mask, scale);
+    let output = q.flash_attention_masked(&k, &v, scale, Some(&causal_mask));
     let result = output.as_slice().await.unwrap();
 
     // Compare with standard masked attention (non-fused implementation)
