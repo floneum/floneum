@@ -187,15 +187,16 @@ impl<C: Connection> HybridSearchSetupExt<C> for Surreal<C> {
         table_name: &str,
         field_name: &str,
     ) -> Result<(), HybridSearchError> {
-        let index_name = format!("{}_fulltext_idx", table_name);
+        let index_name = format!("{}_index", table_name);
 
-        // First define the analyzer (if not already defined)
-        let analyzer_query = "DEFINE ANALYZER simple TOKENIZERS blank,class FILTERS lowercase";
+        // First define the analyzer
+        let analyzer_query =
+            "DEFINE ANALYZER simple TOKENIZERS class,blank FILTERS lowercase, ascii;";
         self.query(analyzer_query).await?;
 
         // Then define the search index using BM25
         let index_query = format!(
-            "DEFINE INDEX {} ON TABLE {} FIELDS {} SEARCH ANALYZER simple BM25",
+            "DEFINE INDEX {} ON TABLE {} FIELDS {} SEARCH ANALYZER simple BM25;",
             index_name, table_name, field_name
         );
 
@@ -444,7 +445,7 @@ pub struct HybridSearchResult<Doc> {
 
 pub struct HybridSearchBuilder<'a, Conn: Connection, Doc, Model: Embedder, Chkr: Chunker> {
     table: &'a DocumentTable<Conn, Doc, Model, Chkr>,
-    query: String,
+    user_query: String,
     results: usize,
     semantic_weight: f32,
     keyword_weight: f32,
@@ -467,7 +468,7 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
     ) -> Self {
         Self {
             table,
-            query: query.into(),
+            user_query: query.into(),
             results: 10,
             semantic_weight: 0.7,
             keyword_weight: 0.3,
@@ -502,25 +503,38 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
         // Perform semantic search
         let semantic_results = self
             .table
-            .search(self.query.clone())
-            .with_results(self.results * 2)
+            .search(self.user_query.clone())
+            .with_results(self.results)
             .run()
             .await?;
 
         // Perform keyword search using SurrealDB full-text search
         let keyword_query = format!(
-            "SELECT *, search::score(1) AS keyword_score FROM {} WHERE {} @@ $query ORDER BY keyword_score DESC LIMIT $limit",
-            self.table.table().table(),
+            r#"
+                SELECT
+                    type::field($field),
+                    search::score(0) as keyword_score
+                FROM type::table($table)
+                WHERE
+                    {} @0@ $user_query
+                ORDER BY
+                    keyword_score DESC
+                LIMIT
+                    $limit;
+            "#,
             self.field_name
         );
 
+        let table_name = self.table.table().table();
         let keyword_results: Vec<KeywordResult<R>> = self
             .table
             .table()
             .db()
             .query(keyword_query)
-            .bind(("query", self.query.clone()))
-            .bind(("limit", self.results * 2))
+            .bind(("field", self.field_name))
+            .bind(("table", table_name.to_string()))
+            .bind(("user_query", self.user_query.clone()))
+            .bind(("limit", self.results))
             .await?
             .take(0)
             .map_err(|e| HybridSearchError::KeywordSearchError(e.to_string()))?;
@@ -593,25 +607,39 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
         // Perform semantic search
         let semantic_results = self
             .table
-            .search(self.query.clone())
+            .search(self.user_query.clone())
             .with_results(self.results * 2)
             .run()
             .await?;
 
         // Perform keyword search
+        // Perform keyword search using SurrealDB full-text search
         let keyword_query = format!(
-            "SELECT *, search::score(1) AS keyword_score FROM {} WHERE {} @@ $query ORDER BY keyword_score DESC LIMIT $limit",
-            self.table.table().table(),
+            r#"
+                SELECT
+                    type::field($field),
+                    search::score(0) as keyword_score
+                FROM type::table($table)
+                WHERE
+                    {} @0@ $user_query
+                ORDER BY
+                    keyword_score DESC
+                LIMIT
+                    $limit;
+            "#,
             self.field_name
         );
 
+        let table_name = self.table.table().table();
         let keyword_results: Vec<KeywordResult<R>> = self
             .table
             .table()
             .db()
             .query(keyword_query)
-            .bind(("query", self.query.clone()))
-            .bind(("limit", self.results * 2))
+            .bind(("field", self.field_name))
+            .bind(("table", table_name.to_string()))
+            .bind(("user_query", self.user_query.clone()))
+            .bind(("limit", self.results))
             .await?
             .take(0)
             .map_err(|e| HybridSearchError::KeywordSearchError(e.to_string()))?;

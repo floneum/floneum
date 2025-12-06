@@ -52,7 +52,7 @@ version = "1.0.163"
 features = ["derive"]
 
 [dependencies.surrealdb]
-version = "2.1.4"
+version = "2.4.0"
 optional = true
 
 [dependencies.heed]
@@ -67,7 +67,7 @@ optional = true
 axum = "0.7.2"
 scraper = "0.19.0"
 tracing-subscriber = "0.2"
-surrealdb = { version = "2.1.4", features = ["kv-mem", "kv-surrealkv"] }
+surrealdb = { version = "2.4.0", features = ["kv-mem", "kv-surrealkv"] }
 anyhow.workspace = true
 image.workspace = true
 tokio = { version = "1", features = ["full"] }
