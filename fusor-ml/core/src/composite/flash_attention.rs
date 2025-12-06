@@ -46,6 +46,7 @@ struct FlashAttentionOperation {
     pub(crate) v: NodeIndex,
     pub(crate) mask: Option<NodeIndex>,
     pub(crate) datatype: DataTypeEnum,
+    pub(crate) head_dim: usize,
     pub(crate) scale: f32,
 }
 
@@ -56,7 +57,7 @@ impl FlashAttentionOperation {
         v: NodeIndex,
         mask: Option<NodeIndex>,
         datatype: DataTypeEnum,
-        _shape: &[usize],
+        shape: &[usize],
         scale: f32,
     ) -> Self {
         Self {
@@ -65,6 +66,7 @@ impl FlashAttentionOperation {
             v,
             mask,
             datatype,
+            head_dim: shape[3],
             scale,
         }
     }
@@ -78,7 +80,7 @@ impl FlashAttentionOperation {
         workgroup_shape: &WorkgroupShape,
         _blocksize: u32,
         kernel: &mut GenericKernel,
-        _device: &crate::Device,
+        device: &crate::Device,
     ) {
         let dtype = self.datatype;
         let out_datatype = self.out_datatype();
@@ -107,117 +109,305 @@ impl FlashAttentionOperation {
 
         let workgroup_size = workgroup_shape.x();
 
-        // Each thread computes one output element [batch, head, seq, dim]
-        // Note: workgroup_index is wrapped in parentheses to ensure correct operator precedence
-        writeln!(
-            kernel,
-            "let global_thread_id = ({}) * {workgroup_size}u + {};",
-            workgroup_index, workgroup_local_index
-        )
-        .unwrap();
+        // Subgroup-based implementation: each subgroup computes one output row [batch, head, seq, :]
+        // Threads within the subgroup cooperatively compute Q·K and load V
+        if device.subgroups_supported() {
+            let subgroup_size = kernel.subgroup_size();
+            let subgroup_local_id = kernel.subgroup_local_index();
 
-        // Calculate output indices from global thread id
-        writeln!(kernel, "var idx = global_thread_id;").unwrap();
-        writeln!(kernel, "let out_dim = idx % {head_dim};").unwrap();
-        writeln!(kernel, "idx /= {head_dim};").unwrap();
-        writeln!(kernel, "let seq_idx = idx % {seq_len};").unwrap();
-        writeln!(kernel, "idx /= {seq_len};").unwrap();
-        writeln!(kernel, "let head_idx = idx % {num_heads};").unwrap();
-        writeln!(kernel, "idx /= {num_heads};").unwrap();
-        writeln!(kernel, "let batch_idx = idx;").unwrap();
-
-        // Early exit if we're beyond valid elements
-        writeln!(
-            kernel,
-            "let total_elements = {batch_size} * {num_heads} * {seq_len} * {head_dim};"
-        )
-        .unwrap();
-        writeln!(kernel, "if global_thread_id >= total_elements {{").unwrap();
-        {
-            writeln!(kernel, "return;").unwrap();
-        }
-        writeln!(kernel, "}}").unwrap();
-
-        // Initialize online softmax variables
-        writeln!(kernel, "var m = {};", min_for_dtype(dtype)).unwrap();
-        writeln!(kernel, "var d = {dtype}(0.0);").unwrap();
-        writeln!(kernel, "var acc = {dtype}(0.0);").unwrap();
-
-        // Process all sequence positions for attention
-        writeln!(
-            kernel,
-            "for (var k_seq = 0u; k_seq < {seq_len}; k_seq++) {{"
-        )
-        .unwrap();
-        {
-            // Compute attention score as full dot product over all head dimensions
-            writeln!(kernel, "var score = {dtype}(0.0);").unwrap();
+            // Each workgroup handles one position [batch, head, seq]
+            // workgroup_index directly maps to the position
             writeln!(
                 kernel,
-                "for (var d_idx = 0u; d_idx < {head_dim}; d_idx++) {{"
+                "let global_position_id = {};",
+                workgroup_index
+            )
+            .unwrap();
+
+            // Calculate batch, head, seq indices from global_position_id
+            writeln!(kernel, "var pos_idx = global_position_id;").unwrap();
+            writeln!(kernel, "let seq_idx = pos_idx % {seq_len};").unwrap();
+            writeln!(kernel, "pos_idx /= {seq_len};").unwrap();
+            writeln!(kernel, "let head_idx = pos_idx % {num_heads};").unwrap();
+            writeln!(kernel, "pos_idx /= {num_heads};").unwrap();
+            writeln!(kernel, "let batch_idx = pos_idx;").unwrap();
+
+            // Early exit if beyond valid positions
+            writeln!(
+                kernel,
+                "let total_positions = {batch_size} * {num_heads} * {seq_len};"
+            )
+            .unwrap();
+            writeln!(kernel, "if global_position_id >= total_positions {{").unwrap();
+            writeln!(kernel, "return;").unwrap();
+            writeln!(kernel, "}}").unwrap();
+
+            // Each thread handles ceil(head_dim / subgroup_size) dimensions
+            writeln!(
+                kernel,
+                "let dims_per_thread = ({head_dim} + {subgroup_size} - 1u) / {subgroup_size};"
+            )
+            .unwrap();
+
+            // Initialize online softmax variables for each dimension this thread handles
+            // We use arrays to handle multiple dimensions per thread
+            // Max dims per thread = ceil(head_dim / min_subgroup_size)
+            let min_subgroup_size = device.limits().min_subgroup_size as usize;
+            let max_dims_per_thread = self.head_dim.div_ceil(min_subgroup_size);
+            writeln!(kernel, "var m_arr: array<{dtype}, {max_dims_per_thread}>;").unwrap();
+            writeln!(kernel, "var d_arr: array<{dtype}, {max_dims_per_thread}>;").unwrap();
+            writeln!(kernel, "var acc_arr: array<{dtype}, {max_dims_per_thread}>;").unwrap();
+            writeln!(kernel, "for (var i = 0u; i < {max_dims_per_thread}u; i++) {{").unwrap();
+            writeln!(kernel, "m_arr[i] = {};", min_for_dtype(dtype)).unwrap();
+            writeln!(kernel, "d_arr[i] = {dtype}(0.0);").unwrap();
+            writeln!(kernel, "acc_arr[i] = {dtype}(0.0);").unwrap();
+            writeln!(kernel, "}}").unwrap();
+
+            // Process all sequence positions for attention
+            writeln!(
+                kernel,
+                "for (var k_seq = 0u; k_seq < {seq_len}; k_seq++) {{"
             )
             .unwrap();
             {
-                // Load Q value
-                write!(kernel, "let q_idx = ").unwrap();
-                q_tensor.strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", "d_idx"]);
-                writeln!(kernel, ";").unwrap();
-                writeln!(kernel, "let q_val = {q_tensor}[q_idx];").unwrap();
+                // COOPERATIVE Q·K COMPUTATION
+                // Each thread computes partial dot product for dimensions it owns
+                writeln!(kernel, "var score_partial = {dtype}(0.0);").unwrap();
+                writeln!(kernel, "for (var d = 0u; d < dims_per_thread; d++) {{").unwrap();
+                {
+                    writeln!(
+                        kernel,
+                        "let d_idx = {} + d * {subgroup_size};",
+                        subgroup_local_id
+                    )
+                    .unwrap();
+                    writeln!(kernel, "if d_idx < {head_dim} {{").unwrap();
+                    {
+                        // Load Q value
+                        write!(kernel, "let q_idx = ").unwrap();
+                        q_tensor.strided_index(
+                            kernel,
+                            ["batch_idx", "head_idx", "seq_idx", "d_idx"],
+                        );
+                        writeln!(kernel, ";").unwrap();
+                        writeln!(kernel, "let q_val = {q_tensor}[q_idx];").unwrap();
 
-                // Load K value
-                write!(kernel, "let k_idx = ").unwrap();
-                k_tensor.strided_index(kernel, ["batch_idx", "head_idx", "k_seq", "d_idx"]);
-                writeln!(kernel, ";").unwrap();
-                writeln!(kernel, "let k_val = {k_tensor}[k_idx];").unwrap();
+                        // Load K value (cooperative loading - each thread loads different K elements)
+                        write!(kernel, "let k_idx = ").unwrap();
+                        k_tensor.strided_index(kernel, ["batch_idx", "head_idx", "k_seq", "d_idx"]);
+                        writeln!(kernel, ";").unwrap();
+                        writeln!(kernel, "let k_val = {k_tensor}[k_idx];").unwrap();
 
-                writeln!(kernel, "score += q_val * k_val;").unwrap();
+                        writeln!(kernel, "score_partial += q_val * k_val;").unwrap();
+                    }
+                    writeln!(kernel, "}}").unwrap();
+                }
+                writeln!(kernel, "}}").unwrap();
+
+                // Reduce across subgroup to get the full attention score
+                writeln!(kernel, "let score = subgroupAdd(score_partial) * {};", self.scale).unwrap();
+
+                // Apply attention mask if provided (same score for all threads in subgroup)
+                if let Some(mask) = &mask_tensor {
+                    write!(kernel, "let mask_idx = ").unwrap();
+                    mask.strided_index(kernel, ["seq_idx", "k_seq"]);
+                    writeln!(kernel, ";").unwrap();
+                    writeln!(kernel, "let masked_score = score + {mask}[mask_idx];").unwrap();
+                } else {
+                    writeln!(kernel, "let masked_score = score;").unwrap();
+                }
+
+                // COOPERATIVE V LOADING & ONLINE SOFTMAX UPDATE
+                // Each thread loads V values for its dimensions and updates accumulators
+                writeln!(kernel, "for (var d = 0u; d < dims_per_thread; d++) {{").unwrap();
+                {
+                    writeln!(
+                        kernel,
+                        "let out_dim = {} + d * {subgroup_size};",
+                        subgroup_local_id
+                    )
+                    .unwrap();
+                    writeln!(kernel, "if out_dim < {head_dim} {{").unwrap();
+                    {
+                        // Load V value for this dimension
+                        write!(kernel, "let v_idx = ").unwrap();
+                        v_tensor.strided_index(
+                            kernel,
+                            ["batch_idx", "head_idx", "k_seq", "out_dim"],
+                        );
+                        writeln!(kernel, ";").unwrap();
+                        writeln!(kernel, "let v_val = {v_tensor}[v_idx];").unwrap();
+
+                        // Online softmax update for this dimension
+                        writeln!(kernel, "let old_m = m_arr[d];").unwrap();
+                        writeln!(kernel, "m_arr[d] = max(m_arr[d], masked_score);").unwrap();
+                        writeln!(kernel, "let exp_old_m_diff = exp(old_m - m_arr[d]);").unwrap();
+                        writeln!(
+                            kernel,
+                            "let exp_score_diff = exp(masked_score - m_arr[d]);"
+                        )
+                        .unwrap();
+                        writeln!(kernel, "d_arr[d] = d_arr[d] * exp_old_m_diff + exp_score_diff;")
+                            .unwrap();
+                        writeln!(
+                            kernel,
+                            "acc_arr[d] = acc_arr[d] * exp_old_m_diff + exp_score_diff * v_val;"
+                        )
+                        .unwrap();
+                    }
+                    writeln!(kernel, "}}").unwrap();
+                }
+                writeln!(kernel, "}}").unwrap();
             }
             writeln!(kernel, "}}").unwrap();
-            writeln!(kernel, "score *= {};", self.scale).unwrap();
 
-            // Apply attention mask if provided
-            if let Some(mask) = &mask_tensor {
-                write!(kernel, "let mask_idx = ").unwrap();
-                mask.strided_index(kernel, ["seq_idx", "k_seq"]);
-                writeln!(kernel, ";").unwrap();
-                writeln!(kernel, "score = score + {mask}[mask_idx];").unwrap();
+            // Write output for each dimension this thread handles
+            writeln!(kernel, "for (var d = 0u; d < dims_per_thread; d++) {{").unwrap();
+            {
+                writeln!(
+                    kernel,
+                    "let out_dim = {} + d * {subgroup_size};",
+                    subgroup_local_id
+                )
+                .unwrap();
+                writeln!(kernel, "if out_dim < {head_dim} {{").unwrap();
+                {
+                    write!(kernel, "let out_idx = ").unwrap();
+                    output_tensor.strided_index(
+                        kernel,
+                        ["batch_idx", "head_idx", "seq_idx", "out_dim"],
+                    );
+                    writeln!(kernel, ";").unwrap();
+                    writeln!(kernel, "{output_tensor}[out_idx] = acc_arr[d] / d_arr[d];").unwrap();
+                }
+                writeln!(kernel, "}}").unwrap();
             }
-
-            // Load V value for the output dimension we're computing
-            write!(kernel, "let v_idx = ").unwrap();
-            v_tensor.strided_index(kernel, ["batch_idx", "head_idx", "k_seq", "out_dim"]);
-            writeln!(kernel, ";").unwrap();
-            writeln!(kernel, "let v_val = {v_tensor}[v_idx];").unwrap();
-
-            // Online softmax update
-            writeln!(kernel, "let old_m = m;").unwrap();
-            writeln!(kernel, "m = max(m, score);").unwrap();
-            writeln!(kernel, "let exp_old_m_diff = exp(old_m - m);").unwrap();
-            writeln!(kernel, "let exp_score_diff = exp(score - m);").unwrap();
-            writeln!(kernel, "d = d * exp_old_m_diff + exp_score_diff;").unwrap();
+            writeln!(kernel, "}}").unwrap();
+        } else {
+            // Fallback: original per-thread implementation for devices without subgroup support
+            // Each thread computes one output element [batch, head, seq, dim]
             writeln!(
                 kernel,
-                "acc = acc * exp_old_m_diff + exp_score_diff * v_val;"
+                "let global_thread_id = ({}) * {workgroup_size}u + {};",
+                workgroup_index, workgroup_local_index
             )
             .unwrap();
-        }
-        writeln!(kernel, "}}").unwrap();
 
-        // Write output
-        write!(kernel, "let out_idx = ").unwrap();
-        output_tensor.strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", "out_dim"]);
-        writeln!(kernel, ";").unwrap();
-        writeln!(kernel, "{output_tensor}[out_idx] = acc / d;").unwrap();
+            // Calculate output indices from global thread id
+            writeln!(kernel, "var idx = global_thread_id;").unwrap();
+            writeln!(kernel, "let out_dim = idx % {head_dim};").unwrap();
+            writeln!(kernel, "idx /= {head_dim};").unwrap();
+            writeln!(kernel, "let seq_idx = idx % {seq_len};").unwrap();
+            writeln!(kernel, "idx /= {seq_len};").unwrap();
+            writeln!(kernel, "let head_idx = idx % {num_heads};").unwrap();
+            writeln!(kernel, "idx /= {num_heads};").unwrap();
+            writeln!(kernel, "let batch_idx = idx;").unwrap();
+
+            // Early exit if we're beyond valid elements
+            writeln!(
+                kernel,
+                "let total_elements = {batch_size} * {num_heads} * {seq_len} * {head_dim};"
+            )
+            .unwrap();
+            writeln!(kernel, "if global_thread_id >= total_elements {{").unwrap();
+            writeln!(kernel, "return;").unwrap();
+            writeln!(kernel, "}}").unwrap();
+
+            // Initialize online softmax variables
+            writeln!(kernel, "var m = {};", min_for_dtype(dtype)).unwrap();
+            writeln!(kernel, "var d = {dtype}(0.0);").unwrap();
+            writeln!(kernel, "var acc = {dtype}(0.0);").unwrap();
+
+            // Process all sequence positions for attention
+            writeln!(
+                kernel,
+                "for (var k_seq = 0u; k_seq < {seq_len}; k_seq++) {{"
+            )
+            .unwrap();
+            {
+                // Compute attention score as full dot product over all head dimensions
+                writeln!(kernel, "var score = {dtype}(0.0);").unwrap();
+                writeln!(
+                    kernel,
+                    "for (var d_idx = 0u; d_idx < {head_dim}; d_idx++) {{"
+                )
+                .unwrap();
+                {
+                    // Load Q value
+                    write!(kernel, "let q_idx = ").unwrap();
+                    q_tensor.strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", "d_idx"]);
+                    writeln!(kernel, ";").unwrap();
+                    writeln!(kernel, "let q_val = {q_tensor}[q_idx];").unwrap();
+
+                    // Load K value
+                    write!(kernel, "let k_idx = ").unwrap();
+                    k_tensor.strided_index(kernel, ["batch_idx", "head_idx", "k_seq", "d_idx"]);
+                    writeln!(kernel, ";").unwrap();
+                    writeln!(kernel, "let k_val = {k_tensor}[k_idx];").unwrap();
+
+                    writeln!(kernel, "score += q_val * k_val;").unwrap();
+                }
+                writeln!(kernel, "}}").unwrap();
+                writeln!(kernel, "score *= {};", self.scale).unwrap();
+
+                // Apply attention mask if provided
+                if let Some(mask) = &mask_tensor {
+                    write!(kernel, "let mask_idx = ").unwrap();
+                    mask.strided_index(kernel, ["seq_idx", "k_seq"]);
+                    writeln!(kernel, ";").unwrap();
+                    writeln!(kernel, "score = score + {mask}[mask_idx];").unwrap();
+                }
+
+                // Load V value for the output dimension we're computing
+                write!(kernel, "let v_idx = ").unwrap();
+                v_tensor.strided_index(kernel, ["batch_idx", "head_idx", "k_seq", "out_dim"]);
+                writeln!(kernel, ";").unwrap();
+                writeln!(kernel, "let v_val = {v_tensor}[v_idx];").unwrap();
+
+                // Online softmax update
+                writeln!(kernel, "let old_m = m;").unwrap();
+                writeln!(kernel, "m = max(m, score);").unwrap();
+                writeln!(kernel, "let exp_old_m_diff = exp(old_m - m);").unwrap();
+                writeln!(kernel, "let exp_score_diff = exp(score - m);").unwrap();
+                writeln!(kernel, "d = d * exp_old_m_diff + exp_score_diff;").unwrap();
+                writeln!(
+                    kernel,
+                    "acc = acc * exp_old_m_diff + exp_score_diff * v_val;"
+                )
+                .unwrap();
+            }
+            writeln!(kernel, "}}").unwrap();
+
+            // Write output
+            write!(kernel, "let out_idx = ").unwrap();
+            output_tensor.strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", "out_dim"]);
+            writeln!(kernel, ";").unwrap();
+            writeln!(kernel, "{output_tensor}[out_idx] = acc / d;").unwrap();
+        }
     }
 }
 
 impl Operation for FlashAttentionOperation {
     fn workgroup_shape_constraints(
         &self,
-        _: &crate::Device,
+        device: &crate::Device,
     ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
         let mut constraints = WorkgroupShapeConstraints::new();
-        constraints.add_constraint(0, Constraint::equals(256));
+        if device.subgroups_supported() {
+            // For subgroup-based implementation, use subgroup size as base
+            let limits = device.limits();
+            constraints.add_constraint(
+                0,
+                Constraint::more_than_or_equals(limits.min_subgroup_size),
+            );
+            constraints.add_constraint(
+                0,
+                Constraint::less_than_or_equals(limits.max_subgroup_size),
+            );
+        } else {
+            // Fallback: fixed workgroup size
+            constraints.add_constraint(0, Constraint::equals(256));
+        }
         constraints.add_constraint(1, Constraint::equals(1));
         constraints.add_constraint(2, Constraint::equals(1));
         constraints
@@ -230,14 +420,21 @@ impl Operation for FlashAttentionOperation {
     ) -> [u32; 3] {
         let q_tensor = inputs[0].as_tensor().unwrap();
         let shape = q_tensor.layout().shape();
+        let device = q_tensor.device();
 
         let workgroup_size = workgroup_shape.x();
 
-        // Total output elements = batch * heads * seq * dim
-        let total_elements = (shape[0] * shape[1] * shape[2] * shape[3]) as u32;
-        let total_workgroups = total_elements.div_ceil(workgroup_size);
-
-        [total_workgroups, 1, 1]
+        if device.subgroups_supported() {
+            // Subgroup-based: each workgroup (containing 1 subgroup) handles one position [batch, head, seq]
+            // workgroup_size == subgroup_size, so we need total_positions workgroups
+            let total_positions = (shape[0] * shape[1] * shape[2]) as u32;
+            [total_positions, 1, 1]
+        } else {
+            // Fallback: each thread handles one output element [batch, head, seq, dim]
+            let total_elements = (shape[0] * shape[1] * shape[2] * shape[3]) as u32;
+            let total_workgroups = total_elements.div_ceil(workgroup_size);
+            [total_workgroups, 1, 1]
+        }
     }
 
     fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
