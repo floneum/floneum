@@ -97,11 +97,12 @@ impl FlashAttentionOperation {
         };
         let output_tensor = kernel.add_tensor_input(4, true, out_datatype);
 
-        // Dimensions
+        // Dimensions - Q and K/V may have different sequence lengths (KV cache case)
         let batch_size = q_tensor.shape_binding(0);
         let num_heads = q_tensor.shape_binding(1);
-        let seq_len = q_tensor.shape_binding(2);
+        let q_seq_len = q_tensor.shape_binding(2);
         let head_dim = q_tensor.shape_binding(3);
+        let kv_seq_len = k_tensor.shape_binding(2);
 
         // Workgroup indices
         let workgroup_index = workgroup_shape.linearized_workgroup_index(kernel);
@@ -126,8 +127,8 @@ impl FlashAttentionOperation {
 
             // Calculate batch, head, seq indices from global_position_id
             writeln!(kernel, "var pos_idx = global_position_id;").unwrap();
-            writeln!(kernel, "let seq_idx = pos_idx % {seq_len};").unwrap();
-            writeln!(kernel, "pos_idx /= {seq_len};").unwrap();
+            writeln!(kernel, "let seq_idx = pos_idx % {q_seq_len};").unwrap();
+            writeln!(kernel, "pos_idx /= {q_seq_len};").unwrap();
             writeln!(kernel, "let head_idx = pos_idx % {num_heads};").unwrap();
             writeln!(kernel, "pos_idx /= {num_heads};").unwrap();
             writeln!(kernel, "let batch_idx = pos_idx;").unwrap();
@@ -135,7 +136,7 @@ impl FlashAttentionOperation {
             // Early exit if beyond valid positions
             writeln!(
                 kernel,
-                "let total_positions = {batch_size} * {num_heads} * {seq_len};"
+                "let total_positions = {batch_size} * {num_heads} * {q_seq_len};"
             )
             .unwrap();
             writeln!(kernel, "if global_position_id >= total_positions {{").unwrap();
@@ -163,10 +164,10 @@ impl FlashAttentionOperation {
             writeln!(kernel, "acc_arr[i] = {dtype}(0.0);").unwrap();
             writeln!(kernel, "}}").unwrap();
 
-            // Process all sequence positions for attention
+            // Process all K/V sequence positions for attention
             writeln!(
                 kernel,
-                "for (var k_seq = 0u; k_seq < {seq_len}; k_seq++) {{"
+                "for (var k_seq = 0u; k_seq < {kv_seq_len}; k_seq++) {{"
             )
             .unwrap();
             {
@@ -297,8 +298,8 @@ impl FlashAttentionOperation {
             writeln!(kernel, "var idx = global_thread_id;").unwrap();
             writeln!(kernel, "let out_dim = idx % {head_dim};").unwrap();
             writeln!(kernel, "idx /= {head_dim};").unwrap();
-            writeln!(kernel, "let seq_idx = idx % {seq_len};").unwrap();
-            writeln!(kernel, "idx /= {seq_len};").unwrap();
+            writeln!(kernel, "let seq_idx = idx % {q_seq_len};").unwrap();
+            writeln!(kernel, "idx /= {q_seq_len};").unwrap();
             writeln!(kernel, "let head_idx = idx % {num_heads};").unwrap();
             writeln!(kernel, "idx /= {num_heads};").unwrap();
             writeln!(kernel, "let batch_idx = idx;").unwrap();
@@ -306,7 +307,7 @@ impl FlashAttentionOperation {
             // Early exit if we're beyond valid elements
             writeln!(
                 kernel,
-                "let total_elements = {batch_size} * {num_heads} * {seq_len} * {head_dim};"
+                "let total_elements = {batch_size} * {num_heads} * {q_seq_len} * {head_dim};"
             )
             .unwrap();
             writeln!(kernel, "if global_thread_id >= total_elements {{").unwrap();
@@ -318,10 +319,10 @@ impl FlashAttentionOperation {
             writeln!(kernel, "var d = {dtype}(0.0);").unwrap();
             writeln!(kernel, "var acc = {dtype}(0.0);").unwrap();
 
-            // Process all sequence positions for attention
+            // Process all K/V sequence positions for attention
             writeln!(
                 kernel,
-                "for (var k_seq = 0u; k_seq < {seq_len}; k_seq++) {{"
+                "for (var k_seq = 0u; k_seq < {kv_seq_len}; k_seq++) {{"
             )
             .unwrap();
             {
@@ -725,6 +726,103 @@ async fn test_flash_attention_masked_fuzz() {
                              (batch={}, heads={}, seq_len={}, head_dim={})",
                             b, h, s, d, flash_val, std_val,
                             batch, heads, seq_len, head_dim
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_flash_attention_kv_cache_fuzz() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    // Fuzz test for KV cache scenarios with various dimension combinations
+    for _iteration in 0..50 {
+        let batch = (rand::random::<u32>() as usize % 2) + 1;
+        let heads = (rand::random::<u32>() as usize % 8) + 1;
+        let q_seq_len = (rand::random::<u32>() as usize % 4) + 1; // Small Q sequence (1-4)
+        let kv_seq_len = q_seq_len + (rand::random::<u32>() as usize % 32); // KV >= Q
+        let head_dim = (rand::random::<u32>() as usize % 64) + 1;
+
+        let q_data: Vec<Vec<Vec<Vec<f32>>>> = (0..batch)
+            .map(|_| {
+                (0..heads)
+                    .map(|_| {
+                        (0..q_seq_len)
+                            .map(|_| (0..head_dim).map(|_| rand::random::<f32>() * 2.0 - 1.0).collect())
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
+
+        let k_data: Vec<Vec<Vec<Vec<f32>>>> = (0..batch)
+            .map(|_| {
+                (0..heads)
+                    .map(|_| {
+                        (0..kv_seq_len)
+                            .map(|_| (0..head_dim).map(|_| rand::random::<f32>() * 2.0 - 1.0).collect())
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
+
+        let v_data: Vec<Vec<Vec<Vec<f32>>>> = (0..batch)
+            .map(|_| {
+                (0..heads)
+                    .map(|_| {
+                        (0..kv_seq_len)
+                            .map(|_| (0..head_dim).map(|_| rand::random::<f32>() * 2.0 - 1.0).collect())
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
+
+        // Mask: [q_seq_len, kv_seq_len] - allow attending to all positions
+        let mask_data: Vec<Vec<f32>> = (0..q_seq_len)
+            .map(|_| vec![0.0; kv_seq_len])
+            .collect();
+
+        let q = Tensor::new(&device, &q_data);
+        let k = Tensor::new(&device, &k_data);
+        let v = Tensor::new(&device, &v_data);
+        let mask = Tensor::new(&device, &mask_data);
+
+        let scale = 1.0 / (head_dim as f32).sqrt();
+
+        let flash_output = q.flash_attention(&k, &v, scale, Some(&mask));
+        let flash_result = flash_output.as_slice().await.unwrap();
+
+        // Standard attention
+        let scores = q.mat_mul(&k.t()) * scale;
+        let mask_4d: Tensor<4, f32> = mask.reshape([1, 1, q_seq_len, kv_seq_len]);
+        let mask_broadcast = mask_4d.broadcast_as([batch, heads, q_seq_len, kv_seq_len]);
+        let masked_scores = scores + mask_broadcast;
+        let attn_weights = masked_scores.softmax_last_dim();
+        let std_output = attn_weights.mat_mul(&v);
+        let std_result = std_output.as_slice().await.unwrap();
+
+        let tolerance = 0.01;
+        for b in 0..batch {
+            for h in 0..heads {
+                for s in 0..q_seq_len {
+                    for d in 0..head_dim {
+                        let flash_val = flash_result[[b, h, s, d]];
+                        let std_val = std_result[[b, h, s, d]];
+
+                        assert!(
+                            (flash_val - std_val).abs() < tolerance,
+                            "KV cache fuzz mismatch at [{}, {}, {}, {}]: flash={}, standard={} \
+                             (batch={}, heads={}, q_seq_len={}, kv_seq_len={}, head_dim={})",
+                            b, h, s, d, flash_val, std_val,
+                            batch, heads, q_seq_len, kv_seq_len, head_dim
                         );
                     }
                 }
