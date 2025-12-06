@@ -13,6 +13,12 @@ use crate::{
 };
 
 impl<const R: usize, T: DataType> Tensor<R, T> {
+    /// Computes flash attention without masking.
+    /// 
+    /// Args:
+    ///   - k: Key tensor of same shape as self
+    ///   - v: Value tensor of same shape as self
+    ///   - scale: Scale factor (typically 1/sqrt(head_dim))
     pub fn flash_attention<const R2: usize>(&self, k: &Self, v: &Self, scale: f32) -> Self
     where
         Tensor<R, T>: LastRank<R2, T>,
@@ -22,6 +28,41 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
             self.key(),
             k.key(),
             v.key(),
+            None,
+            self.datatype(),
+            self.shape(),
+            scale,
+        );
+        let data = self.data();
+
+        Self::from_parts(data.custom(Arc::new(operation)))
+    }
+
+    /// Computes flash attention with an attention mask.
+    /// 
+    /// Args:
+    ///   - k: Key tensor of same shape as self
+    ///   - v: Value tensor of same shape as self  
+    ///   - mask: Attention mask tensor of shape [seq_len, seq_len]. Values are added to
+    ///           attention scores before softmax. Use 0 for positions to attend to and
+    ///           -inf (or large negative) for positions to mask out.
+    ///   - scale: Scale factor (typically 1/sqrt(head_dim))
+    pub fn flash_attention_masked<const R2: usize>(
+        &self,
+        k: &Self,
+        v: &Self,
+        mask: &Tensor<2, T>,
+        scale: f32,
+    ) -> Self
+    where
+        Tensor<R, T>: LastRank<R2, T>,
+        T: crate::FloatDataType,
+    {
+        let operation = FlashAttentionOperation::new(
+            self.key(),
+            k.key(),
+            v.key(),
+            Some(mask.key()),
             self.datatype(),
             self.shape(),
             scale,
@@ -37,6 +78,7 @@ struct FlashAttentionOperation {
     pub(crate) q: NodeIndex,
     pub(crate) k: NodeIndex,
     pub(crate) v: NodeIndex,
+    pub(crate) mask: Option<NodeIndex>,
     pub(crate) datatype: DataTypeEnum,
     pub(crate) scale: f32,
 }
@@ -46,6 +88,7 @@ impl FlashAttentionOperation {
         q: NodeIndex,
         k: NodeIndex,
         v: NodeIndex,
+        mask: Option<NodeIndex>,
         datatype: DataTypeEnum,
         _shape: &[usize],
         scale: f32,
@@ -54,6 +97,7 @@ impl FlashAttentionOperation {
             q,
             k,
             v,
+            mask,
             datatype,
             scale,
         }
@@ -61,10 +105,6 @@ impl FlashAttentionOperation {
 
     pub fn out_datatype(&self) -> DataTypeEnum {
         self.datatype
-    }
-
-    fn rank(&self) -> u32 {
-        4 // Flash attention works on 4D tensors (batch, heads, seq, dim)
     }
 
     fn kernel(
@@ -76,11 +116,17 @@ impl FlashAttentionOperation {
     ) {
         let dtype = self.datatype;
         let out_datatype = self.out_datatype();
+        let has_mask = self.mask.is_some();
 
         // Input tensors
         let q_tensor = kernel.add_tensor_input(4, false, dtype);
         let k_tensor = kernel.add_tensor_input(4, false, dtype);
         let v_tensor = kernel.add_tensor_input(4, false, dtype);
+        let mask_tensor = if has_mask {
+            Some(kernel.add_tensor_input(2, false, dtype))
+        } else {
+            None
+        };
         let output_tensor = kernel.add_tensor_input(4, true, out_datatype);
 
         // Dimensions
@@ -160,6 +206,14 @@ impl FlashAttentionOperation {
             writeln!(kernel, "    }}").unwrap();
             writeln!(kernel, "    score = score * {};", self.scale).unwrap();
 
+            // Apply attention mask if provided
+            if let Some(mask) = &mask_tensor {
+                write!(kernel, "    let mask_idx = ").unwrap();
+                mask.strided_index(kernel, ["seq_idx", "k_seq"]);
+                writeln!(kernel, ";").unwrap();
+                writeln!(kernel, "    score = score + {mask}[mask_idx];").unwrap();
+            }
+
             // Load V value for the output dimension we're computing
             write!(kernel, "    let v_idx = ").unwrap();
             v_tensor.strided_index(kernel, ["batch_idx", "head_idx", "k_seq", "out_dim"]);
@@ -221,6 +275,9 @@ impl Operation for FlashAttentionOperation {
         f(self.q);
         f(self.k);
         f(self.v);
+        if let Some(mask) = self.mask {
+            f(mask);
+        }
     }
 
     fn inputs(&self, nodes: &crate::compute_graph::ComputeGraphInner) -> Vec<MirValue> {
@@ -232,12 +289,19 @@ impl Operation for FlashAttentionOperation {
         let output_type = self.out_datatype();
         let output_tensor = TensorData::new_for_shape(q_tensor.device(), shape, output_type);
 
-        vec![
+        let mut inputs = vec![
             MirValue::Tensor(q_tensor.clone()),
             MirValue::Tensor(k_tensor.clone()),
             MirValue::Tensor(v_tensor.clone()),
-            MirValue::Tensor(output_tensor.clone()),
-        ]
+        ];
+
+        if let Some(mask_idx) = self.mask {
+            let mask_tensor = nodes.get_cached_result(mask_idx).unwrap();
+            inputs.push(MirValue::Tensor(mask_tensor.clone()));
+        }
+
+        inputs.push(MirValue::Tensor(output_tensor.clone()));
+        inputs
     }
 
     fn build_kernel(
@@ -252,12 +316,18 @@ impl Operation for FlashAttentionOperation {
     }
 
     fn output(&self, _: &crate::compute_graph::ComputeGraphInner, inputs: &[MirValue]) -> MirValue {
-        let output_tensor: TensorData = inputs[3].as_tensor().unwrap().clone();
+        // Output is the last input (after q, k, v, and optional mask)
+        let output_idx = if self.mask.is_some() { 4 } else { 3 };
+        let output_tensor: TensorData = inputs[output_idx].as_tensor().unwrap().clone();
         output_tensor.into()
     }
 
     fn name(&self) -> String {
-        "flash_attention".to_string()
+        if self.mask.is_some() {
+            "flash_attention_masked".to_string()
+        } else {
+            "flash_attention".to_string()
+        }
     }
 
     fn output_layout(
@@ -271,7 +341,7 @@ impl Operation for FlashAttentionOperation {
 
 #[cfg(test)]
 #[tokio::test]
-async fn test_flash_attention_masked() {
+async fn test_flash_attention() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
@@ -313,4 +383,74 @@ async fn test_flash_attention_masked() {
             );
         }
     }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_flash_attention_causal_mask() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    // Test flash attention with causal mask - 4D tensors [batch, heads, seq, dim]
+    let q_data = [[[[1.0f32, 0.0], [0.0, 1.0]]]]; // [1, 1, 2, 2]
+    let k_data = [[[[1.0f32, 0.0], [0.0, 1.0]]]]; // [1, 1, 2, 2]
+    let v_data = [[[[1.0f32, 2.0], [3.0, 4.0]]]]; // [1, 1, 2, 2]
+
+    let q = Tensor::new(&device, &q_data);
+    let k = Tensor::new(&device, &k_data);
+    let v = Tensor::new(&device, &v_data);
+
+    // Create causal mask: lower triangular with 0s, upper triangular with -inf
+    // For seq_len=2: [[0, -inf], [0, 0]]
+    let neg_inf = f32::NEG_INFINITY;
+    let causal_mask_data = [[0.0f32, neg_inf], [0.0, 0.0]]; // [2, 2]
+    let causal_mask = Tensor::new(&device, &causal_mask_data);
+
+    let scale = 1.0 / (2.0_f32.sqrt());
+
+    // Test flash attention with causal mask
+    let output = q.flash_attention_masked(&k, &v, &causal_mask, scale);
+    let result = output.as_slice().await.unwrap();
+
+    // Compare with standard masked attention (non-fused implementation)
+    let scores = q.mat_mul(&k.t()) * scale;
+    // Reshape 2D mask [seq, seq] to 4D [1, 1, seq, seq] for broadcasting
+    let causal_mask_4d: Tensor<4, f32> = causal_mask.reshape([1, 1, 2, 2]);
+    let masked_scores = scores + causal_mask_4d;
+    let attn_weights = masked_scores.softmax_last_dim();
+    let expected = attn_weights.mat_mul(&v);
+    let expected_result = expected.as_slice().await.unwrap();
+
+    // Compare flash attention output against standard masked attention
+    let tolerance = 0.01;
+    for i in 0..2 {
+        for j in 0..2 {
+            let flash_val = result[[0, 0, i, j]];
+            let std_val = expected_result[[0, 0, i, j]];
+            assert!(
+                (flash_val - std_val).abs() < tolerance,
+                "Mismatch at [{}, {}]: flash={}, standard={}",
+                i,
+                j,
+                flash_val,
+                std_val
+            );
+        }
+    }
+
+    // Additional check: for causal mask, first row should only attend to first position
+    // So first row output should equal first row of V
+    assert!(
+        (result[[0, 0, 0, 0]] - v_data[0][0][0][0]).abs() < tolerance,
+        "First position should attend only to itself with causal mask: got {}, expected {}",
+        result[[0, 0, 0, 0]],
+        v_data[0][0][0][0]
+    );
+    assert!(
+        (result[[0, 0, 0, 1]] - v_data[0][0][0][1]).abs() < tolerance,
+        "First position should attend only to itself with causal mask: got {}, expected {}",
+        result[[0, 0, 0, 1]],
+        v_data[0][0][0][1]
+    );
 }
