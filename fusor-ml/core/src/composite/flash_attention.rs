@@ -133,7 +133,9 @@ impl FlashAttentionOperation {
         )
         .unwrap();
         writeln!(kernel, "if global_thread_id >= total_elements {{").unwrap();
-        writeln!(kernel, "    return;").unwrap();
+        {
+            writeln!(kernel, "return;").unwrap();
+        }
         writeln!(kernel, "}}").unwrap();
 
         // Initialize online softmax variables
@@ -149,53 +151,53 @@ impl FlashAttentionOperation {
         .unwrap();
         {
             // Compute attention score as full dot product over all head dimensions
-            writeln!(kernel, "    var score = {dtype}(0.0);").unwrap();
+            writeln!(kernel, "var score = {dtype}(0.0);").unwrap();
             writeln!(
                 kernel,
-                "    for (var d_idx = 0u; d_idx < {head_dim}; d_idx++) {{"
+                "for (var d_idx = 0u; d_idx < {head_dim}; d_idx++) {{"
             )
             .unwrap();
             {
                 // Load Q value
-                write!(kernel, "        let q_idx = ").unwrap();
+                write!(kernel, "let q_idx = ").unwrap();
                 q_tensor.strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", "d_idx"]);
                 writeln!(kernel, ";").unwrap();
-                writeln!(kernel, "        let q_val = {q_tensor}[q_idx];").unwrap();
+                writeln!(kernel, "let q_val = {q_tensor}[q_idx];").unwrap();
 
                 // Load K value
-                write!(kernel, "        let k_idx = ").unwrap();
+                write!(kernel, "let k_idx = ").unwrap();
                 k_tensor.strided_index(kernel, ["batch_idx", "head_idx", "k_seq", "d_idx"]);
                 writeln!(kernel, ";").unwrap();
-                writeln!(kernel, "        let k_val = {k_tensor}[k_idx];").unwrap();
+                writeln!(kernel, "let k_val = {k_tensor}[k_idx];").unwrap();
 
-                writeln!(kernel, "        score += q_val * k_val;").unwrap();
+                writeln!(kernel, "score += q_val * k_val;").unwrap();
             }
-            writeln!(kernel, "    }}").unwrap();
-            writeln!(kernel, "    score = score * {};", self.scale).unwrap();
+            writeln!(kernel, "}}").unwrap();
+            writeln!(kernel, "score *= {};", self.scale).unwrap();
 
             // Apply attention mask if provided
             if let Some(mask) = &mask_tensor {
-                write!(kernel, "    let mask_idx = ").unwrap();
+                write!(kernel, "let mask_idx = ").unwrap();
                 mask.strided_index(kernel, ["seq_idx", "k_seq"]);
                 writeln!(kernel, ";").unwrap();
-                writeln!(kernel, "    score = score + {mask}[mask_idx];").unwrap();
+                writeln!(kernel, "score = score + {mask}[mask_idx];").unwrap();
             }
 
             // Load V value for the output dimension we're computing
-            write!(kernel, "    let v_idx = ").unwrap();
+            write!(kernel, "let v_idx = ").unwrap();
             v_tensor.strided_index(kernel, ["batch_idx", "head_idx", "k_seq", "out_dim"]);
             writeln!(kernel, ";").unwrap();
-            writeln!(kernel, "    let v_val = {v_tensor}[v_idx];").unwrap();
+            writeln!(kernel, "let v_val = {v_tensor}[v_idx];").unwrap();
 
             // Online softmax update
-            writeln!(kernel, "    let old_m = m;").unwrap();
-            writeln!(kernel, "    m = max(m, score);").unwrap();
-            writeln!(kernel, "    let exp_old_m_diff = exp(old_m - m);").unwrap();
-            writeln!(kernel, "    let exp_score_diff = exp(score - m);").unwrap();
-            writeln!(kernel, "    d = d * exp_old_m_diff + exp_score_diff;").unwrap();
+            writeln!(kernel, "let old_m = m;").unwrap();
+            writeln!(kernel, "m = max(m, score);").unwrap();
+            writeln!(kernel, "let exp_old_m_diff = exp(old_m - m);").unwrap();
+            writeln!(kernel, "let exp_score_diff = exp(score - m);").unwrap();
+            writeln!(kernel, "d = d * exp_old_m_diff + exp_score_diff;").unwrap();
             writeln!(
                 kernel,
-                "    acc = acc * exp_old_m_diff + exp_score_diff * v_val;"
+                "acc = acc * exp_old_m_diff + exp_score_diff * v_val;"
             )
             .unwrap();
         }
