@@ -16,7 +16,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let scale = 1.0 / (2.0_f32.sqrt());
     let start = std::time::Instant::now();
     for i in 1..1000 {
-        let output = q.flash_attention(&k, &v, scale);
+        let output = q.flash_attention(&k, &v, scale, None);
         _ = output.as_slice().await;
         if i % 100 == 0 {
             let elapsed = start.elapsed().as_micros() as f32;

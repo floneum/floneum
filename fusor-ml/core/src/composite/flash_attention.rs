@@ -108,9 +108,10 @@ impl FlashAttentionOperation {
         let workgroup_size = workgroup_shape.x();
 
         // Each thread computes one output element [batch, head, seq, dim]
+        // Note: workgroup_index is wrapped in parentheses to ensure correct operator precedence
         writeln!(
             kernel,
-            "let global_thread_id = {} * {workgroup_size}u + {};",
+            "let global_thread_id = ({}) * {workgroup_size}u + {};",
             workgroup_index, workgroup_local_index
         )
         .unwrap();
@@ -376,7 +377,7 @@ async fn test_flash_attention_causal_mask() {
     let scale = 1.0 / (2.0_f32.sqrt());
 
     // Test flash attention with causal mask
-    let output = q.flash_attention_masked(&k, &v, scale, Some(&causal_mask));
+    let output = q.flash_attention(&k, &v, scale, Some(&causal_mask));
     let result = output.as_slice().await.unwrap();
 
     // Compare with standard masked attention (non-fused implementation)
@@ -419,4 +420,116 @@ async fn test_flash_attention_causal_mask() {
         result[[0, 0, 0, 1]],
         v_data[0][0][0][1]
     );
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_flash_attention_masked_fuzz() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    // Test multiple random configurations
+    for _iteration in 0..100 {
+        // Random dimensions (keep small for test speed)
+        let batch = (rand::random::<u32>() as usize % 2) + 1;
+        let heads = (rand::random::<u32>() as usize % 16) + 1;
+        let seq_len = (rand::random::<u32>() as usize % 128) + 1;
+        let head_dim = (rand::random::<u32>() as usize % 64) + 1;
+
+        // Generate random Q, K, V tensors as nested Vecs
+        let q_data: Vec<Vec<Vec<Vec<f32>>>> = (0..batch)
+            .map(|_| {
+                (0..heads)
+                    .map(|_| {
+                        (0..seq_len)
+                            .map(|_| (0..head_dim).map(|_| rand::random::<f32>() * 2.0 - 1.0).collect())
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
+
+        let k_data: Vec<Vec<Vec<Vec<f32>>>> = (0..batch)
+            .map(|_| {
+                (0..heads)
+                    .map(|_| {
+                        (0..seq_len)
+                            .map(|_| (0..head_dim).map(|_| rand::random::<f32>() * 2.0 - 1.0).collect())
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
+
+        let v_data: Vec<Vec<Vec<Vec<f32>>>> = (0..batch)
+            .map(|_| {
+                (0..heads)
+                    .map(|_| {
+                        (0..seq_len)
+                            .map(|_| (0..head_dim).map(|_| rand::random::<f32>() * 2.0 - 1.0).collect())
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
+
+        // Generate causal mask
+        let mask_data: Vec<Vec<f32>> = (0..seq_len)
+            .map(|row| {
+                (0..seq_len)
+                    .map(|col| {
+                        if col > row {
+                            // Upper triangular: masked out
+                            f32::NEG_INFINITY
+                        } else {
+                            // Lower triangular: small random values
+                            rand::random::<f32>() * 0.5 - 0.25
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
+
+        let q = Tensor::new(&device, &q_data);
+        let k = Tensor::new(&device, &k_data);
+        let v = Tensor::new(&device, &v_data);
+        let mask = Tensor::new(&device, &mask_data);
+
+        let scale = 1.0 / (head_dim as f32).sqrt();
+
+        // Flash attention with mask
+        let flash_output = q.flash_attention(&k, &v, scale, Some(&mask));
+        let flash_result = flash_output.as_slice().await.unwrap();
+
+        // Standard attention with mask
+        let scores = q.mat_mul(&k.t()) * scale;
+        let mask_4d: Tensor<4, f32> = mask.reshape([1, 1, seq_len, seq_len]);
+        let mask_broadcast = mask_4d.broadcast_as([batch, heads, seq_len, seq_len]);
+        let masked_scores = scores + mask_broadcast;
+        let attn_weights = masked_scores.softmax_last_dim();
+        let std_output = attn_weights.mat_mul(&v);
+        let std_result = std_output.as_slice().await.unwrap();
+
+        // Compare results
+        let tolerance = 0.01;
+        for b in 0..batch {
+            for h in 0..heads {
+                for s in 0..seq_len {
+                    for d in 0..head_dim {
+                        let flash_val = flash_result[[b, h, s, d]];
+                        let std_val = std_result[[b, h, s, d]];
+
+                        assert!(
+                            (flash_val - std_val).abs() < tolerance,
+                            "Mismatch at [{}, {}, {}, {}]: flash={}, standard={} \
+                             (batch={}, heads={}, seq_len={}, head_dim={})",
+                            b, h, s, d, flash_val, std_val,
+                            batch, heads, seq_len, head_dim
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
