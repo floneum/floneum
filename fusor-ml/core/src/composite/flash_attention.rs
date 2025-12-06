@@ -206,27 +206,21 @@ impl FlashAttentionOperation {
                 writeln!(kernel, "let global_seq = tile_start + local_seq;").unwrap();
                 // Use strided indexing for K tensor (supports non-contiguous tensors)
                 write!(kernel, "let k_idx = ").unwrap();
-                k_tensor.strided_index(kernel, ["batch_idx", "head_idx", "global_seq", "local_dim"]);
+                k_tensor
+                    .strided_index(kernel, ["batch_idx", "head_idx", "global_seq", "local_dim"]);
                 writeln!(kernel, ";").unwrap();
                 // Use strided indexing for V tensor (supports non-contiguous tensors)
                 write!(kernel, "let v_idx = ").unwrap();
-                v_tensor.strided_index(kernel, ["batch_idx", "head_idx", "global_seq", "local_dim"]);
+                v_tensor
+                    .strided_index(kernel, ["batch_idx", "head_idx", "global_seq", "local_dim"]);
                 writeln!(kernel, ";").unwrap();
                 writeln!(
                     kernel,
                     "let shared_idx = local_seq * {head_dim} + local_dim;"
                 )
                 .unwrap();
-                writeln!(
-                    kernel,
-                    "{shared_k_tile}[shared_idx] = {k_tensor}[k_idx];"
-                )
-                .unwrap();
-                writeln!(
-                    kernel,
-                    "{shared_v_tile}[shared_idx] = {v_tensor}[v_idx];"
-                )
-                .unwrap();
+                writeln!(kernel, "{shared_k_tile}[shared_idx] = {k_tensor}[k_idx];").unwrap();
+                writeln!(kernel, "{shared_v_tile}[shared_idx] = {v_tensor}[v_idx];").unwrap();
             }
             writeln!(kernel, "}}").unwrap();
             writeln!(kernel, "workgroupBarrier();").unwrap();
@@ -235,7 +229,8 @@ impl FlashAttentionOperation {
             if vec_width == 1 {
                 // Use strided indexing for Q tensor (supports non-contiguous tensors)
                 write!(kernel, "let q_idx = ").unwrap();
-                q_tensor.strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", "out_dim_base"]);
+                q_tensor
+                    .strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", "out_dim_base"]);
                 writeln!(kernel, ";").unwrap();
                 writeln!(kernel, "let q_val = {q_tensor}[q_idx];").unwrap();
             } else {
@@ -248,7 +243,15 @@ impl FlashAttentionOperation {
                     write!(kernel, "    ").unwrap();
                     // Use strided indexing for Q tensor (supports non-contiguous tensors)
                     write!(kernel, "{q_tensor}[").unwrap();
-                    q_tensor.strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", &format!("out_dim_base + {i}u")]);
+                    q_tensor.strided_index(
+                        kernel,
+                        [
+                            "batch_idx",
+                            "head_idx",
+                            "seq_idx",
+                            &format!("out_dim_base + {i}u"),
+                        ],
+                    );
                     write!(kernel, "]").unwrap();
                 }
                 writeln!(kernel, ");").unwrap();
@@ -283,15 +286,27 @@ impl FlashAttentionOperation {
 
                 // Load K and V values (vectorized)
                 if vec_width == 1 {
-                    writeln!(kernel, "let k_val = {shared_k_tile}[k_shared_start + out_dim_base];").unwrap();
-                    writeln!(kernel, "let v_val = {shared_v_tile}[v_shared_start + out_dim_base];").unwrap();
+                    writeln!(
+                        kernel,
+                        "let k_val = {shared_k_tile}[k_shared_start + out_dim_base];"
+                    )
+                    .unwrap();
+                    writeln!(
+                        kernel,
+                        "let v_val = {shared_v_tile}[v_shared_start + out_dim_base];"
+                    )
+                    .unwrap();
                 } else {
                     writeln!(kernel, "var k_val = {}(", vec_type).unwrap();
                     for i in 0..vec_width {
                         if i > 0 {
                             write!(kernel, ", ").unwrap();
                         }
-                        write!(kernel, "{shared_k_tile}[k_shared_start + out_dim_base + {i}u]").unwrap();
+                        write!(
+                            kernel,
+                            "{shared_k_tile}[k_shared_start + out_dim_base + {i}u]"
+                        )
+                        .unwrap();
                     }
                     writeln!(kernel, ");").unwrap();
 
@@ -300,7 +315,11 @@ impl FlashAttentionOperation {
                         if i > 0 {
                             write!(kernel, ", ").unwrap();
                         }
-                        write!(kernel, "{shared_v_tile}[v_shared_start + out_dim_base + {i}u]").unwrap();
+                        write!(
+                            kernel,
+                            "{shared_v_tile}[v_shared_start + out_dim_base + {i}u]"
+                        )
+                        .unwrap();
                     }
                     writeln!(kernel, ");").unwrap();
                 }
@@ -328,7 +347,11 @@ impl FlashAttentionOperation {
                 // Online softmax update for partial results
                 writeln!(kernel, "let original_m = m_partial;").unwrap();
                 writeln!(kernel, "m_partial = max(m_partial, score);").unwrap();
-                writeln!(kernel, "let exp_original_m_diff = exp(original_m - m_partial);").unwrap();
+                writeln!(
+                    kernel,
+                    "let exp_original_m_diff = exp(original_m - m_partial);"
+                )
+                .unwrap();
                 writeln!(kernel, "let exp_score_diff = exp(score - m_partial);").unwrap();
                 writeln!(
                     kernel,
@@ -337,7 +360,11 @@ impl FlashAttentionOperation {
                 .unwrap();
 
                 // Accumulate V values (works for both scalar and vector types)
-                writeln!(kernel, "acc_partial = acc_partial * exp_original_m_diff + exp_score_diff * v_val;").unwrap();
+                writeln!(
+                    kernel,
+                    "acc_partial = acc_partial * exp_original_m_diff + exp_score_diff * v_val;"
+                )
+                .unwrap();
             }
             writeln!(kernel, "}}").unwrap();
 
@@ -358,12 +385,28 @@ impl FlashAttentionOperation {
                 while offset > 1 {
                     offset /= 2;
                     writeln!(kernel, "{{").unwrap();
-                    writeln!(kernel, "    let m_peer = subgroupShuffleDown(m_reduced, {offset}u);").unwrap();
-                    writeln!(kernel, "    let d_peer = subgroupShuffleDown(d_reduced, {offset}u);").unwrap();
-                    writeln!(kernel, "    let acc_peer = subgroupShuffleDown(acc_reduced, {offset}u);").unwrap();
+                    writeln!(
+                        kernel,
+                        "    let m_peer = subgroupShuffleDown(m_reduced, {offset}u);"
+                    )
+                    .unwrap();
+                    writeln!(
+                        kernel,
+                        "    let d_peer = subgroupShuffleDown(d_reduced, {offset}u);"
+                    )
+                    .unwrap();
+                    writeln!(
+                        kernel,
+                        "    let acc_peer = subgroupShuffleDown(acc_reduced, {offset}u);"
+                    )
+                    .unwrap();
                     writeln!(kernel, "    let original_m = m_reduced;").unwrap();
                     writeln!(kernel, "    m_reduced = max(m_reduced, m_peer);").unwrap();
-                    writeln!(kernel, "    let exp_original_m_diff = exp(original_m - m_reduced);").unwrap();
+                    writeln!(
+                        kernel,
+                        "    let exp_original_m_diff = exp(original_m - m_reduced);"
+                    )
+                    .unwrap();
                     writeln!(kernel, "    let exp_m_peer_diff = exp(m_peer - m_reduced);").unwrap();
                     writeln!(kernel, "    d_reduced = d_reduced * exp_original_m_diff + d_peer * exp_m_peer_diff;").unwrap();
                     writeln!(kernel, "    acc_reduced = acc_reduced * exp_original_m_diff + acc_peer * exp_m_peer_diff;").unwrap();
@@ -375,16 +418,32 @@ impl FlashAttentionOperation {
                 writeln!(kernel, "m = max(m, m_reduced);").unwrap();
                 writeln!(kernel, "let exp_original_m_diff = exp(original_m - m);").unwrap();
                 writeln!(kernel, "let exp_m_reduced_diff = exp(m_reduced - m);").unwrap();
-                writeln!(kernel, "d = d * exp_original_m_diff + d_reduced * exp_m_reduced_diff;").unwrap();
-                writeln!(kernel, "acc = acc * exp_original_m_diff + acc_reduced * exp_m_reduced_diff;").unwrap();
+                writeln!(
+                    kernel,
+                    "d = d * exp_original_m_diff + d_reduced * exp_m_reduced_diff;"
+                )
+                .unwrap();
+                writeln!(
+                    kernel,
+                    "acc = acc * exp_original_m_diff + acc_reduced * exp_m_reduced_diff;"
+                )
+                .unwrap();
             } else {
                 // Simple merge for non-subgroup case
                 writeln!(kernel, "let original_m = m;").unwrap();
                 writeln!(kernel, "m = max(m, m_partial);").unwrap();
                 writeln!(kernel, "let exp_original_m_diff = exp(original_m - m);").unwrap();
                 writeln!(kernel, "let exp_m_partial_diff = exp(m_partial - m);").unwrap();
-                writeln!(kernel, "d = d * exp_original_m_diff + d_partial * exp_m_partial_diff;").unwrap();
-                writeln!(kernel, "acc = acc * exp_original_m_diff + acc_partial * exp_m_partial_diff;").unwrap();
+                writeln!(
+                    kernel,
+                    "d = d * exp_original_m_diff + d_partial * exp_m_partial_diff;"
+                )
+                .unwrap();
+                writeln!(
+                    kernel,
+                    "acc = acc * exp_original_m_diff + acc_partial * exp_m_partial_diff;"
+                )
+                .unwrap();
             }
 
             writeln!(kernel, "workgroupBarrier();").unwrap();
@@ -402,7 +461,10 @@ impl FlashAttentionOperation {
                     if vec_width == 1 {
                         // Use strided indexing for output tensor (supports non-contiguous tensors)
                         write!(kernel, "let out_offset = ").unwrap();
-                        output_tensor.strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", "out_dim_base"]);
+                        output_tensor.strided_index(
+                            kernel,
+                            ["batch_idx", "head_idx", "seq_idx", "out_dim_base"],
+                        );
                         writeln!(kernel, ";").unwrap();
                         writeln!(kernel, "{output_tensor}[out_offset] = acc / d;").unwrap();
                     } else {
@@ -419,9 +481,17 @@ impl FlashAttentionOperation {
                             writeln!(kernel, "    let out_dim_i = out_dim_base + {}u;", i).unwrap();
                             // Use strided indexing for output tensor (supports non-contiguous tensors)
                             write!(kernel, "    let out_offset = ").unwrap();
-                            output_tensor.strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", "out_dim_i"]);
+                            output_tensor.strided_index(
+                                kernel,
+                                ["batch_idx", "head_idx", "seq_idx", "out_dim_i"],
+                            );
                             writeln!(kernel, ";").unwrap();
-                            writeln!(kernel, "    {output_tensor}[out_offset] = result.{};", component).unwrap();
+                            writeln!(
+                                kernel,
+                                "    {output_tensor}[out_offset] = result.{};",
+                                component
+                            )
+                            .unwrap();
                             writeln!(kernel, "}}").unwrap();
                         }
                     }
@@ -431,7 +501,10 @@ impl FlashAttentionOperation {
                 if vec_width == 1 {
                     // Use strided indexing for output tensor (supports non-contiguous tensors)
                     write!(kernel, "let out_offset = ").unwrap();
-                    output_tensor.strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", "out_dim_base"]);
+                    output_tensor.strided_index(
+                        kernel,
+                        ["batch_idx", "head_idx", "seq_idx", "out_dim_base"],
+                    );
                     writeln!(kernel, ";").unwrap();
                     writeln!(kernel, "{output_tensor}[out_offset] = acc / d;").unwrap();
                 } else {
@@ -448,9 +521,17 @@ impl FlashAttentionOperation {
                         writeln!(kernel, "    let out_dim_i = out_dim_base + {}u;", i).unwrap();
                         // Use strided indexing for output tensor (supports non-contiguous tensors)
                         write!(kernel, "    let out_offset = ").unwrap();
-                        output_tensor.strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", "out_dim_i"]);
+                        output_tensor.strided_index(
+                            kernel,
+                            ["batch_idx", "head_idx", "seq_idx", "out_dim_i"],
+                        );
                         writeln!(kernel, ";").unwrap();
-                        writeln!(kernel, "    {output_tensor}[out_offset] = result.{};", component).unwrap();
+                        writeln!(
+                            kernel,
+                            "    {output_tensor}[out_offset] = result.{};",
+                            component
+                        )
+                        .unwrap();
                         writeln!(kernel, "}}").unwrap();
                     }
                 }
@@ -533,7 +614,12 @@ impl Operation for FlashAttentionOperation {
     }
 
     fn name(&self) -> String {
-        format!("flash_attention_{}_{}_{}", self.rank(), self.datatype, self.vec_width)
+        format!(
+            "flash_attention_{}_{}_{}",
+            self.rank(),
+            self.datatype,
+            self.vec_width
+        )
     }
 
     fn output_layout(
@@ -547,12 +633,12 @@ impl Operation for FlashAttentionOperation {
 
 #[cfg(test)]
 #[tokio::test]
-async fn test_flash_attention() {
+async fn test_flash_attention_masked() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
 
-    // Simple test case - 4D tensors [batch, heads, seq, dim]
+    // Test with causal mask - 4D tensors [batch, heads, seq, dim]
     let q_data = [[[[1.0f32, 0.0], [0.0, 1.0]]]]; // [1, 1, 2, 2]
     let k_data = [[[[1.0f32, 0.0], [0.0, 1.0]]]]; // [1, 1, 2, 2]
     let v_data = [[[[1.0f32, 2.0], [3.0, 4.0]]]]; // [1, 1, 2, 2]
@@ -563,36 +649,45 @@ async fn test_flash_attention() {
 
     let scale = 1.0 / (2.0_f32.sqrt());
 
-    // Test that flash attention runs without panicking
+    // Test masked flash attention
     let output = q.flash_attention(&k, &v, scale);
     let result = output.as_slice().await.unwrap();
 
-    // Compare with standard attention
+    // Compare with standard masked attention (non-fused implementation)
     let scores = q.mat_mul(&k.t()) * scale;
     let attn_weights = scores.softmax_last_dim();
     let expected = attn_weights.mat_mul(&v);
     let expected_result = expected.as_slice().await.unwrap();
 
-    // Basic sanity check - results should be finite
-    assert!(result[[0, 0, 0, 0]].is_finite(), "Result should be finite");
-    assert!(result[[0, 0, 0, 1]].is_finite(), "Result should be finite");
-    assert!(result[[0, 0, 1, 0]].is_finite(), "Result should be finite");
-    assert!(result[[0, 0, 1, 1]].is_finite(), "Result should be finite");
+    // Compare masked flash attention output against standard masked attention
+    let tolerance = 0.01;
+    for i in 0..2 {
+        for j in 0..2 {
+            let flash_val = result[[0, 0, i, j]];
+            let std_val = expected_result[[0, 0, i, j]];
+            assert!(
+                (flash_val - std_val).abs() < tolerance,
+                "Mismatch at [{}, {}]: flash={}, standard={}",
+                i,
+                j,
+                flash_val,
+                std_val
+            );
+        }
+    }
 
+    // Additional check: for causal mask, first row should only attend to first position
+    // So first row output should equal first row of V
     assert!(
-        expected_result[[0, 0, 0, 0]].is_finite(),
-        "Expected should be finite"
+        (result[[0, 0, 0, 0]] - v_data[0][0][0][0]).abs() < tolerance,
+        "First position should attend only to itself with causal mask: got {}, expected {}",
+        result[[0, 0, 0, 0]],
+        v_data[0][0][0][0]
     );
     assert!(
-        expected_result[[0, 0, 0, 1]].is_finite(),
-        "Expected should be finite"
-    );
-    assert!(
-        expected_result[[0, 0, 1, 0]].is_finite(),
-        "Expected should be finite"
-    );
-    assert!(
-        expected_result[[0, 0, 1, 1]].is_finite(),
-        "Expected should be finite"
+        (result[[0, 0, 0, 1]] - v_data[0][0][0][1]).abs() < tolerance,
+        "First position should attend only to itself with causal mask: got {}, expected {}",
+        result[[0, 0, 0, 1]],
+        v_data[0][0][0][1]
     );
 }
