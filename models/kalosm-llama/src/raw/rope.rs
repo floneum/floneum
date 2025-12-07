@@ -238,7 +238,7 @@ impl RopeCache {
         k: &Tensor<4, f32>,
         start_pos: usize,
     ) -> (Tensor<4, f32>, Tensor<4, f32>) {
-        self.forward_with_embed(q, k, start_pos, Tensor::rope_interleaved)
+        self.forward_with_embed(q, k, start_pos, Tensor::rope_fused)
     }
 
     pub(crate) fn sin(&self) -> &Tensor<2, f32> {
