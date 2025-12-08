@@ -13,12 +13,17 @@ use crate::{
 };
 
 impl<const R: usize, T: DataType> Tensor<R, T> {
-    /// Computes flash attention without masking.
+    /// Computes flash attention with optional masking.
+    /// 
+    /// Supports grouped-query attention (GQA) and multi-query attention (MQA) where
+    /// K and V may have fewer heads than Q. The number of Q heads must be divisible
+    /// by the number of K/V heads.
     /// 
     /// Args:
-    ///   - k: Key tensor of same shape as self
-    ///   - v: Value tensor of same shape as self
+    ///   - k: Key tensor with shape [batch, num_kv_heads, kv_seq_len, head_dim]
+    ///   - v: Value tensor with shape [batch, num_kv_heads, kv_seq_len, head_dim]
     ///   - scale: Scale factor (typically 1/sqrt(head_dim))
+    ///   - mask: Optional attention mask with shape [q_seq_len, kv_seq_len]
     pub fn flash_attention<const R2: usize>(&self, k: &Self, v: &Self, scale: f32, mask: Option<&Tensor<2, T>>) -> Self
     where
         Tensor<R, T>: LastRank<R2, T>,
@@ -31,6 +36,7 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
             mask.map(|m| m.key()),
             self.datatype(),
             self.shape(),
+            k.shape(),
             scale,
         );
         let data = self.data();
@@ -47,6 +53,8 @@ struct FlashAttentionOperation {
     pub(crate) mask: Option<NodeIndex>,
     pub(crate) datatype: DataTypeEnum,
     pub(crate) head_dim: usize,
+    pub(crate) num_heads: usize,
+    pub(crate) num_kv_heads: usize,
     pub(crate) scale: f32,
 }
 
@@ -57,16 +65,27 @@ impl FlashAttentionOperation {
         v: NodeIndex,
         mask: Option<NodeIndex>,
         datatype: DataTypeEnum,
-        shape: &[usize],
+        q_shape: &[usize],
+        kv_shape: &[usize],
         scale: f32,
     ) -> Self {
+        let num_heads = q_shape[1];
+        let num_kv_heads = kv_shape[1];
+        assert!(
+            num_heads % num_kv_heads == 0,
+            "Number of Q heads ({}) must be divisible by number of K/V heads ({})",
+            num_heads,
+            num_kv_heads
+        );
         Self {
             q,
             k,
             v,
             mask,
             datatype,
-            head_dim: shape[3],
+            head_dim: q_shape[3],
+            num_heads,
+            num_kv_heads,
             scale,
         }
     }
@@ -98,11 +117,16 @@ impl FlashAttentionOperation {
         let output_tensor = kernel.add_tensor_input(4, true, out_datatype);
 
         // Dimensions - Q and K/V may have different sequence lengths (KV cache case)
+        // and different number of heads (GQA/MQA case)
         let batch_size = q_tensor.shape_binding(0);
         let num_heads = q_tensor.shape_binding(1);
         let q_seq_len = q_tensor.shape_binding(2);
         let head_dim = q_tensor.shape_binding(3);
         let kv_seq_len = k_tensor.shape_binding(2);
+        
+        // For GQA/MQA: compute the group size for mapping Q heads to KV heads
+        // kv_head_idx = head_idx / num_key_value_groups = head_idx * kv_num_heads / num_heads
+        let num_key_value_groups = self.num_heads / self.num_kv_heads;
 
         // Workgroup indices
         let workgroup_index = workgroup_shape.linearized_workgroup_index(kernel);
@@ -132,6 +156,8 @@ impl FlashAttentionOperation {
             writeln!(kernel, "let head_idx = pos_idx % {num_heads};").unwrap();
             writeln!(kernel, "pos_idx /= {num_heads};").unwrap();
             writeln!(kernel, "let batch_idx = pos_idx;").unwrap();
+            // Map Q head index to KV head index for GQA/MQA
+            writeln!(kernel, "let kv_head_idx = head_idx / {num_key_value_groups}u;").unwrap();
 
             // Early exit if beyond valid positions
             writeln!(
@@ -195,7 +221,7 @@ impl FlashAttentionOperation {
 
                         // Load K value (cooperative loading - each thread loads different K elements)
                         write!(kernel, "let k_idx = ").unwrap();
-                        k_tensor.strided_index(kernel, ["batch_idx", "head_idx", "k_seq", "d_idx"]);
+                        k_tensor.strided_index(kernel, ["batch_idx", "kv_head_idx", "k_seq", "d_idx"]);
                         writeln!(kernel, ";").unwrap();
                         writeln!(kernel, "let k_val = {k_tensor}[k_idx];").unwrap();
 
@@ -234,7 +260,7 @@ impl FlashAttentionOperation {
                         write!(kernel, "let v_idx = ").unwrap();
                         v_tensor.strided_index(
                             kernel,
-                            ["batch_idx", "head_idx", "k_seq", "out_dim"],
+                            ["batch_idx", "kv_head_idx", "k_seq", "out_dim"],
                         );
                         writeln!(kernel, ";").unwrap();
                         writeln!(kernel, "let v_val = {v_tensor}[v_idx];").unwrap();
@@ -303,6 +329,8 @@ impl FlashAttentionOperation {
             writeln!(kernel, "let head_idx = idx % {num_heads};").unwrap();
             writeln!(kernel, "idx /= {num_heads};").unwrap();
             writeln!(kernel, "let batch_idx = idx;").unwrap();
+            // Map Q head index to KV head index for GQA/MQA
+            writeln!(kernel, "let kv_head_idx = head_idx / {num_key_value_groups}u;").unwrap();
 
             // Early exit if we're beyond valid elements
             writeln!(
@@ -342,7 +370,7 @@ impl FlashAttentionOperation {
 
                     // Load K value
                     write!(kernel, "let k_idx = ").unwrap();
-                    k_tensor.strided_index(kernel, ["batch_idx", "head_idx", "k_seq", "d_idx"]);
+                    k_tensor.strided_index(kernel, ["batch_idx", "kv_head_idx", "k_seq", "d_idx"]);
                     writeln!(kernel, ";").unwrap();
                     writeln!(kernel, "let k_val = {k_tensor}[k_idx];").unwrap();
 
@@ -361,7 +389,7 @@ impl FlashAttentionOperation {
 
                 // Load V value for the output dimension we're computing
                 write!(kernel, "let v_idx = ").unwrap();
-                v_tensor.strided_index(kernel, ["batch_idx", "head_idx", "k_seq", "out_dim"]);
+                v_tensor.strided_index(kernel, ["batch_idx", "kv_head_idx", "k_seq", "out_dim"]);
                 writeln!(kernel, ";").unwrap();
                 writeln!(kernel, "let v_val = {v_tensor}[v_idx];").unwrap();
 
@@ -823,6 +851,124 @@ async fn test_flash_attention_kv_cache_fuzz() {
                              (batch={}, heads={}, q_seq_len={}, kv_seq_len={}, head_dim={})",
                             b, h, s, d, flash_val, std_val,
                             batch, heads, q_seq_len, kv_seq_len, head_dim
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_flash_attention_gqa_fuzz() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    // Fuzz test for Grouped-Query Attention (GQA) and Multi-Query Attention (MQA)
+    // where K/V have fewer heads than Q
+    for _iteration in 0..50 {
+        let batch = (rand::random::<u32>() as usize % 2) + 1;
+        // Choose num_kv_heads first, then make num_heads a multiple of it
+        let num_kv_heads = (rand::random::<u32>() as usize % 4) + 1;
+        let num_key_value_groups = (rand::random::<u32>() as usize % 4) + 1;
+        let num_heads = num_kv_heads * num_key_value_groups;
+        let seq_len = (rand::random::<u32>() as usize % 32) + 1;
+        let head_dim = (rand::random::<u32>() as usize % 64) + 1;
+
+        // Q: [batch, num_heads, seq_len, head_dim]
+        let q_data: Vec<Vec<Vec<Vec<f32>>>> = (0..batch)
+            .map(|_| {
+                (0..num_heads)
+                    .map(|_| {
+                        (0..seq_len)
+                            .map(|_| (0..head_dim).map(|_| rand::random::<f32>() * 2.0 - 1.0).collect())
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
+
+        // K/V: [batch, num_kv_heads, seq_len, head_dim]
+        let k_data: Vec<Vec<Vec<Vec<f32>>>> = (0..batch)
+            .map(|_| {
+                (0..num_kv_heads)
+                    .map(|_| {
+                        (0..seq_len)
+                            .map(|_| (0..head_dim).map(|_| rand::random::<f32>() * 2.0 - 1.0).collect())
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
+
+        let v_data: Vec<Vec<Vec<Vec<f32>>>> = (0..batch)
+            .map(|_| {
+                (0..num_kv_heads)
+                    .map(|_| {
+                        (0..seq_len)
+                            .map(|_| (0..head_dim).map(|_| rand::random::<f32>() * 2.0 - 1.0).collect())
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
+
+        let q = Tensor::new(&device, &q_data);
+        let k = Tensor::new(&device, &k_data);
+        let v = Tensor::new(&device, &v_data);
+
+        let scale = 1.0 / (head_dim as f32).sqrt();
+
+        // Flash attention with GQA
+        let flash_output = q.flash_attention(&k, &v, scale, None);
+        let flash_result = flash_output.as_slice().await.unwrap();
+
+        // Reference: expand K/V to match Q heads, then do standard attention
+        let k_expanded: Vec<Vec<Vec<Vec<f32>>>> = (0..batch)
+            .map(|b| {
+                (0..num_heads)
+                    .map(|h| {
+                        let kv_h = h / num_key_value_groups;
+                        k_data[b][kv_h].clone()
+                    })
+                    .collect()
+            })
+            .collect();
+        let v_expanded: Vec<Vec<Vec<Vec<f32>>>> = (0..batch)
+            .map(|b| {
+                (0..num_heads)
+                    .map(|h| {
+                        let kv_h = h / num_key_value_groups;
+                        v_data[b][kv_h].clone()
+                    })
+                    .collect()
+            })
+            .collect();
+
+        let k_exp = Tensor::new(&device, &k_expanded);
+        let v_exp = Tensor::new(&device, &v_expanded);
+
+        let scores = q.mat_mul(&k_exp.t()) * scale;
+        let attn_weights = scores.softmax_last_dim();
+        let std_output = attn_weights.mat_mul(&v_exp);
+        let std_result = std_output.as_slice().await.unwrap();
+
+        let tolerance = 0.01;
+        for b in 0..batch {
+            for h in 0..num_heads {
+                for s in 0..seq_len {
+                    for d in 0..head_dim {
+                        let flash_val = flash_result[[b, h, s, d]];
+                        let std_val = std_result[[b, h, s, d]];
+
+                        assert!(
+                            (flash_val - std_val).abs() < tolerance,
+                            "GQA fuzz mismatch at [{}, {}, {}, {}]: flash={}, standard={} \
+                             (batch={}, num_heads={}, num_kv_heads={}, seq_len={}, head_dim={})",
+                            b, h, s, d, flash_val, std_val,
+                            batch, num_heads, num_kv_heads, seq_len, head_dim
                         );
                     }
                 }

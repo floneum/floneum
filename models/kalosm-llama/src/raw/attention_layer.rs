@@ -280,7 +280,6 @@ impl LlamaAttention {
         let num_heads = self.n_head;
         let head_dim = self.head_dim;
         let num_key_value_heads = self.n_kv_head;
-        let num_key_value_groups = num_heads / num_key_value_heads;
 
         let (query_states, key_states, value_states) = match self.attention_variant {
             AttentionVariant::Separate(ref attention) => attention.forward(
@@ -302,8 +301,6 @@ impl LlamaAttention {
                 pos_ids,
             ),
         };
-        let key_states = repeat_kv(key_states, num_key_value_groups);
-        let value_states = repeat_kv(value_states, num_key_value_groups);
 
         let (key_states, value_states) = match cache {
             None => (key_states, value_states),
@@ -321,17 +318,6 @@ impl LlamaAttention {
             q_len,
             hidden_size,
         )
-    }
-}
-
-fn repeat_kv(x: Tensor<4, f32>, num_key_value_groups: usize) -> Tensor<4, f32> {
-    if num_key_value_groups == 1 {
-        x
-    } else {
-        let [b_sz, n_kv_head, seq_len, head_dim] = *x.shape();
-        x.unsqueeze(2)
-            .broadcast_as([b_sz, n_kv_head, num_key_value_groups, seq_len, head_dim])
-            .reshape([b_sz, n_kv_head * num_key_value_groups, seq_len, head_dim])
     }
 }
 
