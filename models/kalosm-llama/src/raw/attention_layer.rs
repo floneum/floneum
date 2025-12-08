@@ -329,12 +329,9 @@ fn repeat_kv(x: Tensor<4, f32>, num_key_value_groups: usize) -> Tensor<4, f32> {
         x
     } else {
         let [b_sz, n_kv_head, seq_len, head_dim] = *x.shape();
-        Tensor::cat(vec![x; num_key_value_groups], 2).reshape([
-            b_sz,
-            n_kv_head * num_key_value_groups,
-            seq_len,
-            head_dim,
-        ])
+        x.unsqueeze(2)
+            .broadcast_as([b_sz, n_kv_head, num_key_value_groups, seq_len, head_dim])
+            .reshape([b_sz, n_kv_head * num_key_value_groups, seq_len, head_dim])
     }
 }
 
