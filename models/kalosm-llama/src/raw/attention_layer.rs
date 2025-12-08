@@ -302,7 +302,7 @@ impl LlamaAttention {
                 pos_ids,
             ),
         };
-        let key_states = repeat_kv(key_states.clone(), num_key_value_groups);
+        let key_states = repeat_kv(key_states, num_key_value_groups);
         let value_states = repeat_kv(value_states, num_key_value_groups);
 
         let (key_states, value_states) = match cache {

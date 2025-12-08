@@ -265,9 +265,11 @@ impl<T: FloatDataType> MaskCache<T> {
             // Pad the mask on the left with zeros
             let mask_tensor = mask.mask();
             let shape = mask_tensor.shape();
-            let zeros = Tensor::zeros(device, [shape[0], seqlen_offset]);
-            // Concatenate along dimension 1 (columns)
-            let padded_mask = Tensor::cat([zeros, mask_tensor.clone()], 1);
+            let zeros = Tensor::zeros(device, [shape[0], seqlen_offset + shape[1]]);
+            let padded_mask = zeros.slice_assign(
+                [0..shape[0], seqlen_offset..(seqlen_offset + shape[1])],
+                mask_tensor,
+            );
             AttentionMask { mask: padded_mask }
         } else {
             mask
