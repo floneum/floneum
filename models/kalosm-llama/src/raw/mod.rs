@@ -35,7 +35,7 @@ pub const GEMMA_DEFAULT_ROPE_FREQUENCY_SLIDING: f32 = 10_000.;
 
 /// The configuration of a Llama model.
 pub struct LlamaConfig {
-    rope_freq_weight: Option<Tensor<2, f32>>,
+    rope_freq_weight: Option<Tensor<1, f32>>,
     rope_theta: f32,
     pub(crate) context_length: usize,
     head_dimension: usize,

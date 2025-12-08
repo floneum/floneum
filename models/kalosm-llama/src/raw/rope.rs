@@ -4,7 +4,7 @@ use std::f32::consts::PI;
 
 pub(crate) fn create_inverse_frequency(
     rope_scaling: Option<&RopeScalingConfig>,
-    rope_freq_weight: Option<&Tensor<2, f32>>,
+    rope_freq_weight: Option<&Tensor<1, f32>>,
     dim: usize,
     rope_theta: f32,
     device: &Device,
