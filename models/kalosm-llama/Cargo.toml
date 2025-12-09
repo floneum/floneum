@@ -57,4 +57,5 @@ anyhow.workspace = true
 kalosm-streams.workspace = true
 
 [features]
-default = []
+default = ["tokio"]
+tokio = ["kalosm-common/tokio"]

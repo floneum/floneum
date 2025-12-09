@@ -164,7 +164,7 @@ where
 #[derive(Clone)]
 pub struct LlamaChatSession {
     history: Vec<ChatMessage>,
-    session: LlamaSession,
+    session: LlamaSession<half::f16>,
 }
 
 impl ChatSession for LlamaChatSession {
@@ -303,7 +303,7 @@ fn test_serialize_deserialize_chat_session() {
 impl LlamaChatSession {
     #[allow(clippy::too_many_arguments)]
     /// Creates a new chat history.
-    fn new(session: LlamaSession) -> Self {
+    fn new(session: LlamaSession<half::f16>) -> Self {
         Self {
             history: Vec::new(),
             session,

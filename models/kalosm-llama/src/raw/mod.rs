@@ -16,6 +16,8 @@ use fusor_core::cache::MaskCache;
 use fusor_core::layers::Embedding;
 use fusor_core::layers::Linear;
 use fusor_core::layers::RmsNorm;
+use fusor_core::CastTensor;
+use fusor_core::FloatDataType;
 use fusor_core::QMatrix;
 use fusor_core::ShardedVarBuilder;
 use fusor_core::{Device, Result, Tensor};
@@ -34,11 +36,11 @@ pub const GEMMA_DEFAULT_SLIDING_WINDOW_TYPE: usize = 6;
 pub const GEMMA_DEFAULT_ROPE_FREQUENCY_SLIDING: f32 = 10_000.;
 
 /// The configuration of a Llama model.
-pub struct LlamaConfig {
-    rope_freq_weight: Option<Tensor<1, f32>>,
-    rope_theta: f32,
+pub struct LlamaConfig<F: FloatDataType = f32> {
+    pub(crate) rope_freq_weight: Option<Tensor<1, F>>,
+    pub(crate) rope_theta: f32,
     pub(crate) context_length: usize,
-    head_dimension: usize,
+    pub(crate) head_dimension: usize,
     n_head: usize,
     pub(crate) n_layer: usize,
     pub(crate) start_token_string: String,
@@ -55,7 +57,7 @@ pub struct LlamaConfig {
     pub(crate) mrope_sections: Option<Vec<usize>>,
 }
 
-impl LlamaConfig {
+impl<F: FloatDataType> LlamaConfig<F> {
     fn hidden_size(&self) -> usize {
         self.head_dimension * self.n_head
     }
@@ -93,17 +95,17 @@ pub struct RopeScalingConfig {
     pub(crate) original_max_position_embeddings: usize,
 }
 
-pub struct Model {
-    pub(crate) config: Arc<LlamaConfig>,
+pub struct Model<F: FloatDataType = f32> {
+    pub(crate) config: Arc<LlamaConfig<F>>,
     // vision_encoder: Option<vision::QwenVisionTransformer>,
-    tok_embeddings: Embedding<f32>,
-    layers: Vec<LlamaAttention>,
-    norm: RmsNorm<1, f32>,
+    tok_embeddings: Embedding<F>,
+    layers: Vec<LlamaAttention<F>>,
+    norm: RmsNorm<1, F>,
     output: QMatrix,
-    masks: MaskCache<f32>,
+    masks: MaskCache<F>,
 }
 
-impl Model {
+impl<F: FloatDataType> Model<F> {
     pub fn from_gguf<R: std::io::Seek + std::io::Read>(
         source: &mut ShardedVarBuilder<R>,
         _vision_ct: Option<GgufMetadata>,
@@ -112,8 +114,11 @@ impl Model {
         override_stop_token_string: Option<String>,
         override_chat_template: Option<String>,
         rope_scaling: Option<RopeScalingConfig>,
-    ) -> std::result::Result<Self, LlamaSourceError> {
-        let decode_norm = |qmatrix: QMatrix, eps: f64| -> Result<RmsNorm<1, f32>> {
+    ) -> std::result::Result<Self, LlamaSourceError>
+    where
+        f32: CastTensor<F>,
+    {
+        let decode_norm = |qmatrix: QMatrix, eps: f64| -> Result<RmsNorm<1, F>> {
             let weight = qmatrix.dequantize();
             Ok(RmsNorm::new(weight, None, eps as f32))
         };
@@ -262,7 +267,7 @@ impl Model {
         let mut tok_embeddings = tok_embeddings_q.dequantize();
         // if this is gemma3, scale the tok_embeddings by sqrt(embedding_length)
         if &*architecture == "gemma3" {
-            tok_embeddings = tok_embeddings * (embedding_length as f32).sqrt();
+            tok_embeddings = tok_embeddings * F::from_f32((embedding_length as f32).sqrt());
         }
         let tok_embeddings = Embedding::new_from_tensor(tok_embeddings);
 
@@ -418,14 +423,20 @@ impl Model {
             // vision_encoder: vision_encoder.transpose()?,
         })
     }
+}
 
+impl<F: FloatDataType> Model<F>
+where
+    F: CastTensor<f32>,
+    f32: CastTensor<F>,
+{
     pub fn encode_tokens(
         &self,
         raw_tokens: &[u32],
         _raw_images: &[(image::DynamicImage, MediaHints)],
         device: &Device,
-        mut cache: Option<&mut LlamaCache>,
-    ) -> Result<(Tensor<3, f32>, usize, usize, Option<Tensor<2, f32>>)> {
+        mut cache: Option<&mut LlamaCache<F>>,
+    ) -> Result<(Tensor<3, F>, usize, usize, Option<Tensor<2, F>>)> {
         // let mut grid_thw = Vec::new();
         // let mut images = Vec::new();
         // let mut image_token_ranges = Vec::new();
@@ -545,8 +556,8 @@ impl Model {
         tokens: &[u32],
         images: &[(image::DynamicImage, MediaHints)],
         device: &Device,
-        mut cache: Option<&mut LlamaCache>,
-    ) -> Result<Tensor<2, f32>> {
+        mut cache: Option<&mut LlamaCache<F>>,
+    ) -> Result<Tensor<2, F>> {
         let (mut layer_in, seq_len, index_pos, pos_ids) =
             self.encode_tokens(tokens, images, device, cache.as_deref_mut())?;
 

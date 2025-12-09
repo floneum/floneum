@@ -19,7 +19,7 @@ use crate::{LlamaModel, LlamaSession};
 pub(crate) fn generate_structured<P: Parser>(
     prompt: MessageContent,
     llm: &LlamaModel,
-    session: &mut LlamaSession,
+    session: &mut LlamaSession<half::f16>,
     parser: P,
     parser_state: P::PartialState,
     mut sampler: Arc<Mutex<dyn Sampler>>,

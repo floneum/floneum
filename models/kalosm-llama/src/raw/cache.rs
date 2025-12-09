@@ -1,4 +1,5 @@
 use fusor_core::cache::KvCache;
+use fusor_core::DataType;
 
 use super::LlamaConfig;
 
@@ -7,15 +8,15 @@ const CONCAT_DIMENSION: usize = 2;
 
 /// A cache for llama inference. This cache will speed up generation of sequential text significantly.
 #[derive(Clone)]
-pub struct LlamaCache {
+pub struct LlamaCache<F: DataType = f32> {
     pub(crate) start_time: u32,
     pub(crate) tokens: Vec<u32>,
-    pub(crate) blocks: Vec<KvCache<f32>>,
+    pub(crate) blocks: Vec<KvCache<F>>,
 }
 
-impl LlamaCache {
+impl<F: DataType> LlamaCache<F> {
     /// Create a new cache for a model
-    pub fn new(config: &LlamaConfig) -> Self {
+    pub fn new<G: fusor_core::FloatDataType>(config: &LlamaConfig<G>) -> Self {
         let max_seq_len = config.context_length;
         let mut blocks = Vec::with_capacity(config.n_layer);
         for layer_idx in 0..config.n_layer {

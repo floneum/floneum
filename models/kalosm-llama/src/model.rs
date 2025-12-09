@@ -76,18 +76,18 @@ impl From<image::ImageError> for LlamaModelError {
 
 /// The inner, synchronous Llama model.
 pub(crate) struct LlamaModel {
-    pub(crate) model: Model,
+    pub(crate) model: Model<half::f16>,
     pub(crate) device: Device,
     pub(crate) tokenizer: Arc<Tokenizer>,
 }
 
 impl LlamaModel {
     pub(crate) fn forward(
-        model: &Model,
+        model: &Model<half::f16>,
         device: &Device,
         tokens: &[u32],
         images: &[(image::DynamicImage, MediaHints)],
-        cache: Option<&mut LlamaCache>,
+        cache: Option<&mut LlamaCache<half::f16>>,
         logits_vec: &mut Vec<f32>,
         #[allow(unused)] tokenizer: &Tokenizer,
     ) -> Result<(), LlamaModelError> {
@@ -104,6 +104,8 @@ impl LlamaModel {
         }
 
         let logits = model.forward(tokens, images, device, cache)?.squeeze(0);
+        // Cast f16 logits back to f32 for sampling
+        let logits: fusor_core::Tensor<1, f32> = logits.cast();
         futures::executor::block_on(async move {
             let len = logits.shape()[0];
             let logits = logits.as_slice().await.unwrap();

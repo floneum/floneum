@@ -1,14 +1,17 @@
 use super::{LlamaConfig, RopeScalingConfig};
-use fusor_core::{DataType, Device, Dim, Tensor, D};
+use fusor_core::{CastTensor, DataType, Device, Dim, FloatDataType, Tensor, D};
 use std::f32::consts::PI;
 
-pub(crate) fn create_inverse_frequency(
+pub(crate) fn create_inverse_frequency<F: FloatDataType>(
     rope_scaling: Option<&RopeScalingConfig>,
-    rope_freq_weight: Option<&Tensor<1, f32>>,
+    rope_freq_weight: Option<&Tensor<1, F>>,
     dim: usize,
     rope_theta: f32,
     device: &Device,
-) -> Tensor<2, f32> {
+) -> Tensor<2, F>
+where
+    f32: CastTensor<F>,
+{
     let mut inverse_frequency = (0..dim)
         .step_by(2)
         .map(|i| 1. / (rope_theta.powf(i as f32 / dim as f32)))
@@ -32,8 +35,8 @@ pub(crate) fn create_inverse_frequency(
         }
     }
     let inverse_frequency_len = inverse_frequency.len();
-    let mut inverse_frequency =
-        Tensor::new(device, &inverse_frequency).reshape([1, inverse_frequency_len]);
+    let mut inverse_frequency: Tensor<2, F> =
+        Tensor::new(device, &inverse_frequency).reshape([1, inverse_frequency_len]).cast();
     if let Some(weight) = &rope_freq_weight {
         inverse_frequency = inverse_frequency * weight.reshape((1, ()));
     }
@@ -42,13 +45,16 @@ pub(crate) fn create_inverse_frequency(
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum RopeImplementation {
-    QwenVL(QwenVLRopeCache),
-    Llama(RopeCache),
+pub(crate) enum RopeImplementation<F: FloatDataType = f32> {
+    QwenVL(QwenVLRopeCache<F>),
+    Llama(RopeCache<F>),
 }
 
-impl RopeImplementation {
-    pub fn new(config: &LlamaConfig, rope_theta: f32, device: &Device) -> fusor_core::Result<Self> {
+impl<F: FloatDataType> RopeImplementation<F>
+where
+    f32: CastTensor<F>,
+{
+    pub fn new(config: &LlamaConfig<F>, rope_theta: f32, device: &Device) -> fusor_core::Result<Self> {
         if let Some(mrope_sections) = &config.mrope_sections {
             let cache = QwenVLRopeCache::new(config, rope_theta, mrope_sections, device)?;
             Ok(Self::QwenVL(cache))
@@ -60,12 +66,12 @@ impl RopeImplementation {
 
     pub fn forward(
         &self,
-        query: &Tensor<4, f32>,
-        key: &Tensor<4, f32>,
+        query: &Tensor<4, F>,
+        key: &Tensor<4, F>,
         start_pos: usize,
-        position_ids: Option<&Tensor<2, f32>>,
+        position_ids: Option<&Tensor<2, F>>,
         interleaved_rope: bool,
-    ) -> (Tensor<4, f32>, Tensor<4, f32>) {
+    ) -> (Tensor<4, F>, Tensor<4, F>) {
         match self {
             Self::QwenVL(cache) => cache.forward(position_ids.expect("qwen vl requires position ids"), query, key),
             Self::Llama(cache) => {
@@ -80,14 +86,17 @@ impl RopeImplementation {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct QwenVLRopeCache {
-    inverse_frequency: Tensor<2, f32>,
+pub(crate) struct QwenVLRopeCache<F: FloatDataType = f32> {
+    inverse_frequency: Tensor<2, F>,
     mrope_sections: Vec<usize>,
 }
 
-impl QwenVLRopeCache {
+impl<F: FloatDataType> QwenVLRopeCache<F>
+where
+    f32: CastTensor<F>,
+{
     pub fn new(
-        config: &LlamaConfig,
+        config: &LlamaConfig<F>,
         rope_theta: f32,
         mrope_sections: &[usize],
         device: &Device,
@@ -106,7 +115,7 @@ impl QwenVLRopeCache {
         })
     }
 
-    fn forward_sin_cos(&self, position_ids: &Tensor<2, f32>) -> (Tensor<2, f32>, Tensor<2, f32>) {
+    fn forward_sin_cos(&self, position_ids: &Tensor<2, F>) -> (Tensor<2, F>, Tensor<2, F>) {
         let inv_freq_expanded = self
             .inverse_frequency
             .reshape(((),))
@@ -145,15 +154,16 @@ impl QwenVLRopeCache {
 
     pub(crate) fn forward(
         &self,
-        position_ids: &Tensor<2, f32>,
-        query: &Tensor<4, f32>,
-        key: &Tensor<4, f32>,
-    ) -> (Tensor<4, f32>, Tensor<4, f32>) {
+        position_ids: &Tensor<2, F>,
+        query: &Tensor<4, F>,
+        key: &Tensor<4, F>,
+    ) -> (Tensor<4, F>, Tensor<4, F>) {
         let (cos, sin) = self.forward_sin_cos(position_ids);
         let key = key.rope(&cos, &sin);
         let query = query.rope(&cos, &sin);
         (query, key)
     }
+
 }
 
 fn split<const R: usize, T: DataType>(
@@ -172,14 +182,17 @@ fn split<const R: usize, T: DataType>(
 }
 
 #[derive(Debug, Clone)]
-pub struct RopeCache {
-    sin: Tensor<2, f32>,
-    cos: Tensor<2, f32>,
+pub struct RopeCache<F: FloatDataType = f32> {
+    sin: Tensor<2, F>,
+    cos: Tensor<2, F>,
 }
 
-impl RopeCache {
-    pub fn new(config: &LlamaConfig, rope_theta: f32, device: &Device) -> fusor_core::Result<Self> {
-        let inverse_frequency = create_inverse_frequency(
+impl<F: FloatDataType> RopeCache<F>
+where
+    f32: CastTensor<F>,
+{
+    pub fn new(config: &LlamaConfig<F>, rope_theta: f32, device: &Device) -> fusor_core::Result<Self> {
+        let inverse_frequency: Tensor<2, F> = create_inverse_frequency(
             config.rope_scaling.as_ref(),
             config.rope_freq_weight.as_ref(),
             config.head_dimension,
@@ -187,9 +200,10 @@ impl RopeCache {
             device,
         );
 
-        let llama_context_length_indices =
+        let llama_context_length_indices: Tensor<2, F> =
             Tensor::arange(device, 0f32, config.context_length as f32)
-                .reshape([config.context_length, 1]);
+                .reshape([config.context_length, 1])
+                .cast();
 
         let outer_product = llama_context_length_indices.mat_mul(&inverse_frequency);
 
@@ -199,19 +213,19 @@ impl RopeCache {
         Ok(Self { sin, cos })
     }
 
-    pub(crate) fn from_parts(cos: Tensor<2, f32>, sin: Tensor<2, f32>) -> fusor_core::Result<Self> {
+    pub(crate) fn from_parts(cos: Tensor<2, F>, sin: Tensor<2, F>) -> fusor_core::Result<Self> {
         Ok(Self { cos, sin })
     }
 
     fn forward_with_embed(
         &self,
-        q: &Tensor<4, f32>,
-        k: &Tensor<4, f32>,
+        q: &Tensor<4, F>,
+        k: &Tensor<4, F>,
         start_pos: usize,
-        apply_rotary_emb: fn(&Tensor<4, f32>, &Tensor<2, f32>, &Tensor<2, f32>) -> Tensor<4, f32>,
-    ) -> (Tensor<4, f32>, Tensor<4, f32>) {
+        apply_rotary_emb: fn(&Tensor<4, F>, &Tensor<2, F>, &Tensor<2, F>) -> Tensor<4, F>,
+    ) -> (Tensor<4, F>, Tensor<4, F>) {
         let apply_rotary_emb =
-            |sin: &Tensor<2, f32>, cos: &Tensor<2, f32>, x: &Tensor<4, f32>, index_pos| {
+            |sin: &Tensor<2, F>, cos: &Tensor<2, F>, x: &Tensor<4, F>, index_pos| {
                 let [_b_sz, _n_head, seq_len, _n_embd] = *x.shape();
                 let cos = cos.narrow(0, index_pos, seq_len);
                 let sin = sin.narrow(0, index_pos, seq_len);
@@ -225,29 +239,30 @@ impl RopeCache {
 
     pub fn forward(
         &self,
-        q: &Tensor<4, f32>,
-        k: &Tensor<4, f32>,
+        q: &Tensor<4, F>,
+        k: &Tensor<4, F>,
         start_pos: usize,
-    ) -> (Tensor<4, f32>, Tensor<4, f32>) {
+    ) -> (Tensor<4, F>, Tensor<4, F>) {
         self.forward_with_embed(q, k, start_pos, Tensor::rope_normal_fused)
     }
 
     pub fn forward_i(
         &self,
-        q: &Tensor<4, f32>,
-        k: &Tensor<4, f32>,
+        q: &Tensor<4, F>,
+        k: &Tensor<4, F>,
         start_pos: usize,
-    ) -> (Tensor<4, f32>, Tensor<4, f32>) {
+    ) -> (Tensor<4, F>, Tensor<4, F>) {
         self.forward_with_embed(q, k, start_pos, Tensor::rope_fused)
     }
 
-    pub(crate) fn sin(&self) -> &Tensor<2, f32> {
+    pub(crate) fn sin(&self) -> &Tensor<2, F> {
         &self.sin
     }
 
-    pub(crate) fn cos(&self) -> &Tensor<2, f32> {
+    pub(crate) fn cos(&self) -> &Tensor<2, F> {
         &self.cos
     }
+
 }
 
 #[cfg(test)]
@@ -255,9 +270,9 @@ impl RopeCache {
 async fn test_rope_cache() {
     use fusor_core::{Device, Tensor};
 
-    let config = LlamaConfig::mock_test();
+    let config: LlamaConfig<f32> = LlamaConfig::mock_test();
     let device = Device::new().await.unwrap();
-    let cache = RopeCache::new(&config, config.rope_theta, &device).unwrap();
+    let cache: RopeCache<f32> = RopeCache::new(&config, config.rope_theta, &device).unwrap();
 
     let expected_cos = Tensor::new(
         &device,

@@ -1,5 +1,6 @@
 use crate::raw::cache::LlamaCache;
 use crate::raw::LlamaConfig;
+use fusor_core::FloatDataType;
 use kalosm_language_model::TextCompletionSession;
 use std::sync::{Arc, RwLock};
 
@@ -19,11 +20,11 @@ pub enum LlamaSessionLoadingError {
 
 /// A Llama session with cached state for the current fed prompt
 #[derive(Clone)]
-pub struct LlamaSession {
-    pub(crate) cache: Arc<RwLock<LlamaCache>>,
+pub struct LlamaSession<F: FloatDataType = f32> {
+    pub(crate) cache: Arc<RwLock<LlamaCache<F>>>,
 }
 
-impl TextCompletionSession for LlamaSession {
+impl<F: FloatDataType> TextCompletionSession for LlamaSession<F> {
     type Error = LlamaSessionLoadingError;
 
     fn write_to(&self, _into: &mut Vec<u8>) -> Result<(), Self::Error> {
@@ -54,9 +55,9 @@ impl TextCompletionSession for LlamaSession {
     }
 }
 
-impl LlamaSession {
+impl<F: FloatDataType> LlamaSession<F> {
     /// Create a new session
-    pub(crate) fn new(cache: &LlamaConfig) -> Self {
+    pub(crate) fn new(cache: &LlamaConfig<F>) -> Self {
         Self {
             cache: Arc::new(RwLock::new(LlamaCache::new(cache))),
         }

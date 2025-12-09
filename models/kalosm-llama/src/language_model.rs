@@ -42,7 +42,7 @@ impl ModelBuilder for LlamaBuilder {
 }
 
 impl CreateTextCompletionSession for Llama {
-    type Session = LlamaSession;
+    type Session = LlamaSession<half::f16>;
     type Error = LlamaModelError;
 
     fn new_session(&self) -> Result<Self::Session, Self::Error> {

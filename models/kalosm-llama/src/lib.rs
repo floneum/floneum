@@ -52,6 +52,9 @@ use std::ops::Deref;
 use std::sync::Arc;
 use tokenizers::Tokenizer;
 
+/// Re-export half::f16 for users who want to use f16 activation types
+pub use half::f16;
+
 /// A prelude of commonly used items in kalosm-llama.
 pub mod prelude {
     pub use crate::session::LlamaSession;
@@ -77,7 +80,7 @@ struct UnstructuredGenerationTask {
 /// A quantized Llama language model with support for streaming generation.
 #[derive(Clone)]
 pub struct Llama {
-    config: Arc<LlamaConfig>,
+    config: Arc<LlamaConfig<half::f16>>,
     tokenizer: Arc<Tokenizer>,
     task_sender: tokio::sync::mpsc::UnboundedSender<Task>,
 }
@@ -294,7 +297,7 @@ pub(crate) struct InferenceSettings {
     sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler>>,
 
     /// The session to use.
-    session: LlamaSession,
+    session: LlamaSession<half::f16>,
 
     /// The maximum number of tokens to generate.
     max_tokens: u32,
@@ -307,7 +310,7 @@ impl InferenceSettings {
     pub fn new(
         prompt: impl ToString,
         images: Vec<(image::DynamicImage, MediaHints)>,
-        session: LlamaSession,
+        session: LlamaSession<half::f16>,
         sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler>>,
         max_tokens: u32,
         stop_on: Option<String>,

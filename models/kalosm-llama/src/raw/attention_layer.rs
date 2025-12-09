@@ -4,19 +4,21 @@ use fusor_core::cache::AttentionMask;
 use fusor_core::cache::KvCache;
 use fusor_core::layers::Linear;
 use fusor_core::layers::RmsNorm;
+use fusor_core::CastTensor;
+use fusor_core::FloatDataType;
 use fusor_core::QMatrix;
 use fusor_core::Tensor;
 use fusor_core::D;
 
-pub enum FeedForwardVariant {
+pub enum FeedForwardVariant<F: FloatDataType = f32> {
     // Used by the Llama, Qwen, and Gemma models
-    Llama(LlamaFeedForward),
+    Llama(LlamaFeedForward<F>),
     // Used by the Phi models
     Phi(PhiFeedForward),
 }
 
-impl FeedForwardVariant {
-    pub(crate) fn forward(&self, x: &Tensor<3, f32>) -> Tensor<3, f32> {
+impl<F: FloatDataType> FeedForwardVariant<F> {
+    pub(crate) fn forward(&self, x: &Tensor<3, F>) -> Tensor<3, F> {
         match self {
             FeedForwardVariant::Llama(ffn) => ffn.forward(x),
             FeedForwardVariant::Phi(ffn) => ffn.forward(x),
@@ -31,7 +33,7 @@ pub struct PhiFeedForward {
 }
 
 impl PhiFeedForward {
-    pub(crate) fn forward(&self, x: &Tensor<3, f32>) -> Tensor<3, f32> {
+    pub(crate) fn forward<F: FloatDataType>(&self, x: &Tensor<3, F>) -> Tensor<3, F> {
         let up_states = x.q_mat_mul(&self.up);
         let gate = up_states.narrow(D::Minus1, 0, self.feed_forward_length);
         let up_states = up_states.narrow(
@@ -45,16 +47,16 @@ impl PhiFeedForward {
     }
 }
 
-pub struct LlamaFeedForward {
+pub struct LlamaFeedForward<F: FloatDataType = f32> {
     gate: QMatrix,
-    gate_bias: Option<Tensor<1, f32>>,
+    gate_bias: Option<Tensor<1, F>>,
     down: QMatrix,
-    down_bias: Option<Tensor<1, f32>>,
+    down_bias: Option<Tensor<1, F>>,
     up: QMatrix,
-    up_bias: Option<Tensor<1, f32>>,
+    up_bias: Option<Tensor<1, F>>,
 }
 
-impl LlamaFeedForward {
+impl<F: FloatDataType> LlamaFeedForward<F> {
     pub(crate) fn new(gate: QMatrix, down: QMatrix, up: QMatrix) -> Self {
         Self {
             gate,
@@ -68,11 +70,11 @@ impl LlamaFeedForward {
 
     pub(crate) fn new_with_bias(
         gate: QMatrix,
-        gate_bias: Option<Tensor<1, f32>>,
+        gate_bias: Option<Tensor<1, F>>,
         down: QMatrix,
-        down_bias: Option<Tensor<1, f32>>,
+        down_bias: Option<Tensor<1, F>>,
         up: QMatrix,
-        up_bias: Option<Tensor<1, f32>>,
+        up_bias: Option<Tensor<1, F>>,
     ) -> Self {
         Self {
             gate,
@@ -84,7 +86,7 @@ impl LlamaFeedForward {
         }
     }
 
-    fn forward(&self, x: &Tensor<3, f32>) -> Tensor<3, f32> {
+    fn forward(&self, x: &Tensor<3, F>) -> Tensor<3, F> {
         let mut w1 = x.q_mat_mul(&self.gate);
         if let Some(ref bias) = self.gate_bias {
             w1 = w1.add_(bias);
@@ -104,52 +106,52 @@ impl LlamaFeedForward {
     }
 }
 
-pub enum AttentionVariant {
-    Separate(SeparateAttention),
+pub enum AttentionVariant<F: FloatDataType = f32> {
+    Separate(SeparateAttention<F>),
     Grouped(GroupedAttention),
 }
 
-pub struct AttentionBias {
-    bias_q: Tensor<1, f32>,
-    bias_k: Tensor<1, f32>,
-    bias_v: Tensor<1, f32>,
+pub struct AttentionBias<F: FloatDataType = f32> {
+    bias_q: Tensor<1, F>,
+    bias_k: Tensor<1, F>,
+    bias_v: Tensor<1, F>,
 }
 
-impl AttentionBias {
-    pub fn new(q: Tensor<1, f32>, k: Tensor<1, f32>, v: Tensor<1, f32>) -> Self {
+impl<F: FloatDataType> AttentionBias<F> {
+    pub fn new(q: Tensor<1, F>, k: Tensor<1, F>, v: Tensor<1, F>) -> Self {
         Self {
             bias_q: q,
             bias_k: k,
             bias_v: v,
         }
     }
-
-    pub fn from_qtensor(q: &QMatrix, k: &QMatrix, v: &QMatrix) -> Self {
-        Self::new(q.dequantize(), k.dequantize(), v.dequantize())
-    }
 }
 
-pub struct SeparateAttention {
+pub struct SeparateAttention<F: FloatDataType = f32> {
     pub attention_wq: QMatrix,
-    pub attention_q_norm: Option<RmsNorm<1, f32>>,
+    pub attention_q_norm: Option<RmsNorm<1, F>>,
     pub attention_wk: QMatrix,
-    pub attention_k_norm: Option<RmsNorm<1, f32>>,
+    pub attention_k_norm: Option<RmsNorm<1, F>>,
     pub attention_wv: QMatrix,
-    pub bias: Option<AttentionBias>,
+    pub bias: Option<AttentionBias<F>>,
     pub interleaved_rope: bool,
 }
 
-impl SeparateAttention {
+impl<F: FloatDataType> SeparateAttention<F>
+where
+    F: CastTensor<f32>,
+    f32: CastTensor<F>,
+{
     fn forward(
         &self,
         num_heads: usize,
         head_dim: usize,
         num_key_value_heads: usize,
-        hidden_states: &Tensor<3, f32>,
-        rope_cache: &RopeImplementation,
+        hidden_states: &Tensor<3, F>,
+        rope_cache: &RopeImplementation<F>,
         start_pos: usize,
-        pos_ids: Option<&Tensor<2, f32>>,
-    ) -> (Tensor<4, f32>, Tensor<4, f32>, Tensor<4, f32>) {
+        pos_ids: Option<&Tensor<2, F>>,
+    ) -> (Tensor<4, F>, Tensor<4, F>, Tensor<4, F>) {
         let [b_sz, seq_len, _] = *hidden_states.shape();
 
         let query_states = {
@@ -211,16 +213,19 @@ pub struct GroupedAttention {
 }
 
 impl GroupedAttention {
-    fn forward(
+    fn forward<F: FloatDataType>(
         &self,
         num_heads: usize,
         head_dim: usize,
         num_key_value_heads: usize,
-        x: &Tensor<3, f32>,
-        rope_cache: &RopeImplementation,
+        x: &Tensor<3, F>,
+        rope_cache: &RopeImplementation<F>,
         start_pos: usize,
-        pos_ids: Option<&Tensor<2, f32>>,
-    ) -> (Tensor<4, f32>, Tensor<4, f32>, Tensor<4, f32>) {
+        pos_ids: Option<&Tensor<2, F>>,
+    ) -> (Tensor<4, F>, Tensor<4, F>, Tensor<4, F>)
+    where
+        f32: CastTensor<F>,
+    {
         let [b_sz, seq_len, _] = *x.shape();
         let qkv = x.q_mat_mul(&self.attention_qkv);
 
@@ -250,31 +255,35 @@ impl GroupedAttention {
     }
 }
 
-pub struct LlamaAttention {
-    pub attention_variant: AttentionVariant,
-    pub attention_wo: Linear<f32>,
-    pub attention_norm: RmsNorm<1, f32>,
-    pub post_attention_norm: Option<RmsNorm<1, f32>>,
-    pub feed_forward_variant: FeedForwardVariant,
-    pub ffn_norm: RmsNorm<1, f32>,
-    pub post_ffn_norm: Option<RmsNorm<1, f32>>,
+pub struct LlamaAttention<F: FloatDataType = f32> {
+    pub attention_variant: AttentionVariant<F>,
+    pub attention_wo: Linear<F>,
+    pub attention_norm: RmsNorm<1, F>,
+    pub post_attention_norm: Option<RmsNorm<1, F>>,
+    pub feed_forward_variant: FeedForwardVariant<F>,
+    pub ffn_norm: RmsNorm<1, F>,
+    pub post_ffn_norm: Option<RmsNorm<1, F>>,
     pub n_head: usize,
     pub n_kv_head: usize,
     pub head_dim: usize,
     pub hidden_size: usize,
-    pub rope_cache: RopeImplementation,
+    pub rope_cache: RopeImplementation<F>,
     pub(crate) sliding_window_size: Option<usize>,
 }
 
-impl LlamaAttention {
+impl<F: FloatDataType> LlamaAttention<F>
+where
+    F: CastTensor<f32>,
+    f32: CastTensor<F>,
+{
     pub(crate) fn forward(
         &self,
-        hidden_states: &Tensor<3, f32>,
-        attention_mask: Option<&AttentionMask<f32>>,
+        hidden_states: &Tensor<3, F>,
+        attention_mask: Option<&AttentionMask<F>>,
         start_pos: usize,
-        pos_ids: Option<&Tensor<2, f32>>,
-        cache: Option<&mut KvCache<f32>>,
-    ) -> Tensor<3, f32> {
+        pos_ids: Option<&Tensor<2, F>>,
+        cache: Option<&mut KvCache<F>>,
+    ) -> Tensor<3, F> {
         let [b_sz, q_len, _] = *hidden_states.shape();
         let hidden_size = self.hidden_size;
         let num_heads = self.n_head;
@@ -322,17 +331,17 @@ impl LlamaAttention {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn forward_attention_qkv(
-    query_states: &Tensor<4, f32>,
-    key_states: &Tensor<4, f32>,
-    value_states: &Tensor<4, f32>,
-    attention_wo: &Linear<f32>,
-    attention_mask: Option<&AttentionMask<f32>>,
+pub(crate) fn forward_attention_qkv<F: FloatDataType>(
+    query_states: &Tensor<4, F>,
+    key_states: &Tensor<4, F>,
+    value_states: &Tensor<4, F>,
+    attention_wo: &Linear<F>,
+    attention_mask: Option<&AttentionMask<F>>,
     head_dim: usize,
     b_sz: usize,
     q_len: usize,
     hidden_size: usize,
-) -> Tensor<3, f32> {
+) -> Tensor<3, F> {
     let scale = 1. / (head_dim as f64).sqrt();
     let attn_output = {
         // let mut attn_weights = query_states.mat_mul(&key_states.t()) * scale as f32;
