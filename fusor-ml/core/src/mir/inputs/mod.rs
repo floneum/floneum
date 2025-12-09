@@ -152,7 +152,10 @@ impl Display for KernelInput {
                     "@group(0) @binding({index}) var<uniform> {integer}: u32;"
                 )?
             }
-            KernelInputType::Float(float) => write!(f, "var<uniform> {float}: f32;",)?,
+            KernelInputType::Float(float) => {
+                let index = float.index;
+                write!(f, "@group(0) @binding({index}) var<uniform> {float}: f32;")?
+            }
         }
 
         Ok(())

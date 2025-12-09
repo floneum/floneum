@@ -577,6 +577,7 @@ impl Model {
                 x = post_ffn_norm.forward(&x);
             }
             layer_in = x + residual;
+            _ = layer_in.materialize();
         }
         let x = self.norm.forward(&layer_in);
         let x = x.i((.., seq_len - 1, ..));

@@ -56,6 +56,6 @@ impl<const R: usize, T> RmsNorm<R, T> {
         Tensor<N, f32>: LastRank<N2, f32>,
         Tensor<N2, f32>: NextRankInner<NextRank = Tensor<N, f32>>,
     {
-        input.layer_norm(&self.weight, self.bias.as_ref(), self.eps, false)
+        input.rms_norm_fused(&self.weight, self.bias.as_ref(), self.eps)
     }
 }

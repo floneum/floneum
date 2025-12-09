@@ -11,6 +11,7 @@ mod pool;
 mod relu;
 mod repeat;
 mod rms_norm;
+mod rms_norm_fused;
 mod rope;
 mod rope_fused;
 mod silu;
