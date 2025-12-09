@@ -58,4 +58,16 @@ impl<const R: usize, T> RmsNorm<R, T> {
     {
         input.rms_norm_fused(&self.weight, self.bias.as_ref(), self.eps)
     }
+
+    /// Cast the RmsNorm to a different data type
+    pub fn cast<U: DataType>(self) -> RmsNorm<R, U>
+    where
+        T: CastTensor<U>,
+    {
+        RmsNorm {
+            weight: self.weight.cast(),
+            bias: self.bias.map(|b| b.cast()),
+            eps: self.eps,
+        }
+    }
 }

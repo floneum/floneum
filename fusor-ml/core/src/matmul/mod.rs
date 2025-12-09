@@ -104,6 +104,10 @@ impl MatMulOperation {
         }
     }
 
+    pub fn matmul_dtype(&self) -> DataTypeEnum {
+        self.pre_element_wise[0].out_datatype()
+    }
+
     pub fn rank(&self) -> u32 {
         self.out_shape.len() as u32
     }

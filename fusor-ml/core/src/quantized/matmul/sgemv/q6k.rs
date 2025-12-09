@@ -192,7 +192,7 @@ pub(crate) fn q6k_sgemv(
             )
             .unwrap();
 
-            writeln!(kernel, "var sums = vec4f();").unwrap();
+            writeln!(kernel, "var sums = vec4<{dtype}>();").unwrap();
             writeln!(kernel, "for (var j = 0u; j < 4u; j += 1u) {{").unwrap();
             {
                 let first_four_bytes = 0b00001111u8;

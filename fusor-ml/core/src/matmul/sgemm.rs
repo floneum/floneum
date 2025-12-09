@@ -135,7 +135,7 @@ pub(super) fn build_kernel(
         "parameters {parameters:?} invalid"
     );
 
-    let datatype = matmul.datatype;
+    let datatype = matmul.matmul_dtype();
     let workgroup_index = kernel.workgroup_index();
     let workgroup_local_index = kernel.workgroup_local_index();
 

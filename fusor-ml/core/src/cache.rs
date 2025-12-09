@@ -208,12 +208,20 @@ impl<T: FloatDataType> AttentionMask<T> {
 }
 
 /// Mask cache for efficiently managing attention masks
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct MaskCache<T> {
     #[allow(clippy::type_complexity)]
     masks: std::sync::Arc<
         std::sync::RwLock<std::collections::HashMap<(usize, Option<usize>), AttentionMask<T>>>,
     >,
+}
+
+impl<T> Default for MaskCache<T> {
+    fn default() -> Self {
+        Self {
+            masks: Default::default()
+        }
+    }
 }
 
 impl<T: FloatDataType> MaskCache<T> {

@@ -1,4 +1,4 @@
-use crate::{DataType, Device, NextRank, QMatrix, Result, Tensor, VarBuilder};
+use crate::{CastTensor, DataType, Device, NextRank, QMatrix, Result, Tensor, VarBuilder};
 
 /// Embedding layer for token/position embeddings
 ///
@@ -118,6 +118,19 @@ impl<T: DataType> Embedding<T> {
 
     pub fn embedding_dim(&self) -> usize {
         self.embedding_dim
+    }
+
+    /// Cast the Embedding layer to a different data type
+    pub fn cast<U: DataType>(self) -> Embedding<U>
+    where
+        T: CastTensor<U>,
+    {
+        Embedding {
+            embeddings_quantized: self.embeddings_quantized,
+            embeddings: self.embeddings.cast(),
+            num_embeddings: self.num_embeddings,
+            embedding_dim: self.embedding_dim,
+        }
     }
 }
 

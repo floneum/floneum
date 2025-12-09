@@ -251,7 +251,7 @@ pub(crate) fn q4k_sgemv(
             .unwrap();
             writeln!(
                 kernel,
-                "let shift_4 = vec4(1, {shift_right_4}, 1, {shift_right_4});"
+                "let shift_4 = vec4({dtype}(1), {dtype}({shift_right_4}), {dtype}(1), {dtype}({shift_right_4}));"
             )
             .unwrap();
             writeln!(

@@ -1,6 +1,6 @@
 use fusor_gguf::GgmlType;
 
-use crate::{DataType, Device, QMatrix, Result, Tensor, VarBuilder};
+use crate::{CastTensor, DataType, Device, QMatrix, Result, Tensor, VarBuilder};
 
 pub struct Linear<T> {
     weight: QMatrix,
@@ -28,5 +28,16 @@ impl<T: DataType> Linear<T> {
 
     pub fn quantization(&self) -> GgmlType {
         self.weight.datatype()
+    }
+
+    /// Cast the Linear layer to a different data type
+    pub fn cast<U: DataType>(self) -> Linear<U>
+    where
+        T: CastTensor<U>,
+    {
+        Linear {
+            weight: self.weight,
+            bias: self.bias.map(|b| b.cast()),
+        }
     }
 }
