@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::OnceLock;
 
 use crate::chat_template::HuggingFaceChatTemplate;
 use crate::raw::attention_layer::LlamaAttention;
@@ -588,7 +589,10 @@ where
                 x = post_ffn_norm.forward(&x);
             }
             layer_in = x + residual;
-            _ = layer_in.materialize();
+            const FORCE_MATERIALIZE_EVERY_N_LAYERS: usize = 2;
+            if i % FORCE_MATERIALIZE_EVERY_N_LAYERS == 0 {
+                _ = layer_in.materialize();
+            }
         }
         let x = self.norm.forward(&layer_in);
         let x = x.i((.., seq_len - 1, ..));
