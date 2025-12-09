@@ -179,15 +179,16 @@ impl FlashAttentionOperation {
             // Initialize online softmax variables for each dimension this thread handles
             // We use arrays to handle multiple dimensions per thread
             // Max dims per thread = ceil(head_dim / min_subgroup_size)
+            // Always use f32 for accumulation to avoid overflow/underflow in f16
             let min_subgroup_size = device.limits().min_subgroup_size as usize;
             let max_dims_per_thread = self.head_dim.div_ceil(min_subgroup_size);
-            writeln!(kernel, "var m_arr: array<{dtype}, {max_dims_per_thread}>;").unwrap();
-            writeln!(kernel, "var d_arr: array<{dtype}, {max_dims_per_thread}>;").unwrap();
-            writeln!(kernel, "var acc_arr: array<{dtype}, {max_dims_per_thread}>;").unwrap();
+            writeln!(kernel, "var m_arr: array<f32, {max_dims_per_thread}>;").unwrap();
+            writeln!(kernel, "var d_arr: array<f32, {max_dims_per_thread}>;").unwrap();
+            writeln!(kernel, "var acc_arr: array<f32, {max_dims_per_thread}>;").unwrap();
             writeln!(kernel, "for (var i = 0u; i < {max_dims_per_thread}u; i++) {{").unwrap();
-            writeln!(kernel, "m_arr[i] = {};", min_for_dtype(dtype)).unwrap();
-            writeln!(kernel, "d_arr[i] = {dtype}(0.0);").unwrap();
-            writeln!(kernel, "acc_arr[i] = {dtype}(0.0);").unwrap();
+            writeln!(kernel, "m_arr[i] = f32({});", min_for_dtype(dtype)).unwrap();
+            writeln!(kernel, "d_arr[i] = f32(0.0);").unwrap();
+            writeln!(kernel, "acc_arr[i] = f32(0.0);").unwrap();
             writeln!(kernel, "}}").unwrap();
 
             // Process all K/V sequence positions for attention
@@ -199,7 +200,7 @@ impl FlashAttentionOperation {
             {
                 // COOPERATIVE Q·K COMPUTATION
                 // Each thread computes partial dot product for dimensions it owns
-                writeln!(kernel, "var score_partial = {dtype}(0.0);").unwrap();
+                writeln!(kernel, "var score_partial = f32(0.0);").unwrap();
                 writeln!(kernel, "for (var d = 0u; d < dims_per_thread; d++) {{").unwrap();
                 {
                     writeln!(
@@ -210,20 +211,20 @@ impl FlashAttentionOperation {
                     .unwrap();
                     writeln!(kernel, "if d_idx < {head_dim} {{").unwrap();
                     {
-                        // Load Q value
+                        // Load Q value and convert to f32
                         write!(kernel, "let q_idx = ").unwrap();
                         q_tensor.strided_index(
                             kernel,
                             ["batch_idx", "head_idx", "seq_idx", "d_idx"],
                         );
                         writeln!(kernel, ";").unwrap();
-                        writeln!(kernel, "let q_val = {q_tensor}[q_idx];").unwrap();
+                        writeln!(kernel, "let q_val = f32({q_tensor}[q_idx]);").unwrap();
 
-                        // Load K value (cooperative loading - each thread loads different K elements)
+                        // Load K value and convert to f32
                         write!(kernel, "let k_idx = ").unwrap();
                         k_tensor.strided_index(kernel, ["batch_idx", "kv_head_idx", "k_seq", "d_idx"]);
                         writeln!(kernel, ";").unwrap();
-                        writeln!(kernel, "let k_val = {k_tensor}[k_idx];").unwrap();
+                        writeln!(kernel, "let k_val = f32({k_tensor}[k_idx]);").unwrap();
 
                         writeln!(kernel, "score_partial += q_val * k_val;").unwrap();
                     }
@@ -239,7 +240,7 @@ impl FlashAttentionOperation {
                     write!(kernel, "let mask_idx = ").unwrap();
                     mask.strided_index(kernel, ["seq_idx", "k_seq"]);
                     writeln!(kernel, ";").unwrap();
-                    writeln!(kernel, "let masked_score = score + {mask}[mask_idx];").unwrap();
+                    writeln!(kernel, "let masked_score = score + f32({mask}[mask_idx]);").unwrap();
                 } else {
                     writeln!(kernel, "let masked_score = score;").unwrap();
                 }
@@ -256,14 +257,14 @@ impl FlashAttentionOperation {
                     .unwrap();
                     writeln!(kernel, "if out_dim < {head_dim} {{").unwrap();
                     {
-                        // Load V value for this dimension
+                        // Load V value for this dimension and convert to f32
                         write!(kernel, "let v_idx = ").unwrap();
                         v_tensor.strided_index(
                             kernel,
                             ["batch_idx", "kv_head_idx", "k_seq", "out_dim"],
                         );
                         writeln!(kernel, ";").unwrap();
-                        writeln!(kernel, "let v_val = {v_tensor}[v_idx];").unwrap();
+                        writeln!(kernel, "let v_val = f32({v_tensor}[v_idx]);").unwrap();
 
                         // Online softmax update for this dimension
                         writeln!(kernel, "let old_m = m_arr[d];").unwrap();
@@ -305,7 +306,8 @@ impl FlashAttentionOperation {
                         ["batch_idx", "head_idx", "seq_idx", "out_dim"],
                     );
                     writeln!(kernel, ";").unwrap();
-                    writeln!(kernel, "{output_tensor}[out_idx] = acc_arr[d] / d_arr[d];").unwrap();
+                    // Convert result back to output dtype
+                    writeln!(kernel, "{output_tensor}[out_idx] = {dtype}(acc_arr[d] / d_arr[d]);").unwrap();
                 }
                 writeln!(kernel, "}}").unwrap();
             }
@@ -342,10 +344,10 @@ impl FlashAttentionOperation {
             writeln!(kernel, "return;").unwrap();
             writeln!(kernel, "}}").unwrap();
 
-            // Initialize online softmax variables
-            writeln!(kernel, "var m = {};", min_for_dtype(dtype)).unwrap();
-            writeln!(kernel, "var d = {dtype}(0.0);").unwrap();
-            writeln!(kernel, "var acc = {dtype}(0.0);").unwrap();
+            // Initialize online softmax variables - use f32 for accumulation
+            writeln!(kernel, "var m = f32({});", min_for_dtype(dtype)).unwrap();
+            writeln!(kernel, "var d = f32(0.0);").unwrap();
+            writeln!(kernel, "var acc = f32(0.0);").unwrap();
 
             // Process all K/V sequence positions for attention
             writeln!(
@@ -355,24 +357,24 @@ impl FlashAttentionOperation {
             .unwrap();
             {
                 // Compute attention score as full dot product over all head dimensions
-                writeln!(kernel, "var score = {dtype}(0.0);").unwrap();
+                writeln!(kernel, "var score = f32(0.0);").unwrap();
                 writeln!(
                     kernel,
                     "for (var d_idx = 0u; d_idx < {head_dim}; d_idx++) {{"
                 )
                 .unwrap();
                 {
-                    // Load Q value
+                    // Load Q value and convert to f32
                     write!(kernel, "let q_idx = ").unwrap();
                     q_tensor.strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", "d_idx"]);
                     writeln!(kernel, ";").unwrap();
-                    writeln!(kernel, "let q_val = {q_tensor}[q_idx];").unwrap();
+                    writeln!(kernel, "let q_val = f32({q_tensor}[q_idx]);").unwrap();
 
-                    // Load K value
+                    // Load K value and convert to f32
                     write!(kernel, "let k_idx = ").unwrap();
                     k_tensor.strided_index(kernel, ["batch_idx", "kv_head_idx", "k_seq", "d_idx"]);
                     writeln!(kernel, ";").unwrap();
-                    writeln!(kernel, "let k_val = {k_tensor}[k_idx];").unwrap();
+                    writeln!(kernel, "let k_val = f32({k_tensor}[k_idx]);").unwrap();
 
                     writeln!(kernel, "score += q_val * k_val;").unwrap();
                 }
@@ -384,14 +386,14 @@ impl FlashAttentionOperation {
                     write!(kernel, "let mask_idx = ").unwrap();
                     mask.strided_index(kernel, ["seq_idx", "k_seq"]);
                     writeln!(kernel, ";").unwrap();
-                    writeln!(kernel, "score = score + {mask}[mask_idx];").unwrap();
+                    writeln!(kernel, "score = score + f32({mask}[mask_idx]);").unwrap();
                 }
 
-                // Load V value for the output dimension we're computing
+                // Load V value for the output dimension we're computing and convert to f32
                 write!(kernel, "let v_idx = ").unwrap();
                 v_tensor.strided_index(kernel, ["batch_idx", "kv_head_idx", "k_seq", "out_dim"]);
                 writeln!(kernel, ";").unwrap();
-                writeln!(kernel, "let v_val = {v_tensor}[v_idx];").unwrap();
+                writeln!(kernel, "let v_val = f32({v_tensor}[v_idx]);").unwrap();
 
                 // Online softmax update
                 writeln!(kernel, "let old_m = m;").unwrap();
@@ -407,11 +409,11 @@ impl FlashAttentionOperation {
             }
             writeln!(kernel, "}}").unwrap();
 
-            // Write output
+            // Write output - convert back to output dtype
             write!(kernel, "let out_idx = ").unwrap();
             output_tensor.strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", "out_dim"]);
             writeln!(kernel, ";").unwrap();
-            writeln!(kernel, "{output_tensor}[out_idx] = acc / d;").unwrap();
+            writeln!(kernel, "{output_tensor}[out_idx] = {dtype}(acc / d);").unwrap();
         }
     }
 }

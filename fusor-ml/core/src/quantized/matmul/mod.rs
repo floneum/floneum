@@ -769,3 +769,108 @@ impl Operation for QMatMulOperation {
         )
     }
 }
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_fuzz_q_mat_mul_f16_sgemv() {
+    use crate::Tensor;
+    use half::f16;
+
+    // Use a Q5_0 weight to test the q_n_sgemv path
+    let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("blk.0.attn_q.weight").await;
+    println!("q_matrix: {q_matrix:?}");
+
+    // Use small M to trigger sgemv path
+    let batch = 1;
+    let seq_len = 12; // Small M to use sgemv
+    let hidden = 576;
+    
+    // Use simple input data (all 0.5)
+    let random_data: Vec<Vec<Vec<f16>>> = (0..batch)
+        .map(|_| {
+            (0..seq_len)
+                .map(|_| (0..hidden).map(|_| f16::from_f32(0.5)).collect())
+                .collect()
+        })
+        .collect();
+    let tensor = Tensor::<3, f16>::new(&device, &random_data);
+    println!("f16 tensor: {tensor:?}");
+    
+    // First check that the f16 tensor is valid
+    let tensor_slice = tensor.as_slice().await.unwrap();
+    let mut input_nan_count = 0;
+    for b in 0..batch {
+        for s in 0..seq_len {
+            for h in 0..hidden {
+                let val = tensor_slice[[b, s, h]];
+                if val.is_nan() || val.is_infinite() {
+                    input_nan_count += 1;
+                }
+            }
+        }
+    }
+    println!("Input has {} NaN/inf values", input_nan_count);
+    
+    // Now do matmul
+    let result: Tensor<3, f16> = tensor.q_mat_mul(&q_matrix);
+    let fusor_shape = result.shape();
+    let result = result.as_slice().await.unwrap();
+    
+    // Check for NaN/inf values
+    let mut nan_count = 0;
+    let mut inf_count = 0;
+    for b in 0..batch {
+        for s in 0..seq_len {
+            for h in 0..hidden {
+                let val = result[[b, s, h]];
+                if val.is_nan() {
+                    nan_count += 1;
+                }
+                if val.is_infinite() {
+                    inf_count += 1;
+                }
+            }
+        }
+    }
+    
+    // Print some output values for debugging
+    if nan_count > 0 {
+        println!("First few output values: {:?}", (0..10).map(|i| result[[0, 0, i]]).collect::<Vec<_>>());
+    }
+    
+    if nan_count > 0 || inf_count > 0 {
+        panic!("Result contains {} NaN and {} inf values out of {}", nan_count, inf_count, batch * seq_len * hidden);
+    }
+    
+    // Compare with candle f32 reference  
+    let random_data_f32: Vec<Vec<Vec<f32>>> = random_data.iter()
+        .map(|b| b.iter().map(|s| s.iter().map(|v| v.to_f32()).collect()).collect())
+        .collect();
+    
+    let candle_b = candle_core::Tensor::from_iter(
+        random_data_f32
+            .iter()
+            .flat_map(|x| x.iter().flat_map(|x| x.iter().copied())),
+        &candle_core::Device::Cpu,
+    )
+    .unwrap()
+    .reshape(&[batch, seq_len, hidden])
+    .unwrap();
+    let candle_result = candle_core::Module::forward(&candle_q_matrix, &candle_b).unwrap();
+    let candle_result = candle_result.to_vec3::<f32>().unwrap();
+    
+    for b in 0..batch {
+        for s in 0..seq_len {
+            for h in 0..hidden {
+                let expected = candle_result[b][s][h];
+                let actual = result[[b, s, h]].to_f32();
+                // f16 has lower precision so we use a larger tolerance
+                if (expected - actual).abs() > 2.0 {
+                    panic!("Mismatch at [{}, {}, {}]: expected {}, got {}", b, s, h, expected, actual);
+                }
+            }
+        }
+    }
+    
+    println!("f16 sgemv test passed for shape {:?}", fusor_shape);
+}
