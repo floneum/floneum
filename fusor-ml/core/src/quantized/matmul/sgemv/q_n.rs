@@ -1,4 +1,5 @@
 use crate::{
+    DataTypeEnum,
     mir::{
         inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
@@ -7,7 +8,6 @@ use crate::{
     quantized::matmul::QMatMulOperation,
     shift_right_scale,
     util::{maybe_vec_storage_index, maybe_vec_storage_subgroup_add, maybe_vec_storage_type},
-    DataTypeEnum,
 };
 use std::fmt::Write;
 
@@ -94,7 +94,12 @@ pub(crate) fn q_n_sgemv(
         for j in (0..8).step_by(2) {
             writeln!(kernel, "{{").unwrap();
 
-            for (var_name, offset) in [("a_val_0", j), ("a_val_1", j + 1), ("a_val_16", j + 16), ("a_val_17", j + 17)] {
+            for (var_name, offset) in [
+                ("a_val_0", j),
+                ("a_val_1", j + 1),
+                ("a_val_16", j + 16),
+                ("a_val_17", j + 17),
+            ] {
                 write!(kernel, "let {var_name} = f32({input_a}[").unwrap();
                 let mut indices = Vec::new();
                 // Add batch indices first

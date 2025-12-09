@@ -1,8 +1,8 @@
 mod conv1d;
 mod embedding;
-mod rms_norm;
 mod layer_norm;
 mod linear;
+mod rms_norm;
 
 pub use conv1d::*;
 pub use embedding::*;

@@ -219,7 +219,7 @@ pub struct MaskCache<T> {
 impl<T> Default for MaskCache<T> {
     fn default() -> Self {
         Self {
-            masks: Default::default()
+            masks: Default::default(),
         }
     }
 }

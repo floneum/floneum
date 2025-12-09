@@ -1,4 +1,5 @@
 use crate::{
+    DataTypeEnum,
     mir::{
         inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
@@ -7,7 +8,6 @@ use crate::{
     quantized::matmul::QMatMulOperation,
     shift_right_scale,
     util::{maybe_vec_storage_index, maybe_vec_storage_subgroup_add, maybe_vec_storage_type},
-    DataTypeEnum,
 };
 use std::fmt::Write;
 
@@ -190,7 +190,11 @@ pub(crate) fn q4k_sgemv(
                 "let block_scale = f32({input_b}[local_block_offset].scale);"
             )
             .unwrap();
-            writeln!(kernel, "let block_min = f32({input_b}[local_block_offset].min);").unwrap();
+            writeln!(
+                kernel,
+                "let block_min = f32({input_b}[local_block_offset].min);"
+            )
+            .unwrap();
             // Load 8 scales into a cache
             writeln!(
                 kernel,

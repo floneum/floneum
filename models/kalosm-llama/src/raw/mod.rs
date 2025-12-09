@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::OnceLock;
 
 use crate::chat_template::HuggingFaceChatTemplate;
 use crate::raw::attention_layer::LlamaAttention;

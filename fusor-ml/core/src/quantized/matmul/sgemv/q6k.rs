@@ -1,4 +1,5 @@
 use crate::{
+    DataTypeEnum,
     mir::{
         inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
@@ -6,7 +7,6 @@ use crate::{
     },
     quantized::matmul::QMatMulOperation,
     util::{maybe_vec_storage_index, maybe_vec_storage_subgroup_add, maybe_vec_storage_type},
-    DataTypeEnum,
 };
 use std::fmt::Write;
 

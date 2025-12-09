@@ -131,7 +131,12 @@ impl<
     T4: TensorIndexComponent<R1, R2, D, Output = Tensor<R2, D>>,
     T5: TensorIndexComponent<5, R1, D, Output = Tensor<R1, D>>,
     D: DataType,
-> TensorIndex<5, D, PhantomConst<R1, PhantomConst<R2, PhantomConst<R3, PhantomConst<R4, PhantomConst<R5>>>>>> for (T1, T2, T3, T4, T5)
+>
+    TensorIndex<
+        5,
+        D,
+        PhantomConst<R1, PhantomConst<R2, PhantomConst<R3, PhantomConst<R4, PhantomConst<R5>>>>>,
+    > for (T1, T2, T3, T4, T5)
 {
     type Output = Tensor<R5, D>;
 

@@ -11,29 +11,21 @@ use crate::{
     },
     tensor::DataTypeEnum,
     visit_tiled::{
-        build_visit_tiled_kernel, titled_map_dispatch_size, titled_map_workgroup_size_constraints,
-        MaybeQTensorInput,
+        MaybeQTensorInput, build_visit_tiled_kernel, titled_map_dispatch_size,
+        titled_map_workgroup_size_constraints,
     },
 };
 
 impl<D: DataType> Tensor<4, D> {
     /// Apply fused interleaved RoPE (rotary position embedding).
     /// This pairs adjacent elements: (0, 1), (2, 3), etc.
-    pub fn rope_fused(
-        &self,
-        cos: &Tensor<2, D>,
-        sin: &Tensor<2, D>,
-    ) -> Tensor<4, D> {
+    pub fn rope_fused(&self, cos: &Tensor<2, D>, sin: &Tensor<2, D>) -> Tensor<4, D> {
         self.rope_fused_impl(cos, sin, true)
     }
 
     /// Apply fused normal RoPE (rotary position embedding).
     /// This pairs first half with second half: (0, head_dim/2), (1, head_dim/2+1), etc.
-    pub fn rope_normal_fused(
-        &self,
-        cos: &Tensor<2, D>,
-        sin: &Tensor<2, D>,
-    ) -> Tensor<4, D> {
+    pub fn rope_normal_fused(&self, cos: &Tensor<2, D>, sin: &Tensor<2, D>) -> Tensor<4, D> {
         self.rope_fused_impl(cos, sin, false)
     }
 
@@ -144,11 +136,17 @@ impl RopeFusedOperation {
                     let sin_idx_var = "sin_idx";
 
                     write!(kernel, "let {} = ", cos_idx_var).unwrap();
-                    cos_input.strided_index(kernel, vec![freq_idx_0.clone(), freq_idx_1.clone()].into_iter());
+                    cos_input.strided_index(
+                        kernel,
+                        vec![freq_idx_0.clone(), freq_idx_1.clone()].into_iter(),
+                    );
                     writeln!(kernel, ";").unwrap();
 
                     write!(kernel, "let {} = ", sin_idx_var).unwrap();
-                    sin_input.strided_index(kernel, vec![freq_idx_0.clone(), freq_idx_1.clone()].into_iter());
+                    sin_input.strided_index(
+                        kernel,
+                        vec![freq_idx_0.clone(), freq_idx_1.clone()].into_iter(),
+                    );
                     writeln!(kernel, ";").unwrap();
 
                     let cos_val = format!("{}[{}]", cos_input, cos_idx_var);
@@ -157,20 +155,27 @@ impl RopeFusedOperation {
                     // Neighbor index
                     let neighbor_last_dim = "neighbor_last_dim";
                     writeln!(kernel, "let is_even = ({} % 2u) == 0u;", dim_last).unwrap();
-                    writeln!(kernel, "let {} = select({} - 1u, {} + 1u, is_even);", neighbor_last_dim, dim_last, dim_last).unwrap();
+                    writeln!(
+                        kernel,
+                        "let {} = select({} - 1u, {} + 1u, is_even);",
+                        neighbor_last_dim, dim_last, dim_last
+                    )
+                    .unwrap();
 
                     let neighbor_idx_var = "neighbor_idx";
                     write!(kernel, "let {} = ", neighbor_idx_var).unwrap();
 
                     // Reconstruct neighbor dims: dim_0, ..., dim_{rank-2}, neighbor_last_dim
                     let mut neighbor_dims = Vec::new();
-                    for i in 0..rank-1 {
+                    for i in 0..rank - 1 {
                         neighbor_dims.push(format!("dim_{}", i));
                     }
                     neighbor_dims.push(neighbor_last_dim.to_string());
 
                     match input_tensor {
-                        MaybeQTensorInput::Tensor(t) => t.strided_index(kernel, neighbor_dims.into_iter()),
+                        MaybeQTensorInput::Tensor(t) => {
+                            t.strided_index(kernel, neighbor_dims.into_iter())
+                        }
                         _ => panic!("Expected tensor input"),
                     }
                     writeln!(kernel, ";").unwrap();
@@ -195,11 +200,17 @@ impl RopeFusedOperation {
                     let sin_idx_var = "sin_idx";
 
                     write!(kernel, "let {} = ", cos_idx_var).unwrap();
-                    cos_input.strided_index(kernel, vec![freq_idx_0.clone(), freq_idx_1.clone()].into_iter());
+                    cos_input.strided_index(
+                        kernel,
+                        vec![freq_idx_0.clone(), freq_idx_1.clone()].into_iter(),
+                    );
                     writeln!(kernel, ";").unwrap();
 
                     write!(kernel, "let {} = ", sin_idx_var).unwrap();
-                    sin_input.strided_index(kernel, vec![freq_idx_0.clone(), freq_idx_1.clone()].into_iter());
+                    sin_input.strided_index(
+                        kernel,
+                        vec![freq_idx_0.clone(), freq_idx_1.clone()].into_iter(),
+                    );
                     writeln!(kernel, ";").unwrap();
 
                     let cos_val = format!("{}[{}]", cos_input, cos_idx_var);
@@ -208,21 +219,27 @@ impl RopeFusedOperation {
                     // Neighbor index
                     let neighbor_last_dim = "neighbor_last_dim";
                     writeln!(kernel, "let in_first_half = {} < {}u;", dim_last, half).unwrap();
-                    writeln!(kernel, "let {} = select({} - {}u, {} + {}u, in_first_half);",
-                        neighbor_last_dim, dim_last, half, dim_last, half).unwrap();
+                    writeln!(
+                        kernel,
+                        "let {} = select({} - {}u, {} + {}u, in_first_half);",
+                        neighbor_last_dim, dim_last, half, dim_last, half
+                    )
+                    .unwrap();
 
                     let neighbor_idx_var = "neighbor_idx";
                     write!(kernel, "let {} = ", neighbor_idx_var).unwrap();
 
                     // Reconstruct neighbor dims: dim_0, ..., dim_{rank-2}, neighbor_last_dim
                     let mut neighbor_dims = Vec::new();
-                    for i in 0..rank-1 {
+                    for i in 0..rank - 1 {
                         neighbor_dims.push(format!("dim_{}", i));
                     }
                     neighbor_dims.push(neighbor_last_dim.to_string());
 
                     match input_tensor {
-                        MaybeQTensorInput::Tensor(t) => t.strided_index(kernel, neighbor_dims.into_iter()),
+                        MaybeQTensorInput::Tensor(t) => {
+                            t.strided_index(kernel, neighbor_dims.into_iter())
+                        }
                         _ => panic!("Expected tensor input"),
                     }
                     writeln!(kernel, ";").unwrap();
@@ -271,11 +288,8 @@ impl Operation for RopeFusedOperation {
         let cos = nodes.get_cached_result(self.cos).unwrap();
         let sin = nodes.get_cached_result(self.sin).unwrap();
 
-        let output_tensor = TensorData::new_for_shape(
-            input.device(),
-            input.layout().shape(),
-            self.datatype,
-        );
+        let output_tensor =
+            TensorData::new_for_shape(input.device(), input.layout().shape(), self.datatype);
 
         // Order must match kernel binding order: cos, sin, input, output
         vec![
@@ -302,7 +316,11 @@ impl Operation for RopeFusedOperation {
     }
 
     fn name(&self) -> String {
-        let mode = if self.interleaved { "interleaved" } else { "normal" };
+        let mode = if self.interleaved {
+            "interleaved"
+        } else {
+            "normal"
+        };
         format!("rope_fused_{}_{}_{}", mode, self.rank(), self.datatype)
     }
 
@@ -328,14 +346,20 @@ mod tests {
         let cos_data: Vec<Vec<f32>> = (0..pos_shape[0])
             .map(|i| {
                 (0..pos_shape[1])
-                    .map(|j| ((i as f32) / 10000f32.powf((2 * j) as f32 / (pos_shape[1] * 2) as f32)).cos())
+                    .map(|j| {
+                        ((i as f32) / 10000f32.powf((2 * j) as f32 / (pos_shape[1] * 2) as f32))
+                            .cos()
+                    })
                     .collect()
             })
             .collect();
         let sin_data: Vec<Vec<f32>> = (0..pos_shape[0])
             .map(|i| {
                 (0..pos_shape[1])
-                    .map(|j| ((i as f32) / 10000f32.powf((2 * j) as f32 / (pos_shape[1] * 2) as f32)).sin())
+                    .map(|j| {
+                        ((i as f32) / 10000f32.powf((2 * j) as f32 / (pos_shape[1] * 2) as f32))
+                            .sin()
+                    })
                     .collect()
             })
             .collect();
@@ -378,7 +402,17 @@ mod tests {
                         let original_val = original[[b, h, s, d]];
                         let fused_val = fused[[b, h, s, d]];
                         let diff = (original_val - fused_val).abs();
-                        assert!(diff < 1e-4, "Mismatch at index [{}, {}, {}, {}]: original {} vs fused {}, diff {}", b, h, s, d, original_val, fused_val, diff);
+                        assert!(
+                            diff < 1e-4,
+                            "Mismatch at index [{}, {}, {}, {}]: original {} vs fused {}, diff {}",
+                            b,
+                            h,
+                            s,
+                            d,
+                            original_val,
+                            fused_val,
+                            diff
+                        );
                     }
                 }
             }
@@ -393,14 +427,20 @@ mod tests {
         let cos_data: Vec<Vec<f32>> = (0..pos_shape[0])
             .map(|i| {
                 (0..pos_shape[1])
-                    .map(|j| ((i as f32) / 10000f32.powf((2 * j) as f32 / (pos_shape[1] * 2) as f32)).cos())
+                    .map(|j| {
+                        ((i as f32) / 10000f32.powf((2 * j) as f32 / (pos_shape[1] * 2) as f32))
+                            .cos()
+                    })
                     .collect()
             })
             .collect();
         let sin_data: Vec<Vec<f32>> = (0..pos_shape[0])
             .map(|i| {
                 (0..pos_shape[1])
-                    .map(|j| ((i as f32) / 10000f32.powf((2 * j) as f32 / (pos_shape[1] * 2) as f32)).sin())
+                    .map(|j| {
+                        ((i as f32) / 10000f32.powf((2 * j) as f32 / (pos_shape[1] * 2) as f32))
+                            .sin()
+                    })
                     .collect()
             })
             .collect();
@@ -443,7 +483,17 @@ mod tests {
                         let original_val = original[[b, h, s, d]];
                         let fused_val = fused[[b, h, s, d]];
                         let diff = (original_val - fused_val).abs();
-                        assert!(diff < 1e-4, "Mismatch at index [{}, {}, {}, {}]: original {} vs fused {}, diff {}", b, h, s, d, original_val, fused_val, diff);
+                        assert!(
+                            diff < 1e-4,
+                            "Mismatch at index [{}, {}, {}, {}]: original {} vs fused {}, diff {}",
+                            b,
+                            h,
+                            s,
+                            d,
+                            original_val,
+                            fused_val,
+                            diff
+                        );
                     }
                 }
             }

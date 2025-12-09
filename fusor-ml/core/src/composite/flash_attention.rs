@@ -14,17 +14,23 @@ use crate::{
 
 impl<const R: usize, T: DataType> Tensor<R, T> {
     /// Computes flash attention with optional masking.
-    /// 
+    ///
     /// Supports grouped-query attention (GQA) and multi-query attention (MQA) where
     /// K and V may have fewer heads than Q. The number of Q heads must be divisible
     /// by the number of K/V heads.
-    /// 
+    ///
     /// Args:
     ///   - k: Key tensor with shape [batch, num_kv_heads, kv_seq_len, head_dim]
     ///   - v: Value tensor with shape [batch, num_kv_heads, kv_seq_len, head_dim]
     ///   - scale: Scale factor (typically 1/sqrt(head_dim))
     ///   - mask: Optional attention mask with shape [q_seq_len, kv_seq_len]
-    pub fn flash_attention<const R2: usize>(&self, k: &Self, v: &Self, scale: f32, mask: Option<&Tensor<2, T>>) -> Self
+    pub fn flash_attention<const R2: usize>(
+        &self,
+        k: &Self,
+        v: &Self,
+        scale: f32,
+        mask: Option<&Tensor<2, T>>,
+    ) -> Self
     where
         Tensor<R, T>: LastRank<R2, T>,
         T: crate::FloatDataType,
@@ -123,7 +129,7 @@ impl FlashAttentionOperation {
         let q_seq_len = q_tensor.shape_binding(2);
         let head_dim = q_tensor.shape_binding(3);
         let kv_seq_len = k_tensor.shape_binding(2);
-        
+
         // For GQA/MQA: compute the group size for mapping Q heads to KV heads
         // kv_head_idx = head_idx / num_key_value_groups = head_idx * kv_num_heads / num_heads
         let num_key_value_groups = self.num_heads / self.num_kv_heads;
@@ -142,12 +148,7 @@ impl FlashAttentionOperation {
 
             // Each workgroup handles one position [batch, head, seq]
             // workgroup_index directly maps to the position
-            writeln!(
-                kernel,
-                "let global_position_id = {};",
-                workgroup_index
-            )
-            .unwrap();
+            writeln!(kernel, "let global_position_id = {};", workgroup_index).unwrap();
 
             // Calculate batch, head, seq indices from global_position_id
             writeln!(kernel, "var pos_idx = global_position_id;").unwrap();
@@ -157,7 +158,11 @@ impl FlashAttentionOperation {
             writeln!(kernel, "pos_idx /= {num_heads};").unwrap();
             writeln!(kernel, "let batch_idx = pos_idx;").unwrap();
             // Map Q head index to KV head index for GQA/MQA
-            writeln!(kernel, "let kv_head_idx = head_idx / {num_key_value_groups}u;").unwrap();
+            writeln!(
+                kernel,
+                "let kv_head_idx = head_idx / {num_key_value_groups}u;"
+            )
+            .unwrap();
 
             // Early exit if beyond valid positions
             writeln!(
@@ -185,7 +190,11 @@ impl FlashAttentionOperation {
             writeln!(kernel, "var m_arr: array<f32, {max_dims_per_thread}>;").unwrap();
             writeln!(kernel, "var d_arr: array<f32, {max_dims_per_thread}>;").unwrap();
             writeln!(kernel, "var acc_arr: array<f32, {max_dims_per_thread}>;").unwrap();
-            writeln!(kernel, "for (var i = 0u; i < {max_dims_per_thread}u; i++) {{").unwrap();
+            writeln!(
+                kernel,
+                "for (var i = 0u; i < {max_dims_per_thread}u; i++) {{"
+            )
+            .unwrap();
             writeln!(kernel, "m_arr[i] = f32({});", min_for_dtype(dtype)).unwrap();
             writeln!(kernel, "d_arr[i] = f32(0.0);").unwrap();
             writeln!(kernel, "acc_arr[i] = f32(0.0);").unwrap();
@@ -213,16 +222,15 @@ impl FlashAttentionOperation {
                     {
                         // Load Q value and convert to f32
                         write!(kernel, "let q_idx = ").unwrap();
-                        q_tensor.strided_index(
-                            kernel,
-                            ["batch_idx", "head_idx", "seq_idx", "d_idx"],
-                        );
+                        q_tensor
+                            .strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", "d_idx"]);
                         writeln!(kernel, ";").unwrap();
                         writeln!(kernel, "let q_val = f32({q_tensor}[q_idx]);").unwrap();
 
                         // Load K value and convert to f32
                         write!(kernel, "let k_idx = ").unwrap();
-                        k_tensor.strided_index(kernel, ["batch_idx", "kv_head_idx", "k_seq", "d_idx"]);
+                        k_tensor
+                            .strided_index(kernel, ["batch_idx", "kv_head_idx", "k_seq", "d_idx"]);
                         writeln!(kernel, ";").unwrap();
                         writeln!(kernel, "let k_val = f32({k_tensor}[k_idx]);").unwrap();
 
@@ -233,7 +241,12 @@ impl FlashAttentionOperation {
                 writeln!(kernel, "}}").unwrap();
 
                 // Reduce across subgroup to get the full attention score
-                writeln!(kernel, "let score = subgroupAdd(score_partial) * {};", self.scale).unwrap();
+                writeln!(
+                    kernel,
+                    "let score = subgroupAdd(score_partial) * {};",
+                    self.scale
+                )
+                .unwrap();
 
                 // Apply attention mask if provided (same score for all threads in subgroup)
                 if let Some(mask) = &mask_tensor {
@@ -270,13 +283,13 @@ impl FlashAttentionOperation {
                         writeln!(kernel, "let old_m = m_arr[d];").unwrap();
                         writeln!(kernel, "m_arr[d] = max(m_arr[d], masked_score);").unwrap();
                         writeln!(kernel, "let exp_old_m_diff = exp(old_m - m_arr[d]);").unwrap();
+                        writeln!(kernel, "let exp_score_diff = exp(masked_score - m_arr[d]);")
+                            .unwrap();
                         writeln!(
                             kernel,
-                            "let exp_score_diff = exp(masked_score - m_arr[d]);"
+                            "d_arr[d] = d_arr[d] * exp_old_m_diff + exp_score_diff;"
                         )
                         .unwrap();
-                        writeln!(kernel, "d_arr[d] = d_arr[d] * exp_old_m_diff + exp_score_diff;")
-                            .unwrap();
                         writeln!(
                             kernel,
                             "acc_arr[d] = acc_arr[d] * exp_old_m_diff + exp_score_diff * v_val;"
@@ -301,13 +314,15 @@ impl FlashAttentionOperation {
                 writeln!(kernel, "if out_dim < {head_dim} {{").unwrap();
                 {
                     write!(kernel, "let out_idx = ").unwrap();
-                    output_tensor.strided_index(
-                        kernel,
-                        ["batch_idx", "head_idx", "seq_idx", "out_dim"],
-                    );
+                    output_tensor
+                        .strided_index(kernel, ["batch_idx", "head_idx", "seq_idx", "out_dim"]);
                     writeln!(kernel, ";").unwrap();
                     // Convert result back to output dtype
-                    writeln!(kernel, "{output_tensor}[out_idx] = {dtype}(acc_arr[d] / d_arr[d]);").unwrap();
+                    writeln!(
+                        kernel,
+                        "{output_tensor}[out_idx] = {dtype}(acc_arr[d] / d_arr[d]);"
+                    )
+                    .unwrap();
                 }
                 writeln!(kernel, "}}").unwrap();
             }
@@ -332,7 +347,11 @@ impl FlashAttentionOperation {
             writeln!(kernel, "idx /= {num_heads};").unwrap();
             writeln!(kernel, "let batch_idx = idx;").unwrap();
             // Map Q head index to KV head index for GQA/MQA
-            writeln!(kernel, "let kv_head_idx = head_idx / {num_key_value_groups}u;").unwrap();
+            writeln!(
+                kernel,
+                "let kv_head_idx = head_idx / {num_key_value_groups}u;"
+            )
+            .unwrap();
 
             // Early exit if we're beyond valid elements
             writeln!(
@@ -427,14 +446,10 @@ impl Operation for FlashAttentionOperation {
         if device.subgroups_supported() {
             // For subgroup-based implementation, use subgroup size as base
             let limits = device.limits();
-            constraints.add_constraint(
-                0,
-                Constraint::more_than_or_equals(limits.min_subgroup_size),
-            );
-            constraints.add_constraint(
-                0,
-                Constraint::less_than_or_equals(limits.max_subgroup_size),
-            );
+            constraints
+                .add_constraint(0, Constraint::more_than_or_equals(limits.min_subgroup_size));
+            constraints
+                .add_constraint(0, Constraint::less_than_or_equals(limits.max_subgroup_size));
         } else {
             // Fallback: fixed workgroup size
             constraints.add_constraint(0, Constraint::equals(256));
@@ -673,7 +688,11 @@ async fn test_flash_attention_masked_fuzz() {
                 (0..heads)
                     .map(|_| {
                         (0..seq_len)
-                            .map(|_| (0..head_dim).map(|_| rand::random::<f32>() * 2.0 - 1.0).collect())
+                            .map(|_| {
+                                (0..head_dim)
+                                    .map(|_| rand::random::<f32>() * 2.0 - 1.0)
+                                    .collect()
+                            })
                             .collect()
                     })
                     .collect()
@@ -685,7 +704,11 @@ async fn test_flash_attention_masked_fuzz() {
                 (0..heads)
                     .map(|_| {
                         (0..seq_len)
-                            .map(|_| (0..head_dim).map(|_| rand::random::<f32>() * 2.0 - 1.0).collect())
+                            .map(|_| {
+                                (0..head_dim)
+                                    .map(|_| rand::random::<f32>() * 2.0 - 1.0)
+                                    .collect()
+                            })
                             .collect()
                     })
                     .collect()
@@ -697,7 +720,11 @@ async fn test_flash_attention_masked_fuzz() {
                 (0..heads)
                     .map(|_| {
                         (0..seq_len)
-                            .map(|_| (0..head_dim).map(|_| rand::random::<f32>() * 2.0 - 1.0).collect())
+                            .map(|_| {
+                                (0..head_dim)
+                                    .map(|_| rand::random::<f32>() * 2.0 - 1.0)
+                                    .collect()
+                            })
                             .collect()
                     })
                     .collect()
@@ -754,8 +781,16 @@ async fn test_flash_attention_masked_fuzz() {
                             (flash_val - std_val).abs() < tolerance,
                             "Mismatch at [{}, {}, {}, {}]: flash={}, standard={} \
                              (batch={}, heads={}, seq_len={}, head_dim={})",
-                            b, h, s, d, flash_val, std_val,
-                            batch, heads, seq_len, head_dim
+                            b,
+                            h,
+                            s,
+                            d,
+                            flash_val,
+                            std_val,
+                            batch,
+                            heads,
+                            seq_len,
+                            head_dim
                         );
                     }
                 }
@@ -784,7 +819,11 @@ async fn test_flash_attention_kv_cache_fuzz() {
                 (0..heads)
                     .map(|_| {
                         (0..q_seq_len)
-                            .map(|_| (0..head_dim).map(|_| rand::random::<f32>() * 2.0 - 1.0).collect())
+                            .map(|_| {
+                                (0..head_dim)
+                                    .map(|_| rand::random::<f32>() * 2.0 - 1.0)
+                                    .collect()
+                            })
                             .collect()
                     })
                     .collect()
@@ -796,7 +835,11 @@ async fn test_flash_attention_kv_cache_fuzz() {
                 (0..heads)
                     .map(|_| {
                         (0..kv_seq_len)
-                            .map(|_| (0..head_dim).map(|_| rand::random::<f32>() * 2.0 - 1.0).collect())
+                            .map(|_| {
+                                (0..head_dim)
+                                    .map(|_| rand::random::<f32>() * 2.0 - 1.0)
+                                    .collect()
+                            })
                             .collect()
                     })
                     .collect()
@@ -808,7 +851,11 @@ async fn test_flash_attention_kv_cache_fuzz() {
                 (0..heads)
                     .map(|_| {
                         (0..kv_seq_len)
-                            .map(|_| (0..head_dim).map(|_| rand::random::<f32>() * 2.0 - 1.0).collect())
+                            .map(|_| {
+                                (0..head_dim)
+                                    .map(|_| rand::random::<f32>() * 2.0 - 1.0)
+                                    .collect()
+                            })
                             .collect()
                     })
                     .collect()
@@ -816,9 +863,7 @@ async fn test_flash_attention_kv_cache_fuzz() {
             .collect();
 
         // Mask: [q_seq_len, kv_seq_len] - allow attending to all positions
-        let mask_data: Vec<Vec<f32>> = (0..q_seq_len)
-            .map(|_| vec![0.0; kv_seq_len])
-            .collect();
+        let mask_data: Vec<Vec<f32>> = (0..q_seq_len).map(|_| vec![0.0; kv_seq_len]).collect();
 
         let q = Tensor::new(&device, &q_data);
         let k = Tensor::new(&device, &k_data);
@@ -851,8 +896,17 @@ async fn test_flash_attention_kv_cache_fuzz() {
                             (flash_val - std_val).abs() < tolerance,
                             "KV cache fuzz mismatch at [{}, {}, {}, {}]: flash={}, standard={} \
                              (batch={}, heads={}, q_seq_len={}, kv_seq_len={}, head_dim={})",
-                            b, h, s, d, flash_val, std_val,
-                            batch, heads, q_seq_len, kv_seq_len, head_dim
+                            b,
+                            h,
+                            s,
+                            d,
+                            flash_val,
+                            std_val,
+                            batch,
+                            heads,
+                            q_seq_len,
+                            kv_seq_len,
+                            head_dim
                         );
                     }
                 }
@@ -885,7 +939,11 @@ async fn test_flash_attention_gqa_fuzz() {
                 (0..num_heads)
                     .map(|_| {
                         (0..seq_len)
-                            .map(|_| (0..head_dim).map(|_| rand::random::<f32>() * 2.0 - 1.0).collect())
+                            .map(|_| {
+                                (0..head_dim)
+                                    .map(|_| rand::random::<f32>() * 2.0 - 1.0)
+                                    .collect()
+                            })
                             .collect()
                     })
                     .collect()
@@ -898,7 +956,11 @@ async fn test_flash_attention_gqa_fuzz() {
                 (0..num_kv_heads)
                     .map(|_| {
                         (0..seq_len)
-                            .map(|_| (0..head_dim).map(|_| rand::random::<f32>() * 2.0 - 1.0).collect())
+                            .map(|_| {
+                                (0..head_dim)
+                                    .map(|_| rand::random::<f32>() * 2.0 - 1.0)
+                                    .collect()
+                            })
                             .collect()
                     })
                     .collect()
@@ -910,7 +972,11 @@ async fn test_flash_attention_gqa_fuzz() {
                 (0..num_kv_heads)
                     .map(|_| {
                         (0..seq_len)
-                            .map(|_| (0..head_dim).map(|_| rand::random::<f32>() * 2.0 - 1.0).collect())
+                            .map(|_| {
+                                (0..head_dim)
+                                    .map(|_| rand::random::<f32>() * 2.0 - 1.0)
+                                    .collect()
+                            })
                             .collect()
                     })
                     .collect()
@@ -969,8 +1035,17 @@ async fn test_flash_attention_gqa_fuzz() {
                             (flash_val - std_val).abs() < tolerance,
                             "GQA fuzz mismatch at [{}, {}, {}, {}]: flash={}, standard={} \
                              (batch={}, num_heads={}, num_kv_heads={}, seq_len={}, head_dim={})",
-                            b, h, s, d, flash_val, std_val,
-                            batch, num_heads, num_kv_heads, seq_len, head_dim
+                            b,
+                            h,
+                            s,
+                            d,
+                            flash_val,
+                            std_val,
+                            batch,
+                            num_heads,
+                            num_kv_heads,
+                            seq_len,
+                            head_dim
                         );
                     }
                 }

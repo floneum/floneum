@@ -15,33 +15,35 @@ use criterion::async_executor::FuturesExecutor;
 // Sizes: [batch_size, num_heads, seq_len, head_dim]
 // Testing various common configurations
 const SIZES: [[usize; 4]; 8] = [
-    [1, 32, 128, 64],   // Small sequence
-    [1, 32, 512, 64],   // Medium sequence
-    [1, 32, 1024, 64],  // Large sequence
-    [1, 32, 2048, 64],  // Very large sequence
-    [2, 32, 512, 64],   // Batch of 2
-    [4, 32, 512, 64],   // Batch of 4
-    [1, 32, 128, 128],  // Larger head dimension
-    [1, 8, 1024, 128],  // Fewer heads, larger dim
+    [1, 32, 128, 64],  // Small sequence
+    [1, 32, 512, 64],  // Medium sequence
+    [1, 32, 1024, 64], // Large sequence
+    [1, 32, 2048, 64], // Very large sequence
+    [2, 32, 512, 64],  // Batch of 2
+    [4, 32, 512, 64],  // Batch of 4
+    [1, 32, 128, 128], // Larger head dimension
+    [1, 8, 1024, 128], // Fewer heads, larger dim
 ];
 
-async fn setup_fusor_tensors(device: &Device, batch: usize, heads: usize, seq_len: usize, head_dim: usize) -> (Tensor<4, f32>, Tensor<2, f32>, Tensor<2, f32>) {
+async fn setup_fusor_tensors(
+    device: &Device,
+    batch: usize,
+    heads: usize,
+    seq_len: usize,
+    head_dim: usize,
+) -> (Tensor<4, f32>, Tensor<2, f32>, Tensor<2, f32>) {
     let pos_shape = [seq_len * 2, head_dim / 2];
     let cos_data = (0..pos_shape[0])
         .map(|i| {
             (0..pos_shape[1])
-                .map(|j| {
-                    ((i as f32) / 10000f32.powf((2 * (j / 2)) as f32 / head_dim as f32)).cos()
-                })
+                .map(|j| ((i as f32) / 10000f32.powf((2 * (j / 2)) as f32 / head_dim as f32)).cos())
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
     let sin_data = (0..pos_shape[0])
         .map(|i| {
             (0..pos_shape[1])
-                .map(|j| {
-                    ((i as f32) / 10000f32.powf((2 * (j / 2)) as f32 / head_dim as f32)).sin()
-                })
+                .map(|j| ((i as f32) / 10000f32.powf((2 * (j / 2)) as f32 / head_dim as f32)).sin())
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
@@ -54,23 +56,19 @@ async fn setup_fusor_tensors(device: &Device, batch: usize, heads: usize, seq_le
             (0..heads)
                 .map(|_| {
                     (0..seq_len)
-                        .map(|_| {
-                            (0..head_dim)
-                                .map(|_| 1.0f32)
-                                .collect()
-                        })
+                        .map(|_| (0..head_dim).map(|_| 1.0f32).collect())
                         .collect()
                 })
                 .collect()
         })
         .collect();
     let input = Tensor::new(device, &input_data);
-    
+
     // Ensure materialization
     _ = input.as_slice().await.unwrap();
     _ = cos.as_slice().await.unwrap();
     _ = sin.as_slice().await.unwrap();
-    
+
     (input, cos, sin)
 }
 
@@ -80,18 +78,22 @@ fn rope_benchmark(c: &mut Criterion) {
 
     for [batch, heads, seq_len, head_dim] in SIZES {
         let device = device.clone();
-        
+
         // Original Interleaved
         let device_ref = device.clone();
         group.bench_with_input(
-            BenchmarkId::new("rope_interleaved", format!("{}x{}x{}x{}", batch, heads, seq_len, head_dim)),
+            BenchmarkId::new(
+                "rope_interleaved",
+                format!("{}x{}x{}x{}", batch, heads, seq_len, head_dim),
+            ),
             &(batch, heads, seq_len, head_dim),
             move |b, &(batch, heads, seq_len, head_dim)| {
                 let device = device_ref.clone();
                 b.to_async(FuturesExecutor).iter_custom(|iters| {
                     let device = device.clone();
                     async move {
-                        let (input, cos, sin) = setup_fusor_tensors(&device, batch, heads, seq_len, head_dim).await;
+                        let (input, cos, sin) =
+                            setup_fusor_tensors(&device, batch, heads, seq_len, head_dim).await;
 
                         let mut sum = Duration::ZERO;
                         while sum.is_zero() {
@@ -107,18 +109,22 @@ fn rope_benchmark(c: &mut Criterion) {
                 });
             },
         );
-        
+
         // Fused
         let device_ref = device.clone();
         group.bench_with_input(
-            BenchmarkId::new("rope_fused", format!("{}x{}x{}x{}", batch, heads, seq_len, head_dim)),
+            BenchmarkId::new(
+                "rope_fused",
+                format!("{}x{}x{}x{}", batch, heads, seq_len, head_dim),
+            ),
             &(batch, heads, seq_len, head_dim),
             move |b, &(batch, heads, seq_len, head_dim)| {
                 let device = device_ref.clone();
                 b.to_async(FuturesExecutor).iter_custom(|iters| {
                     let device = device.clone();
                     async move {
-                        let (input, cos, sin) = setup_fusor_tensors(&device, batch, heads, seq_len, head_dim).await;
+                        let (input, cos, sin) =
+                            setup_fusor_tensors(&device, batch, heads, seq_len, head_dim).await;
 
                         let mut sum = Duration::ZERO;
                         while sum.is_zero() {
@@ -158,7 +164,10 @@ fn bench_candle_rope(candle_device: candle_core::Device, name: &str, c: &mut Cri
     for [batch, heads, seq_len, head_dim] in SIZES {
         let candle_device = candle_device.clone();
         group.bench_with_input(
-            BenchmarkId::new("rope_i", format!("{}x{}x{}x{}", batch, heads, seq_len, head_dim)),
+            BenchmarkId::new(
+                "rope_i",
+                format!("{}x{}x{}x{}", batch, heads, seq_len, head_dim),
+            ),
             &(batch, heads, seq_len, head_dim),
             move |b, &(batch, heads, seq_len, head_dim)| {
                 b.to_async(FuturesExecutor).iter_batched(
@@ -171,7 +180,10 @@ fn bench_candle_rope(candle_device: candle_core::Device, name: &str, c: &mut Cri
                                 .map(|i| {
                                     (0..pos_shape[1])
                                         .map(|j| {
-                                            ((i as f32) / 10000f32.powf((2 * (j / 2)) as f32 / head_dim as f32)).cos()
+                                            ((i as f32)
+                                                / 10000f32
+                                                    .powf((2 * (j / 2)) as f32 / head_dim as f32))
+                                            .cos()
                                         })
                                         .collect::<Vec<_>>()
                                 })
@@ -180,7 +192,10 @@ fn bench_candle_rope(candle_device: candle_core::Device, name: &str, c: &mut Cri
                                 .map(|i| {
                                     (0..pos_shape[1])
                                         .map(|j| {
-                                            ((i as f32) / 10000f32.powf((2 * (j / 2)) as f32 / head_dim as f32)).sin()
+                                            ((i as f32)
+                                                / 10000f32
+                                                    .powf((2 * (j / 2)) as f32 / head_dim as f32))
+                                            .sin()
                                         })
                                         .collect::<Vec<_>>()
                                 })
@@ -195,17 +210,14 @@ fn bench_candle_rope(candle_device: candle_core::Device, name: &str, c: &mut Cri
                                     (0..heads)
                                         .map(|_| {
                                             (0..seq_len)
-                                                .map(|_| {
-                                                    (0..head_dim)
-                                                        .map(|_| 1.0f32)
-                                                        .collect()
-                                                })
+                                                .map(|_| (0..head_dim).map(|_| 1.0f32).collect())
                                                 .collect()
                                         })
                                         .collect()
                                 })
                                 .collect();
-                            let input = candle_core::Tensor::new(input_data, &candle_device).unwrap();
+                            let input =
+                                candle_core::Tensor::new(input_data, &candle_device).unwrap();
 
                             (input, cos, sin)
                         }
@@ -215,7 +227,8 @@ fn bench_candle_rope(candle_device: candle_core::Device, name: &str, c: &mut Cri
                         move |(input, cos, sin)| {
                             let candle_device = candle_device.clone();
                             async move {
-                                let output = candle_nn::rotary_emb::rope_i(&input, &cos, &sin).unwrap();
+                                let output =
+                                    candle_nn::rotary_emb::rope_i(&input, &cos, &sin).unwrap();
                                 candle_device.synchronize().unwrap();
                                 output
                             }

@@ -130,7 +130,7 @@ impl ResizeOperation {
                     )
                     .unwrap();
                     writeln!(kernel, "{prefix}_remaining_index /= {shape_i};",).unwrap();
-            }
+                }
             }
             write!(kernel, "let input_index = ").unwrap();
             input.strided_index(kernel, (0..).map(|i| format!("input_index_{i}")));

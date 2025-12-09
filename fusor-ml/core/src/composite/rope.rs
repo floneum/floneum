@@ -76,14 +76,18 @@ async fn test_rope_interleaved() {
     let cos = (0..pos_shape[0])
         .map(|i| {
             (0..pos_shape[1])
-                .map(|j| ((i as f32) / 10000f32.powf((2 * (j / 2)) as f32 / pos_shape[1] as f32)).cos())
+                .map(|j| {
+                    ((i as f32) / 10000f32.powf((2 * (j / 2)) as f32 / pos_shape[1] as f32)).cos()
+                })
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
     let sin = (0..pos_shape[0])
         .map(|i| {
             (0..pos_shape[1])
-                .map(|j| ((i as f32) / 10000f32.powf((2 * (j / 2)) as f32 / pos_shape[1] as f32)).sin())
+                .map(|j| {
+                    ((i as f32) / 10000f32.powf((2 * (j / 2)) as f32 / pos_shape[1] as f32)).sin()
+                })
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
@@ -113,13 +117,15 @@ async fn test_rope_interleaved() {
     let fusor_tensor = Tensor::new(&device, &data);
     let candle_tensor = candle_core::Tensor::new(data, &candle_device).unwrap();
     let fusor_rope = fusor_tensor.rope_interleaved(&fusor_cos, &fusor_sin);
-    let candle_rope = candle_nn::rotary_emb::rope_i(
-        &candle_tensor, &candle_cos, &candle_sin
-    )
-    .unwrap();
+    let candle_rope =
+        candle_nn::rotary_emb::rope_i(&candle_tensor, &candle_cos, &candle_sin).unwrap();
 
     let fusor_as_slice = fusor_rope.i((0, .., .., ..)).as_slice().await.unwrap();
-    let candle_as_slice = candle_rope.i((0, .., .., ..)).unwrap().to_vec3::<f32>().unwrap();
+    let candle_as_slice = candle_rope
+        .i((0, .., .., ..))
+        .unwrap()
+        .to_vec3::<f32>()
+        .unwrap();
 
     for i in 0..shape[1] {
         for j in 0..shape[2] {

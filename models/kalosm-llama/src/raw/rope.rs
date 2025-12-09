@@ -35,8 +35,9 @@ where
         }
     }
     let inverse_frequency_len = inverse_frequency.len();
-    let mut inverse_frequency: Tensor<2, F> =
-        Tensor::new(device, &inverse_frequency).reshape([1, inverse_frequency_len]).cast();
+    let mut inverse_frequency: Tensor<2, F> = Tensor::new(device, &inverse_frequency)
+        .reshape([1, inverse_frequency_len])
+        .cast();
     if let Some(weight) = &rope_freq_weight {
         inverse_frequency = inverse_frequency * weight.reshape((1, ()));
     }
@@ -54,7 +55,11 @@ impl<F: FloatDataType> RopeImplementation<F>
 where
     f32: CastTensor<F>,
 {
-    pub fn new(config: &LlamaConfig<F>, rope_theta: f32, device: &Device) -> fusor_core::Result<Self> {
+    pub fn new(
+        config: &LlamaConfig<F>,
+        rope_theta: f32,
+        device: &Device,
+    ) -> fusor_core::Result<Self> {
         if let Some(mrope_sections) = &config.mrope_sections {
             let cache = QwenVLRopeCache::new(config, rope_theta, mrope_sections, device)?;
             Ok(Self::QwenVL(cache))
@@ -73,7 +78,11 @@ where
         interleaved_rope: bool,
     ) -> (Tensor<4, F>, Tensor<4, F>) {
         match self {
-            Self::QwenVL(cache) => cache.forward(position_ids.expect("qwen vl requires position ids"), query, key),
+            Self::QwenVL(cache) => cache.forward(
+                position_ids.expect("qwen vl requires position ids"),
+                query,
+                key,
+            ),
             Self::Llama(cache) => {
                 if interleaved_rope {
                     cache.forward_i(query, key, start_pos)
@@ -116,11 +125,11 @@ where
     }
 
     fn forward_sin_cos(&self, position_ids: &Tensor<2, F>) -> (Tensor<2, F>, Tensor<2, F>) {
-        let inv_freq_expanded = self
-            .inverse_frequency
-            .reshape(((),))
-            .repeat([3])
-            .reshape((3, 1, (), 1));
+        let inv_freq_expanded =
+            self.inverse_frequency
+                .reshape(((),))
+                .repeat([3])
+                .reshape((3, 1, (), 1));
         let position_ids_expanded = position_ids.unsqueeze(1).unsqueeze(1);
         let freqs = inv_freq_expanded
             .mat_mul(&position_ids_expanded)
@@ -136,8 +145,7 @@ where
                 .collect::<Vec<_>>(),
             D::Minus1,
         )
-        .squeeze(0)
-        ;
+        .squeeze(0);
         let sin = Tensor::cat(
             split(&sin, D::Minus1, &self.mrope_sections)
                 .iter()
@@ -146,8 +154,7 @@ where
                 .collect::<Vec<_>>(),
             D::Minus1,
         )
-        .squeeze(0)
-    ;
+        .squeeze(0);
 
         (cos, sin)
     }
@@ -163,7 +170,6 @@ where
         let query = query.rope(&cos, &sin);
         (query, key)
     }
-
 }
 
 fn split<const R: usize, T: DataType>(
@@ -191,7 +197,11 @@ impl<F: FloatDataType> RopeCache<F>
 where
     f32: CastTensor<F>,
 {
-    pub fn new(config: &LlamaConfig<F>, rope_theta: f32, device: &Device) -> fusor_core::Result<Self> {
+    pub fn new(
+        config: &LlamaConfig<F>,
+        rope_theta: f32,
+        device: &Device,
+    ) -> fusor_core::Result<Self> {
         let inverse_frequency: Tensor<2, F> = create_inverse_frequency(
             config.rope_scaling.as_ref(),
             config.rope_freq_weight.as_ref(),
@@ -262,7 +272,6 @@ where
     pub(crate) fn cos(&self) -> &Tensor<2, F> {
         &self.cos
     }
-
 }
 
 #[cfg(test)]
