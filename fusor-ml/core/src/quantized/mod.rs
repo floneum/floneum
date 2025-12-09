@@ -1162,10 +1162,10 @@ impl WgslQuantizedType for BlockQ4K {
         )
         .unwrap();
 
+        let shift_4 = shift_right_scale(4);
         writeln!(
             code,
-            "let scale = scales_vec[sub_chunk / 2 + (scale_group % 2)*2] * select(1.0, {}, sub_chunk >= 2u);",
-            shift_right_scale(4)
+            "let scale = scales_vec[sub_chunk / 2 + (scale_group % 2)*2] * select({datatype}(1.0), {datatype}({shift_4}), sub_chunk >= 2u);"
         )
         .unwrap();
         writeln!(
