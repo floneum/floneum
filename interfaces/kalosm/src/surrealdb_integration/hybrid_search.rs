@@ -6,8 +6,8 @@ use surrealdb::{Connection, RecordIdKey, Surreal};
 use kalosm_language::prelude::*;
 
 use crate::language::{
-    DocumentTable, DocumentTableBuilder, DocumentTableCreationError, DocumentTableModifyError,
-    DocumentTableSearchBuilder, DocumentTableSearchError,
+    DocumentTable, DocumentTableAddContextError, DocumentTableBuilder, DocumentTableCreationError,
+    DocumentTableModifyError, DocumentTableSearchBuilder, DocumentTableSearchError,
 };
 use crate::{EmbeddedIndexedTableError, EmbeddingIndexedTable};
 
@@ -115,96 +115,6 @@ pub fn create_content_hash<T: Hash>(record: &T) -> u64 {
     hasher.finish()
 }
 
-/// Merge and deduplicate results from two sources
-pub fn merge_results<R>(
-    semantic_map: HashMap<u64, (RecordIdKey, R, f32)>,
-    keyword_map: HashMap<u64, (R, f32)>,
-    combine_scores: impl Fn(f32, f32) -> f32,
-) -> Vec<(u64, RecordIdKey, R, f32, f32, f32)>
-where
-    R: Clone,
-{
-    let mut combined_results = Vec::new();
-    let mut seen_keys = HashSet::new();
-
-    let all_keys: Vec<u64> = semantic_map
-        .keys()
-        .chain(keyword_map.keys())
-        .copied()
-        .collect();
-
-    for key in all_keys {
-        if seen_keys.insert(key) {
-            let semantic_entry = semantic_map.get(&key);
-            let keyword_entry = keyword_map.get(&key);
-
-            let semantic_score = semantic_entry.map(|(_, _, s)| *s).unwrap_or(0.0);
-            let keyword_score = keyword_entry.map(|(_, s)| *s).unwrap_or(0.0);
-
-            let combined_score = combine_scores(semantic_score, keyword_score);
-
-            if let Some((record_id, record, _)) = semantic_entry {
-                combined_results.push((
-                    key,
-                    record_id.clone(),
-                    record.clone(),
-                    combined_score,
-                    semantic_score,
-                    keyword_score,
-                ));
-            } else if let Some((record, _)) = keyword_entry {
-                combined_results.push((
-                    key,
-                    RecordIdKey::from("keyword_only"),
-                    record.clone(),
-                    combined_score,
-                    semantic_score,
-                    keyword_score,
-                ));
-            }
-        }
-    }
-
-    combined_results
-}
-
-pub trait HybridSearchSetupExt<C: Connection> {
-    /// Enable hybrid search on a table by creating the necessary full-text index.
-    ///
-    /// # Arguments
-    /// * `table_name` - The name of the table to enable hybrid search on
-    /// * `field_name` - The field to index for full-text search
-    async fn enable_hybrid_search(
-        &self,
-        table_name: &str,
-        field_name: &str,
-    ) -> Result<(), HybridSearchError>;
-}
-
-impl<C: Connection> HybridSearchSetupExt<C> for Surreal<C> {
-    async fn enable_hybrid_search(
-        &self,
-        table_name: &str,
-        field_name: &str,
-    ) -> Result<(), HybridSearchError> {
-        let index_name = format!("{}_index", table_name);
-
-        // First define the analyzer
-        let analyzer_query =
-            "DEFINE ANALYZER simple TOKENIZERS class,blank FILTERS lowercase, ascii;";
-        self.query(analyzer_query).await?;
-
-        // Then define the search index using BM25
-        let index_query = format!(
-            "DEFINE INDEX {} ON TABLE {} FIELDS {} SEARCH ANALYZER simple BM25;",
-            index_name, table_name, field_name
-        );
-
-        self.query(index_query).await?;
-        Ok(())
-    }
-}
-
 /// Extension trait to add `with_hybrid_search()` to DocumentTableBuilder
 pub trait DocumentTableBuilderHybridExt<C: Connection, E, K: Chunker>: Sized {
     /// Enable hybrid search capability on this table
@@ -301,20 +211,50 @@ impl<C: Connection, E, K: Chunker> HybridDocumentTableBuilder<C, E, K> {
     /// 1. Create the underlying document table
     /// 2. Create a full-text search index on the specified field
     /// 3. Return a `HybridDocumentTable` that supports both semantic and keyword search
-    pub async fn build<R: Serialize + DeserializeOwned>(
-        self,
-    ) -> Result<HybridDocumentTable<C, R, E, K>, HybridSearchError>
+    pub async fn build<R>(self) -> Result<HybridDocumentTable<C, R, E, K>, HybridSearchError>
     where
         E: Embedder,
+        R: Serialize + DeserializeOwned + AsRef<Document>,
     {
         let table = self.inner.build().await?;
+        let links_table = table.table().table_links();
 
-        // Enable hybrid search on the table
-        table
-            .table()
-            .db()
-            .enable_hybrid_search(table.table().table(), &self.field_name)
-            .await?;
+        // Define the extraction function
+        let func_query = format!(
+            r#"
+                DEFINE FUNCTION fn::extract_chunk($doc_id: record, $start: int, $end: int) {{
+                    LET $doc = (SELECT object FROM {} WHERE meta::id(id) = $doc_id)[0];
+                    RETURN string::slice($doc.object.{}, $start, $end);
+                }};
+            "#,
+            table.table().table(),
+            self.field_name
+        );
+        table.table().db().query(func_query).await?;
+
+        // Add chunk_text field to existing links by updating them
+        // This migrates any existing data
+        let update_links_query = format!(
+            r#"
+                UPDATE `{}`
+                SET chunk_text = fn::extract_chunk(document_id, byte_range.start, byte_range.end)
+                WHERE chunk_text IS NONE;
+            "#,
+            links_table
+        );
+        table.table().db().query(update_links_query).await?;
+
+        // Create the search index on the materialized field
+        let index_query = format!(
+            r#"
+                DEFINE ANALYZER simple TOKENIZERS class,blank FILTERS lowercase, ascii;
+                DEFINE INDEX chunk_text_idx ON TABLE `{}`
+                FIELDS chunk_text
+                SEARCH ANALYZER simple BM25 HIGHLIGHTS;
+            "#,
+            links_table
+        );
+        table.table().db().query(index_query).await?;
 
         Ok(HybridDocumentTable {
             inner: table,
@@ -383,6 +323,11 @@ impl<C: Connection, R, E: Embedder, K: Chunker> HybridDocumentTable<C, R, E, K> 
         self.inner.embedding_model()
     }
 
+    /// Get a reference to the chunker
+    pub fn chunker(&self) -> &K {
+        self.inner.chunker()
+    }
+
     /// Insert a new record into the table
     pub async fn insert(
         &self,
@@ -391,7 +336,24 @@ impl<C: Connection, R, E: Embedder, K: Chunker> HybridDocumentTable<C, R, E, K> 
     where
         R: AsRef<Document> + Serialize + DeserializeOwned + 'static,
     {
-        self.inner.insert(value).await
+        // Chunk the document
+        let chunks = self
+            .inner
+            .chunker()
+            .chunk(value.as_ref(), self.inner.embedding_model())
+            .await
+            .map_err(DocumentTableModifyError::EmbedItem)?;
+
+        // Insert with materialized chunk text
+        let record_key = self
+            .inner
+            .table()
+            .insert_with_chunk_text(chunks, value, |v, range| {
+                v.as_ref().body()[range.clone()].to_string()
+            })
+            .await?;
+
+        Ok(record_key)
     }
 
     /// Extend the table with an iterator of new records
@@ -403,7 +365,50 @@ impl<C: Connection, R, E: Embedder, K: Chunker> HybridDocumentTable<C, R, E, K> 
         R: AsRef<Document> + Serialize + DeserializeOwned + 'static,
         K: Sync,
     {
-        self.inner.extend(iter).await
+        let entries = iter.into_iter().collect::<Vec<_>>();
+        let documents = entries.iter().map(|v| v.as_ref()).collect::<Vec<_>>();
+
+        // Batch chunk all documents
+        let embeddings = self
+            .inner
+            .chunker()
+            .chunk_batch(documents, self.inner.embedding_model())
+            .await
+            .map_err(DocumentTableModifyError::EmbedItem)?;
+
+        let mut ids = Vec::new();
+        for (value, chunks) in entries.into_iter().zip(embeddings) {
+            // Insert each with materialized chunk text
+            let id = self
+                .inner
+                .table()
+                .insert_with_chunk_text(chunks, value, |v, range| {
+                    v.as_ref().body()[range.clone()].to_string()
+                })
+                .await?;
+            ids.push(id);
+        }
+        Ok(ids)
+    }
+
+    /// Extend the table with context documents
+    pub async fn add_context<D>(
+        &self,
+        context: D,
+    ) -> Result<Vec<RecordIdKey>, DocumentTableAddContextError<D::Error, K::Error<E::Error>>>
+    where
+        D: IntoDocuments,
+        R: From<Document> + AsRef<Document> + Serialize + DeserializeOwned + 'static,
+        K: Sync,
+    {
+        let documents = context
+            .into_documents()
+            .await
+            .map_err(DocumentTableAddContextError::ConvertItem)?;
+        let iter = documents.into_iter().map(|v| v.into());
+        self.extend(iter)
+            .await
+            .map_err(DocumentTableAddContextError::ModifyTable)
     }
 
     /// Select a record from the table
@@ -453,10 +458,10 @@ pub struct HybridSearchBuilder<'a, Conn: Connection, Doc, Model: Embedder, Chkr:
 }
 
 #[derive(Deserialize)]
-struct KeywordResult<R> {
-    #[serde(flatten)]
-    record: R,
-    pub id: RecordIdKey,
+struct KeywordChunkResult {
+    document_id: RecordIdKey,
+    byte_range: std::ops::Range<usize>,
+    chunk_text: String,
     keyword_score: f32,
 }
 
@@ -497,7 +502,7 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
     /// Execute the hybrid search using weighted combination
     pub async fn run_weighted(self) -> Result<Vec<HybridSearchResult<R>>, HybridSearchError>
     where
-        R: Serialize + DeserializeOwned + Clone + AsRef<Document> + Send + Sync + Hash,
+        R: Serialize + DeserializeOwned + Clone + AsRef<Document> + Send + Sync,
         <M as Embedder>::Error: std::fmt::Debug + std::fmt::Display + 'static,
     {
         // Perform semantic search
@@ -508,32 +513,31 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
             .run()
             .await?;
 
-        // Perform keyword search using SurrealDB full-text search
+        // Perform keyword search on the links table
+        let links_table = self.table.table().table_links();
         let keyword_query = format!(
             r#"
                 SELECT
-                    type::field($field),
-                    search::score(0) as keyword_score
-                FROM type::table($table)
+                    document_id,
+                    byte_range,
+                    chunk_text,
+                    search::score(1) as keyword_score
+                FROM `{}`
                 WHERE
-                    {} @0@ $user_query
+                    chunk_text @1@ $query
                 ORDER BY
                     keyword_score DESC
-                LIMIT
-                    $limit;
+                LIMIT $limit;
             "#,
-            self.field_name
+            links_table
         );
 
-        let table_name = self.table.table().table();
-        let keyword_results: Vec<KeywordResult<R>> = self
+        let keyword_results: Vec<KeywordChunkResult> = self
             .table
             .table()
             .db()
             .query(keyword_query)
-            .bind(("field", self.field_name))
-            .bind(("table", table_name.to_string()))
-            .bind(("user_query", self.user_query.clone()))
+            .bind(("query", self.user_query.clone()))
             .bind(("limit", self.results))
             .await?
             .take(0)
@@ -547,52 +551,85 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
             .map(|r| r.keyword_score)
             .fold(0.0f32, f32::max);
 
-        // Build score maps
-        let mut semantic_map: HashMap<u64, (RecordIdKey, R, f32)> = HashMap::new();
+        // Build score maps using record IDs as keys
+        let mut semantic_map: HashMap<String, (RecordIdKey, R, f32)> = HashMap::new();
         for result in semantic_results {
             let normalized = distance_to_similarity(result.distance, max_semantic).unwrap_or(0.0);
-            let key = create_content_hash(&result.record);
+            let key = result.record_id.to_string();
             semantic_map.insert(key, (result.record_id, result.record, normalized));
         }
 
-        let mut keyword_map: HashMap<u64, (R, f32)> = HashMap::new();
+        let mut keyword_map: HashMap<String, (R, f32)> = HashMap::new();
         for result in keyword_results {
             let normalized = if max_keyword > 0.0 {
                 result.keyword_score / max_keyword
             } else {
                 0.0
             };
-            let key = create_content_hash(&result.record);
-            keyword_map.insert(key, (result.record, normalized));
+            let key = result.document_id.to_string();
+
+            // If we don't have this document yet, fetch it
+            if !keyword_map.contains_key(&key) {
+                if let Ok(record) = self.table.table().select(result.document_id.clone()).await {
+                    keyword_map.insert(key.clone(), (record, normalized));
+                }
+            }
         }
 
-        // Merge using helper function
-        let combined = merge_results(semantic_map, keyword_map, |sem, key| {
-            calculate_weighted_score(sem, key, self.semantic_weight, self.keyword_weight)
-        });
+        // Merge results by record ID
+        let mut combined_results = Vec::new();
+        let mut seen_keys = HashSet::new();
 
-        // Convert to result type and sort
-        let mut results: Vec<HybridSearchResult<R>> = combined
-            .into_iter()
-            .map(
-                |(_, id, record, score, semantic_score, keyword_score)| HybridSearchResult {
-                    record,
-                    id,
-                    score,
-                    semantic_score,
-                    keyword_score,
-                },
-            )
+        let all_keys: Vec<String> = semantic_map
+            .keys()
+            .chain(keyword_map.keys())
+            .cloned()
             .collect();
 
-        results.sort_by(|a, b| {
+        for key in all_keys {
+            if seen_keys.insert(key.clone()) {
+                let semantic_entry = semantic_map.get(&key);
+                let keyword_entry = keyword_map.get(&key);
+
+                let semantic_score = semantic_entry.map(|(_, _, s)| *s).unwrap_or(0.0);
+                let keyword_score = keyword_entry.map(|(_, s)| *s).unwrap_or(0.0);
+
+                let combined_score = calculate_weighted_score(
+                    semantic_score,
+                    keyword_score,
+                    self.semantic_weight,
+                    self.keyword_weight,
+                );
+
+                if let Some((record_id, record, _)) = semantic_entry {
+                    combined_results.push(HybridSearchResult {
+                        record: record.clone(),
+                        id: record_id.clone(),
+                        score: combined_score,
+                        semantic_score,
+                        keyword_score,
+                    });
+                } else if let Some((record, _)) = keyword_entry {
+                    combined_results.push(HybridSearchResult {
+                        record: record.clone(),
+                        id: RecordIdKey::from(key.as_str()),
+                        score: combined_score,
+                        semantic_score,
+                        keyword_score,
+                    });
+                }
+            }
+        }
+
+        // Sort and truncate
+        combined_results.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        results.truncate(self.results);
+        combined_results.truncate(self.results);
 
-        Ok(results)
+        Ok(combined_results)
     }
 
     /// Execute the hybrid search using Reciprocal Rank Fusion (RRF)
@@ -601,7 +638,7 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
     /// * `k` - RRF constant, typically 60
     pub async fn run_with_rrf(self, k: f32) -> Result<Vec<HybridSearchResult<R>>, HybridSearchError>
     where
-        R: Serialize + DeserializeOwned + Clone + AsRef<Document> + Send + Sync + Hash,
+        R: Serialize + DeserializeOwned + Clone + AsRef<Document> + Send + Sync,
         <M as Embedder>::Error: std::fmt::Debug + std::fmt::Display + 'static,
     {
         // Perform semantic search
@@ -612,60 +649,58 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
             .run()
             .await?;
 
-        // Perform keyword search
-        // Perform keyword search using SurrealDB full-text search
+        // Perform keyword search on the links table
+        let links_table = self.table.table().table_links();
         let keyword_query = format!(
             r#"
                 SELECT
-                    type::field($field),
+                    document_id,
+                    byte_range,
+                    chunk_text,
                     search::score(0) as keyword_score
-                FROM type::table($table)
+                FROM `{}`
                 WHERE
-                    {} @0@ $user_query
+                    chunk_text @0@ $query
                 ORDER BY
                     keyword_score DESC
-                LIMIT
-                    $limit;
+                LIMIT $limit;
             "#,
-            self.field_name
+            links_table
         );
 
-        let table_name = self.table.table().table();
-        let keyword_results: Vec<KeywordResult<R>> = self
+        let keyword_results: Vec<KeywordChunkResult> = self
             .table
             .table()
             .db()
             .query(keyword_query)
-            .bind(("field", self.field_name))
-            .bind(("table", table_name.to_string()))
-            .bind(("user_query", self.user_query.clone()))
+            .bind(("query", self.user_query.clone()))
             .bind(("limit", self.results))
             .await?
             .take(0)
             .map_err(|e| HybridSearchError::KeywordSearchError(e.to_string()))?;
 
-        // Build rank maps
-        let mut semantic_ranks: HashMap<u64, usize> = HashMap::new();
+        // Build rank maps using record IDs
+        let mut semantic_ranks: HashMap<String, usize> = HashMap::new();
         for (rank, result) in semantic_results.iter().enumerate() {
-            let key = create_content_hash(&result.record);
+            let key = result.record_id.to_string();
             semantic_ranks.insert(key, rank);
         }
 
-        let mut keyword_ranks: HashMap<u64, usize> = HashMap::new();
+        let mut keyword_ranks: HashMap<String, usize> = HashMap::new();
         for (rank, result) in keyword_results.iter().enumerate() {
-            let key = create_content_hash(&result.record);
+            let key = result.document_id.to_string();
             keyword_ranks.insert(key, rank);
         }
 
         // Collect all unique keys
-        let all_keys: HashSet<u64> = semantic_ranks
+        let all_keys: HashSet<String> = semantic_ranks
             .keys()
             .chain(keyword_ranks.keys())
-            .copied()
+            .cloned()
             .collect();
 
         // Build result map with RRF scores
-        let mut rrf_results: HashMap<u64, (R, f32, f32, f32, RecordIdKey)> = HashMap::new();
+        let mut rrf_results = Vec::new();
 
         for key in all_keys {
             let semantic_rank = semantic_ranks.get(&key).copied();
@@ -688,53 +723,37 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
             // Get record and ID (prefer semantic)
             if let Some(rank) = semantic_rank {
                 let result = &semantic_results[rank];
-                rrf_results.insert(
-                    key,
-                    (
-                        result.record.clone(),
-                        rrf_score,
-                        semantic_score,
-                        keyword_score,
-                        result.record_id.clone(),
-                    ),
-                );
+                rrf_results.push(HybridSearchResult {
+                    record: result.record.clone(),
+                    id: result.record_id.clone(),
+                    score: rrf_score,
+                    semantic_score,
+                    keyword_score,
+                });
             } else if let Some(rank) = keyword_rank {
                 let result = &keyword_results[rank];
-                rrf_results.insert(
-                    key,
-                    (
-                        result.record.clone(),
-                        rrf_score,
+                // Fetch the full record
+                if let Ok(record) = self.table.table().select(result.document_id.clone()).await {
+                    rrf_results.push(HybridSearchResult {
+                        record,
+                        id: result.document_id.clone(),
+                        score: rrf_score,
                         semantic_score,
                         keyword_score,
-                        RecordIdKey::from("keyword_only"),
-                    ),
-                );
+                    });
+                }
             }
         }
 
-        // Convert to result type and sort
-        let mut results: Vec<HybridSearchResult<R>> = rrf_results
-            .into_iter()
-            .map(
-                |(_, (record, score, semantic, keyword, id))| HybridSearchResult {
-                    record,
-                    id,
-                    score,
-                    semantic_score: semantic,
-                    keyword_score: keyword,
-                },
-            )
-            .collect();
-
-        results.sort_by(|a, b| {
+        // Sort and truncate
+        rrf_results.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        results.truncate(self.results);
+        rrf_results.truncate(self.results);
 
-        Ok(results)
+        Ok(rrf_results)
     }
 }
 
@@ -911,124 +930,6 @@ mod tests {
         // Test with neither present
         let score = combine_rrf_scores(None, None, k);
         assert_eq!(score, 0.0);
-    }
-
-    #[test]
-    fn test_merge_results_no_overlap() {
-        let mut semantic_map = HashMap::new();
-        let mut keyword_map = HashMap::new();
-
-        semantic_map.insert(1u64, (RecordIdKey::from("sem1"), "doc1".to_string(), 0.9));
-        keyword_map.insert(2u64, ("doc2".to_string(), 0.7));
-
-        let results = merge_results(semantic_map, keyword_map, |sem, key| sem * 0.7 + key * 0.3);
-
-        assert_eq!(results.len(), 2);
-    }
-
-    #[test]
-    fn test_merge_results_with_overlap() {
-        let mut semantic_map = HashMap::new();
-        let mut keyword_map = HashMap::new();
-
-        let hash = 12345u64;
-        semantic_map.insert(hash, (RecordIdKey::from("id1"), "doc".to_string(), 0.9));
-        keyword_map.insert(hash, ("doc".to_string(), 0.7));
-
-        let results = merge_results(semantic_map, keyword_map, |sem, key| sem * 0.7 + key * 0.3);
-
-        // Should have only 1 result (deduplicated)
-        assert_eq!(results.len(), 1);
-
-        // Check the combined score
-        let (_, _, _, combined_score, sem_score, key_score) = &results[0];
-        assert!((sem_score - 0.9).abs() < 0.001);
-        assert!((key_score - 0.7).abs() < 0.001);
-
-        let expected = 0.9 * 0.7 + 0.7 * 0.3;
-        assert!((combined_score - expected).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_merge_results_prefers_semantic_id() {
-        let mut semantic_map = HashMap::new();
-        let mut keyword_map = HashMap::new();
-
-        let hash = 99999u64;
-        semantic_map.insert(
-            hash,
-            (RecordIdKey::from("semantic_id"), "doc".to_string(), 0.8),
-        );
-        keyword_map.insert(hash, ("doc".to_string(), 0.6));
-
-        let results = merge_results(semantic_map, keyword_map, |sem, key| sem + key);
-
-        assert_eq!(results.len(), 1);
-        let (_, id, _, _, _, _) = &results[0];
-
-        // Should prefer the semantic ID
-        assert_eq!(id.to_string(), "semantic_id");
-    }
-
-    #[test]
-    fn test_merge_results_keyword_only() {
-        let semantic_map = HashMap::new();
-        let mut keyword_map = HashMap::new();
-
-        keyword_map.insert(555u64, ("keyword_doc".to_string(), 0.5));
-
-        let results = merge_results(semantic_map, keyword_map, |sem, key| sem * 0.7 + key * 0.3);
-
-        assert_eq!(results.len(), 1);
-        let (_, id, _, combined_score, sem_score, key_score) = &results[0];
-
-        // Should have keyword-only ID
-        assert_eq!(id.to_string(), "keyword_only");
-
-        // Semantic score should be 0
-        assert_eq!(*sem_score, 0.0);
-
-        // Keyword score should be preserved
-        assert!((key_score - 0.5).abs() < 0.001);
-
-        // Combined should only use keyword
-        let expected = 0.0 * 0.7 + 0.5 * 0.3;
-        assert!((combined_score - expected).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_merge_results_empty_maps() {
-        let semantic_map: HashMap<u64, (RecordIdKey, String, f32)> = HashMap::new();
-        let keyword_map: HashMap<u64, (String, f32)> = HashMap::new();
-
-        let results = merge_results(semantic_map, keyword_map, |sem, key| sem + key);
-
-        assert_eq!(results.len(), 0);
-    }
-
-    #[test]
-    fn test_merge_results_multiple_docs() {
-        let mut semantic_map = HashMap::new();
-        let mut keyword_map = HashMap::new();
-
-        semantic_map.insert(1u64, (RecordIdKey::from("id1"), "doc1".to_string(), 0.9));
-        semantic_map.insert(2u64, (RecordIdKey::from("id2"), "doc2".to_string(), 0.7));
-
-        keyword_map.insert(2u64, ("doc2".to_string(), 0.8)); // Overlaps with doc2
-        keyword_map.insert(3u64, ("doc3".to_string(), 0.6));
-
-        let results = merge_results(semantic_map, keyword_map, |sem, key| sem * 0.5 + key * 0.5);
-
-        // Should have 3 unique documents
-        assert_eq!(results.len(), 3);
-
-        // Find the overlapping doc (hash 2)
-        let overlapping = results.iter().find(|(hash, _, _, _, _, _)| *hash == 2u64);
-        assert!(overlapping.is_some());
-
-        let (_, _, _, _, sem, key) = overlapping.unwrap();
-        assert!((sem - 0.7).abs() < 0.001);
-        assert!((key - 0.8).abs() < 0.001);
     }
 
     #[test]
