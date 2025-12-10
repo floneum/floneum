@@ -81,7 +81,7 @@ async fn test_rrf_hybrid_search() -> Result<(), Box<dyn std::error::Error>> {
     let table = db
         .document_table_builder(table_name)
         .with_chunker(chunker)
-        .with_hybrid_search("body")
+        .with_hybrid_search()
         .build::<Document>()
         .await?;
 
@@ -124,7 +124,7 @@ async fn test_weighted_hybrid_search() -> Result<(), Box<dyn std::error::Error>>
     let table = db
         .document_table_builder(table_name)
         .with_chunker(chunker)
-        .with_hybrid_search("body")
+        .with_hybrid_search()
         .build::<Document>()
         .await?;
 
@@ -168,7 +168,7 @@ async fn test_keyword_only_match() -> Result<(), Box<dyn std::error::Error>> {
     let table = db
         .document_table_builder(table_name)
         .with_chunker(chunker)
-        .with_hybrid_search("body")
+        .with_hybrid_search()
         .build::<Document>()
         .await?;
 

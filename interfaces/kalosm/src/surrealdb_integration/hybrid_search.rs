@@ -119,8 +119,7 @@ pub fn create_content_hash<T: Hash>(record: &T) -> u64 {
 pub trait DocumentTableBuilderHybridExt<C: Connection, E, K: Chunker>: Sized {
     /// Enable hybrid search capability on this table
     ///
-    /// # Arguments
-    /// * `field_name` - The field to index for full-text search (e.g., "body", "content", "text")
+    /// The default field name is "body". Use `.with_search_field()` to change it.
     ///
     /// # Example
     /// ```rust,no_run
@@ -128,9 +127,21 @@ pub trait DocumentTableBuilderHybridExt<C: Connection, E, K: Chunker>: Sized {
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let db = /* your database connection */;
-    /// let document_table = db
+    ///
+    /// // Use default "body" field
+    /// let table1 = db
     ///     .document_table_builder("documents")
-    ///     .with_hybrid_search("body")  // 👈 Enable hybrid search
+    ///     .with_hybrid_search()  // 👈 Uses "body" by default
+    ///     .with_chunker(SemanticChunker::new())
+    ///     .at("./db/embeddings.db")
+    ///     .build::<Document>()
+    ///     .await?;
+    ///
+    /// // Or customize the field
+    /// let table2 = db
+    ///     .document_table_builder("articles")
+    ///     .with_hybrid_search()
+    ///     .with_search_field("content")  // 👈 Change to "content"
     ///     .with_chunker(SemanticChunker::new())
     ///     .at("./db/embeddings.db")
     ///     .build::<Document>()
@@ -138,20 +149,14 @@ pub trait DocumentTableBuilderHybridExt<C: Connection, E, K: Chunker>: Sized {
     /// # Ok(())
     /// # }
     /// ```
-    fn with_hybrid_search(
-        self,
-        field_name: impl Into<String>,
-    ) -> HybridDocumentTableBuilder<C, E, K>;
+    fn with_hybrid_search(self) -> HybridDocumentTableBuilder<C, E, K>;
 }
 
 impl<C: Connection, E, K: Chunker> DocumentTableBuilderHybridExt<C, E, K>
     for DocumentTableBuilder<C, E, K>
 {
-    fn with_hybrid_search(
-        self,
-        field_name: impl Into<String>,
-    ) -> HybridDocumentTableBuilder<C, E, K> {
-        HybridDocumentTableBuilder::new(self, field_name)
+    fn with_hybrid_search(self) -> HybridDocumentTableBuilder<C, E, K> {
+        HybridDocumentTableBuilder::new(self, "body")
     }
 }
 
