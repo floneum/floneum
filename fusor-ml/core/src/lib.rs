@@ -27,6 +27,7 @@ mod layout;
 mod map_layout;
 pub mod matmul;
 mod mir;
+mod nary_wise;
 mod pair_wise;
 mod quantized;
 mod quantized_types_wgsl;

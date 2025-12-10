@@ -143,10 +143,9 @@ impl Operation for DequantizeOperation {
             }
         }
 
-        write!(kernel, "let chunk_index = ").unwrap();
+        write!(kernel, "let chunk = {input}[").unwrap();
         input.strided_index(kernel, (0..).map(|i| format!("index_{i}")));
-        writeln!(kernel, ";").unwrap();
-        writeln!(kernel, "let chunk = {input}[chunk_index];").unwrap();
+        writeln!(kernel, "];").unwrap();
 
         dequantize_block(
             kernel,

@@ -76,6 +76,14 @@ impl ElementWiseFunctions {
     pub fn push(&mut self, function: ElementWiseFunction) {
         self.functions.push(function);
     }
+
+    pub fn name(&self) -> String {
+        self.functions
+            .iter()
+            .map(|f| f.name())
+            .collect::<Vec<_>>()
+            .join("_")
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -277,6 +285,16 @@ impl ElementWiseFunction {
 
     pub(crate) fn name(&self) -> &str {
         self.name.as_deref().unwrap_or("element_wise")
+    }
+
+    pub(crate) fn to_nary_function(&self, input_type: DataTypeEnum) -> crate::nary_wise::NaryFunction {
+        crate::nary_wise::NaryFunction {
+            name: self.name.clone(),
+            operation: self.operation.clone(),
+            input_names: vec!["input".to_string()],
+            input_types: vec![input_type],
+            output_type: self.datatype,
+        }
     }
 }
 

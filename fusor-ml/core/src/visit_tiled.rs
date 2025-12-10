@@ -3,7 +3,7 @@ use std::fmt::{Display, Write};
 use fusor_gguf::GgmlType;
 
 use crate::{
-    DataTypeEnum, Device, Layout, QMatrix, TensorData, dequantize_block,
+    DataTypeEnum, Device, Layout, QMatrix, TensorData, dequantize_block, dequantize_mat4x4_block,
     mir::{
         inputs::{MirValue, QMatrixInput, TensorInput},
         kernel::GenericKernel,
@@ -210,9 +210,10 @@ fn build_tiled_map_kernel(
             tile_size
         )
         .unwrap();
+        writeln!(kernel, "var tile_offset = 0u;").unwrap();
         writeln!(
             kernel,
-            "for (var tile_offset = 0u; tile_offset < {}u; tile_offset++) {{",
+            "while (tile_offset < {}u) {{",
             tile_size
         )
         .unwrap();
@@ -272,66 +273,81 @@ fn build_tiled_map_kernel(
         )
         .unwrap();
 
-        // Compute chunk index
-        write!(kernel, "let chunk_index = ").unwrap();
+        // Load the quantized block
+        write!(kernel, "let chunk = &{quantized_input}[").unwrap();
         quantized_input.strided_index(
             kernel,
             (0..rank - 1)
                 .map(|i| format!("dim_{i}"))
                 .chain(std::iter::once(format!("block_dim_{}", rank - 1))),
         );
-        writeln!(kernel, ";").unwrap();
-
-        // Bounds check
-        first_tensor_input(&tensors).check_bounds(
+        writeln!(kernel, "];").unwrap();
+        
+        writeln!(kernel, "let sub_block_index = block_offset / 16u;").unwrap();
+        let handled = dequantize_mat4x4_block(
             kernel,
-            (0..rank).map(|i| format!("dim_{i}")),
-            |kernel| {
-                writeln!(kernel, "let chunk = {quantized_input}[chunk_index];").unwrap();
+            *quantized_type,
+            "sub_block_index",
+            "chunk".to_string(),
+            DataTypeEnum::F32,
+            |val, kernel| {
+                writeln!(kernel, "let sub_block_offset = block_offset % 16u;").unwrap();
+                writeln!(
+                    kernel,
+                    "let items_limit = min(16u - sub_block_offset, {}u - tile_offset);",
+                    tile_size
+                )
+                .unwrap();
+                writeln!(kernel, "for (var i = 0u; i < items_limit; i++) {{").unwrap();
+                writeln!(kernel, "let local_idx = sub_block_offset + i;").unwrap();
+                writeln!(kernel, "let col = local_idx / 4u;").unwrap();
+                writeln!(kernel, "let row = local_idx % 4u;").unwrap();
+                writeln!(kernel, "let val = {val}[col][row];").unwrap();
 
-                // Dequantize the specific element from the block
-                write!(kernel, "let dequantized_value = ").unwrap();
-                // We need to extract just the one value at block_offset from the chunk
-                // This is a simplified version - we'll need to inline the dequantization logic
-                {
-                    // For now, use a helper that dequantizes just one element
-                    dequantize_block(
-                        kernel,
-                        *quantized_type,
-                        "chunk".to_string(),
-                        DataTypeEnum::F32,
-                        |i, data, kernel| {
-                            writeln!(kernel, "if (block_offset == {i}u) {{").unwrap();
+                // Recalculate dimensions for the current element
+                for i in 0..rank {
+                    if i == rank - 1 {
+                        writeln!(kernel, "let current_dim_{i} = dim_{i} + i;").unwrap();
+                    } else {
+                        writeln!(kernel, "let current_dim_{i} = dim_{i};").unwrap();
+                    }
+                }
 
-                            let mut values = Vec::new();
-                            for (index, tensor) in tensors.iter().enumerate() {
-                                match tensor {
-                                    MaybeQTensorInput::Tensor(tensor) => {
-                                        writeln!(kernel, "let index_{index} = ",).unwrap();
-                                        tensor.strided_index(
-                                            kernel,
-                                            (0..rank).map(|i| format!("dim_{i}")),
-                                        );
-                                        writeln!(kernel, ";").unwrap();
-                                        values.push(format!("{tensor}[index_{index}]"));
-                                    }
-                                    MaybeQTensorInput::QTensor(_) => {
-                                        values.push(data.clone());
-                                    }
+                first_tensor_input(&tensors).check_bounds(
+                    kernel,
+                    (0..rank).map(|i| format!("current_dim_{i}")),
+                    |kernel| {
+                        let mut values = Vec::new();
+                        for (index, tensor) in tensors.iter().enumerate() {
+                            match tensor {
+                                MaybeQTensorInput::Tensor(tensor) => {
+                                    writeln!(kernel, "let index_{index} = ",).unwrap();
+                                    tensor.strided_index(
+                                        kernel,
+                                        (0..rank).map(|i| format!("current_dim_{i}")),
+                                    );
+                                    writeln!(kernel, ";").unwrap();
+                                    values.push(format!("{tensor}[index_{index}]"));
+                                }
+                                MaybeQTensorInput::QTensor(_) => {
+                                    values.push("val".to_string());
                                 }
                             }
-                            let indexes = (0..datatypes.len())
-                                .map(|i| format!("index_{i}"))
-                                .collect::<Vec<_>>();
+                        }
+                        let indexes = (0..datatypes.len())
+                            .map(|i| format!("index_{i}"))
+                            .collect::<Vec<_>>();
 
-                            let modify_data = modify_data(kernel, &indexes, &tensors, &values);
-                            writeln!(kernel, "{modify_data}").unwrap();
-                            writeln!(kernel, "}}").unwrap();
-                        },
-                    );
-                }
+                        let modify_data = modify_data(kernel, &indexes, &tensors, &values);
+                        writeln!(kernel, "{modify_data}").unwrap();
+                    },
+                );
+                writeln!(kernel, "}}").unwrap();
+                writeln!(kernel, "tile_offset += items_limit;").unwrap();
             },
         );
+
+        assert!(handled);
 
         writeln!(kernel, "}}").unwrap();
     } else {

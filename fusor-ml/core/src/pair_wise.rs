@@ -22,7 +22,7 @@ pub(crate) struct PairWiseOperation {
     pub(crate) second: NodeIndex,
     pub(crate) pre_element_wise: [ElementWiseFunctions; 2],
     pub(crate) function: PairWiseFunction,
-    post_element_wise: ElementWiseFunctions,
+    pub(crate) post_element_wise: ElementWiseFunctions,
     shape: Box<[usize]>,
 }
 
@@ -276,6 +276,20 @@ impl PairWiseFunction {
             self.datatype,
         )
         .with_name(self.name())
+    }
+
+    pub(crate) fn to_nary_function(
+        &self,
+        input_a_type: DataTypeEnum,
+        input_b_type: DataTypeEnum,
+    ) -> crate::nary_wise::NaryFunction {
+        crate::nary_wise::NaryFunction {
+            name: self.name.clone(),
+            operation: self.operation.clone(),
+            input_names: vec!["a".to_string(), "b".to_string()],
+            input_types: vec![input_a_type, input_b_type],
+            output_type: self.datatype,
+        }
     }
 }
 

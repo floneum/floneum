@@ -129,7 +129,7 @@ pub(crate) fn general_sgemv(
         };
         writeln!(
             kernel,
-            "let chunk = {input_b}[{index} * k_block_size + index];"
+            "let chunk = &{input_b}[{index} * k_block_size + index];"
         )
         .unwrap();
 

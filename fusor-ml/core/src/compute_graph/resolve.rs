@@ -15,11 +15,18 @@ use crate::{
         operation::Operation,
         workgroup_shape::{self, WorkgroupShapeConstraints},
     },
+    nary_wise::{NaryExpr, NaryOperation},
     quantized::matmul::QMatMulOperation,
     tensor::TensorData,
+    visit_tiled::VisitTiledInputType,
 };
 
 use super::{ComputeGraphInner, ComputeGraphNodeVariant, NodeIndex, queue::ComputeQueue};
+
+pub(crate) struct ResolverResult {
+    pub(crate) data: TensorData,
+    pub(crate) total_kernels: usize,
+}
 
 pub(crate) struct Resolver<'a> {
     command_encoder: &'a mut CommandEncoder,
@@ -57,7 +64,7 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    pub(crate) fn run(&mut self, graph: &mut ComputeGraphInner) -> TensorData {
+    pub(crate) fn run(&mut self, graph: &mut ComputeGraphInner) -> ResolverResult {
         let limits = graph.device.limits();
         self.queue_operations(graph);
         let queued_operations = std::mem::take(&mut self.queued_operations);
@@ -68,6 +75,7 @@ impl<'a> Resolver<'a> {
         let mut inputs = Vec::new();
         let mut all_input_values = Vec::new();
         let mut kernel = GenericKernel::new();
+        let mut total_kernels = 0;
 
         for (node, operation) in queued_operations {
             let new_inputs = operation.inputs(graph);
@@ -84,18 +92,21 @@ impl<'a> Resolver<'a> {
             if extend {
                 current_constraints = new_merged;
             } else {
-                self.flush_operations(
-                    graph,
-                    &mut kernel,
-                    &pending_operations,
-                    &inputs,
-                    &all_input_values,
-                    old_best,
-                );
-                pending_operations.clear();
-                all_input_values.clear();
-                inputs.clear();
-                kernel.clear();
+                if !pending_operations.is_empty() {
+                    total_kernels += 1;
+                    self.flush_operations(
+                        graph,
+                        &mut kernel,
+                        &pending_operations,
+                        &inputs,
+                        &all_input_values,
+                        old_best,
+                    );
+                    pending_operations.clear();
+                    all_input_values.clear();
+                    inputs.clear();
+                    kernel.clear();
+                }
                 current_constraints = constraint;
             }
             // Map layout isn't really a kernel. Resolve it immediately
@@ -132,6 +143,7 @@ impl<'a> Resolver<'a> {
                     "Failed to find a valid workgroup shape for constraints {current_constraints:?}"
                 )
             });
+            total_kernels += 1;
             self.flush_operations(
                 graph,
                 &mut kernel,
@@ -142,9 +154,13 @@ impl<'a> Resolver<'a> {
             );
         }
 
-        graph
+        let data = graph
             .get_result(self.target)
-            .expect("Target result not cached")
+            .expect("Target result not cached");
+        ResolverResult {
+            data,
+            total_kernels,
+        }
     }
 
     fn should_extend_kernel(&mut self, _: Vec<MirValue>, _: &[Vec<MirValue>]) -> bool {
@@ -258,7 +274,7 @@ impl<'a> Resolver<'a> {
                 ComputeGraphNodeVariant::ElementWise(op) => {
                     self.resolve_element_wise(graph, node, &op)
                 }
-                ComputeGraphNodeVariant::PairWise(op) => self.resolve_pair_wise(graph, &op),
+                ComputeGraphNodeVariant::PairWise(op) => self.resolve_pair_wise(graph, node, &op),
                 ComputeGraphNodeVariant::MatMul(op) => self.resolve_mat_mul(graph, &op),
                 ComputeGraphNodeVariant::Reduce(op) => self.resolve_reduce(graph, &op),
                 ComputeGraphNodeVariant::Tensor(op) => {
@@ -339,6 +355,11 @@ impl<'a> Resolver<'a> {
         key: NodeIndex,
         operation: &ElementWiseOperation,
     ) -> Arc<dyn Operation> {
+        // Try to collect nary chain first (element-wise can be root too)
+        if let Some(nary) = self.try_collect_nary_chain(graph, key) {
+            return Arc::new(nary);
+        }
+
         // First collect all element wise ops in this chain
         let functions = self.collect_element_wise_ops(graph, key, Some(operation));
         let input = functions.value;
@@ -383,8 +404,13 @@ impl<'a> Resolver<'a> {
     fn resolve_pair_wise(
         &mut self,
         graph: &mut ComputeGraphInner,
+        node: NodeIndex,
         operation: &PairWiseOperation,
     ) -> Arc<dyn Operation> {
+        // Try to collect nary chain first
+        if let Some(nary) = self.try_collect_nary_chain(graph, node) {
+            return Arc::new(nary);
+        }
         self.resolve_pair_wise_then(graph, operation, None)
     }
 
@@ -705,6 +731,126 @@ impl<'a> Resolver<'a> {
         kernel.set_pre_element_wise_indexes(indexes_pre_element_wise.functions);
 
         Arc::new(kernel)
+    }
+
+    fn try_collect_nary_chain(
+        &mut self,
+        graph: &ComputeGraphInner,
+        node: NodeIndex,
+    ) -> Option<NaryOperation> {
+        let mut inputs = Vec::new();
+        let (expression, output_datatype) = self.collect_nary_expr(graph, node, &mut inputs)?;
+
+        let (shape, final_output_datatype) = {
+            let node_data = graph.nodes.nodes.node_weight(node)?;
+            match &node_data.variant {
+                ComputeGraphNodeVariant::ElementWise(op) => (op.shape().into(), op.functions.out_datatype()),
+                ComputeGraphNodeVariant::PairWise(op) => (op.shape().into(), op.post_element_wise.out_datatype()),
+                // For other types, or if the Nary expression changes the output datatype
+                // fall back to the collected output_datatype, which is the datatype of the root NaryExpr.
+                _ => (graph.get_result_or_qmatrix(node)?.layout().shape().into(), output_datatype),
+            }
+        };
+
+        Some(NaryOperation {
+            inputs,
+            expression,
+            shape,
+            output_datatype: final_output_datatype,
+        })
+    }
+
+    fn collect_nary_expr(
+        &mut self,
+        graph: &ComputeGraphInner,
+        node: NodeIndex,
+        inputs: &mut Vec<NodeIndex>,
+    ) -> Option<(NaryExpr, DataTypeEnum)> {
+        let (variant, cached) = {
+            let node_data = graph.nodes.nodes.node_weight(node)?;
+            (node_data.variant.clone(), node_data.cached.is_some())
+        };
+
+        // Cached results become leaf inputs
+        if cached {
+            return self.add_leaf_input(node, inputs, graph);
+        }
+
+        match variant {
+            ComputeGraphNodeVariant::PairWise(op) => {
+                let (left_expr, left_output_type) = self.collect_nary_expr(graph, op.first, inputs)?;
+                let (right_expr, right_output_type) = self.collect_nary_expr(graph, op.second, inputs)?;
+
+                let left_expr =
+                    self.wrap_with_element_wise_functions(left_expr, &op.pre_element_wise[0]);
+                let right_expr =
+                    self.wrap_with_element_wise_functions(right_expr, &op.pre_element_wise[1]);
+
+                let mut expr = NaryExpr::Op {
+                    children: vec![left_expr, right_expr],
+                    function: op.function.to_nary_function(left_output_type, right_output_type),
+                };
+
+                expr = self.wrap_with_element_wise_functions(expr, &op.post_element_wise);
+
+                Some((expr, op.post_element_wise.out_datatype()))
+            }
+
+            ComputeGraphNodeVariant::ElementWise(op) => {
+                let (child_expr, _) = self.collect_nary_expr(graph, op.value, inputs)?;
+
+                let expr = self.wrap_with_element_wise_functions(child_expr, &op.functions);
+
+                Some((expr, op.functions.out_datatype()))
+            }
+
+            _ => self.add_leaf_input(node, inputs, graph),
+        }
+    }
+
+    /// Wrap an expression with element-wise functions (each becomes a unary Op node)
+    fn wrap_with_element_wise_functions(
+        &self,
+        mut expr: NaryExpr,
+        funcs: &ElementWiseFunctions,
+    ) -> NaryExpr {
+        let mut current_input_type = funcs.input_datatype();
+        for func in funcs.iter() {
+            expr = NaryExpr::Op {
+                children: vec![expr],
+                function: func.to_nary_function(current_input_type),
+            };
+            current_input_type = func.datatype;
+        }
+        expr
+    }
+
+    fn add_leaf_input(
+        &self,
+        node: NodeIndex,
+        inputs: &mut Vec<NodeIndex>,
+        graph: &ComputeGraphInner,
+    ) -> Option<(NaryExpr, DataTypeEnum)> {
+        // Check if this input already exists (deduplication)
+        if let Some(idx) = inputs.iter().position(|&n| n == node) {
+            let datatype = graph.get_result_or_qmatrix(node)
+                .map(|d| match d.datatype() {
+                    VisitTiledInputType::Dequantized(dt) => dt,
+                    VisitTiledInputType::Quantized(_) => DataTypeEnum::F32,
+                })?;
+            return Some((NaryExpr::Input(idx), datatype));
+        }
+
+        let idx = inputs.len();
+        inputs.push(node);
+
+        let datatype = graph.get_result_or_qmatrix(node)
+            .map(|d| match d.datatype() {
+                VisitTiledInputType::Dequantized(dt) => dt,
+                VisitTiledInputType::Quantized(_) => DataTypeEnum::F32,
+            })?;
+
+        Some((NaryExpr::Input(idx), datatype))
     }
 
     fn resolve_tensor(

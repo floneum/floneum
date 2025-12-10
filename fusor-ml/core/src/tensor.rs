@@ -331,8 +331,9 @@ impl LazyTensorData {
         Self::from_parts(device, info, key)
     }
 
-    pub(crate) fn materialize(&self) -> TensorData {
-        self.device.compute_graph().resolve(self.key, &self.device)
+    pub(crate) fn materialize(&self) -> (TensorData, usize) {
+        let result = self.device.compute_graph().resolve(self.key, &self.device);
+        (result.data, result.total_kernels)
     }
 
     pub fn graphvis(&self) -> Graph {
@@ -802,7 +803,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
     #[track_caller]
     pub fn materialize(&self) -> impl Future<Output = ()> + 'static {
         #[allow(unused)]
-        let data = self.data.materialize();
+        let (data, _) = self.data.materialize();
         #[cfg(feature = "extra_assertions")]
         let caller = std::panic::Location::caller();
         let (sender, receiver) = futures_channel::oneshot::channel();
@@ -838,10 +839,16 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         }
     }
 
+    /// How many kernel calls are needed to fully resolve this tensor
+    pub fn count_kernels_to_resolve(&self) -> usize {
+        let (_, count) = self.data.materialize();
+        count
+    }
+
     pub async fn as_slice(&self) -> Result<TensorSlice<R, D>, wgpu::BufferAsyncError> {
         #[cfg(not(target_arch = "wasm32"))]
         let start_time = std::time::Instant::now();
-        let tensor = self.data.materialize();
+        let (tensor, _) = self.data.materialize();
         #[cfg(not(target_arch = "wasm32"))]
         tracing::trace!("Materialized tensor in {:?}", start_time.elapsed());
         #[cfg(not(target_arch = "wasm32"))]

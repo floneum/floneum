@@ -13,12 +13,9 @@ mod resolve;
 mod visualize;
 
 use crate::{
-    DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, QMatrix,
-    ReduceOperation, dequantize::DequantizeOperation, index_select::IndexSelectOperation,
-    map_layout::MapLayoutOperation, mir::operation::Operation, quantized::matmul::QMatMulOperation,
-    resize::ResizeOperation, slice_assign::SliceAssignOperation, tensor::TensorData,
-    visit_tiled::MaybeQData,
+    DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, QMatrix, ReduceOperation, dequantize::DequantizeOperation, index_select::IndexSelectOperation, map_layout::MapLayoutOperation, mir::operation::Operation,  quantized::matmul::QMatMulOperation, resize::ResizeOperation, slice_assign::SliceAssignOperation, tensor::TensorData, visit_tiled::MaybeQData,compute_graph::resolve::ResolverResult
 };
+
 
 #[derive(Clone)]
 pub(crate) struct ComputeGraph {
@@ -95,7 +92,7 @@ impl ComputeGraph {
         self.create_node(ComputeGraphNodeVariant::Custom(op))
     }
 
-    pub(crate) fn resolve(&self, key: NodeIndex, device: &Device) -> TensorData {
+    pub(crate) fn resolve(&self, key: NodeIndex, device: &Device) -> ResolverResult {
         let mut encoder = device
             .wgpu_device()
             .create_command_encoder(&CommandEncoderDescriptor {
@@ -148,7 +145,7 @@ pub(crate) struct ComputeGraphNode {
     cached: Option<TensorData>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) enum ComputeGraphNodeVariant {
     ElementWise(ElementWiseOperation),
     PairWise(PairWiseOperation),
@@ -298,18 +295,12 @@ impl ComputeGraphInner {
     }
 
     pub(crate) fn get_result_or_qmatrix(&self, key: NodeIndex) -> Option<MaybeQData> {
-        // Check if this is a Dequantize node
-        if let Some(node) = self.nodes.nodes.node_weight(key)
-            && let ComputeGraphNodeVariant::Dequantize(op) = &node.variant
-        {
-            return Some(op.matrix.clone().into());
+        let node = self.nodes.nodes.node_weight(key)?;
+        match &node.variant {
+            ComputeGraphNodeVariant::Dequantize(op) => Some(op.matrix.clone().into()),
+            ComputeGraphNodeVariant::Tensor(op) => Some(op.clone().into()),
+            _ => node.cached.as_ref().map(|t| t.clone().into()),
         }
-        // Otherwise, get from cached results on the node
-        self.nodes
-            .nodes
-            .node_weight(key)
-            .and_then(|n| n.cached.as_ref())
-            .map(|t| t.clone().into())
     }
 
     pub(crate) fn get_result(&self, key: NodeIndex) -> Option<TensorData> {
