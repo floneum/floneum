@@ -3,7 +3,7 @@ use std::fmt::{Display, Write};
 use fusor_gguf::GgmlType;
 
 use crate::{
-    DataTypeEnum, Device, Layout, QMatrix, TensorData, dequantize_block, dequantize_mat4x4_block,
+    DataTypeEnum, Device, Layout, QMatrix, TensorData, dequantize_mat4x4_block,
     mir::{
         inputs::{MirValue, QMatrixInput, TensorInput},
         kernel::GenericKernel,

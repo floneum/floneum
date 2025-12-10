@@ -20,6 +20,22 @@ impl<const R: usize, D: FloatDataType + DataType> Tensor<R, D> {
 
 #[cfg(test)]
 #[tokio::test]
+async fn test_gelu_is_optimized() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., -2.], [-3., 4.], [5., -6.]];
+
+    let tensor = Tensor::new(&device, &data);
+
+    let tensor = tensor.gelu();
+
+    assert_eq!(tensor.count_kernels_to_resolve(), 1);
+}
+
+#[cfg(test)]
+#[tokio::test]
 async fn test_gelu() {
     use std::f32;
 

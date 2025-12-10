@@ -25,20 +25,7 @@ pub(crate) struct NaryFunction {
 }
 
 impl NaryFunction {
-    pub fn new(
-        operation: impl Into<String>,
-        input_names: Vec<String>,
-        input_types: Vec<DataTypeEnum>,
-        output_type: DataTypeEnum,
-    ) -> Self {
-        Self {
-            name: None,
-            operation: operation.into(),
-            input_names,
-            input_types,
-            output_type,
-        }
-    }
+
 
     pub fn name(&self) -> &str {
         self.name.as_deref().unwrap_or("op")
@@ -179,14 +166,12 @@ impl Operation for NaryOperation {
 
         // Check if we can reuse an input allocation for output
         let reuse_index = mir_inputs.iter().enumerate().find_map(|(i, input)| {
-            let data: Result<MaybeQData, _> = input.clone().try_into();
-            if let Ok(data) = data {
-                if data.datatype() == self.output_datatype.into()
-                    && data.owned()
-                    && !data.layout().allocation_overlaps()
-                {
-                    return Some(i);
-                }
+            if let Ok(data) = std::convert::TryInto::<MaybeQData>::try_into(input.clone())
+                && data.datatype() == self.output_datatype.into()
+                && data.owned()
+                && !data.layout().allocation_overlaps()
+            {
+                return Some(i);
             }
             None
         });
@@ -208,14 +193,12 @@ impl Operation for NaryOperation {
             .iter()
             .enumerate()
             .find_map(|(i, input)| {
-                let data: Result<MaybeQData, _> = input.clone().try_into();
-                if let Ok(data) = data {
-                    if data.datatype() == self.output_datatype.into()
-                        && data.owned()
-                        && !data.layout().allocation_overlaps()
-                    {
-                        return Some(i);
-                    }
+                if let Ok(data) = std::convert::TryInto::<MaybeQData>::try_into(input.clone())
+                    && data.datatype() == self.output_datatype.into()
+                    && data.owned()
+                    && !data.layout().allocation_overlaps()
+                {
+                    return Some(i);
                 }
                 None
             });
@@ -240,14 +223,12 @@ impl Operation for NaryOperation {
             .iter()
             .enumerate()
             .find_map(|(i, input)| {
-                let data: Result<MaybeQData, _> = input.clone().try_into();
-                if let Ok(data) = data {
-                    if data.datatype() == self.output_datatype.into()
-                        && data.owned()
-                        && !data.layout().allocation_overlaps()
-                    {
-                        return Some(i);
-                    }
+                if let Ok(data) = std::convert::TryInto::<MaybeQData>::try_into(input.clone())
+                    && data.datatype() == self.output_datatype.into()
+                    && data.owned()
+                    && !data.layout().allocation_overlaps()
+                {
+                    return Some(i);
                 }
                 None
             });

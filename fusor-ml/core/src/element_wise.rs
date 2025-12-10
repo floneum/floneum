@@ -77,13 +77,7 @@ impl ElementWiseFunctions {
         self.functions.push(function);
     }
 
-    pub fn name(&self) -> String {
-        self.functions
-            .iter()
-            .map(|f| f.name())
-            .collect::<Vec<_>>()
-            .join("_")
-    }
+
 }
 
 #[derive(Clone, Debug)]
