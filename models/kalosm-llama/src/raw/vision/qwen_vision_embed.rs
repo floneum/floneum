@@ -64,15 +64,26 @@ where
         vb: &mut VarBuilder,
         device: &Device,
     ) -> fusor_core::Result<Self> {
-        let weight_tensor = vb.get("weight", device)?;
-        let shape = weight_tensor.shape().to_vec();
-
-        // [out_channels, in_channels, temporal, kernel_h, kernel_w]
+        // GGUF stores Conv3D weights split into two Conv2D tensors along the temporal dimension
+        // - "weight" contains temporal slice 0: [out_channels, in_channels, kernel_h, kernel_w]
+        // - "weight.1" contains temporal slice 1: [out_channels, in_channels, kernel_h, kernel_w]
+        // We need to stack them to form [out_channels, in_channels, temporal, kernel_h, kernel_w]
         assert_eq!(
             temporal_patch_size, 2,
             "Only 2 temporal patch size is supported for 5D weights"
         );
-        let weight = weight_tensor.dequantize::<5, F>();
+
+        let weight_0 = vb.get("weight", device)?;
+        let weight_1 = vb.get("weight.1", device)?;
+
+        // Dequantize to 4D tensors
+        let weight_0: Tensor<4, F> = weight_0.dequantize();
+        let weight_1: Tensor<4, F> = weight_1.dequantize();
+
+        // Stack along the temporal dimension (dim 2) to create 5D tensor
+        // [out_channels, in_channels, kernel_h, kernel_w] -> [out_channels, in_channels, 2, kernel_h, kernel_w]
+        let weight: Tensor<5, F> = Tensor::stack([weight_0, weight_1], 2);
+
         let cfg = Conv3dConfig {
             stride: patch_size,
             ..Default::default()
