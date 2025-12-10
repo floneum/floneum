@@ -505,32 +505,31 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
         R: Serialize + DeserializeOwned + Clone + AsRef<Document> + Send + Sync,
         <M as Embedder>::Error: std::fmt::Debug + std::fmt::Display + 'static,
     {
+        let search_limit = self.results * 3;
+
         // Perform semantic search
         let semantic_results = self
             .table
             .search(self.user_query.clone())
-            .with_results(self.results)
+            .with_results(search_limit)
             .run()
             .await?;
 
         // Perform keyword search on the links table
         let links_table = self.table.table().table_links();
-        let keyword_query = format!(
-            r#"
-                SELECT
-                    document_id,
-                    byte_range,
-                    chunk_text,
-                    search::score(1) as keyword_score
-                FROM `{}`
-                WHERE
-                    chunk_text @1@ $query
-                ORDER BY
-                    keyword_score DESC
-                LIMIT $limit;
-            "#,
-            links_table
-        );
+        let keyword_query = r#"
+            SELECT
+                document_id,
+                byte_range,
+                chunk_text,
+                search::score(1) as keyword_score
+            FROM type::table($table)
+            WHERE
+                chunk_text @1@ $query
+            ORDER BY
+                keyword_score DESC
+            LIMIT $limit;
+        "#;
 
         let keyword_results: Vec<KeywordChunkResult> = self
             .table
@@ -538,7 +537,8 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
             .db()
             .query(keyword_query)
             .bind(("query", self.user_query.clone()))
-            .bind(("limit", self.results))
+            .bind(("table", links_table))
+            .bind(("limit", search_limit))
             .await?
             .take(0)
             .map_err(|e| HybridSearchError::KeywordSearchError(e.to_string()))?;
@@ -641,32 +641,31 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
         R: Serialize + DeserializeOwned + Clone + AsRef<Document> + Send + Sync,
         <M as Embedder>::Error: std::fmt::Debug + std::fmt::Display + 'static,
     {
+        let search_limit = self.results * 3;
+
         // Perform semantic search
         let semantic_results = self
             .table
             .search(self.user_query.clone())
-            .with_results(self.results * 2)
+            .with_results(search_limit)
             .run()
             .await?;
 
         // Perform keyword search on the links table
         let links_table = self.table.table().table_links();
-        let keyword_query = format!(
-            r#"
-                SELECT
-                    document_id,
-                    byte_range,
-                    chunk_text,
-                    search::score(0) as keyword_score
-                FROM `{}`
-                WHERE
-                    chunk_text @0@ $query
-                ORDER BY
-                    keyword_score DESC
-                LIMIT $limit;
-            "#,
-            links_table
-        );
+        let keyword_query = r#"
+            SELECT
+                document_id,
+                byte_range,
+                chunk_text,
+                search::score(1) as keyword_score
+            FROM type::table($table)
+            WHERE
+                chunk_text @1@ $query
+            ORDER BY
+                keyword_score DESC
+            LIMIT $limit;
+        "#;
 
         let keyword_results: Vec<KeywordChunkResult> = self
             .table
@@ -674,7 +673,8 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
             .db()
             .query(keyword_query)
             .bind(("query", self.user_query.clone()))
-            .bind(("limit", self.results))
+            .bind(("table", links_table))
+            .bind(("limit", search_limit))
             .await?
             .take(0)
             .map_err(|e| HybridSearchError::KeywordSearchError(e.to_string()))?;
