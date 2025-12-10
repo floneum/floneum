@@ -50,17 +50,38 @@ impl Operation for DequantizeOperation {
         workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
         _: &[MirValue],
     ) -> [u32; 3] {
-        std::array::from_fn(|i| match i.cmp(&(self.matrix.shape.len() - 1)) {
-            std::cmp::Ordering::Less => {
-                let n = self.matrix.shape[i];
-                (n as u32).div_ceil(workgroup_shape.component(i))
-            }
-            std::cmp::Ordering::Equal => {
-                let n = self.matrix.shape[i];
-                (n as u32).div_ceil(workgroup_shape.component(i) * self.elements_per_block())
-            }
-            std::cmp::Ordering::Greater => 1,
-        })
+        // Linearize dispatch for high-dimensional tensors
+        let elements_per_block = self.elements_per_block();
+        let total_blocks: u32 = self
+            .matrix
+            .shape
+            .iter()
+            .enumerate()
+            .map(|(i, &n)| {
+                if i == self.matrix.shape.len() - 1 {
+                    (n as u32).div_ceil(elements_per_block as u32)
+                } else {
+                    n as u32
+                }
+            })
+            .product();
+
+        let workgroup_volume = workgroup_shape.x() * workgroup_shape.y() * workgroup_shape.z();
+        let total_workgroups = (total_blocks as u32).div_ceil(workgroup_volume);
+
+        // Distribute workgroups across x, y, z dimensions
+        let max_per_dim = self
+            .matrix
+            .device
+            .limits()
+            .max_compute_workgroups_per_dimension;
+        let workgroup_size_x = total_workgroups.min(max_per_dim);
+        let remaining = total_workgroups.div_ceil(workgroup_size_x);
+        let workgroup_size_y = remaining.min(max_per_dim);
+        let workgroup_size_z = total_workgroups
+            .div_ceil(workgroup_size_x * workgroup_size_y);
+
+        [workgroup_size_x, workgroup_size_y, workgroup_size_z]
     }
 
     fn visit_dependencies(&self, _: &mut dyn FnMut(crate::compute_graph::NodeIndex)) {}
@@ -80,7 +101,7 @@ impl Operation for DequantizeOperation {
     fn build_kernel(
         &self,
         _: &crate::compute_graph::ComputeGraphInner,
-        _: &crate::mir::workgroup_shape::WorkgroupShape,
+        workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
         _: &[MirValue],
         kernel: &mut GenericKernel,
     ) {
@@ -97,15 +118,30 @@ impl Operation for DequantizeOperation {
                 .fold(input.to_string(), |acc, f| f.call(vec![acc]))
         };
 
-        let global_id = kernel.global_id();
         let elements_per_block = self.elements_per_block();
 
-        for (dim, axis) in ["x", "y", "z"]
-            .iter()
-            .enumerate()
-            .take(self.matrix.shape.len())
-        {
-            writeln!(kernel, "let index_{dim} = {global_id}.{axis};").unwrap();
+        // Linearize the global index to handle more than 3D inputs
+        let linearized_workgroup_index = workgroup_shape.linearized_workgroup_index(kernel);
+        let local_id = kernel.workgroup_local_index();
+        writeln!(
+            kernel,
+            "let flat_global_id = ({linearized_workgroup_index}) * BLOCKSIZE + {local_id};"
+        )
+        .unwrap();
+
+        // Convert flat index to multi-dimensional indices (row-major order)
+        writeln!(kernel, "var remaining_index = flat_global_id;").unwrap();
+        for dim in (0..rank).rev() {
+            let shape_binding = output.shape_binding(dim);
+            let divisor = if dim == rank - 1 {
+                format!("(({shape_binding} + {elements_per_block} - 1u) / {elements_per_block}u)")
+            } else {
+                format!("{shape_binding}")
+            };
+            writeln!(kernel, "let index_{dim} = remaining_index % {divisor};").unwrap();
+            if dim > 0 {
+                writeln!(kernel, "remaining_index = remaining_index / {divisor};").unwrap();
+            }
         }
 
         write!(kernel, "let chunk_index = ").unwrap();

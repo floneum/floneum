@@ -86,7 +86,7 @@ impl<F: FloatDataType> LlamaFeedForward<F> {
         }
     }
 
-    fn forward(&self, x: &Tensor<3, F>) -> Tensor<3, F> {
+    pub(crate) fn forward(&self, x: &Tensor<3, F>) -> Tensor<3, F> {
         let mut w1 = x.q_mat_mul(&self.gate);
         if let Some(ref bias) = self.gate_bias {
             w1 = w1.add_(bias);

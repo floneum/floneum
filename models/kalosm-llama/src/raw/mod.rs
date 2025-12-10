@@ -27,6 +27,7 @@ use fusor_gguf::GgufValue;
 mod attention_layer;
 pub mod cache;
 mod rope;
+mod vision;
 
 use cache::LlamaCache;
 use kalosm_language_model::MediaHints;
@@ -50,10 +51,10 @@ pub struct LlamaConfig<F: FloatDataType = f32> {
     pub(crate) rope_scaling: Option<RopeScalingConfig>,
     pub(crate) sliding_window_type: Option<usize>,
     pub(crate) sliding_window_size: Option<usize>,
-    pub(crate) _vision_start_token: Option<u32>,
+    pub(crate) vision_start_token: Option<u32>,
     pub(crate) _vision_end_token: Option<u32>,
-    pub(crate) _image_pad_token: Option<u32>,
-    pub(crate) _video_pad_token: Option<u32>,
+    pub(crate) image_pad_token: Option<u32>,
+    pub(crate) video_pad_token: Option<u32>,
     pub(crate) mrope_sections: Option<Vec<usize>>,
 }
 
@@ -78,10 +79,10 @@ impl<F: FloatDataType> LlamaConfig<F> {
             sliding_window_size: None,
             chat_template: None,
             rope_scaling: None,
-            _vision_start_token: None,
+            vision_start_token: None,
             _vision_end_token: None,
-            _image_pad_token: None,
-            _video_pad_token: None,
+            image_pad_token: None,
+            video_pad_token: None,
             mrope_sections: None,
         }
     }
@@ -97,7 +98,7 @@ pub struct RopeScalingConfig {
 
 pub struct Model<F: FloatDataType = f32> {
     pub(crate) config: Arc<LlamaConfig<F>>,
-    // vision_encoder: Option<vision::QwenVisionTransformer>,
+    vision_encoder: Option<vision::QwenVisionTransformer<F>>,
     tok_embeddings: Embedding<F>,
     layers: Vec<LlamaAttention<F>>,
     norm: RmsNorm<1, F>,
@@ -108,8 +109,8 @@ pub struct Model<F: FloatDataType = f32> {
 impl<F: FloatDataType> Model<F> {
     pub fn from_gguf<R: std::io::Seek + std::io::Read>(
         source: &mut ShardedVarBuilder<R>,
-        _vision_ct: Option<GgufMetadata>,
-        _vision_file: Option<PathBuf>,
+        vision_ct: Option<GgufMetadata>,
+        vision_file: Option<PathBuf>,
         device: &Device,
         override_stop_token_string: Option<String>,
         override_chat_template: Option<String>,
@@ -117,6 +118,7 @@ impl<F: FloatDataType> Model<F> {
     ) -> std::result::Result<Self, LlamaSourceError>
     where
         f32: CastTensor<F>,
+        F: CastTensor<f32>,
     {
         let decode_norm = |qmatrix: QMatrix, eps: f64| -> Result<RmsNorm<1, F>> {
             let weight = qmatrix.dequantize();
@@ -228,7 +230,7 @@ impl<F: FloatDataType> Model<F> {
             rope_scaling,
             sliding_window_type,
             sliding_window_size,
-            _vision_start_token: tokens
+            vision_start_token: tokens
                 .iter()
                 .position(|v| &**v == "<|vision_start|>")
                 .map(|v| v as u32),
@@ -236,11 +238,11 @@ impl<F: FloatDataType> Model<F> {
                 .iter()
                 .position(|v| &**v == "<|vision_end|>")
                 .map(|v| v as u32),
-            _image_pad_token: tokens
+            image_pad_token: tokens
                 .iter()
                 .position(|v| &**v == "<|image_pad|>")
                 .map(|v| v as u32),
-            _video_pad_token: tokens
+            video_pad_token: tokens
                 .iter()
                 .position(|v| &**v == "<|video_pad|>")
                 .map(|v| v as u32),
@@ -403,16 +405,16 @@ impl<F: FloatDataType> Model<F> {
         }
 
         // If the model is a vision model, load the vision encoder
-        // let vision_encoder: Option<std::result::Result<vision::QwenVisionTransformer, _>> =
-        //     if let (Some(vision_ct), Some(vision_file)) = (vision_ct, vision_file) {
-        //         Some(vision::QwenVisionTransformer::from_gguf(
-        //             vision_ct,
-        //             &vision_file,
-        //             device,
-        //         ))
-        //     } else {
-        //         None
-        //     };
+        let vision_encoder = if let (Some(vision_ct), Some(vision_file)) = (vision_ct, vision_file)
+        {
+            Some(vision::QwenVisionTransformer::from_gguf(
+                vision_ct,
+                &vision_file,
+                device,
+            ))
+        } else {
+            None
+        };
         Ok(Self {
             config,
             tok_embeddings,
@@ -420,7 +422,7 @@ impl<F: FloatDataType> Model<F> {
             norm,
             output,
             masks: Default::default(),
-            // vision_encoder: vision_encoder.transpose()?,
+            vision_encoder: vision_encoder.transpose()?,
         })
     }
 }
@@ -433,71 +435,71 @@ where
     pub fn encode_tokens(
         &self,
         raw_tokens: &[u32],
-        _raw_images: &[(image::DynamicImage, MediaHints)],
+        raw_images: &[(image::DynamicImage, MediaHints)],
         device: &Device,
         mut cache: Option<&mut LlamaCache<F>>,
     ) -> Result<(Tensor<3, F>, usize, usize, Option<Tensor<2, F>>)> {
-        // let mut grid_thw = Vec::new();
-        // let mut images = Vec::new();
-        // let mut image_token_ranges = Vec::new();
-        // // Embed all images
-        // if let Some(vision_encoder) = &self.vision_encoder {
-        //     for (image, hints) in raw_images {
-        //         let min_pixels = hints.min_tokens();
-        //         let max_pixels = hints.max_tokens();
-        //         let (image, thw) =
-        //             vision_encoder.preprocess_image(image, min_pixels, max_pixels)?;
-        //         images.push(image);
-        //         grid_thw.push(thw)
-        //     }
-        // }
+        let mut grid_thw = Vec::new();
+        let mut images = Vec::new();
+        let mut image_token_ranges = Vec::new();
+        // Embed all images
+        if let Some(vision_encoder) = &self.vision_encoder {
+            for (image, hints) in raw_images {
+                let min_pixels = hints.min_tokens();
+                let max_pixels = hints.max_tokens();
+                let (image, thw) =
+                    vision_encoder.preprocess_image(image, min_pixels, max_pixels)?;
+                images.push(image);
+                grid_thw.push(thw)
+            }
+        }
 
-        // // Add any image padding tokens to the tokens if needed
-        // let tokens = if let (Some(image_pad_token), Some(vision_start_token), Some(vision)) = (
-        //     self.config.image_pad_token,
-        //     self.config.vision_start_token,
-        //     &self.vision_encoder,
-        // ) {
-        //     let mut tokens = Vec::new();
-        //     let mut token_iter = raw_tokens.iter().copied();
-        //     let mut image_iter = grid_thw.iter();
-        //     while let Some(token) = token_iter.next() {
-        //         tokens.push(token);
-        //         let start_index = tokens.len();
-        //         if token == vision_start_token {
-        //             match token_iter.next() {
-        //                 Some(next) if next == image_pad_token => {
-        //                     // Push a pad token for every image token
-        //                     let grid = image_iter.next().ok_or_else(|| {
-        //                         candle_core::Error::Msg(
-        //                             "Image pad token found without matching image.".to_string(),
-        //                         )
-        //                     })?;
-        //                     for _ in 0..grid.iter().product::<u32>()
-        //                         / (vision.spacial_merge_size as u32).pow(2)
-        //                     {
-        //                         tokens.push(image_pad_token);
-        //                     }
-        //                     image_token_ranges.push(start_index..tokens.len());
-        //                 }
-        //                 Some(next) => {
-        //                     tokens.push(next);
-        //                 }
-        //                 None => break,
-        //             }
-        //         }
-        //     }
-        //     tokens
-        // } else {
-        //     raw_tokens.to_vec()
-        // };
-        let tokens = raw_tokens.to_vec();
+        // Add any image padding tokens to the tokens if needed
+        let tokens = if let (Some(image_pad_token), Some(vision_start_token), Some(vision)) = (
+            self.config.image_pad_token,
+            self.config.vision_start_token,
+            &self.vision_encoder,
+        ) {
+            let mut tokens = Vec::new();
+            let mut token_iter = raw_tokens.iter().copied();
+            let mut image_iter = grid_thw.iter();
+            while let Some(token) = token_iter.next() {
+                tokens.push(token);
+                let start_index = tokens.len();
+                if token == vision_start_token {
+                    match token_iter.next() {
+                        Some(next) if next == image_pad_token => {
+                            // Push a pad token for every image token
+                            let grid = image_iter.next().ok_or_else(|| {
+                                std::io::Error::new(
+                                    std::io::ErrorKind::Other,
+                                    "Image pad token found without matching image.".to_string(),
+                                )
+                            })?;
+                            for _ in 0..grid.iter().product::<u32>()
+                                / (vision.spacial_merge_size as u32).pow(2)
+                            {
+                                tokens.push(image_pad_token);
+                            }
+                            image_token_ranges.push(start_index..tokens.len());
+                        }
+                        Some(next) => {
+                            tokens.push(next);
+                        }
+                        None => break,
+                    }
+                }
+            }
+            tokens
+        } else {
+            raw_tokens.to_vec()
+        };
 
         let mut seq_len = tokens.len();
         let cached_tokens = cache.as_ref().map(|c| c.tokens.len()).unwrap_or_default();
         // We use a lower cutoff than the context length to avoid recomputing the attention every single token
         let cutoff_len: usize = self.config.context_length.saturating_sub(32).max(8);
-        let (tokens, index_pos, _start_time) = if seq_len + cached_tokens
+        let (tokens, index_pos, start_time) = if seq_len + cached_tokens
             > self.config.context_length
         {
             let all_tokens = if let Some(cache) = cache.as_mut() {
@@ -527,26 +529,26 @@ where
         };
         let x = Tensor::new(device, tokens.as_slice()).unsqueeze(0);
 
-        let embeddings = self.tok_embeddings.forward(&x);
-        let pos_ids = None;
-        // let batch_size = embeddings.shape()[0];
-        // let embed_dim = embeddings.shape()[2];
+        let mut embeddings = self.tok_embeddings.forward(&x);
+        let mut pos_ids = None;
+        let batch_size = embeddings.shape()[0];
+        let embed_dim = embeddings.shape()[2];
 
-        // if let Some(vision_encoder) = &self.vision_encoder {
-        //     for ((pixels, grid), range) in images.iter().zip(&grid_thw).zip(image_token_ranges) {
-        //         let image_embeds = vision_encoder.forward_image(pixels, *grid)?;
-        //         embeddings = embeddings.slice_assign(
-        //             &[0..batch_size, range, 0..embed_dim],
-        //             &image_embeds.unsqueeze(0)?,
-        //         )?;
-        //     }
-        //     let (new_pos_ids, new_start_time) =
-        //         vision_encoder.get_rope_index(&tokens, &grid_thw, &self.config, start_time)?;
-        //     if let Some(cache) = cache.as_mut() {
-        //         cache.start_time = new_start_time;
-        //     }
-        //     pos_ids = Some(new_pos_ids);
-        // }
+        if let Some(vision_encoder) = &self.vision_encoder {
+            for ((pixels, grid), range) in images.iter().zip(&grid_thw).zip(image_token_ranges) {
+                let image_embeds = vision_encoder.forward_image(&pixels.cast(), *grid)?;
+                embeddings = embeddings.slice_assign(
+                    [0..batch_size, range, 0..embed_dim],
+                    &image_embeds.unsqueeze(0),
+                );
+            }
+            let (new_pos_ids, new_start_time) =
+                vision_encoder.get_rope_index(&tokens, &grid_thw, &self.config, start_time)?;
+            if let Some(cache) = cache.as_mut() {
+                cache.start_time = new_start_time;
+            }
+            pos_ids = Some(new_pos_ids.cast::<f32>().cast());
+        }
 
         Ok((embeddings, seq_len, index_pos, pos_ids))
     }

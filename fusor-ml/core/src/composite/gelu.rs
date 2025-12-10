@@ -5,13 +5,13 @@ impl<const R: usize, D: FloatDataType + DataType> Tensor<R, D> {
         // gelu(x) = tanh(sqrt(2/pi) * x * (1.0 + 0.044715 * x * x))
         // Tanh is numerically unstable for large inputs, so we clamp the input to a reasonable range.
         let myself = self
-            .max_elementwise(D::from_f32(-12.0))
-            .min_elementwise(D::from_f32(12.0));
+            .max_elementwise(D::from_f32(-5.5))
+            .min_elementwise(D::from_f32(5.5));
         let coeff = D::from_f32((2.0 / std::f32::consts::PI).sqrt());
         let x_squared = &myself * &myself;
         let inner = &myself * &((x_squared * D::from_f32(0.044715)) + D::from_f32(1.0));
         let tanh_inner = inner * coeff;
-        let tanh = tanh_inner.tanh_exact();
+        let tanh = tanh_inner.tanh();
         let one_plus_tanh = tanh + D::from_f32(1.0);
         let half = D::from_f32(0.5);
         self * &one_plus_tanh * half

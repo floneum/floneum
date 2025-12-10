@@ -167,6 +167,11 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
         self.transpose(D::Minus1, D::Minus2)
     }
 
+    /// Alias for [`broadcast_as`](Tensor::broadcast_as)
+    pub fn expand<const R2: usize>(&self, out_shape: [usize; R2]) -> Tensor<R2, T> {
+        self.broadcast_as(out_shape)
+    }
+
     pub fn broadcast_as<const R2: usize>(&self, out_shape: [usize; R2]) -> Tensor<R2, T> {
         const {
             assert!(

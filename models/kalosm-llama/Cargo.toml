@@ -52,9 +52,10 @@ tokenizers = { workspace = true, features = ["onig"] }
 tokio = { version = "1.32.0", features = ["full"] }
 tracing-subscriber = "0.3.18"
 pretty_assertions = "1.4.1"
-# kalosm = { workspace = true, features = ["language"], default-features = true }
+kalosm = { workspace = true, features = ["language"], default-features = true }
 anyhow.workspace = true
 kalosm-streams.workspace = true
+reqwest = { version = "0.12" }
 
 [features]
 default = ["tokio"]

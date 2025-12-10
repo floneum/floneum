@@ -162,6 +162,11 @@ pub struct AttentionMask<T> {
 }
 
 impl<T: FloatDataType> AttentionMask<T> {
+    /// Create a new attention mask
+    pub fn new(mask: Tensor<2, T>) -> Self {
+        Self { mask }
+    }
+
     /// Create a causal mask for the given sequence length
     ///
     /// mask[i, j] = -inf if j > i (can't attend to future), 0 otherwise
@@ -175,7 +180,7 @@ impl<T: FloatDataType> AttentionMask<T> {
         }
 
         let mask = Tensor::new(device, mask_data.chunks(seq_len).collect::<Vec<_>>());
-        Self { mask }
+        Self::new(mask)
     }
 
     /// Apply the mask to attention scores

@@ -1,5 +1,14 @@
 use crate::{DataType, Tensor, TensorSlice};
 
+
+impl<D: DataType> Tensor<1, D> {
+    /// Convert a 1D tensor to a `Vec<D>`
+    pub async fn to_vec1(&self) -> crate::Result<Vec<D>, crate::Error> {
+        let slice = self.as_slice().await?;
+        Ok(slice.to_vec1())
+    }
+}
+
 impl<D: DataType> Tensor<2, D> {
     /// Convert a 2D tensor to a `Vec<Vec<D>>`
     pub async fn to_vec2(&self) -> crate::Result<Vec<Vec<D>>, crate::Error> {
@@ -13,6 +22,20 @@ impl<D: DataType> Tensor<3, D> {
     pub async fn to_vec3(&self) -> crate::Result<Vec<Vec<Vec<D>>>, crate::Error> {
         let slice = self.as_slice().await?;
         Ok(slice.to_vec3())
+    }
+}
+
+impl<D: DataType> TensorSlice<1, D> {
+    /// Convert a 1D tensor slice to a `Vec<D>`
+    pub fn to_vec1(&self) -> Vec<D> {
+        let shape = self.shape();
+        let len = shape[0];
+
+        let mut result = Vec::with_capacity(len);
+        for i in 0..len {
+            result.push(self[[i]]);
+        }
+        result
     }
 }
 

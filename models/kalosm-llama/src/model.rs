@@ -157,6 +157,21 @@ impl LlamaModel {
             None => None,
         };
 
+        let vision_model_path = match &builder.source.vision_model {
+            Some(vision_model) => {
+                let vision_model_source = format!("Vision Model ({vision_model})");
+                let mut create_progress =
+                    ModelLoadingProgress::downloading_progress(vision_model_source);
+                let vision_model_path = builder
+                    .source
+                    .cache
+                    .get(vision_model, |progress| handler(create_progress(progress)))
+                    .await?;
+                Some(vision_model_path)
+            }
+            None => None,
+        };
+
         let source = format!("Model ({})", builder.source.model[0]);
         let mut create_progress = ModelLoadingProgress::downloading_progress(source);
         let filename = builder
@@ -206,6 +221,18 @@ impl LlamaModel {
                 }
 
                 let mut source = ShardedVarBuilder::new(files_with_metadata);
+                
+                let (vision_ct, vision_file) = match vision_model_path {
+                    Some(path) => {
+                        let mut file = std::fs::File::open(&path).map_err(|err| {
+                            LlamaSourceError::Model(kalosm_common::CacheError::Io(err))
+                        })?;
+                        let metadata = GgufMetadata::read(&mut file)?;
+                        (Some(metadata), Some(path))
+                    }
+                    None => (None, None),
+                };
+
                 let tokenizer = match tokenizer {
                     Some(tokenizer) => tokenizer,
                     None => {
@@ -297,8 +324,8 @@ impl LlamaModel {
                 };
                 let model = Model::from_gguf(
                     &mut source,
-                    None,
-                    None,
+                    vision_ct,
+                    vision_file,
                     &device,
                     override_stop_token_string,
                     override_chat_template,

@@ -674,6 +674,79 @@ where
     }
 }
 
+impl<'a, I, I2, I3, I4, I5, D: DataType> IntoTensor<5, D> for I
+where
+    I: IntoIterator<Item = I2, IntoIter: ExactSizeIterator>,
+    I2: IntoIterator<Item = I3, IntoIter: ExactSizeIterator>,
+    I3: IntoIterator<Item = I4, IntoIter: ExactSizeIterator>,
+    I4: IntoIterator<Item = I5, IntoIter: ExactSizeIterator>,
+    I5: IntoIterator<Item = &'a D, IntoIter: ExactSizeIterator>,
+{
+    fn into_tensor(self, device: &Device) -> Tensor<5, D> {
+        let mut iter = self
+            .into_iter()
+            .map(|i| {
+                i.into_iter()
+                    .map(|i| {
+                        i.into_iter()
+                            .map(|i| i.into_iter().map(IntoIterator::into_iter).peekable())
+                            .peekable()
+                    })
+                    .peekable()
+            })
+            .peekable();
+        let mut shape = [iter.len(), 0, 0, 0, 0];
+        if let Some(iter) = iter.peek_mut() {
+            let size = iter.len();
+            shape[1] = size;
+            if let Some(iter) = iter.peek_mut() {
+                let size = iter.len();
+                shape[2] = size;
+                if let Some(iter) = iter.peek_mut() {
+                    let size = iter.len();
+                    shape[3] = size;
+                    if let Some(iter) = iter.peek() {
+                        let size = iter.len();
+                        shape[4] = size;
+                    }
+                }
+            }
+        }
+
+        let iter = iter.flat_map(|i| {
+            let size = i.len();
+            let required_size = shape[1];
+            if size != required_size {
+                panic!("expected a rectangular matrix. The first inner iterator size was {required_size}, but another inner iterator size was {size}");
+            }
+            i.flat_map(|i| {
+                let size = i.len();
+                let required_size = shape[2];
+                if size != required_size {
+                    panic!("expected a rectangular matrix. The first inner inner iterator size was {required_size}, but another inner inner iterator size was {size}");
+                }
+                i.flat_map(|i| {
+                    let size = i.len();
+                    let required_size = shape[3];
+                    if size != required_size {
+                        panic!("expected a rectangular matrix. The first inner inner inner iterator size was {required_size}, but another inner inner inner iterator size was {size}");
+                    }
+                    i.flat_map(|i| {
+                        let size = i.len();
+                        let required_size = shape[4];
+                        if size != required_size {
+                            panic!("expected a rectangular matrix. The first inner inner inner inner iterator size was {required_size}, but another inner inner inner inner iterator size was {size}");
+                        }
+                        i
+                    })
+                })
+            })
+        });
+
+        Tensor::new_inner(device, iter, shape)
+    }
+}
+
 impl<D: DataType, const R: usize> Tensor<R, D> {
     pub fn new(device: &Device, data: impl IntoTensor<R, D>) -> Self {
         data.into_tensor(device)
@@ -683,6 +756,11 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         Self::from_parts(LazyTensorData::new(TensorData::new_splat(
             device, &shape, value,
         )))
+    }
+
+    /// Alias for [`Tensor::splat`]
+    pub fn full(device: &Device, value: D, shape: [usize; R]) -> Self {
+        Self::splat(device, value, shape)
     }
 
     pub(crate) fn from_parts(data: LazyTensorData) -> Self {

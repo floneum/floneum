@@ -117,7 +117,7 @@ where
             rope_theta,
             device,
         );
-        let mrope_sections = mrope_sections.to_vec();
+        let mrope_sections = mrope_sections.iter().copied().filter(|&x| x > 0).collect();
         Ok(Self {
             inverse_frequency,
             mrope_sections,
@@ -223,8 +223,8 @@ where
         Ok(Self { sin, cos })
     }
 
-    pub(crate) fn from_parts(cos: Tensor<2, F>, sin: Tensor<2, F>) -> fusor_core::Result<Self> {
-        Ok(Self { cos, sin })
+    pub(crate) fn from_parts(cos: Tensor<2, F>, sin: Tensor<2, F>) -> Self {
+        Self { cos, sin }
     }
 
     fn forward_with_embed(
