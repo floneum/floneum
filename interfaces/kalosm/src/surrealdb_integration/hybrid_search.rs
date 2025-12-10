@@ -543,82 +543,92 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
             .take(0)
             .map_err(|e| HybridSearchError::KeywordSearchError(e.to_string()))?;
 
-        // Normalize scores
-        let max_semantic = semantic_results.first().map(|r| r.distance).unwrap_or(1.0);
-
-        let max_keyword = keyword_results
+        // Process semantic results - keep order with keys
+        let semantic_inverse_scores: Vec<f32> = semantic_results
             .iter()
-            .map(|r| r.keyword_score)
-            .fold(0.0f32, f32::max);
-
-        // Build score maps using record IDs as keys
-        let mut semantic_map: HashMap<String, (RecordIdKey, R, f32)> = HashMap::new();
-        for result in semantic_results {
-            let normalized = distance_to_similarity(result.distance, max_semantic).unwrap_or(0.0);
-            let key = result.record_id.to_string();
-            semantic_map.insert(key, (result.record_id, result.record, normalized));
-        }
-
-        let mut keyword_map: HashMap<String, (R, f32)> = HashMap::new();
-        for result in keyword_results {
-            let normalized = if max_keyword > 0.0 {
-                result.keyword_score / max_keyword
-            } else {
-                0.0
-            };
-            let key = result.document_id.to_string();
-
-            // If we don't have this document yet, fetch it
-            if !keyword_map.contains_key(&key) {
-                if let Ok(record) = self.table.table().select(result.document_id.clone()).await {
-                    keyword_map.insert(key.clone(), (record, normalized));
+            .map(|r| {
+                if r.distance > 0.0 {
+                    1.0 / r.distance
+                } else {
+                    f32::MAX
                 }
-            }
+            })
+            .collect();
+
+        let normalized_semantic_vec = normalize_scores(&semantic_inverse_scores)
+            .unwrap_or_else(|| vec![0.0; semantic_inverse_scores.len()]);
+
+        let semantic_map: HashMap<String, (RecordIdKey, R, f32)> = semantic_results
+            .into_iter()
+            .zip(normalized_semantic_vec.iter())
+            .map(|(result, &norm_score)| {
+                (
+                    result.record_id.to_string(),
+                    (result.record_id, result.record, norm_score),
+                )
+            })
+            .collect();
+
+        // Aggregate keyword scores by document (keep MAX score per document)
+        let mut keyword_aggregated: HashMap<String, f32> = HashMap::new();
+        for result in keyword_results {
+            let key = result.document_id.to_string();
+            keyword_aggregated
+                .entry(key)
+                .and_modify(|score| *score = score.max(result.keyword_score))
+                .or_insert(result.keyword_score);
         }
 
-        // Merge results by record ID
-        let mut combined_results = Vec::new();
-        let mut seen_keys = HashSet::new();
+        // Normalize keyword scores - maintain order
+        let keyword_keys: Vec<String> = keyword_aggregated.keys().cloned().collect();
+        let keyword_scores: Vec<f32> = keyword_keys.iter().map(|k| keyword_aggregated[k]).collect();
 
-        let all_keys: Vec<String> = semantic_map
+        let normalized_keyword_vec =
+            normalize_scores(&keyword_scores).unwrap_or_else(|| vec![0.0; keyword_scores.len()]);
+
+        let keyword_map: HashMap<String, f32> = keyword_keys
+            .into_iter()
+            .zip(normalized_keyword_vec.iter())
+            .map(|(k, &score)| (k, score))
+            .collect();
+
+        // Combine results
+        let mut combined_results = Vec::new();
+        let all_keys: HashSet<String> = semantic_map
             .keys()
             .chain(keyword_map.keys())
             .cloned()
             .collect();
 
         for key in all_keys {
-            if seen_keys.insert(key.clone()) {
-                let semantic_entry = semantic_map.get(&key);
-                let keyword_entry = keyword_map.get(&key);
+            let semantic_score = semantic_map.get(&key).map(|(_, _, s)| *s).unwrap_or(0.0);
+            let keyword_score = keyword_map.get(&key).copied().unwrap_or(0.0);
 
-                let semantic_score = semantic_entry.map(|(_, _, s)| *s).unwrap_or(0.0);
-                let keyword_score = keyword_entry.map(|(_, s)| *s).unwrap_or(0.0);
+            let combined_score = calculate_weighted_score(
+                semantic_score,
+                keyword_score,
+                self.semantic_weight,
+                self.keyword_weight,
+            );
 
-                let combined_score = calculate_weighted_score(
-                    semantic_score,
-                    keyword_score,
-                    self.semantic_weight,
-                    self.keyword_weight,
-                );
-
-                if let Some((record_id, record, _)) = semantic_entry {
-                    combined_results.push(HybridSearchResult {
-                        record: record.clone(),
-                        id: record_id.clone(),
-                        score: combined_score,
-                        semantic_score,
-                        keyword_score,
-                    });
-                } else if let Some((record, _)) = keyword_entry {
-                    combined_results.push(HybridSearchResult {
-                        record: record.clone(),
-                        id: RecordIdKey::from(key.as_str()),
-                        score: combined_score,
-                        semantic_score,
-                        keyword_score,
-                    });
+            // Get the record
+            let (record_id, record) = if let Some((id, rec, _)) = semantic_map.get(&key) {
+                (id.clone(), rec.clone())
+            } else {
+                let id = RecordIdKey::from(key.as_str());
+                match self.table.table().select(id.clone()).await {
+                    Ok(rec) => (id, rec),
+                    Err(_) => continue,
                 }
-            }
+            };
+
+            combined_results.push(HybridSearchResult {
+                record,
+                id: record_id,
+                score: combined_score,
+                semantic_score,
+                keyword_score,
+            });
         }
 
         // Sort and truncate
