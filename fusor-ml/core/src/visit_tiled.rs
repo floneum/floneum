@@ -418,7 +418,7 @@ pub(crate) fn titled_map_workgroup_size_constraints(
     constraints
 }
 
-pub(crate) fn titled_map_dispatch_size<'a>(
+pub(crate) fn titled_map_dispatch_size(
     tile_size: u32,
     workgroup_shape: WorkgroupShape,
     shape: &[usize],
