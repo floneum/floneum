@@ -1,7 +1,7 @@
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
-use surrealdb::{Connection, RecordIdKey, Surreal};
+use surrealdb::{Connection, RecordIdKey};
 
 use kalosm_language::prelude::*;
 
@@ -234,26 +234,32 @@ impl<C: Connection, E, K: Chunker> HybridDocumentTableBuilder<C, E, K> {
 
         // Add chunk_text field to existing links by updating them
         // This migrates any existing data
-        let update_links_query = format!(
-            r#"
-                UPDATE `{}`
+        let update_links_query = r#"
+                UPDATE type::table($table)
                 SET chunk_text = fn::extract_chunk(document_id, byte_range.start, byte_range.end)
                 WHERE chunk_text IS NONE;
-            "#,
-            links_table
-        );
-        table.table().db().query(update_links_query).await?;
+            "#;
+        table
+            .table()
+            .db()
+            .query(update_links_query)
+            .bind(("table", links_table.clone()))
+            .await?;
 
         // Create the search index on the materialized field
         let index_query = format!(
             r#"
-                DEFINE ANALYZER simple TOKENIZERS class,blank FILTERS lowercase, ascii;
+                DEFINE ANALYZER rag_analyzer
+                TOKENIZERS blank,punct
+                FILTERS lowercase;
+
                 DEFINE INDEX chunk_text_idx ON TABLE `{}`
                 FIELDS chunk_text
-                SEARCH ANALYZER simple BM25 HIGHLIGHTS;
+                SEARCH ANALYZER rag_analyzer BM25;
             "#,
             links_table
         );
+
         table.table().db().query(index_query).await?;
 
         Ok(HybridDocumentTable {
@@ -293,16 +299,15 @@ impl<C: Connection, R, E: Embedder, K: Chunker> HybridDocumentTable<C, R, E, K> 
     pub fn field_name(&self) -> &str {
         &self.field_name
     }
-}
 
-// For convenience, also support regular search operations
-impl<C: Connection, R, E: Embedder, K: Chunker> HybridDocumentTable<C, R, E, K> {
     /// Perform hybrid search combining semantic and keyword search
     ///
     /// The field name for keyword search was already configured when building the table.
     pub fn hybrid_search(&self, query: impl Into<String>) -> HybridSearchBuilder<'_, C, R, E, K> {
         HybridSearchBuilder::new(&self.inner, query, &self.field_name)
     }
+
+    // For convenience, also support regular search operations
 
     /// Perform regular semantic search (without keyword matching)
     pub fn search<Em>(&self, embedding: Em) -> DocumentTableSearchBuilder<'_, C, R, E, K, Em>
@@ -356,6 +361,22 @@ impl<C: Connection, R, E: Embedder, K: Chunker> HybridDocumentTable<C, R, E, K> 
         Ok(record_key)
     }
 
+    /// Rebuild the full-text search index
+    ///
+    /// Call this after bulk operations or if search results seem incomplete.
+    /// This is automatically called by `extend()` and `add_context()`.
+    pub async fn rebuild_search_index(&self) -> Result<(), HybridSearchError> {
+        let links_table = self.table().table_links();
+        let rebuild_query = format!(
+            "REBUILD INDEX IF EXISTS chunk_text_idx ON TABLE `{}`;",
+            links_table
+        );
+
+        self.table().db().query(rebuild_query).await?;
+
+        Ok(())
+    }
+
     /// Extend the table with an iterator of new records
     pub async fn extend<T: IntoIterator<Item = R> + Send>(
         &self,
@@ -388,6 +409,12 @@ impl<C: Connection, R, E: Embedder, K: Chunker> HybridDocumentTable<C, R, E, K> 
                 .await?;
             ids.push(id);
         }
+
+        // Rebuild index after bulk insert to ensure search works immediately
+        if !ids.is_empty() {
+            self.rebuild_search_index().await.ok(); // Non-fatal if fails
+        }
+
         Ok(ids)
     }
 
@@ -457,7 +484,7 @@ pub struct HybridSearchBuilder<'a, Conn: Connection, Doc, Model: Embedder, Chkr:
     field_name: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct KeywordChunkResult {
     document_id: RecordIdKey,
     byte_range: std::ops::Range<usize>,
