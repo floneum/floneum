@@ -75,7 +75,8 @@ struct RmsNormOperation {
 }
 
 impl RmsNormOperation {
-    pub fn new(
+    #[allow(clippy::too_many_arguments)]
+    fn new(
         input: NodeIndex,
         weight: NodeIndex,
         bias: Option<NodeIndex>,

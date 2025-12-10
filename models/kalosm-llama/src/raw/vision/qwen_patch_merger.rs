@@ -59,7 +59,7 @@ where
         let x_3d = self.mlp[1].forward(&x_3d);
 
         // Squeeze back to 2D
-        let x = x_3d.squeeze(0);
-        x
+
+        x_3d.squeeze(0)
     }
 }

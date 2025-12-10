@@ -59,7 +59,7 @@ impl Operation for DequantizeOperation {
             .enumerate()
             .map(|(i, &n)| {
                 if i == self.matrix.shape.len() - 1 {
-                    (n as u32).div_ceil(elements_per_block as u32)
+                    (n as u32).div_ceil(elements_per_block)
                 } else {
                     n as u32
                 }
@@ -67,7 +67,7 @@ impl Operation for DequantizeOperation {
             .product();
 
         let workgroup_volume = workgroup_shape.x() * workgroup_shape.y() * workgroup_shape.z();
-        let total_workgroups = (total_blocks as u32).div_ceil(workgroup_volume);
+        let total_workgroups = total_blocks.div_ceil(workgroup_volume);
 
         // Distribute workgroups across x, y, z dimensions
         let max_per_dim = self
@@ -78,8 +78,7 @@ impl Operation for DequantizeOperation {
         let workgroup_size_x = total_workgroups.min(max_per_dim);
         let remaining = total_workgroups.div_ceil(workgroup_size_x);
         let workgroup_size_y = remaining.min(max_per_dim);
-        let workgroup_size_z = total_workgroups
-            .div_ceil(workgroup_size_x * workgroup_size_y);
+        let workgroup_size_z = total_workgroups.div_ceil(workgroup_size_x * workgroup_size_y);
 
         [workgroup_size_x, workgroup_size_y, workgroup_size_z]
     }

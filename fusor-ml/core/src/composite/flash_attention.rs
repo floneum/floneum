@@ -65,7 +65,8 @@ struct FlashAttentionOperation {
 }
 
 impl FlashAttentionOperation {
-    pub fn new(
+    #[allow(clippy::too_many_arguments)]
+    fn new(
         q: NodeIndex,
         k: NodeIndex,
         v: NodeIndex,
@@ -78,7 +79,7 @@ impl FlashAttentionOperation {
         let num_heads = q_shape[1];
         let num_kv_heads = kv_shape[1];
         assert!(
-            num_heads % num_kv_heads == 0,
+            num_heads.is_multiple_of(num_kv_heads),
             "Number of Q heads ({}) must be divisible by number of K/V heads ({})",
             num_heads,
             num_kv_heads

@@ -199,7 +199,7 @@ fn build_tiled_map_kernel(
         "let global_thread_id = workgroup_flat_id * BLOCKSIZE + {local_id};"
     )
     .unwrap();
-    writeln!(kernel, "").unwrap();
+    writeln!(kernel).unwrap();
 
     if let Some((quantized_type, quantized_input)) = quantized_block {
         let block_size = quantized_type.block_size() as u32;
@@ -222,7 +222,7 @@ fn build_tiled_map_kernel(
             tile_size
         )
         .unwrap();
-        writeln!(kernel, "").unwrap();
+        writeln!(kernel).unwrap();
 
         // Convert flat index to multi-dimensional indices
         writeln!(kernel, "// Convert flat index to multi-dimensional indices").unwrap();
@@ -248,7 +248,7 @@ fn build_tiled_map_kernel(
                 .unwrap();
             }
         }
-        writeln!(kernel, "").unwrap();
+        writeln!(kernel).unwrap();
 
         // For quantized data, we need to handle block alignment for the last dimension
         writeln!(
@@ -293,44 +293,42 @@ fn build_tiled_map_kernel(
                 write!(kernel, "let dequantized_value = ").unwrap();
                 // We need to extract just the one value at block_offset from the chunk
                 // This is a simplified version - we'll need to inline the dequantization logic
-                match *quantized_type {
-                    _ => {
-                        // For now, use a helper that dequantizes just one element
-                        dequantize_block(
-                            kernel,
-                            *quantized_type,
-                            "chunk".to_string(),
-                            DataTypeEnum::F32,
-                            |i, data, kernel| {
-                                writeln!(kernel, "if (block_offset == {i}u) {{").unwrap();
+                {
+                    // For now, use a helper that dequantizes just one element
+                    dequantize_block(
+                        kernel,
+                        *quantized_type,
+                        "chunk".to_string(),
+                        DataTypeEnum::F32,
+                        |i, data, kernel| {
+                            writeln!(kernel, "if (block_offset == {i}u) {{").unwrap();
 
-                                let mut values = Vec::new();
-                                for (index, tensor) in tensors.iter().enumerate() {
-                                    match tensor {
-                                        MaybeQTensorInput::Tensor(tensor) => {
-                                            writeln!(kernel, "let index_{index} = ",).unwrap();
-                                            tensor.strided_index(
-                                                kernel,
-                                                (0..rank).map(|i| format!("dim_{i}")),
-                                            );
-                                            writeln!(kernel, ";").unwrap();
-                                            values.push(format!("{tensor}[index_{index}]"));
-                                        }
-                                        MaybeQTensorInput::QTensor(_) => {
-                                            values.push(data.clone());
-                                        }
+                            let mut values = Vec::new();
+                            for (index, tensor) in tensors.iter().enumerate() {
+                                match tensor {
+                                    MaybeQTensorInput::Tensor(tensor) => {
+                                        writeln!(kernel, "let index_{index} = ",).unwrap();
+                                        tensor.strided_index(
+                                            kernel,
+                                            (0..rank).map(|i| format!("dim_{i}")),
+                                        );
+                                        writeln!(kernel, ";").unwrap();
+                                        values.push(format!("{tensor}[index_{index}]"));
+                                    }
+                                    MaybeQTensorInput::QTensor(_) => {
+                                        values.push(data.clone());
                                     }
                                 }
-                                let indexes = (0..datatypes.len())
-                                    .map(|i| format!("index_{i}"))
-                                    .collect::<Vec<_>>();
+                            }
+                            let indexes = (0..datatypes.len())
+                                .map(|i| format!("index_{i}"))
+                                .collect::<Vec<_>>();
 
-                                let modify_data = modify_data(kernel, &indexes, &tensors, &values);
-                                writeln!(kernel, "{modify_data}").unwrap();
-                                writeln!(kernel, "}}").unwrap();
-                            },
-                        );
-                    }
+                            let modify_data = modify_data(kernel, &indexes, &tensors, &values);
+                            writeln!(kernel, "{modify_data}").unwrap();
+                            writeln!(kernel, "}}").unwrap();
+                        },
+                    );
                 }
             },
         );
@@ -350,7 +348,7 @@ fn build_tiled_map_kernel(
             tile_size
         )
         .unwrap();
-        writeln!(kernel, "").unwrap();
+        writeln!(kernel).unwrap();
 
         // Convert flat index to multi-dimensional indices
         writeln!(kernel, "// Convert flat index to multi-dimensional indices").unwrap();
@@ -368,7 +366,7 @@ fn build_tiled_map_kernel(
                 .unwrap();
             }
         }
-        writeln!(kernel, "").unwrap();
+        writeln!(kernel).unwrap();
 
         // Bounds check and data access
         first_tensor_input(&tensors).check_bounds(
@@ -429,7 +427,7 @@ pub(crate) fn titled_map_dispatch_size<'a>(
     let total_elements: u64 = shape.iter().map(|&x| x as u64).product();
 
     // Calculate total number of tiles needed (each thread processes tile_size elements)
-    let total_tiles = ((total_elements + tile_size as u64 - 1) / tile_size as u64) as u32;
+    let total_tiles = total_elements.div_ceil(tile_size as u64) as u32;
 
     // Calculate total workgroups needed
     let workgroup_volume = workgroup_shape.x() * workgroup_shape.y() * workgroup_shape.z();
@@ -441,10 +439,10 @@ pub(crate) fn titled_map_dispatch_size<'a>(
     let max_y = 65535u32;
 
     let workgroup_size_x = total_workgroups.min(max_x);
-    let remaining = (total_workgroups + workgroup_size_x - 1) / workgroup_size_x;
+    let remaining = total_workgroups.div_ceil(workgroup_size_x);
     let workgroup_size_y = remaining.min(max_y);
-    let workgroup_size_z = ((total_workgroups + workgroup_size_x * workgroup_size_y - 1)
-        / (workgroup_size_x * workgroup_size_y))
+    let workgroup_size_z = total_workgroups
+        .div_ceil(workgroup_size_x * workgroup_size_y)
         .max(1);
 
     [workgroup_size_x, workgroup_size_y, workgroup_size_z]

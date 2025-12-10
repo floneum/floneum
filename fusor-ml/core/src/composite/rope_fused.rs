@@ -94,8 +94,8 @@ impl RopeFusedOperation {
         kernel: &mut GenericKernel,
     ) {
         // We add cos and sin inputs manually first (bindings 0 and 1)
-        let cos_input = kernel.add_tensor_input(2, true, self.datatype.into());
-        let sin_input = kernel.add_tensor_input(2, true, self.datatype.into());
+        let cos_input = kernel.add_tensor_input(2, true, self.datatype);
+        let sin_input = kernel.add_tensor_input(2, true, self.datatype);
 
         // Then we let build_visit_tiled_kernel handle input (binding 2) and output (binding 3)
         let datatypes = vec![
@@ -136,17 +136,11 @@ impl RopeFusedOperation {
                     let sin_idx_var = "sin_idx";
 
                     write!(kernel, "let {} = ", cos_idx_var).unwrap();
-                    cos_input.strided_index(
-                        kernel,
-                        vec![freq_idx_0.clone(), freq_idx_1.clone()].into_iter(),
-                    );
+                    cos_input.strided_index(kernel, vec![freq_idx_0.clone(), freq_idx_1.clone()]);
                     writeln!(kernel, ";").unwrap();
 
                     write!(kernel, "let {} = ", sin_idx_var).unwrap();
-                    sin_input.strided_index(
-                        kernel,
-                        vec![freq_idx_0.clone(), freq_idx_1.clone()].into_iter(),
-                    );
+                    sin_input.strided_index(kernel, vec![freq_idx_0.clone(), freq_idx_1.clone()]);
                     writeln!(kernel, ";").unwrap();
 
                     let cos_val = format!("{}[{}]", cos_input, cos_idx_var);
@@ -173,9 +167,7 @@ impl RopeFusedOperation {
                     neighbor_dims.push(neighbor_last_dim.to_string());
 
                     match input_tensor {
-                        MaybeQTensorInput::Tensor(t) => {
-                            t.strided_index(kernel, neighbor_dims.into_iter())
-                        }
+                        MaybeQTensorInput::Tensor(t) => t.strided_index(kernel, neighbor_dims),
                         _ => panic!("Expected tensor input"),
                     }
                     writeln!(kernel, ";").unwrap();
@@ -200,17 +192,11 @@ impl RopeFusedOperation {
                     let sin_idx_var = "sin_idx";
 
                     write!(kernel, "let {} = ", cos_idx_var).unwrap();
-                    cos_input.strided_index(
-                        kernel,
-                        vec![freq_idx_0.clone(), freq_idx_1.clone()].into_iter(),
-                    );
+                    cos_input.strided_index(kernel, vec![freq_idx_0.clone(), freq_idx_1.clone()]);
                     writeln!(kernel, ";").unwrap();
 
                     write!(kernel, "let {} = ", sin_idx_var).unwrap();
-                    sin_input.strided_index(
-                        kernel,
-                        vec![freq_idx_0.clone(), freq_idx_1.clone()].into_iter(),
-                    );
+                    sin_input.strided_index(kernel, vec![freq_idx_0.clone(), freq_idx_1.clone()]);
                     writeln!(kernel, ";").unwrap();
 
                     let cos_val = format!("{}[{}]", cos_input, cos_idx_var);
@@ -237,9 +223,7 @@ impl RopeFusedOperation {
                     neighbor_dims.push(neighbor_last_dim.to_string());
 
                     match input_tensor {
-                        MaybeQTensorInput::Tensor(t) => {
-                            t.strided_index(kernel, neighbor_dims.into_iter())
-                        }
+                        MaybeQTensorInput::Tensor(t) => t.strided_index(kernel, neighbor_dims),
                         _ => panic!("Expected tensor input"),
                     }
                     writeln!(kernel, ";").unwrap();

@@ -1,6 +1,5 @@
 use crate::{DataType, Tensor, TensorSlice};
 
-
 impl<D: DataType> Tensor<1, D> {
     /// Convert a 1D tensor to a `Vec<D>`
     pub async fn to_vec1(&self) -> crate::Result<Vec<D>, crate::Error> {

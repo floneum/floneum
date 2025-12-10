@@ -142,7 +142,7 @@ impl<F: FloatDataType> Model<F> {
         let stop_token = if let Some(override_stop_token_string) = override_stop_token_string {
             tokens
                 .iter()
-                .position(|v| &**v == override_stop_token_string)
+                .position(|v| **v == override_stop_token_string)
                 .unwrap_or(0) as u32
         } else {
             source
@@ -152,7 +152,7 @@ impl<F: FloatDataType> Model<F> {
         };
         let start_token_string = start_token
             .map(|v| tokens[v as usize].to_string())
-            .unwrap_or_else(|| "".to_string());
+            .unwrap_or_default();
         let stop_token_string = tokens[stop_token as usize].to_string();
         let chat_template = override_chat_template.or_else(|| {
             source
@@ -323,7 +323,7 @@ impl<F: FloatDataType> Model<F> {
                         && architecture.as_ref() != "gemma3",
                     bias,
                 };
-                AttentionVariant::Separate(separate)
+                AttentionVariant::Separate(Box::new(separate))
             };
             let attention_wo = source.tensor(&format!("{prefix}.attn_output.weight"), device)?;
             // Try to read from the up, down and gate weights
@@ -432,6 +432,7 @@ where
     F: CastTensor<f32>,
     f32: CastTensor<F>,
 {
+    #[allow(clippy::type_complexity)]
     pub fn encode_tokens(
         &self,
         raw_tokens: &[u32],
@@ -471,8 +472,7 @@ where
                         Some(next) if next == image_pad_token => {
                             // Push a pad token for every image token
                             let grid = image_iter.next().ok_or_else(|| {
-                                std::io::Error::new(
-                                    std::io::ErrorKind::Other,
+                                std::io::Error::other(
                                     "Image pad token found without matching image.".to_string(),
                                 )
                             })?;

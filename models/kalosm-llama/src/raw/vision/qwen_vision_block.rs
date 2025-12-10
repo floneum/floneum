@@ -1,5 +1,7 @@
 use fusor_core::{
-    CastTensor, D, Device, FloatDataType, Tensor, VarBuilder, cache::{AttentionMask, KvCache}, layers::{Linear, RmsNorm}
+    cache::{AttentionMask, KvCache},
+    layers::{Linear, RmsNorm},
+    CastTensor, Device, FloatDataType, Tensor, VarBuilder, D,
 };
 
 use crate::raw::{

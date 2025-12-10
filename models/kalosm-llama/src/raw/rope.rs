@@ -174,7 +174,7 @@ where
 
 fn split<const R: usize, T: DataType>(
     tensor: &Tensor<R, T>,
-    dim: impl Dim<R> + Copy,
+    dim: impl Dim<R>,
     split_at: &[usize],
 ) -> Vec<Tensor<R, T>> {
     let mut result = Vec::new();
@@ -227,6 +227,7 @@ where
         Self { cos, sin }
     }
 
+    #[allow(clippy::type_complexity)]
     fn forward_with_embed(
         &self,
         q: &Tensor<4, F>,
@@ -239,7 +240,7 @@ where
                 let [_b_sz, _n_head, seq_len, _n_embd] = *x.shape();
                 let cos = cos.narrow(0, index_pos, seq_len);
                 let sin = sin.narrow(0, index_pos, seq_len);
-                apply_rotary_emb(&x, &cos, &sin)
+                apply_rotary_emb(x, &cos, &sin)
             };
         let q = apply_rotary_emb(&self.sin, &self.cos, q, start_pos);
         let k = apply_rotary_emb(&self.sin, &self.cos, k, start_pos);

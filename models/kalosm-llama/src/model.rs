@@ -221,7 +221,7 @@ impl LlamaModel {
                 }
 
                 let mut source = ShardedVarBuilder::new(files_with_metadata);
-                
+
                 let (vision_ct, vision_file) = match vision_model_path {
                     Some(path) => {
                         let mut file = std::fs::File::open(&path).map_err(|err| {

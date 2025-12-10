@@ -107,7 +107,7 @@ impl<F: FloatDataType> LlamaFeedForward<F> {
 }
 
 pub enum AttentionVariant<F: FloatDataType = f32> {
-    Separate(SeparateAttention<F>),
+    Separate(Box<SeparateAttention<F>>),
     Grouped(GroupedAttention),
 }
 
@@ -142,6 +142,7 @@ where
     F: CastTensor<f32>,
     f32: CastTensor<F>,
 {
+    #[allow(clippy::too_many_arguments)]
     fn forward(
         &self,
         num_heads: usize,
@@ -213,6 +214,7 @@ pub struct GroupedAttention {
 }
 
 impl GroupedAttention {
+    #[allow(clippy::too_many_arguments)]
     fn forward<F: FloatDataType>(
         &self,
         num_heads: usize,
@@ -365,7 +367,5 @@ pub(crate) fn forward_attention_qkv<F: FloatDataType>(
 
     let attn_output = attn_output.reshape([b_sz, q_len, hidden_size]);
 
-    let attn_output = attention_wo.forward(&attn_output);
-
-    attn_output
+    attention_wo.forward(&attn_output)
 }

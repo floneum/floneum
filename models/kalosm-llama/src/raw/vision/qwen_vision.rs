@@ -9,11 +9,11 @@ fn pad_to<const R: usize, T: DataType + std::fmt::Debug>(
     for (d, &target_dim) in shape.iter().enumerate() {
         let current_dim = current.shape()[d];
         if current_dim < target_dim {
-             let pad_size = target_dim - current_dim;
-             let mut pad_shape = *current.shape();
-             pad_shape[d] = pad_size;
-             let padding = Tensor::full(current.device(), value, pad_shape);
-             current = Tensor::cat(vec![current, padding], d);
+            let pad_size = target_dim - current_dim;
+            let mut pad_shape = *current.shape();
+            pad_shape[d] = pad_size;
+            let padding = Tensor::full(current.device(), value, pad_shape);
+            current = Tensor::cat(vec![current, padding], d);
         }
     }
     current
@@ -84,11 +84,11 @@ pub(crate) fn get_window_index(
                 vit_merger_window_size,
             ])
         };
-        
+
         let index_padded_flat = index_padded.reshape([index_padded.shape().iter().product(), 1]);
         let index_padded_vec2 = pollster::block_on(index_padded_flat.to_vec2())?;
         let index_padded_slice: Vec<u32> = index_padded_vec2.into_iter().map(|v| v[0]).collect();
-        
+
         // index_padded shape: [grid_t, num_windows, window_h, window_w]
         // Flattened in slice.
         // We need to calculate seqlens per window.
@@ -96,9 +96,9 @@ pub(crate) fn get_window_index(
         // Sum over dim 2 and 3 means sum over last two dimensions.
         let window_area = vit_merger_window_size * vit_merger_window_size;
         let num_windows = grid_t * num_windows_h * num_windows_w;
-        
+
         let mut seqlens_vec = Vec::with_capacity(num_windows);
-        
+
         for window_idx in 0..num_windows {
             let start = window_idx * window_area;
             let end = start + window_area;
@@ -106,18 +106,18 @@ pub(crate) fn get_window_index(
             let count = window.iter().filter(|&&x| x != u32::MAX).count() as u32;
             seqlens_vec.push(count);
         }
-        
+
         // index_new is all non-MAX elements
         let index_new_vec = index_padded_slice
             .iter()
             .filter(|&&x| x != u32::MAX)
             .copied()
             .collect::<Vec<_>>();
-            
+
         let index_new = Tensor::new(device, &index_new_vec);
         // window_index_id is u32
-        window_index.push(index_new + window_index_id as u32);
-        
+        window_index.push(index_new + window_index_id);
+
         // Calculate cu_seqlens_tmp
         // seqlens.cumsum(0) * spatial_merge_unit
         let mut cumsum = 0;
@@ -126,10 +126,10 @@ pub(crate) fn get_window_index(
             cumsum += len;
             cu_seqlens_tmp.push(cumsum * spatial_merge_unit as u32);
         }
-        
+
         let last_val = *cu_window_seqlens.last().unwrap();
         cu_window_seqlens.extend(cu_seqlens_tmp.into_iter().map(|x| x + last_val));
-        
+
         window_index_id += (grid_t * llm_grid_h * llm_grid_w) as u32;
     }
 
