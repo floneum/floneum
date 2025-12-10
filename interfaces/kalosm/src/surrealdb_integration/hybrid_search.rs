@@ -482,6 +482,7 @@ pub struct HybridSearchBuilder<'a, Conn: Connection, Doc, Model: Embedder, Chkr:
     semantic_weight: f32,
     keyword_weight: f32,
     field_name: String,
+    rrf_k: f32,
 }
 
 #[derive(Deserialize, Debug)]
@@ -505,6 +506,7 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
             semantic_weight: 0.7,
             keyword_weight: 0.3,
             field_name: field_name.into(),
+            rrf_k: 60.0,
         }
     }
 
@@ -523,6 +525,15 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
     /// Set the weight of the keyword search (default: 0.3)
     pub fn with_keyword_weight(mut self, weight: f32) -> Self {
         self.keyword_weight = weight;
+        self
+    }
+
+    /// Set the RRF constant k (default: 60.0)
+    ///
+    /// Lower values give more weight to higher-ranked results.
+    /// Typical values range from 1 to 100, with 60 being standard.
+    pub fn with_rrf_k(mut self, k: f32) -> Self {
+        self.rrf_k = k;
         self
     }
 
@@ -669,15 +680,16 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
         Ok(combined_results)
     }
 
-    /// Execute the hybrid search using Reciprocal Rank Fusion (RRF)
+    /// Set the RRF constant k (default: 60.0)
     ///
-    /// # Arguments
-    /// * `k` - RRF constant, typically 60
-    pub async fn run_rrf(self, k: f32) -> Result<Vec<HybridSearchResult<R>>, HybridSearchError>
+    /// Lower values give more weight to higher-ranked results.
+    /// Typical values range from 1 to 100, with 60 being standard.
+    pub async fn run_rrf(self) -> Result<Vec<HybridSearchResult<R>>, HybridSearchError>
     where
         R: Serialize + DeserializeOwned + Clone + AsRef<Document> + Send + Sync,
         <M as Embedder>::Error: std::fmt::Debug + std::fmt::Display + 'static,
     {
+        let k = self.rrf_k;
         let search_limit = self.results * 3;
 
         // Perform semantic search
