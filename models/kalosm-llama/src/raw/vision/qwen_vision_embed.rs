@@ -1,12 +1,12 @@
 use fusor_core::{CastTensor, Device, FloatDataType, Tensor, VarBuilder};
 
 #[derive(Debug, Clone, Copy)]
-pub struct Conv2dConfig {
+pub struct Conv3dConfig {
     pub padding: usize,
     pub stride: usize,
 }
 
-impl Default for Conv2dConfig {
+impl Default for Conv3dConfig {
     fn default() -> Self {
         Self {
             padding: 0,
@@ -15,14 +15,14 @@ impl Default for Conv2dConfig {
     }
 }
 
-pub struct Conv2d<T> {
-    weight: Tensor<4, T>,       // (out_channels, in_channels, kernel_h, kernel_w)
+pub struct Conv3d<T> {
+    weight: Tensor<5, T>, // (out_channels, in_channels, kernel_h, kernel_w, temporal)
     bias: Option<Tensor<1, T>>, // (out_channels,)
-    config: Conv2dConfig,
+    config: Conv3dConfig,
 }
 
-impl<T: fusor_core::DataType> Conv2d<T> {
-    pub fn new(weight: Tensor<4, T>, bias: Option<Tensor<1, T>>, config: Conv2dConfig) -> Self {
+impl<T: fusor_core::DataType> Conv3d<T> {
+    pub fn new(weight: Tensor<5, T>, bias: Option<Tensor<1, T>>, config: Conv3dConfig) -> Self {
         Self {
             weight,
             bias,
@@ -30,12 +30,16 @@ impl<T: fusor_core::DataType> Conv2d<T> {
         }
     }
 
-    pub fn forward(&self, input: &Tensor<4, T>) -> Tensor<4, T> {
+    pub fn forward(&self, input: &Tensor<5, T>) -> Tensor<5, T> {
         input.conv(
             &self.weight,
             self.bias.as_ref(),
-            [self.config.padding, self.config.padding],
-            [self.config.stride, self.config.stride],
+            [
+                self.config.padding,
+                self.config.padding,
+                self.config.padding,
+            ],
+            [self.config.stride, self.config.stride, self.config.stride],
         )
     }
 }
@@ -45,8 +49,7 @@ pub(crate) struct Qwen2_5VisionPatchEmbed<F: FloatDataType> {
     temporal_patch_size: usize,
     in_channels: usize,
     embed_dim: usize,
-    conv: Conv2d<F>,
-    conv2: Conv2d<F>,
+    conv: Conv3d<F>,
 }
 
 impl<F: FloatDataType> Qwen2_5VisionPatchEmbed<F>
@@ -70,13 +73,7 @@ where
             "Only 2 temporal patch size is supported for 5D weights"
         );
         let weight = weight_tensor.dequantize::<5, F>();
-        let weight_one = weight
-            .narrow(2, 0, 1)
-            .reshape([shape[0], shape[1], patch_size, patch_size]);
-        let weight_two = weight
-            .narrow(2, 1, 1)
-            .reshape([shape[0], shape[1], patch_size, patch_size]);
-        let cfg = Conv2dConfig {
+        let cfg = Conv3dConfig {
             stride: patch_size,
             ..Default::default()
         };
@@ -86,8 +83,7 @@ where
             temporal_patch_size,
             in_channels,
             embed_dim: hidden_size,
-            conv: Conv2d::new(weight_one, None, cfg),
-            conv2: Conv2d::new(weight_two, None, cfg),
+            conv: Conv3d::new(weight, None, cfg),
         })
     }
 
@@ -108,14 +104,7 @@ where
             self.patch_size,
         ]);
 
-        // Split on dim 2 (temporal).
-        let frame1 = x.narrow(2, 0, 1).squeeze(2);
-        let frame2 = x.narrow(2, 1, 1).squeeze(2);
-
-        let out1 = self.conv.forward(&frame1);
-        let out2 = self.conv2.forward(&frame2);
-
-        let out = out1 + out2;
+        let out = self.conv.forward(&x);
         Ok(out.reshape(((), self.embed_dim)))
     }
 }
@@ -189,34 +178,17 @@ async fn test_vision_patch_embed() {
 
     let device = Device::new().await.unwrap();
 
-    let weight = Tensor::new(
-        &device,
-        &weights
-    );
-    let weight_1 = weight
-        .narrow(2, 0, 1)
-        .reshape([embed_dim, in_channels, patch_size, patch_size]);
-    let weight_2 = weight
-        .narrow(2, 1, 1)
-        .reshape([embed_dim, in_channels, patch_size, patch_size]);
+    let weight = Tensor::new(&device, &weights);
 
     let patch_embed = Qwen2_5VisionPatchEmbed {
         patch_size,
         temporal_patch_size,
         in_channels,
         embed_dim,
-        conv: Conv2d::new(
-            weight_1,
+        conv: Conv3d::new(
+            weight,
             None,
-            Conv2dConfig {
-                stride: patch_size,
-                ..Default::default()
-            },
-        ),
-        conv2: Conv2d::new(
-            weight_2,
-            None,
-            Conv2dConfig {
+            Conv3dConfig {
                 stride: patch_size,
                 ..Default::default()
             },
@@ -228,12 +200,12 @@ async fn test_vision_patch_embed() {
         [[[8., 9.], [10., 11.]], [[12., 13.], [14., 15.]]],
         [[[16., 17.], [18., 19.]], [[20., 21.], [22., 23.]]],
     ]];
-    let input = Tensor::new(
-        &device,
-        &input,
-    );
+    let input = Tensor::new(&device, &input);
 
-    let output = patch_embed.forward(&input.reshape((1, ()))).unwrap().cast::<f32>();
+    let output = patch_embed
+        .forward(&input.reshape((1, ())))
+        .unwrap()
+        .cast::<f32>();
     let output_vec = output.to_vec2().await.unwrap();
     println!("Output: {output_vec:?}");
     let expected_output = [[0.3058, 0.6866, -0.7391, -0.6952]];
