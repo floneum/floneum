@@ -646,7 +646,7 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
     ///
     /// # Arguments
     /// * `k` - RRF constant, typically 60
-    pub async fn run_with_rrf(self, k: f32) -> Result<Vec<HybridSearchResult<R>>, HybridSearchError>
+    pub async fn run_rrf(self, k: f32) -> Result<Vec<HybridSearchResult<R>>, HybridSearchError>
     where
         R: Serialize + DeserializeOwned + Clone + AsRef<Document> + Send + Sync,
         <M as Embedder>::Error: std::fmt::Debug + std::fmt::Display + 'static,
@@ -689,67 +689,66 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
             .take(0)
             .map_err(|e| HybridSearchError::KeywordSearchError(e.to_string()))?;
 
-        // Build rank maps using record IDs
-        let mut semantic_ranks: HashMap<String, usize> = HashMap::new();
+        // Build semantic rank map
+        let mut semantic_ranks: HashMap<String, (usize, RecordIdKey, R)> = HashMap::new();
         for (rank, result) in semantic_results.iter().enumerate() {
             let key = result.record_id.to_string();
-            semantic_ranks.insert(key, rank);
+            semantic_ranks.insert(key, (rank, result.record_id.clone(), result.record.clone()));
         }
 
-        let mut keyword_ranks: HashMap<String, usize> = HashMap::new();
+        // Build keyword rank map (aggregate by document, keep best rank)
+        let mut keyword_ranks: HashMap<String, (usize, RecordIdKey)> = HashMap::new();
         for (rank, result) in keyword_results.iter().enumerate() {
             let key = result.document_id.to_string();
-            keyword_ranks.insert(key, rank);
+            keyword_ranks
+                .entry(key)
+                .and_modify(|(best_rank, _)| {
+                    if rank < *best_rank {
+                        *best_rank = rank;
+                    }
+                })
+                .or_insert((rank, result.document_id.clone()));
         }
 
-        // Collect all unique keys
+        // Calculate RRF scores
+        let mut rrf_results = Vec::new();
         let all_keys: HashSet<String> = semantic_ranks
             .keys()
             .chain(keyword_ranks.keys())
             .cloned()
             .collect();
 
-        // Build result map with RRF scores
-        let mut rrf_results = Vec::new();
-
         for key in all_keys {
-            let semantic_rank = semantic_ranks.get(&key).copied();
-            let keyword_rank = keyword_ranks.get(&key).copied();
+            let semantic_entry = semantic_ranks.get(&key);
+            let keyword_entry = keyword_ranks.get(&key);
 
-            let rrf_score = combine_rrf_scores(semantic_rank, keyword_rank, k);
-
-            // Get normalized scores for display
-            let semantic_score = semantic_rank
-                .map(|r| {
-                    let result = &semantic_results[r];
-                    1.0 - result.distance
-                })
+            let semantic_rrf = semantic_entry
+                .map(|(rank, _, _)| calculate_rrf_score(*rank, k))
                 .unwrap_or(0.0);
 
-            let keyword_score = keyword_rank
-                .map(|r| keyword_results[r].keyword_score)
+            let keyword_rrf = keyword_entry
+                .map(|(rank, _)| calculate_rrf_score(*rank, k))
                 .unwrap_or(0.0);
 
-            // Get record and ID (prefer semantic)
-            if let Some(rank) = semantic_rank {
-                let result = &semantic_results[rank];
+            let rrf_score = semantic_rrf + keyword_rrf;
+
+            // Get the record
+            if let Some((_, record_id, record)) = semantic_entry {
                 rrf_results.push(HybridSearchResult {
-                    record: result.record.clone(),
-                    id: result.record_id.clone(),
+                    record: record.clone(),
+                    id: record_id.clone(),
                     score: rrf_score,
-                    semantic_score,
-                    keyword_score,
+                    semantic_score: semantic_rrf,
+                    keyword_score: keyword_rrf,
                 });
-            } else if let Some(rank) = keyword_rank {
-                let result = &keyword_results[rank];
-                // Fetch the full record
-                if let Ok(record) = self.table.table().select(result.document_id.clone()).await {
+            } else if let Some((_, record_id)) = keyword_entry {
+                if let Ok(record) = self.table.table().select(record_id.clone()).await {
                     rrf_results.push(HybridSearchResult {
                         record,
-                        id: result.document_id.clone(),
+                        id: record_id.clone(),
                         score: rrf_score,
-                        semantic_score,
-                        keyword_score,
+                        semantic_score: semantic_rrf,
+                        keyword_score: keyword_rrf,
                     });
                 }
             }
