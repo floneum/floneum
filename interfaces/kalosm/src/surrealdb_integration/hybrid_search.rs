@@ -630,23 +630,43 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
 
     /// Set the weight of the semantic search
     ///
+    /// The keyword weight will be automatically adjusted to `1.0 - weight`
+    /// to ensure the weights sum to 1.0.
+    ///
     /// Default: 0.7
     ///
     /// # Arguments
     /// * `weight` - Weight for semantic score (0.0 to 1.0)
+    ///
+    /// # Example
+    /// ```
+    /// // Setting semantic weight to 0.8 will set keyword weight to 0.2
+    /// builder.with_semantic_weight(0.8)
+    /// ```
     pub fn with_semantic_weight(mut self, weight: f32) -> Self {
-        self.semantic_weight = weight;
+        self.semantic_weight = weight.clamp(0.0, 1.0);
+        self.keyword_weight = 1.0 - self.semantic_weight;
         self
     }
 
     /// Set the weight of the keyword search
     ///
+    /// The semantic weight will be automatically adjusted to `1.0 - weight`
+    /// to ensure the weights sum to 1.0.
+    ///
     /// Default: 0.3
     ///
     /// # Arguments
     /// * `weight` - Weight for keyword score (0.0 to 1.0)
+    ///
+    /// # Example
+    /// ```
+    /// // Setting keyword weight to 0.4 will set semantic weight to 0.6
+    /// builder.with_keyword_weight(0.4)
+    /// ```
     pub fn with_keyword_weight(mut self, weight: f32) -> Self {
-        self.keyword_weight = weight;
+        self.keyword_weight = weight.clamp(0.0, 1.0);
+        self.semantic_weight = 1.0 - self.keyword_weight;
         self
     }
 
@@ -660,7 +680,7 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
     /// # Arguments
     /// * `k` - RRF constant k
     pub fn with_rrf_k(mut self, k: f32) -> Self {
-        self.rrf_k = k;
+        self.rrf_k = k.clamp(1.0, 100.0);
         self
     }
 
