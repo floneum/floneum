@@ -1,16 +1,8 @@
 use kalosm::language::*;
-use serde::{Deserialize, Serialize};
-use std::{
-    future::Future,
-    hash::{Hash, Hasher},
-};
+// use std::future::Future;
 use surrealdb::{
-    engine::{
-        any::Any,
-        local::{Db, Mem, SurrealKv},
-    },
-    sql::Thing,
-    RecordIdKey, Surreal,
+    engine::local::{Db, Mem},
+    Surreal,
 };
 
 // Helper to create test database

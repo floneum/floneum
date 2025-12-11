@@ -1,38 +1,53 @@
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
 use surrealdb::{Connection, RecordIdKey};
 
 use kalosm_language::prelude::*;
 
 use crate::language::{
-    DocumentTable, DocumentTableAddContextError, DocumentTableBuilder, DocumentTableCreationError,
-    DocumentTableModifyError, DocumentTableSearchBuilder, DocumentTableSearchError,
+    DocumentTable, DocumentTableBuilder, DocumentTableCreationError, DocumentTableSearchBuilder,
+    DocumentTableSearchError,
 };
 use crate::{EmbeddedIndexedTableError, EmbeddingIndexedTable};
 
+/// Errors that can occur during hybrid search operations
 #[derive(Debug, thiserror::Error)]
 pub enum HybridSearchError {
+    /// Failed to set up hybrid search infrastructure
     #[error("Failed to enable hybrid search: {0}")]
     SetupError(String),
 
+    /// Keyword search operation failed
     #[error("Keyword search failed: {0}")]
     KeywordSearchError(String),
 
+    /// Database operation failed
     #[error("Database error: {0}")]
     DatabaseError(#[from] surrealdb::Error),
 
+    /// Document table creation failed
     #[error("Document table creation failed: {0}")]
     TableCreationError(#[from] DocumentTableCreationError),
 
+    /// No results found in search
     #[error("No results found")]
     NoResults,
 
+    /// Semantic search operation failed
     #[error("Semantic search failed: {0}")]
     SemanticSearchError(#[from] EmbeddedIndexedTableError),
 
+    /// Semantic query embedding failed
     #[error("Semantic query failed: {0}")]
     SemanticQueryError(String),
+
+    /// Document table modification failed
+    #[error("Document table modification failed: {0}")]
+    ModifyError(String),
+
+    /// Context addition failed
+    #[error("Context addition failed: {0}")]
+    ContextError(String),
 }
 
 impl<E> From<DocumentTableSearchError<E>> for HybridSearchError
@@ -51,7 +66,15 @@ where
 
 /// Normalize scores to 0-1 range using max normalization
 ///
-/// Returns None if all scores are zero or negative
+/// Returns `None` if all scores are zero or negative, as normalization
+/// is not possible in that case.
+///
+/// # Arguments
+/// * `scores` - Slice of scores to normalize
+///
+/// # Returns
+/// * `Some(Vec<f32>)` - Normalized scores in 0-1 range
+/// * `None` - If all scores are ≤ 0
 pub fn normalize_scores(scores: &[f32]) -> Option<Vec<f32>> {
     if scores.is_empty() {
         return Some(vec![]);
@@ -60,25 +83,22 @@ pub fn normalize_scores(scores: &[f32]) -> Option<Vec<f32>> {
     let max_score = scores.iter().copied().fold(0.0f32, f32::max);
 
     if max_score <= 0.0 {
-        // All scores are zero or negative - cannot normalize
         return None;
     }
 
     Some(scores.iter().map(|&s| s / max_score).collect())
 }
 
-/// Convert distance to similarity score (1 - normalized_distance)
+/// Calculate weighted combination of semantic and keyword scores
 ///
-/// Returns None if max_distance is zero or negative
-pub fn distance_to_similarity(distance: f32, max_distance: f32) -> Option<f32> {
-    if max_distance <= 0.0 {
-        return None;
-    }
-
-    Some(1.0 - (distance / max_distance).min(1.0))
-}
-
-/// Calculate weighted combination of two scores
+/// # Arguments
+/// * `semantic_score` - Normalized semantic search score
+/// * `keyword_score` - Normalized keyword search score
+/// * `semantic_weight` - Weight for semantic score (typically 0.7)
+/// * `keyword_weight` - Weight for keyword score (typically 0.3)
+///
+/// # Returns
+/// Combined weighted score
 pub fn calculate_weighted_score(
     semantic_score: f32,
     keyword_score: f32,
@@ -88,34 +108,25 @@ pub fn calculate_weighted_score(
     semantic_score * semantic_weight + keyword_score * keyword_weight
 }
 
-/// Calculate RRF score for a given rank
+/// Calculate Reciprocal Rank Fusion (RRF) score for a given rank
+///
+/// RRF is a method for combining rankings that is more robust than
+/// score-based combination methods.
+///
+/// # Arguments
+/// * `rank` - Zero-indexed rank position (0 = first place)
+/// * `k` - RRF constant, typically 60. Lower values give more weight to top results
+///
+/// # Returns
+/// RRF score for this rank
 pub fn calculate_rrf_score(rank: usize, k: f32) -> f32 {
     1.0 / (k + rank as f32 + 1.0)
 }
 
-/// Combine RRF scores from multiple sources
-pub fn combine_rrf_scores(
-    semantic_rank: Option<usize>,
-    keyword_rank: Option<usize>,
-    k: f32,
-) -> f32 {
-    let semantic_score = semantic_rank
-        .map(|r| calculate_rrf_score(r, k))
-        .unwrap_or(0.0);
-    let keyword_score = keyword_rank
-        .map(|r| calculate_rrf_score(r, k))
-        .unwrap_or(0.0);
-    semantic_score + keyword_score
-}
-
-/// Create a hash-based key from record content for deduplication
-pub fn create_content_hash<T: Hash>(record: &T) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    record.hash(&mut hasher);
-    hasher.finish()
-}
-
 /// Extension trait to add `with_hybrid_search()` to DocumentTableBuilder
+///
+/// This trait enables the builder pattern for creating document tables
+/// with hybrid search capabilities.
 pub trait DocumentTableBuilderHybridExt<C: Connection, E, K: Chunker>: Sized {
     /// Enable hybrid search capability on this table
     ///
@@ -126,12 +137,11 @@ pub trait DocumentTableBuilderHybridExt<C: Connection, E, K: Chunker>: Sized {
     /// use kalosm::language::*;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let db = /* your database connection */;
-    ///
+    /// # let db = todo!();
     /// // Use default "body" field
     /// let table1 = db
     ///     .document_table_builder("documents")
-    ///     .with_hybrid_search()  // 👈 Uses "body" by default
+    ///     .with_hybrid_search()
     ///     .with_chunker(SemanticChunker::new())
     ///     .at("./db/embeddings.db")
     ///     .build::<Document>()
@@ -141,7 +151,7 @@ pub trait DocumentTableBuilderHybridExt<C: Connection, E, K: Chunker>: Sized {
     /// let table2 = db
     ///     .document_table_builder("articles")
     ///     .with_hybrid_search()
-    ///     .with_search_field("content")  // 👈 Change to "content"
+    ///     .with_search_field("content")
     ///     .with_chunker(SemanticChunker::new())
     ///     .at("./db/embeddings.db")
     ///     .build::<Document>()
@@ -164,6 +174,9 @@ impl<C: Connection, E, K: Chunker> DocumentTableBuilderHybridExt<C, E, K>
 ///
 /// This builder is created by calling `.with_hybrid_search()` on a `DocumentTableBuilder`.
 /// It will automatically create the necessary full-text search index when `.build()` is called.
+///
+/// Hybrid search combines semantic (vector) search with keyword (full-text) search
+/// to provide more relevant results than either approach alone.
 pub struct HybridDocumentTableBuilder<C: Connection, E = Bert, K: Chunker = SemanticChunker> {
     inner: DocumentTableBuilder<C, E, K>,
     field_name: String,
@@ -182,19 +195,30 @@ impl<C: Connection, E, K: Chunker> HybridDocumentTableBuilder<C, E, K> {
         }
     }
 
-    /// Change which field to use for full-text search (default is set in `with_hybrid_search()`)
+    /// Change which field to use for full-text search
+    ///
+    /// Default is "body" (set in `with_hybrid_search()`).
+    ///
+    /// # Arguments
+    /// * `field` - Name of the field to index for keyword search
     pub fn with_search_field(mut self, field: impl Into<String>) -> Self {
         self.field_name = field.into();
         self
     }
 
     /// Set the location of the vector database
+    ///
+    /// # Arguments
+    /// * `location` - Path to the vector database directory
     pub fn at(mut self, location: impl AsRef<std::path::Path>) -> Self {
         self.inner = self.inner.at(location);
         self
     }
 
     /// Set the embedding model
+    ///
+    /// # Arguments
+    /// * `model` - The embedding model to use for semantic search
     pub fn with_embedding_model<E2>(self, model: E2) -> HybridDocumentTableBuilder<C, E2, K> {
         HybridDocumentTableBuilder {
             inner: self.inner.with_embedding_model(model),
@@ -203,6 +227,9 @@ impl<C: Connection, E, K: Chunker> HybridDocumentTableBuilder<C, E, K> {
     }
 
     /// Set the chunking strategy
+    ///
+    /// # Arguments
+    /// * `chunker` - The chunker to use for splitting documents
     pub fn with_chunker<K2: Chunker>(self, chunker: K2) -> HybridDocumentTableBuilder<C, E, K2> {
         HybridDocumentTableBuilder {
             inner: self.inner.with_chunker(chunker),
@@ -214,8 +241,15 @@ impl<C: Connection, E, K: Chunker> HybridDocumentTableBuilder<C, E, K> {
     ///
     /// This will:
     /// 1. Create the underlying document table
-    /// 2. Create a full-text search index on the specified field
-    /// 3. Return a `HybridDocumentTable` that supports both semantic and keyword search
+    /// 2. Define the chunk extraction function
+    /// 3. Migrate any existing data to include chunk text
+    /// 4. Create a full-text search index on the chunk text
+    ///
+    /// # Returns
+    /// A `HybridDocumentTable` that supports both semantic and keyword search
+    ///
+    /// # Errors
+    /// Returns `HybridSearchError` if table creation or index setup fails
     pub async fn build<R>(self) -> Result<HybridDocumentTable<C, R, E, K>, HybridSearchError>
     where
         E: Embedder,
@@ -238,7 +272,6 @@ impl<C: Connection, E, K: Chunker> HybridDocumentTableBuilder<C, E, K> {
         table.table().db().query(func_query).await?;
 
         // Add chunk_text field to existing links by updating them
-        // This migrates any existing data
         let update_links_query = r#"
                 UPDATE type::table($table)
                 SET chunk_text = fn::extract_chunk(document_id, byte_range.start, byte_range.end)
@@ -279,6 +312,11 @@ impl<C: Connection, E, K: Chunker> HybridDocumentTableBuilder<C, E, K> {
 /// This type is returned when building a table with `.with_hybrid_search()`.
 /// It provides both semantic search (via the inner `DocumentTable`) and
 /// hybrid search that combines semantic and keyword matching.
+///
+/// Hybrid search is particularly effective because:
+/// - Semantic search handles conceptual queries and synonyms
+/// - Keyword search handles exact terms and specific phrases
+/// - The combination provides better results than either alone
 pub struct HybridDocumentTable<C: Connection, R, E: Embedder, K: Chunker> {
     inner: DocumentTable<C, R, E, K>,
     field_name: String,
@@ -307,14 +345,25 @@ impl<C: Connection, R, E: Embedder, K: Chunker> HybridDocumentTable<C, R, E, K> 
 
     /// Perform hybrid search combining semantic and keyword search
     ///
-    /// The field name for keyword search was already configured when building the table.
+    /// This is the primary search method for hybrid tables. It combines
+    /// vector similarity search with full-text keyword search.
+    ///
+    /// # Arguments
+    /// * `query` - The search query string
+    ///
+    /// # Returns
+    /// A builder that allows configuring search parameters and fusion methods
     pub fn hybrid_search(&self, query: impl Into<String>) -> HybridSearchBuilder<'_, C, R, E, K> {
-        HybridSearchBuilder::new(&self.inner, query, &self.field_name)
+        HybridSearchBuilder::new(&self.inner, query)
     }
 
-    // For convenience, also support regular search operations
-
     /// Perform regular semantic search (without keyword matching)
+    ///
+    /// This bypasses hybrid search and uses only vector similarity.
+    /// Use this when you want pure semantic matching without keyword influence.
+    ///
+    /// # Arguments
+    /// * `embedding` - The embedding or text to search for
     pub fn search<Em>(&self, embedding: Em) -> DocumentTableSearchBuilder<'_, C, R, E, K, Em>
     where
         Em: IntoEmbedding,
@@ -339,22 +388,29 @@ impl<C: Connection, R, E: Embedder, K: Chunker> HybridDocumentTable<C, R, E, K> 
     }
 
     /// Insert a new record into the table
-    pub async fn insert(
-        &self,
-        value: R,
-    ) -> Result<RecordIdKey, DocumentTableModifyError<K::Error<E::Error>>>
+    ///
+    /// This chunks the document, creates embeddings, and inserts it with
+    /// materialized chunk text for keyword search.
+    ///
+    /// # Arguments
+    /// * `value` - The document to insert
+    ///
+    /// # Returns
+    /// The record ID of the inserted document
+    ///
+    /// # Errors
+    /// Returns `HybridSearchError` if chunking or insertion fails
+    pub async fn insert(&self, value: R) -> Result<RecordIdKey, HybridSearchError>
     where
         R: AsRef<Document> + Serialize + DeserializeOwned + 'static,
     {
-        // Chunk the document
         let chunks = self
             .inner
             .chunker()
             .chunk(value.as_ref(), self.inner.embedding_model())
             .await
-            .map_err(DocumentTableModifyError::EmbedItem)?;
+            .map_err(|_| HybridSearchError::ModifyError("Chunking failed".to_string()))?;
 
-        // Insert with materialized chunk text
         let record_key = self
             .inner
             .table()
@@ -370,6 +426,9 @@ impl<C: Connection, R, E: Embedder, K: Chunker> HybridDocumentTable<C, R, E, K> 
     ///
     /// Call this after bulk operations or if search results seem incomplete.
     /// This is automatically called by `extend()` and `add_context()`.
+    ///
+    /// # Errors
+    /// Returns `HybridSearchError` if the rebuild operation fails
     pub async fn rebuild_search_index(&self) -> Result<(), HybridSearchError> {
         let links_table = self.table().table_links();
         let rebuild_query = format!(
@@ -383,10 +442,22 @@ impl<C: Connection, R, E: Embedder, K: Chunker> HybridDocumentTable<C, R, E, K> 
     }
 
     /// Extend the table with an iterator of new records
+    ///
+    /// This is more efficient than calling `insert()` multiple times as it
+    /// batches the chunking operations and rebuilds the search index once.
+    ///
+    /// # Arguments
+    /// * `iter` - Iterator of documents to insert
+    ///
+    /// # Returns
+    /// Vector of record IDs for the inserted documents
+    ///
+    /// # Errors
+    /// Returns `HybridSearchError` if chunking or insertion fails
     pub async fn extend<T: IntoIterator<Item = R> + Send>(
         &self,
         iter: T,
-    ) -> Result<Vec<RecordIdKey>, DocumentTableModifyError<K::Error<E::Error>>>
+    ) -> Result<Vec<RecordIdKey>, HybridSearchError>
     where
         R: AsRef<Document> + Serialize + DeserializeOwned + 'static,
         K: Sync,
@@ -394,17 +465,15 @@ impl<C: Connection, R, E: Embedder, K: Chunker> HybridDocumentTable<C, R, E, K> 
         let entries = iter.into_iter().collect::<Vec<_>>();
         let documents = entries.iter().map(|v| v.as_ref()).collect::<Vec<_>>();
 
-        // Batch chunk all documents
         let embeddings = self
             .inner
             .chunker()
             .chunk_batch(documents, self.inner.embedding_model())
             .await
-            .map_err(DocumentTableModifyError::EmbedItem)?;
+            .map_err(|_| HybridSearchError::ModifyError("Batch chunking failed".to_string()))?;
 
         let mut ids = Vec::new();
         for (value, chunks) in entries.into_iter().zip(embeddings) {
-            // Insert each with materialized chunk text
             let id = self
                 .inner
                 .table()
@@ -415,134 +484,196 @@ impl<C: Connection, R, E: Embedder, K: Chunker> HybridDocumentTable<C, R, E, K> 
             ids.push(id);
         }
 
-        // Rebuild index after bulk insert to ensure search works immediately
         if !ids.is_empty() {
-            self.rebuild_search_index().await.ok(); // Non-fatal if fails
+            self.rebuild_search_index().await.ok();
         }
 
         Ok(ids)
     }
 
     /// Extend the table with context documents
-    pub async fn add_context<D>(
-        &self,
-        context: D,
-    ) -> Result<Vec<RecordIdKey>, DocumentTableAddContextError<D::Error, K::Error<E::Error>>>
+    ///
+    /// This is a convenience method for adding documents from various sources
+    /// that implement `IntoDocuments`.
+    ///
+    /// # Arguments
+    /// * `context` - The context source to add (e.g., files, URLs, text)
+    ///
+    /// # Returns
+    /// Vector of record IDs for the inserted documents
+    ///
+    /// # Errors
+    /// Returns `HybridSearchError` if conversion or insertion fails
+    pub async fn add_context<D>(&self, context: D) -> Result<Vec<RecordIdKey>, HybridSearchError>
     where
         D: IntoDocuments,
         R: From<Document> + AsRef<Document> + Serialize + DeserializeOwned + 'static,
         K: Sync,
     {
-        let documents = context
-            .into_documents()
-            .await
-            .map_err(DocumentTableAddContextError::ConvertItem)?;
+        let documents = context.into_documents().await.map_err(|_| {
+            HybridSearchError::ContextError("Context conversion failed".to_string())
+        })?;
         let iter = documents.into_iter().map(|v| v.into());
-        self.extend(iter)
-            .await
-            .map_err(DocumentTableAddContextError::ModifyTable)
+        self.extend(iter).await
     }
 
-    /// Select a record from the table
-    pub async fn select(&self, id: impl Into<RecordIdKey>) -> Result<R, EmbeddedIndexedTableError>
+    /// Select a record from the table by ID
+    ///
+    /// # Arguments
+    /// * `id` - The record ID to retrieve
+    ///
+    /// # Returns
+    /// The record if found
+    ///
+    /// # Errors
+    /// Returns `HybridSearchError` if the record doesn't exist or can't be retrieved
+    pub async fn select(&self, id: impl Into<RecordIdKey>) -> Result<R, HybridSearchError>
     where
         R: Serialize + DeserializeOwned + 'static,
     {
-        self.inner.select(id).await
+        Ok(self.inner.select(id).await?)
     }
 
     /// Delete a record from the table
-    pub async fn delete(
-        &self,
-        id: impl Into<RecordIdKey>,
-    ) -> Result<Option<R>, EmbeddedIndexedTableError>
+    ///
+    /// # Arguments
+    /// * `id` - The record ID to delete
+    ///
+    /// # Returns
+    /// The deleted record if it existed, or `None`
+    ///
+    /// # Errors
+    /// Returns `HybridSearchError` if the deletion fails
+    pub async fn delete(&self, id: impl Into<RecordIdKey>) -> Result<Option<R>, HybridSearchError>
     where
         R: Serialize + DeserializeOwned + 'static,
     {
-        self.inner.delete(id).await
+        Ok(self.inner.delete(id).await?)
     }
 
     /// Select all records from the table
-    pub async fn select_all(&self) -> Result<Vec<R>, EmbeddedIndexedTableError>
+    ///
+    /// # Returns
+    /// Vector of all records in the table
+    ///
+    /// # Errors
+    /// Returns `HybridSearchError` if the query fails
+    pub async fn select_all(&self) -> Result<Vec<R>, HybridSearchError>
     where
         R: Serialize + DeserializeOwned + 'static,
     {
-        self.inner.select_all().await
+        Ok(self.inner.select_all().await?)
     }
 }
 
+/// Result from a hybrid search query
+///
+/// Contains both the document and scoring information from both
+/// semantic and keyword search components.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HybridSearchResult<Doc> {
+    /// The retrieved document
     pub record: Doc,
+    /// The record ID
     pub id: RecordIdKey,
+    /// Combined score (fusion of semantic and keyword scores)
     pub score: f32,
+    /// Semantic similarity score component
     pub semantic_score: f32,
+    /// Keyword matching score component
     pub keyword_score: f32,
 }
 
+/// Builder for configuring and executing hybrid search queries
+///
+/// This builder allows you to configure search parameters like result count,
+/// score weights, and fusion method before executing the search.
 pub struct HybridSearchBuilder<'a, Conn: Connection, Doc, Model: Embedder, Chkr: Chunker> {
     table: &'a DocumentTable<Conn, Doc, Model, Chkr>,
     user_query: String,
     results: usize,
     semantic_weight: f32,
     keyword_weight: f32,
-    field_name: String,
     rrf_k: f32,
 }
 
+/// Internal struct for deserializing keyword search results
 #[derive(Deserialize, Debug)]
 struct KeywordChunkResult {
     document_id: RecordIdKey,
-    byte_range: std::ops::Range<usize>,
-    chunk_text: String,
     keyword_score: f32,
 }
 
 impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R, M, K> {
-    pub(crate) fn new(
-        table: &'a DocumentTable<C, R, M, K>,
-        query: impl Into<String>,
-        field_name: impl Into<String>,
-    ) -> Self {
+    /// Create a new hybrid search builder
+    pub(crate) fn new(table: &'a DocumentTable<C, R, M, K>, query: impl Into<String>) -> Self {
         Self {
             table,
             user_query: query.into(),
             results: 10,
             semantic_weight: 0.7,
             keyword_weight: 0.3,
-            field_name: field_name.into(),
             rrf_k: 60.0,
         }
     }
 
-    /// Set the number of results to return (default: 10)
+    /// Set the number of results to return
+    ///
+    /// Default: 10
+    ///
+    /// # Arguments
+    /// * `results` - Maximum number of results to return
     pub fn with_results(mut self, results: usize) -> Self {
         self.results = results;
         self
     }
 
-    /// Set the weight of the semantic search (default: 0.7)
+    /// Set the weight of the semantic search
+    ///
+    /// Default: 0.7
+    ///
+    /// # Arguments
+    /// * `weight` - Weight for semantic score (0.0 to 1.0)
     pub fn with_semantic_weight(mut self, weight: f32) -> Self {
         self.semantic_weight = weight;
         self
     }
 
-    /// Set the weight of the keyword search (default: 0.3)
+    /// Set the weight of the keyword search
+    ///
+    /// Default: 0.3
+    ///
+    /// # Arguments
+    /// * `weight` - Weight for keyword score (0.0 to 1.0)
     pub fn with_keyword_weight(mut self, weight: f32) -> Self {
         self.keyword_weight = weight;
         self
     }
 
-    /// Set the RRF constant k (default: 60.0)
+    /// Set the RRF constant k
     ///
     /// Lower values give more weight to higher-ranked results.
     /// Typical values range from 1 to 100, with 60 being standard.
+    ///
+    /// Default: 60.0
+    ///
+    /// # Arguments
+    /// * `k` - RRF constant k
     pub fn with_rrf_k(mut self, k: f32) -> Self {
         self.rrf_k = k;
         self
     }
 
-    /// Execute the hybrid search using weighted combination
+    /// Execute the hybrid search using weighted score combination
+    ///
+    /// This method normalizes both semantic and keyword scores to 0-1 range,
+    /// then combines them using the configured weights.
+    ///
+    /// # Returns
+    /// Vector of search results sorted by combined score
+    ///
+    /// # Errors
+    /// Returns `HybridSearchError` if the search fails
     pub async fn run_weighted(self) -> Result<Vec<HybridSearchResult<R>>, HybridSearchError>
     where
         R: Serialize + DeserializeOwned + Clone + AsRef<Document> + Send + Sync,
@@ -550,7 +681,6 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
     {
         let search_limit = self.results * 3;
 
-        // Perform semantic search
         let semantic_results = self
             .table
             .search(self.user_query.clone())
@@ -558,13 +688,10 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
             .run()
             .await?;
 
-        // Perform keyword search on the links table
         let links_table = self.table.table().table_links();
         let keyword_query = r#"
             SELECT
                 document_id,
-                byte_range,
-                chunk_text,
                 search::score(1) as keyword_score
             FROM type::table($table)
             WHERE
@@ -586,7 +713,6 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
             .take(0)
             .map_err(|e| HybridSearchError::KeywordSearchError(e.to_string()))?;
 
-        // Process semantic results - keep order with keys
         let semantic_inverse_scores: Vec<f32> = semantic_results
             .iter()
             .map(|r| {
@@ -612,7 +738,6 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
             })
             .collect();
 
-        // Aggregate keyword scores by document (keep MAX score per document)
         let mut keyword_aggregated: HashMap<String, f32> = HashMap::new();
         for result in keyword_results {
             let key = result.document_id.to_string();
@@ -622,7 +747,6 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
                 .or_insert(result.keyword_score);
         }
 
-        // Normalize keyword scores - maintain order
         let keyword_keys: Vec<String> = keyword_aggregated.keys().cloned().collect();
         let keyword_scores: Vec<f32> = keyword_keys.iter().map(|k| keyword_aggregated[k]).collect();
 
@@ -635,7 +759,6 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
             .map(|(k, &score)| (k, score))
             .collect();
 
-        // Combine results
         let mut combined_results = Vec::new();
         let all_keys: HashSet<String> = semantic_map
             .keys()
@@ -654,7 +777,6 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
                 self.keyword_weight,
             );
 
-            // Get the record
             let (record_id, record) = if let Some((id, rec, _)) = semantic_map.get(&key) {
                 (id.clone(), rec.clone())
             } else {
@@ -674,7 +796,6 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
             });
         }
 
-        // Sort and truncate
         combined_results.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
@@ -685,10 +806,17 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
         Ok(combined_results)
     }
 
-    /// Set the RRF constant k (default: 60.0)
+    /// Execute the hybrid search using Reciprocal Rank Fusion (RRF)
     ///
-    /// Lower values give more weight to higher-ranked results.
-    /// Typical values range from 1 to 100, with 60 being standard.
+    /// RRF combines rankings from semantic and keyword search without
+    /// requiring score normalization. It's often more robust than weighted
+    /// combination when the score distributions differ significantly.
+    ///
+    /// # Returns
+    /// Vector of search results sorted by RRF score
+    ///
+    /// # Errors
+    /// Returns `HybridSearchError` if the search fails
     pub async fn run_rrf(self) -> Result<Vec<HybridSearchResult<R>>, HybridSearchError>
     where
         R: Serialize + DeserializeOwned + Clone + AsRef<Document> + Send + Sync,
@@ -866,43 +994,6 @@ mod tests {
     }
 
     #[test]
-    fn test_distance_to_similarity() {
-        // Test zero distance - should give max similarity
-        match distance_to_similarity(0.0, 10.0) {
-            Some(similarity) => assert!((similarity - 1.0).abs() < 0.001),
-            None => panic!("Expected Some for valid inputs (0.0, 10.0)"),
-        }
-
-        // Test max distance - should give zero similarity
-        let max = 5.0;
-        match distance_to_similarity(max, max) {
-            Some(similarity) => {
-                println!("Similarity for ({}, {}): {}", max, max, similarity);
-                assert!((similarity - 0.0).abs() < 0.001);
-            }
-            None => panic!("Expected Some for valid inputs ({}, {})", max, max),
-        }
-
-        // Test half distance
-        match distance_to_similarity(5.0, 10.0) {
-            Some(similarity) => assert!((similarity - 0.5).abs() < 0.001),
-            None => panic!("Expected Some for valid inputs (5.0, 10.0)"),
-        }
-
-        // Test zero max distance - should return None
-        assert!(
-            distance_to_similarity(0.0, 0.0).is_none(),
-            "Expected None for zero max_distance"
-        );
-
-        // Test negative max distance - should return None
-        assert!(
-            distance_to_similarity(1.0, -5.0).is_none(),
-            "Expected None for negative max_distance"
-        );
-    }
-
-    #[test]
     fn test_weighted_score() {
         // Test pure semantic
         let score = calculate_weighted_score(0.9, 0.3, 1.0, 0.0);
@@ -957,86 +1048,5 @@ mod tests {
         assert!(score > 0.0);
         // But very small
         assert!(score < 0.01);
-    }
-
-    #[test]
-    fn test_combine_rrf() {
-        let k = 60.0;
-        // Test for both scores present
-        let score = combine_rrf_scores(Some(0), Some(5), k);
-
-        let expected = calculate_rrf_score(0, k) + calculate_rrf_score(5, k);
-        assert!((score - expected).abs() < 0.0001);
-
-        // Test for only semantic
-        let score = combine_rrf_scores(Some(3), None, k);
-
-        let expected = calculate_rrf_score(3, k);
-        assert!((score - expected).abs() < 0.0001);
-
-        // Test for only keyword
-        let score = combine_rrf_scores(None, Some(7), k);
-
-        let expected = calculate_rrf_score(7, k);
-        assert!((score - expected).abs() < 0.0001);
-
-        // Test with neither present
-        let score = combine_rrf_scores(None, None, k);
-        assert_eq!(score, 0.0);
-    }
-
-    #[test]
-    fn test_full_weighted_pipeline() {
-        // Simulate a full weighted hybrid search calculation
-        let raw_semantic_distances = vec![0.1, 0.3, 0.5];
-        let raw_keyword_scores = vec![10.0, 7.0, 3.0];
-
-        // Normalize
-        let max_semantic = 0.5;
-        let semantic_scores: Vec<f32> = raw_semantic_distances
-            .iter()
-            .filter_map(|&d| distance_to_similarity(d, max_semantic))
-            .collect();
-
-        let keyword_scores = normalize_scores(&raw_keyword_scores).unwrap();
-
-        // Combine
-        let combined: Vec<f32> = semantic_scores
-            .iter()
-            .zip(keyword_scores.iter())
-            .map(|(&sem, &key)| calculate_weighted_score(sem, key, 0.7, 0.3))
-            .collect();
-
-        // Verify all scores are valid
-        assert!(combined.iter().all(|&s| s >= 0.0 && s <= 1.0));
-
-        // First result should have highest score (smallest distance, highest keyword)
-        assert!(combined[0] > combined[1]);
-        assert!(combined[1] > combined[2]);
-    }
-
-    #[test]
-    fn test_full_rrf_pipeline() {
-        // Simulate RRF calculation
-        let k = 60.0;
-
-        // Document rankings: [semantic_rank, keyword_rank]
-        let rankings = vec![
-            (Some(0), Some(2)), // High in semantic, medium in keyword
-            (Some(5), Some(0)), // Medium in semantic, high in keyword
-            (Some(1), None),    // High in semantic, not in keyword
-        ];
-
-        let rrf_scores: Vec<f32> = rankings
-            .iter()
-            .map(|&(sem, key)| combine_rrf_scores(sem, key, k))
-            .collect();
-
-        // All scores should be positive
-        assert!(rrf_scores.iter().all(|&s| s > 0.0));
-
-        // Doc 0 (rank 0 semantic + rank 2 keyword) should score highest
-        assert!(rrf_scores[0] > rrf_scores[1]);
-        assert!(rrf_scores[0] > rrf_scores[2]);
     }
 }
