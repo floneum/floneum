@@ -1,19 +1,13 @@
 use std::{
-    fmt::{Display, Write},
+    fmt::Display,
     ops::{Add, Div, Mul, Sub},
-    sync::OnceLock,
 };
 
 use crate::{
-    ElementWiseFunction, ElementWiseFunctions, MaxRank, Tensor,
-    compute_graph::{ComputeGraphInner, NodeIndex},
-    layout::TILE_SIZE,
-    mir::{function::Function, kernel::GenericKernel, operation::Operation},
-    tensor::{DataType, DataTypeEnum, TensorData},
-    visit_tiled::{
-        MaybeQData, build_visit_tiled_kernel, titled_map_dispatch_size,
-        titled_map_workgroup_size_constraints,
-    },
+    ElementWiseFunction, MaxRank, Tensor,
+    compute_graph::NodeIndex,
+    mir::operation::Operation,
+    tensor::{DataType, DataTypeEnum},
 };
 
 #[derive(Clone, Debug)]

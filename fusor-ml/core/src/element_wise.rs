@@ -1,19 +1,13 @@
 use std::{
     fmt::Display,
     ops::{Add, Div, Mul, Neg, Rem, Sub},
-    sync::OnceLock,
 };
 
 use crate::{
     Tensor,
-    compute_graph::{ComputeGraphInner, NodeIndex},
-    layout::TILE_SIZE,
-    mir::{function::Function, inputs::MirValue, kernel::GenericKernel, operation::Operation},
-    tensor::{DataType, DataTypeEnum, TensorData},
-    visit_tiled::{
-        MaybeQData, build_visit_tiled_kernel, titled_map_dispatch_size,
-        titled_map_workgroup_size_constraints,
-    },
+    compute_graph::NodeIndex,
+    mir::{function::Function, kernel::GenericKernel, operation::Operation},
+    tensor::{DataType, DataTypeEnum},
 };
 
 #[cfg(test)]

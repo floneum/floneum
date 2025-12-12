@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use crate::{
-    ElementWiseFunction, ElementWiseOperation, PairWiseFunction, PairWiseOperation,
+    ElementWiseFunction, ElementWiseOperation,
     compute_graph::{ComputeGraphInner, NodeIndex},
     layout::TILE_SIZE,
     mir::{function::Function, inputs::MirValue, kernel::GenericKernel, operation::Operation},
