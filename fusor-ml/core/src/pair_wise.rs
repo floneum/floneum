@@ -20,9 +20,7 @@ use crate::{
 pub(crate) struct PairWiseOperation {
     pub(crate) first: NodeIndex,
     pub(crate) second: NodeIndex,
-    pub(crate) pre_element_wise: [ElementWiseFunctions; 2],
     pub(crate) function: PairWiseFunction,
-    pub(crate) post_element_wise: ElementWiseFunctions,
     shape: Box<[usize]>,
 }
 
@@ -33,213 +31,16 @@ impl PairWiseOperation {
         second: NodeIndex,
         shape: &[usize],
     ) -> Self {
-        let datatype = function.datatype;
         Self {
-            pre_element_wise: [
-                ElementWiseFunctions::empty(datatype),
-                ElementWiseFunctions::empty(datatype),
-            ],
             function,
-            post_element_wise: ElementWiseFunctions::empty(datatype),
             first,
             second,
             shape: shape.into(),
         }
     }
 
-    pub fn set_post_element_wise(&mut self, element_wise: ElementWiseFunctions) {
-        self.post_element_wise = element_wise;
-    }
-
-    pub fn set_pre_element_wise(&mut self, element_wise: [ElementWiseFunctions; 2]) {
-        self.pre_element_wise = element_wise;
-    }
-
-    fn output_datatype(&self) -> DataTypeEnum {
-        self.post_element_wise.out_datatype()
-    }
-
-    pub fn add_function(&self, kernel: &mut GenericKernel) -> Function {
-        kernel.add_function(
-            self.function.datatype,
-            self.function.operation.clone(),
-            ["a", "b"].iter().enumerate().map(|(i, x)| {
-                (
-                    x.to_string(),
-                    self.pre_element_wise[i].out_datatype().to_string(),
-                )
-            }),
-        )
-    }
-
     pub fn shape(&self) -> &[usize] {
         &self.shape
-    }
-
-    fn re_used_allocation_index(&self, first: &MaybeQData, second: &MaybeQData) -> Option<usize> {
-        if first.datatype() == self.output_datatype().into()
-            && first.owned()
-            && !first.layout().allocation_overlaps()
-        {
-            Some(0)
-        } else if second.datatype() == self.output_datatype().into()
-            && second.owned()
-            && !second.layout().allocation_overlaps()
-        {
-            Some(1)
-        } else {
-            None
-        }
-    }
-}
-
-impl Operation for PairWiseOperation {
-    fn workgroup_shape_constraints(
-        &self,
-        device: &crate::Device,
-    ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
-        titled_map_workgroup_size_constraints(&self.shape, device)
-    }
-
-    fn dispatch_size(
-        &self,
-        workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
-        _: &[crate::mir::inputs::MirValue],
-    ) -> [u32; 3] {
-        titled_map_dispatch_size(TILE_SIZE, *workgroup_shape, &self.shape)
-    }
-
-    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
-        f(self.first);
-        f(self.second);
-    }
-
-    fn inputs(
-        &self,
-        nodes: &crate::compute_graph::ComputeGraphInner,
-    ) -> Vec<crate::mir::inputs::MirValue> {
-        let first = nodes.get_result_or_qmatrix(self.first).unwrap();
-        let second = nodes.get_result_or_qmatrix(self.second).unwrap();
-
-        let requires_new_tensor = self.re_used_allocation_index(&first, &second).is_none();
-
-        if requires_new_tensor {
-            let output_tensor = TensorData::new_for_shape(
-                first.device(),
-                first.layout().shape(),
-                self.output_datatype(),
-            );
-            vec![first.into(), second.into(), output_tensor.into()]
-        } else {
-            vec![first.into(), second.into()]
-        }
-    }
-
-    fn build_kernel(
-        &self,
-        graph: &ComputeGraphInner,
-        _: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[crate::mir::inputs::MirValue],
-        kernel: &mut GenericKernel,
-    ) {
-        let first: MaybeQData = inputs[0].clone().try_into().unwrap();
-        let second: MaybeQData = inputs[1].clone().try_into().unwrap();
-        assert_eq!(first.layout().shape(), second.layout().shape());
-
-        let first_layout = first.layout();
-        let shape = first_layout.shape();
-        let re_used_allocation_index = self.re_used_allocation_index(&first, &second);
-        let output_tensor_index = re_used_allocation_index.unwrap_or(2);
-        let requires_new_tensor = re_used_allocation_index.is_none();
-
-        let pre_element_wise_functions: OnceLock<[Vec<Function>; 2]> = OnceLock::new();
-        let pair_wise_function = OnceLock::new();
-        let post_element_wise_functions = OnceLock::new();
-        let mut datatypes = vec![first.datatype(), second.datatype()];
-
-        if requires_new_tensor {
-            datatypes.push(self.output_datatype().into());
-        }
-
-        build_visit_tiled_kernel(
-            &graph.device,
-            shape,
-            TILE_SIZE,
-            datatypes,
-            |kernel, indexes, tensors, values| {
-                let first_value = &values[0];
-                let second_value = &values[1];
-                let output_index = &indexes[output_tensor_index];
-                let out_tensor = &tensors[output_tensor_index];
-                let mut kernel_text = String::new();
-                let pre_element_wise_functions = pre_element_wise_functions.get_or_init(|| {
-                    std::array::from_fn(|i| self.pre_element_wise[i].add_functions(kernel))
-                });
-                let first_value = pre_element_wise_functions[0]
-                    .iter()
-                    .fold(first_value.to_string(), |acc, f| f.call(vec![acc]));
-                writeln!(&mut kernel_text, "let a = {first_value};").unwrap();
-                let second_value = pre_element_wise_functions[1]
-                    .iter()
-                    .fold(second_value.to_string(), |acc, f| f.call(vec![acc]));
-                writeln!(&mut kernel_text, "let b = {second_value};").unwrap();
-                let pair_wise_function =
-                    pair_wise_function.get_or_init(|| self.add_function(kernel));
-                let result = pair_wise_function.call(vec!["a".to_string(), "b".to_string()]);
-                let post_element_wise_functions = post_element_wise_functions
-                    .get_or_init(|| self.post_element_wise.add_functions(kernel));
-                let result = post_element_wise_functions
-                    .iter()
-                    .fold(result, |acc, f| f.call(vec![acc]));
-                writeln!(&mut kernel_text, "{out_tensor}[{output_index}] = {result};").unwrap();
-                kernel_text
-            },
-            kernel,
-        );
-    }
-
-    fn output(
-        &self,
-        _: &ComputeGraphInner,
-        inputs: &[crate::mir::inputs::MirValue],
-    ) -> crate::mir::inputs::MirValue {
-        let first: MaybeQData = inputs[0].clone().try_into().unwrap();
-        let second: MaybeQData = inputs[1].clone().try_into().unwrap();
-        let re_used_allocation_index = self.re_used_allocation_index(&first, &second);
-        let output_tensor_index = re_used_allocation_index.unwrap_or(2);
-        inputs[output_tensor_index].clone()
-    }
-
-    fn name(&self) -> String {
-        let functions = self
-            .pre_element_wise
-            .iter()
-            .flat_map(|f| f.iter())
-            .chain(self.post_element_wise.iter())
-            .collect::<Vec<_>>();
-        let mut name = String::new();
-        for function in functions {
-            if !name.is_empty() {
-                name.push('_');
-            }
-            write!(&mut name, "{}", function.name()).unwrap();
-        }
-        if name.is_empty() {
-            name = self.function.name().to_string();
-        } else {
-            name.push('_');
-            name.push_str(self.function.name());
-        }
-        name.push_str("_pair_wise_");
-        name.push_str(
-            &self
-                .shape
-                .iter()
-                .map(|x| x.to_string())
-                .collect::<Vec<_>>()
-                .join("x"),
-        );
-        name
     }
 }
 

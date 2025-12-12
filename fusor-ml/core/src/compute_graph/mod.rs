@@ -16,7 +16,6 @@ use crate::{
     DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, QMatrix, ReduceOperation, dequantize::DequantizeOperation, index_select::IndexSelectOperation, map_layout::MapLayoutOperation, mir::operation::Operation,  quantized::matmul::QMatMulOperation, resize::ResizeOperation, slice_assign::SliceAssignOperation, tensor::TensorData, visit_tiled::MaybeQData,compute_graph::resolve::ResolverResult
 };
 
-
 #[derive(Clone)]
 pub(crate) struct ComputeGraph {
     inner: Arc<RwLock<ComputeGraphInner>>,

@@ -211,12 +211,7 @@ fn build_tiled_map_kernel(
         )
         .unwrap();
         writeln!(kernel, "var tile_offset = 0u;").unwrap();
-        writeln!(
-            kernel,
-            "while (tile_offset < {}u) {{",
-            tile_size
-        )
-        .unwrap();
+        writeln!(kernel, "while (tile_offset < {}u) {{", tile_size).unwrap();
         writeln!(
             kernel,
             "let flat_index = global_thread_id * {}u + tile_offset;",
@@ -282,7 +277,7 @@ fn build_tiled_map_kernel(
                 .chain(std::iter::once(format!("block_dim_{}", rank - 1))),
         );
         writeln!(kernel, "];").unwrap();
-        
+
         writeln!(kernel, "let sub_block_index = block_offset / 16u;").unwrap();
         let handled = dequantize_mat4x4_block(
             kernel,

@@ -30,6 +30,9 @@ async fn test_mean() {
     let mean0: Tensor<1, f32> = a.mean(0);
     let mean1: Tensor<1, f32> = a.mean(1);
 
+    // The elementwise div should be fused into the mean kernel
+    assert_eq!(mean0.count_kernels_to_resolve(), 1);
+
     assert_eq!(&mean0.as_slice().await.unwrap(), &[2.5, 3.5, 4.5]);
     assert_eq!(&mean1.as_slice().await.unwrap(), &[2.0, 5.0]);
 }

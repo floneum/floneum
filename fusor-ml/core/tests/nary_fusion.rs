@@ -1,5 +1,5 @@
-use fusor_core::Tensor;
 use fusor_core::Device;
+use fusor_core::Tensor;
 
 #[tokio::test]
 async fn test_nary_triple_add() {

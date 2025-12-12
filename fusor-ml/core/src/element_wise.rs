@@ -76,8 +76,6 @@ impl ElementWiseFunctions {
     pub fn push(&mut self, function: ElementWiseFunction) {
         self.functions.push(function);
     }
-
-
 }
 
 #[derive(Clone, Debug)]
@@ -124,12 +122,6 @@ impl ElementWiseOperation {
         &self.shape
     }
 
-    fn requires_new_tensor(&self, tensor: &MaybeQData) -> bool {
-        let output_type = self.functions.out_datatype();
-        let re_use_allocation = self.functions.input_datatype == output_type && tensor.owned();
-        !re_use_allocation
-    }
-
     pub(crate) fn name(&self) -> String {
         self.functions
             .functions
@@ -137,122 +129,6 @@ impl ElementWiseOperation {
             .map(|f| f.name())
             .collect::<Vec<_>>()
             .join("_")
-    }
-}
-
-impl Operation for ElementWiseOperation {
-    fn workgroup_shape_constraints(
-        &self,
-        device: &crate::Device,
-    ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
-        titled_map_workgroup_size_constraints(self.shape(), device)
-    }
-
-    fn dispatch_size(
-        &self,
-        workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
-        _: &[crate::mir::inputs::MirValue],
-    ) -> [u32; 3] {
-        titled_map_dispatch_size(TILE_SIZE, *workgroup_shape, self.shape())
-    }
-
-    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
-        f(self.value);
-    }
-
-    fn inputs(&self, nodes: &ComputeGraphInner) -> Vec<crate::mir::inputs::MirValue> {
-        let input = nodes.get_result_or_qmatrix(self.value).unwrap();
-        let requires_new_tensor = self.requires_new_tensor(&input);
-
-        if requires_new_tensor {
-            let output_type = self.functions.out_datatype();
-            let new_tensor =
-                TensorData::new_for_shape(input.device(), input.layout().shape(), output_type)
-                    .into();
-            return vec![input.into(), new_tensor];
-        }
-
-        vec![input.into()]
-    }
-
-    fn output(&self, _: &ComputeGraphInner, inputs: &[MirValue]) -> MirValue {
-        let tensor: MaybeQData = inputs[0].clone().try_into().unwrap();
-        let output_tensor = inputs.get(1).map(|input| {
-            let MirValue::Tensor(tensor) = input.clone() else {
-                panic!("expected tensor input");
-            };
-            tensor
-        });
-        match output_tensor {
-            Some(output_tensor) => output_tensor.into(),
-            None => tensor.into(),
-        }
-    }
-
-    fn build_kernel(
-        &self,
-        graph: &ComputeGraphInner,
-        _: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[crate::mir::inputs::MirValue],
-        kernel: &mut GenericKernel,
-    ) {
-        let tensor: MaybeQData = inputs[0].clone().try_into().unwrap();
-        let output_tensor = inputs.get(1).map(|input| {
-            let MirValue::Tensor(tensor) = input.clone() else {
-                panic!("expected tensor input");
-            };
-            tensor
-        });
-        let layout = tensor.layout();
-        let shape = layout.shape();
-        let output_type = self.functions.out_datatype();
-
-        let functions = OnceLock::new();
-        let mut datatypes = vec![tensor.datatype()];
-        if output_tensor.is_some() {
-            datatypes.push(output_type.into());
-        }
-        build_visit_tiled_kernel(
-            &graph.device,
-            shape,
-            TILE_SIZE,
-            datatypes,
-            |kernel, indexes, tensors, values| match (indexes, tensors, values) {
-                ([index], [tensor], [value]) => {
-                    let result = functions
-                        .get_or_init(|| self.functions.add_functions(kernel))
-                        .iter()
-                        .fold(value.to_string(), |acc, f| f.call(vec![acc]));
-                    format!("{tensor}[{index}] = {result};")
-                }
-                ([_, out_index], [_, output], [value, _]) => {
-                    let result = functions
-                        .get_or_init(|| self.functions.add_functions(kernel))
-                        .iter()
-                        .fold(value.to_string(), |acc, f| f.call(vec![acc]));
-                    format!("{output}[{out_index}] = {result};")
-                }
-                _ => panic!("invalid number of tensors"),
-            },
-            kernel,
-        );
-    }
-
-    fn name(&self) -> String {
-        let functions = self
-            .functions
-            .functions
-            .iter()
-            .map(|f| f.name())
-            .collect::<Vec<_>>()
-            .join("_");
-        let shape = self
-            .shape
-            .iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-            .join("x");
-        format!("element_wise_{functions}_{shape}")
     }
 }
 
@@ -281,7 +157,10 @@ impl ElementWiseFunction {
         self.name.as_deref().unwrap_or("element_wise")
     }
 
-    pub(crate) fn to_nary_function(&self, input_type: DataTypeEnum) -> crate::nary_wise::NaryFunction {
+    pub(crate) fn to_nary_function(
+        &self,
+        input_type: DataTypeEnum,
+    ) -> crate::nary_wise::NaryFunction {
         crate::nary_wise::NaryFunction {
             name: self.name.clone(),
             operation: self.operation.clone(),

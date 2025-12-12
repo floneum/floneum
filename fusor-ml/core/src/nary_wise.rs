@@ -1,6 +1,7 @@
 use std::fmt::Write;
 
 use crate::{
+    ElementWiseFunction, ElementWiseOperation, PairWiseFunction, PairWiseOperation,
     compute_graph::{ComputeGraphInner, NodeIndex},
     layout::TILE_SIZE,
     mir::{function::Function, inputs::MirValue, kernel::GenericKernel, operation::Operation},
@@ -25,16 +26,10 @@ pub(crate) struct NaryFunction {
 }
 
 impl NaryFunction {
-
-
     pub fn name(&self) -> &str {
         self.name.as_deref().unwrap_or("op")
     }
 }
-
-
-
-
 
 /// Expression tree node supporting any arity operations
 #[derive(Clone, Debug)]
@@ -49,7 +44,6 @@ pub(crate) enum NaryExpr {
 }
 
 impl NaryExpr {
-
     /// Get the name of the expression for debugging
     pub fn name(&self) -> String {
         match self {
@@ -131,6 +125,75 @@ impl NaryOperation {
 
                 temp_name
             }
+        }
+    }
+
+    /// Attempt to convert this NaryOperation into an ElementwiseOperation. This will only succeed
+    /// if there is only a single input to the operation
+    pub(crate) fn try_into_elementwise_op(&self) -> Option<ElementWiseOperation> {
+        if self.inputs.len() == 1 {
+            let output_datatype = self.output_datatype;
+            let value = self.inputs[0];
+            let input_datatype = match self.expression {
+                NaryExpr::Input(_) => output_datatype,
+                NaryExpr::Op { ref function, .. } => function.input_types[0],
+            };
+
+            fn collect_functions(
+                expr: &NaryExpr,
+                function_body: &mut String,
+                out_id: &mut usize,
+            ) -> std::fmt::Result {
+                let this_output = *out_id;
+                match expr {
+                    NaryExpr::Input(_) => {
+                        writeln!(function_body, "let output_{this_output} = input;",)
+                    }
+                    NaryExpr::Op { children, function } => {
+                        let mut inputs = Vec::new();
+                        for child in children {
+                            *out_id += 1;
+                            inputs.push(*out_id);
+                            collect_functions(child, function_body, out_id)?;
+                        }
+                        // TODO: this isn't a great way to handle this. Refactor once we get rid of elementwise and pairwise ops
+                        let default_value = match function.output_type {
+                            DataTypeEnum::F32 => "0.0",
+                            DataTypeEnum::F16 => "f16(0.0)",
+                            DataTypeEnum::U32 => "0u",
+                        };
+                        writeln!(function_body, "var output_{this_output} = {default_value};",)?;
+                        writeln!(function_body, "{{",)?;
+                        for (i, input_id) in inputs.iter().enumerate() {
+                            writeln!(
+                                function_body,
+                                "    let {} = output_{};",
+                                function.input_names[i], input_id
+                            )?;
+                        }
+                        writeln!(function_body, "{}", function.operation)?;
+                        writeln!(function_body, "    output_{} = output;", this_output,)?;
+                        writeln!(function_body, "}}",)?;
+                        Ok(())
+                    }
+                }
+            }
+
+            let mut function_body = String::new();
+            let mut out_id = 0;
+            collect_functions(&self.expression, &mut function_body, &mut out_id).unwrap();
+            writeln!(function_body, "let output = output_0;").unwrap();
+            let functions = ElementWiseFunction::new(function_body, output_datatype);
+
+            let shape = self.shape.clone();
+            Some(ElementWiseOperation::new(
+                input_datatype,
+                value,
+                functions,
+                shape,
+            ))
+        } else {
+            None
         }
     }
 }
