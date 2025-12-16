@@ -98,10 +98,9 @@ async fn test_rrf_hybrid_search() -> Result<(), Box<dyn std::error::Error>> {
         println!();
     }
 
-    assert!(!results.is_empty());
     // First result should be about async programming
     assert!(
-        results[0].record.title().contains("Async") || results[0].record.body().contains("async")
+        results[0].record.title().contains("Async") && results[0].record.body().contains("async")
     );
 
     Ok(())
@@ -125,7 +124,7 @@ async fn test_weighted_hybrid_search() -> Result<(), Box<dyn std::error::Error>>
 
     let results = table
         .hybrid_search("ownership memory safety")
-        .with_results(3)
+        .with_results(1)
         .with_semantic_weight(0.6)
         .with_keyword_weight(0.4)
         .run_weighted()
@@ -142,7 +141,6 @@ async fn test_weighted_hybrid_search() -> Result<(), Box<dyn std::error::Error>>
         println!();
     }
 
-    assert!(!results.is_empty());
     // Should find the ownership article
     assert!(results
         .iter()
@@ -181,7 +179,6 @@ async fn test_keyword_only_match() -> Result<(), Box<dyn std::error::Error>> {
         println!();
     }
 
-    assert!(!results.is_empty());
     // USB-C docking station should be first
     assert!(results[0].record.title().contains("USB-C"));
 

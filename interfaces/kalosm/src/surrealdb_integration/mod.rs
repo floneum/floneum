@@ -60,7 +60,7 @@ pub struct DocumentLink {
     /// Optional materialized chunk text (only present when hybrid search is enabled)
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
-    pub chunk_text: Option<String>,
+    chunk_text: Option<String>,
 }
 
 /// An object with associated embedding ids.
