@@ -1,6 +1,6 @@
 use rustc_hash::FxHashMap;
 
-use crate::{Layout, TensorLayoutInfo, index_select::IndexSelectOperation};
+use crate::{Layout, TensorLayoutInfo, index_select::IndexSelectOperation, nary_wise::NaryOperation};
 
 use super::{ComputeGraphNodeVariant, NodeIndex, queue::ComputeQueue};
 
@@ -26,6 +26,7 @@ impl LayoutPass {
             match &node_data.variant {
                 ComputeGraphNodeVariant::ElementWise(op) => self.visit_element_wise(node, op),
                 ComputeGraphNodeVariant::PairWise(op) => self.visit_pair_wise(node, op),
+                ComputeGraphNodeVariant::Nary(op) => self.visit_nary(node, op),
                 ComputeGraphNodeVariant::MatMul(op) => self.visit_mat_mul(node, op),
                 ComputeGraphNodeVariant::QMatMul(op) => self.visit_q_mat_mul(node, op),
                 ComputeGraphNodeVariant::Reduce(op) => self.visit_reduce(node, op),
@@ -66,6 +67,22 @@ impl LayoutPass {
             return;
         };
         self.output_layout.insert(key, first_layout.clone());
+    }
+
+    fn visit_nary(&mut self, key: NodeIndex, operation: &NaryOperation) {
+        // Ensure all inputs have been visited
+        for input in &operation.inputs {
+            if !self.output_layout.contains_key(input) {
+                self.queue.push_back(*input);
+                self.queue.push_back(key);
+                return;
+            }
+        }
+        let output_layout = Layout::contiguous(&operation.shape);
+        self.output_layout.insert(
+            key,
+            TensorLayoutInfo::new(output_layout, operation.output_datatype),
+        );
     }
 
     fn visit_mat_mul(&mut self, key: NodeIndex, operation: &crate::MatMulOperation) {

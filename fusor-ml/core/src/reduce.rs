@@ -18,9 +18,9 @@ use crate::{
 #[derive(Debug, Clone)]
 pub(crate) struct ReduceOperation {
     pub(crate) value: NodeIndex,
-    pre_element_wise: ElementWiseFunctions,
+    pub(crate) pre_element_wise: ElementWiseFunctions,
     pub(crate) function: ReduceFunction,
-    post_element_wise: ElementWiseFunctions,
+    pub(crate) post_element_wise: ElementWiseFunctions,
     pub(crate) axis: usize,
     pub(crate) shape: Box<[usize]>,
 }

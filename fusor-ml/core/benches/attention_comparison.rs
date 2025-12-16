@@ -188,7 +188,7 @@ fn bench_attention_comparison(c: &mut Criterion) {
 
                         let start = std::time::Instant::now();
                         for _ in 0..iters {
-                            let output = q.flash_attention(&k, &v, scale);
+                            let output = q.flash_attention(&k, &v, scale, None);
                             let _ = black_box(output.as_slice().await.unwrap());
                         }
                         let elapsed = start.elapsed();

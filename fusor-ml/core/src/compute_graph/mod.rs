@@ -16,7 +16,7 @@ use crate::{
     DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, QMatrix,
     ReduceOperation, compute_graph::resolve::ResolverResult, dequantize::DequantizeOperation,
     index_select::IndexSelectOperation, map_layout::MapLayoutOperation, mir::operation::Operation,
-    quantized::matmul::QMatMulOperation, resize::ResizeOperation,
+    nary_wise::NaryOperation, quantized::matmul::QMatMulOperation, resize::ResizeOperation,
     slice_assign::SliceAssignOperation, tensor::TensorData, visit_tiled::MaybeQData,
 };
 
@@ -152,6 +152,7 @@ pub(crate) struct ComputeGraphNode {
 pub(crate) enum ComputeGraphNodeVariant {
     ElementWise(ElementWiseOperation),
     PairWise(PairWiseOperation),
+    Nary(NaryOperation),
     SliceAssign(SliceAssignOperation),
     Resize(ResizeOperation),
     MapLayout(MapLayoutOperation),
@@ -162,6 +163,46 @@ pub(crate) enum ComputeGraphNodeVariant {
     Reduce(ReduceOperation),
     IndexSelect(IndexSelectOperation),
     Custom(Arc<dyn Operation + Send + Sync>),
+}
+
+impl ComputeGraphNodeVariant {
+    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
+        match &self {
+            ComputeGraphNodeVariant::ElementWise(op) => f(op.value),
+            ComputeGraphNodeVariant::PairWise(op) => {
+                f(op.first);
+                f(op.second);
+            }
+            ComputeGraphNodeVariant::Nary(op) => {
+                for input in &op.inputs {
+                    f(*input);
+                }
+            }
+            ComputeGraphNodeVariant::MatMul(op) => {
+                f(op.first);
+                f(op.second);
+            }
+            ComputeGraphNodeVariant::QMatMul(op) => {
+                f(op.input);
+            }
+            ComputeGraphNodeVariant::Reduce(op) => f(op.value),
+            ComputeGraphNodeVariant::MapLayout(op) => f(op.input),
+            ComputeGraphNodeVariant::Resize(op) => f(op.input),
+            ComputeGraphNodeVariant::SliceAssign(op) => {
+                f(op.input);
+                f(op.value);
+            }
+            ComputeGraphNodeVariant::IndexSelect(op) => {
+                f(op.input);
+                f(op.indexes);
+            }
+            ComputeGraphNodeVariant::Dequantize(_) => {}
+            ComputeGraphNodeVariant::Tensor(_) => {}
+            ComputeGraphNodeVariant::Custom(op) => {
+                op.visit_dependencies(f);
+            }
+        }
+    }
 }
 
 pub(crate) struct ComputeGraphInner {
@@ -205,36 +246,7 @@ impl ComputeGraphInner {
 
     fn visit_dependencies(&self, key: NodeIndex, f: &mut dyn FnMut(NodeIndex)) {
         if let Some(node) = self.nodes.nodes.node_weight(key) {
-            match &node.variant {
-                ComputeGraphNodeVariant::ElementWise(op) => f(op.value),
-                ComputeGraphNodeVariant::PairWise(op) => {
-                    f(op.first);
-                    f(op.second);
-                }
-                ComputeGraphNodeVariant::MatMul(op) => {
-                    f(op.first);
-                    f(op.second);
-                }
-                ComputeGraphNodeVariant::QMatMul(op) => {
-                    f(op.input);
-                }
-                ComputeGraphNodeVariant::Reduce(op) => f(op.value),
-                ComputeGraphNodeVariant::MapLayout(op) => f(op.input),
-                ComputeGraphNodeVariant::Resize(op) => f(op.input),
-                ComputeGraphNodeVariant::SliceAssign(op) => {
-                    f(op.input);
-                    f(op.value);
-                }
-                ComputeGraphNodeVariant::IndexSelect(op) => {
-                    f(op.input);
-                    f(op.indexes);
-                }
-                ComputeGraphNodeVariant::Dequantize(_) => {}
-                ComputeGraphNodeVariant::Tensor(_) => {}
-                ComputeGraphNodeVariant::Custom(op) => {
-                    op.visit_dependencies(f);
-                }
-            }
+            node.variant.visit_dependencies(f);
         }
     }
 

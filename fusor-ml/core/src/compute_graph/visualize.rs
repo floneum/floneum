@@ -58,6 +58,27 @@ impl GraphVisPass {
         self.identities.insert(key, id.clone());
     }
 
+    fn visit_nary(&mut self, key: NodeIndex, operation: &crate::nary_wise::NaryOperation) {
+        let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
+        let id = Identity::quoted(format!(
+            "nary ({}) #{:?}",
+            output_layout,
+            key
+        ));
+        self.statements.push(Stmt::Node {
+            id: id.clone(),
+            port: None,
+            attr: None,
+        });
+        for input in &operation.inputs {
+            let input_id = self.identities.get(input).unwrap();
+            self.statements.push(Stmt::Edge(
+                Edge::head_node(input_id.clone(), None).arrow_to_node(id.clone(), None),
+            ));
+        }
+        self.identities.insert(key, id.clone());
+    }
+
     fn visit_mat_mul(&mut self, key: NodeIndex, operation: &crate::MatMulOperation) {
         let first = self.identities.get(&operation.first).unwrap();
         let second = self.identities.get(&operation.second).unwrap();
@@ -290,6 +311,7 @@ impl ComputeGraphInner {
                     graph_vis_pass.visit_element_wise(node, op)
                 }
                 ComputeGraphNodeVariant::PairWise(op) => graph_vis_pass.visit_pair_wise(node, op),
+                ComputeGraphNodeVariant::Nary(op) => graph_vis_pass.visit_nary(node, op),
                 ComputeGraphNodeVariant::MatMul(op) => graph_vis_pass.visit_mat_mul(node, op),
                 ComputeGraphNodeVariant::QMatMul(op) => graph_vis_pass.visit_q_mat_mul(node, op),
                 ComputeGraphNodeVariant::Reduce(op) => graph_vis_pass.visit_reduce(node, op),

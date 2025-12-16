@@ -6,7 +6,7 @@ use std::{
 use crate::{
     Tensor,
     compute_graph::NodeIndex,
-    mir::{function::Function, kernel::GenericKernel, operation::Operation},
+    mir::{function::Function, kernel::GenericKernel},
     tensor::{DataType, DataTypeEnum},
 };
 
@@ -16,7 +16,7 @@ use crate::Device;
 #[derive(Clone, Debug)]
 pub(crate) struct ElementWiseFunctions {
     input_datatype: DataTypeEnum,
-    functions: Vec<ElementWiseFunction>,
+    pub(crate) functions: Vec<ElementWiseFunction>,
 }
 
 impl ElementWiseFunctions {

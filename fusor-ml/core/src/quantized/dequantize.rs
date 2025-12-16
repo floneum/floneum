@@ -16,7 +16,7 @@ use super::{QMatrix, dequantize_block};
 pub(crate) struct DequantizeOperation {
     pub(crate) matrix: QMatrix,
     pub(crate) datatype: DataTypeEnum,
-    post_dequantize: ElementWiseFunctions,
+    pub(crate) post_dequantize: ElementWiseFunctions,
 }
 
 impl DequantizeOperation {
