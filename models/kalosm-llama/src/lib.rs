@@ -97,11 +97,7 @@ impl<F: FloatDataType> Clone for Llama<F> {
     }
 }
 
-impl<F: FloatDataType> Llama<F>
-where
-    F: FloatDataType + CastTensor<f32> + Send + Sync + 'static,
-    f32: CastTensor<F>,
-{
+impl Llama {
     /// Create a default chat model.
     pub async fn new_chat() -> Result<Self, LlamaSourceError> {
         Self::builder()
@@ -127,7 +123,7 @@ where
     }
 
     /// Create a new builder for a Llama model.
-    pub fn builder() -> LlamaBuilder<F> {
+    pub fn builder() -> LlamaBuilder {
         LlamaBuilder::default()
     }
 }
@@ -255,6 +251,11 @@ impl<F: FloatDataType> Default for LlamaBuilder<F> {
 }
 
 impl<F: FloatDataType> LlamaBuilder<F> {
+    /// Create a new Llama builder with default settings.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     /// Set the source for the model.
     pub fn with_source(mut self, source: source::LlamaSource) -> Self {
         self.source = source;
