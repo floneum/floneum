@@ -142,10 +142,11 @@ impl<M: CreateChatSession> Chat<M> {
     /// # #[tokio::main]
     /// # async fn main() {
     /// let model = Llama::new_chat().await.unwrap();
-    /// // Load the model session from the filesystem
-    /// let session =
-    ///     LlamaChatSession::from_bytes(std::fs::read("chat.llama").unwrap().as_slice()).unwrap();
-    /// // Start the chat session with the cached session
+    /// // Get a session from an existing chat
+    /// let mut old_chat = model.chat();
+    /// old_chat(&"Hello!").to_std_out().await.unwrap();
+    /// let session = old_chat.session().unwrap().try_clone().unwrap();
+    /// // Start a new chat session with the cloned session
     /// let mut chat = model.chat().with_session(session);
     /// # }
     /// ```
@@ -254,20 +255,7 @@ impl<M: CreateChatSession> Chat<M> {
 
     /// Get a reference to the chat session or an error if the session failed to load.
     ///
-    /// You can use the session to save the chat for later:
-    /// ```rust, no_run
-    /// # use kalosm::language::*;
-    /// # #[tokio::main]
-    /// # async fn main() {
-    /// let model = Llama::new_chat().await.unwrap();
-    /// let mut chat = model.chat();
-    /// let session = chat.session().unwrap();
-    /// let bytes = session.to_bytes().unwrap();
-    /// std::fs::write("./chat.llama", bytes).unwrap();
-    /// # }
-    /// ```
-    ///
-    /// Or get the chat history:
+    /// You can use the session to get the chat history:
     /// ```rust, no_run
     /// # use kalosm::language::*;
     /// # #[tokio::main]

@@ -70,6 +70,7 @@ enum Task<F: FloatDataType = half::f16> {
     StructuredGeneration(StructuredGenerationTask<F>),
 }
 
+#[allow(clippy::type_complexity)]
 struct StructuredGenerationTask<F: FloatDataType = half::f16> {
     runner: Box<dyn FnOnce(&mut LlamaModel<F>) + Send>,
 }

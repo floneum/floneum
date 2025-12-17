@@ -17,7 +17,7 @@ use crate::token_stream::TokenOutputStream;
 use crate::{LlamaModel, LlamaSession};
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn generate_structured<F: FloatDataType, P: Parser>(
+pub(crate) fn generate_structured<F, P: Parser>(
     prompt: MessageContent,
     llm: &LlamaModel<F>,
     session: &mut LlamaSession<F>,
@@ -29,7 +29,7 @@ pub(crate) fn generate_structured<F: FloatDataType, P: Parser>(
     seed: Option<u64>,
 ) -> Result<P::Output, LlamaModelError>
 where
-    F: CastTensor<f32> + Send + Sync + 'static,
+    F: FloatDataType + CastTensor<f32> + Send + Sync + 'static,
     f32: CastTensor<F>,
 {
     let eos_token = llm.model.config.stop_token_string.clone();
