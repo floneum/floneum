@@ -31,6 +31,7 @@ image.workspace = true
 tokio = { version = "1.28.1", features = ["full"] }
 kalosm = { workspace = true, features = ["language", "openai", "anthropic"], default-features = true }
 kalosm-learning = { workspace = true }
+kalosm-common = { workspace = true }
 pretty_assertions = "1.4.1"
 postcard = { version = "1.0.8", features = ["use-std"] }
 anyhow = { workspace = true }
