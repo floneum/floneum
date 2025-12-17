@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::{model::LlamaModelError, session::LlamaSessionLoadingError, Llama, LlamaSession};
+use fusor_core::{CastTensor, FloatDataType};
 use kalosm_language_model::{
     ChatMessage, ChatModel, ChatSession, ContentChunk, CreateChatSession,
     CreateTextCompletionSession, MessageContent, MessageType, StructuredChatModel,
@@ -13,10 +14,10 @@ use kalosm_sample::{CreateParserState, Parser};
 use llm_samplers::types::Sampler;
 use minijinja::ErrorKind;
 
-fn get_new_tokens(
+fn get_new_tokens<F: FloatDataType>(
     messages: &[ChatMessage],
-    session: &mut LlamaChatSession,
-    model: &Llama,
+    session: &mut LlamaChatSession<F>,
+    model: &Llama<F>,
 ) -> Result<String, LlamaModelError> {
     let chat_template = model
         .config
@@ -48,16 +49,24 @@ fn get_new_tokens(
     Ok(new_text.to_string())
 }
 
-impl CreateChatSession for Llama {
+impl<F: FloatDataType> CreateChatSession for Llama<F>
+where
+    F: CastTensor<f32> + Send + Sync + 'static,
+    f32: CastTensor<F>,
+{
     type Error = LlamaModelError;
-    type ChatSession = LlamaChatSession;
+    type ChatSession = LlamaChatSession<F>;
 
     fn new_chat_session(&self) -> Result<Self::ChatSession, Self::Error> {
         Ok(LlamaChatSession::new(self.new_session()?))
     }
 }
 
-impl<S: Sampler + 'static> ChatModel<S> for Llama {
+impl<F: FloatDataType, S: Sampler + 'static> ChatModel<S> for Llama<F>
+where
+    F: CastTensor<f32> + Send + Sync + 'static,
+    f32: CastTensor<F>,
+{
     fn add_messages_with_callback<'a>(
         &'a self,
         session: &'a mut Self::ChatSession,
@@ -98,8 +107,10 @@ impl<S: Sampler + 'static> ChatModel<S> for Llama {
     }
 }
 
-impl<S, Constraints> StructuredChatModel<Constraints, S> for Llama
+impl<F: FloatDataType, S, Constraints> StructuredChatModel<Constraints, S> for Llama<F>
 where
+    F: CastTensor<f32> + Send + Sync + 'static,
+    f32: CastTensor<F>,
     <Constraints as Parser>::Output: Send,
     Constraints: CreateParserState + Send + 'static,
     S: Sampler + 'static,
@@ -158,13 +169,21 @@ where
 }
 
 /// A Llama chat session.
-#[derive(Clone)]
-pub struct LlamaChatSession {
+pub struct LlamaChatSession<F: FloatDataType = half::f16> {
     history: Vec<ChatMessage>,
-    session: LlamaSession<half::f16>,
+    session: LlamaSession<F>,
 }
 
-impl ChatSession for LlamaChatSession {
+impl<F: FloatDataType> Clone for LlamaChatSession<F> {
+    fn clone(&self) -> Self {
+        Self {
+            history: self.history.clone(),
+            session: self.session.clone(),
+        }
+    }
+}
+
+impl<F: FloatDataType> ChatSession for LlamaChatSession<F> {
     type Error = LlamaSessionLoadingError;
 
     fn history(&self) -> Vec<ChatMessage> {
@@ -179,10 +198,10 @@ impl ChatSession for LlamaChatSession {
     }
 }
 
-impl LlamaChatSession {
+impl<F: FloatDataType> LlamaChatSession<F> {
     #[allow(clippy::too_many_arguments)]
     /// Creates a new chat history.
-    fn new(session: LlamaSession<half::f16>) -> Self {
+    fn new(session: LlamaSession<F>) -> Self {
         Self {
             history: Vec::new(),
             session,

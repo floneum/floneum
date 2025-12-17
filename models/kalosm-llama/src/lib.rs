@@ -55,6 +55,9 @@ use tokenizers::Tokenizer;
 /// Re-export half::f16 for users who want to use f16 activation types
 pub use half::f16;
 
+/// Re-export fusor_core types needed for the activation type generic
+pub use fusor_core::{CastTensor, FloatDataType};
+
 /// A prelude of commonly used items in kalosm-llama.
 pub mod prelude {
     pub use crate::session::LlamaSession;
@@ -62,33 +65,46 @@ pub mod prelude {
     pub use kalosm_language_model::*;
 }
 
-enum Task {
-    UnstructuredGeneration(UnstructuredGenerationTask),
-    StructuredGeneration(StructuredGenerationTask),
+enum Task<F: FloatDataType = half::f16> {
+    UnstructuredGeneration(UnstructuredGenerationTask<F>),
+    StructuredGeneration(StructuredGenerationTask<F>),
 }
 
-struct StructuredGenerationTask {
-    runner: Box<dyn FnOnce(&mut LlamaModel) + Send>,
+struct StructuredGenerationTask<F: FloatDataType = half::f16> {
+    runner: Box<dyn FnOnce(&mut LlamaModel<F>) + Send>,
 }
 
-struct UnstructuredGenerationTask {
-    settings: InferenceSettings,
+struct UnstructuredGenerationTask<F: FloatDataType = half::f16> {
+    settings: InferenceSettings<F>,
     on_token: Box<dyn FnMut(String) -> Result<(), LlamaModelError> + Send + Sync>,
     finished: tokio::sync::oneshot::Sender<Result<(), LlamaModelError>>,
 }
 
 /// A quantized Llama language model with support for streaming generation.
-#[derive(Clone)]
-pub struct Llama {
-    config: Arc<LlamaConfig<half::f16>>,
+pub struct Llama<F: FloatDataType = half::f16> {
+    config: Arc<LlamaConfig<F>>,
     tokenizer: Arc<Tokenizer>,
-    task_sender: tokio::sync::mpsc::UnboundedSender<Task>,
+    task_sender: tokio::sync::mpsc::UnboundedSender<Task<F>>,
 }
 
-impl Llama {
+impl<F: FloatDataType> Clone for Llama<F> {
+    fn clone(&self) -> Self {
+        Self {
+            config: self.config.clone(),
+            tokenizer: self.tokenizer.clone(),
+            task_sender: self.task_sender.clone(),
+        }
+    }
+}
+
+impl<F: FloatDataType> Llama<F>
+where
+    F: FloatDataType + CastTensor<f32> + Send + Sync + 'static,
+    f32: CastTensor<F>,
+{
     /// Create a default chat model.
     pub async fn new_chat() -> Result<Self, LlamaSourceError> {
-        Llama::builder()
+        Self::builder()
             .with_source(LlamaSource::llama_3_1_8b_chat())
             .build()
             .await
@@ -96,7 +112,7 @@ impl Llama {
 
     /// Create a default phi-3 chat model.
     pub async fn phi_3() -> Result<Self, LlamaSourceError> {
-        Llama::builder()
+        Self::builder()
             .with_source(LlamaSource::phi_3_5_mini_4k_instruct())
             .build()
             .await
@@ -104,24 +120,30 @@ impl Llama {
 
     /// Create a default text generation model.
     pub async fn new() -> Result<Self, LlamaSourceError> {
-        Llama::builder()
+        Self::builder()
             .with_source(LlamaSource::llama_8b())
             .build()
             .await
     }
 
+    /// Create a new builder for a Llama model.
+    pub fn builder() -> LlamaBuilder<F> {
+        LlamaBuilder::default()
+    }
+}
+
+impl<F> Llama<F>
+where
+    F: FloatDataType + CastTensor<f32> + Send + Sync + 'static,
+    f32: CastTensor<F>,
+{
     /// Get the tokenizer for the model.
     pub fn tokenizer(&self) -> &Arc<Tokenizer> {
         &self.tokenizer
     }
 
-    /// Create a new builder for a Llama model.
-    pub fn builder() -> LlamaBuilder {
-        LlamaBuilder::default()
-    }
-
     #[allow(clippy::too_many_arguments)]
-    fn from_build(mut model: LlamaModel) -> Self {
+    fn from_build(mut model: LlamaModel<F>) -> Self {
         let (task_sender, mut task_receiver) = tokio::sync::mpsc::unbounded_channel();
         let config = model.model.config.clone();
         let tokenizer = model.tokenizer.clone();
@@ -170,7 +192,11 @@ impl Llama {
     }
 }
 
-impl Deref for Llama {
+impl<F> Deref for Llama<F>
+where
+    F: FloatDataType + CastTensor<f32> + Send + Sync + 'static,
+    f32: CastTensor<F>,
+{
     type Target = dyn Fn(&str) -> TextCompletionBuilder<Self>;
 
     fn deref(&self) -> &Self::Target {
@@ -210,14 +236,25 @@ impl Deref for Llama {
 }
 
 /// A builder with configuration for a Llama model.
-#[derive(Default)]
-pub struct LlamaBuilder {
+pub struct LlamaBuilder<F: FloatDataType = half::f16> {
     source: source::LlamaSource,
     device: Option<Device>,
     flash_attn: bool,
+    _marker: std::marker::PhantomData<F>,
 }
 
-impl LlamaBuilder {
+impl<F: FloatDataType> Default for LlamaBuilder<F> {
+    fn default() -> Self {
+        Self {
+            source: Default::default(),
+            device: None,
+            flash_attn: false,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<F: FloatDataType> LlamaBuilder<F> {
     /// Set the source for the model.
     pub fn with_source(mut self, source: source::LlamaSource) -> Self {
         self.source = source;
@@ -243,7 +280,13 @@ impl LlamaBuilder {
             None => Ok(Device::new().await?),
         }
     }
+}
 
+impl<F: FloatDataType> LlamaBuilder<F>
+where
+    F: CastTensor<f32> + Send + Sync + 'static,
+    f32: CastTensor<F>,
+{
     /// Build the model with a handler for progress as the download and loading progresses.
     ///
     /// ```rust, no_run
@@ -274,20 +317,20 @@ impl LlamaBuilder {
     pub async fn build_with_loading_handler(
         self,
         handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
-    ) -> Result<Llama, LlamaSourceError> {
+    ) -> Result<Llama<F>, LlamaSourceError> {
         let model = LlamaModel::from_builder(self, handler).await?;
 
         Ok(Llama::from_build(model))
     }
 
     /// Build the model (this will download the model if it is not already downloaded)
-    pub async fn build(self) -> Result<Llama, LlamaSourceError> {
+    pub async fn build(self) -> Result<Llama<F>, LlamaSourceError> {
         self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator())
             .await
     }
 }
 
-pub(crate) struct InferenceSettings {
+pub(crate) struct InferenceSettings<F: FloatDataType = half::f16> {
     /// The prompt to use.
     prompt: String,
 
@@ -301,7 +344,7 @@ pub(crate) struct InferenceSettings {
     sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler>>,
 
     /// The session to use.
-    session: LlamaSession<half::f16>,
+    session: LlamaSession<F>,
 
     /// The maximum number of tokens to generate.
     max_tokens: u32,
@@ -310,11 +353,11 @@ pub(crate) struct InferenceSettings {
     seed: Option<u64>,
 }
 
-impl InferenceSettings {
+impl<F: FloatDataType> InferenceSettings<F> {
     pub fn new(
         prompt: impl ToString,
         images: Vec<(image::DynamicImage, MediaHints)>,
-        session: LlamaSession<half::f16>,
+        session: LlamaSession<F>,
         sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler>>,
         max_tokens: u32,
         stop_on: Option<String>,

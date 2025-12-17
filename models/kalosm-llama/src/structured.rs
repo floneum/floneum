@@ -1,3 +1,4 @@
+use fusor_core::{CastTensor, FloatDataType};
 use kalosm_language_model::{ContentChunk, MessageContent};
 use kalosm_sample::CreateParserState;
 use kalosm_sample::{LiteralParser, ParseStatus, Parser, ParserExt};
@@ -16,17 +17,21 @@ use crate::token_stream::TokenOutputStream;
 use crate::{LlamaModel, LlamaSession};
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn generate_structured<P: Parser>(
+pub(crate) fn generate_structured<F: FloatDataType, P: Parser>(
     prompt: MessageContent,
-    llm: &LlamaModel,
-    session: &mut LlamaSession<half::f16>,
+    llm: &LlamaModel<F>,
+    session: &mut LlamaSession<F>,
     parser: P,
     parser_state: P::PartialState,
     mut sampler: Arc<Mutex<dyn Sampler>>,
     mut on_token: impl FnMut(String) -> Result<(), LlamaModelError>,
     top_k: Option<usize>,
     seed: Option<u64>,
-) -> Result<P::Output, LlamaModelError> {
+) -> Result<P::Output, LlamaModelError>
+where
+    F: CastTensor<f32> + Send + Sync + 'static,
+    f32: CastTensor<F>,
+{
     let eos_token = llm.model.config.stop_token_string.clone();
     let mut on_token = move |tok: String| {
         if tok == eos_token {
