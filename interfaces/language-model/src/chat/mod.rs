@@ -156,66 +156,6 @@ pub trait ChatSession {
     /// The type of error the chat session may return during operations.
     type Error: Send + Sync + 'static;
 
-    /// Serialize the session into bytes.
-    fn write_to(&self, into: &mut Vec<u8>) -> Result<(), Self::Error>;
-
-    /// # Loading sessions
-    ///
-    /// Sessions can be deserialized to and from bytes using the [`ChatSession::from_bytes`] method.
-    /// Caching a session avoids re-processing the text again when the session is resumed.
-    ///
-    /// ```rust, no_run
-    /// use kalosm::language::*;
-    ///
-    /// #[tokio::main]
-    /// async fn main() {
-    ///     let mut llm = Llama::new_chat().await.unwrap();
-    ///     let mut chat = llm.chat();
-    ///
-    ///     // Feed some text into the session
-    ///     chat(&"What is the capital of France?").await.unwrap();
-    ///
-    ///     // Save the session to bytes
-    ///     let session = chat.session().unwrap();
-    ///     let session_as_bytes = session.to_bytes().unwrap();
-    ///
-    ///     // And write those bytes to a file
-    ///     std::fs::write("session.bin", session_as_bytes).unwrap();
-    /// }
-    /// ```
-    fn to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
-        let mut bytes = Vec::new();
-        self.write_to(&mut bytes)?;
-        Ok(bytes)
-    }
-
-    /// # Loading sessions
-    ///
-    /// Sessions can be deserialized to and from bytes using the [`ChatSession::from_bytes`] method.
-    /// Caching a session avoids re-processing the text again when the session is resumed.
-    ///
-    /// ```rust, no_run
-    /// use kalosm::language::*;
-    ///
-    /// #[tokio::main]
-    /// async fn main() {
-    ///     let mut llm = Llama::new_chat().await.unwrap();
-    ///     // Load a chat session from a file
-    ///     let session =
-    ///         LlamaChatSession::from_bytes(std::fs::read("session.bin").unwrap().as_slice()).unwrap();
-    ///     let mut chat = llm.chat().with_session(session);
-    ///
-    ///     // Feed some more text into the session
-    ///     chat(&"What was my first question?")
-    ///         .to_std_out()
-    ///         .await
-    ///         .unwrap();
-    /// }
-    /// ```
-    fn from_bytes(bytes: &[u8]) -> Result<Self, Self::Error>
-    where
-        Self: std::marker::Sized;
-
     /// # Session History
     ///
     /// Get the history of the session. The history is a list of messages that have been sent to the model.

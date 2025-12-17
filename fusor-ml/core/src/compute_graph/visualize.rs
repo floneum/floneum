@@ -60,11 +60,7 @@ impl GraphVisPass {
 
     fn visit_nary(&mut self, key: NodeIndex, operation: &crate::nary_wise::NaryOperation) {
         let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
-        let id = Identity::quoted(format!(
-            "nary ({}) #{:?}",
-            output_layout,
-            key
-        ));
+        let id = Identity::quoted(format!("nary ({}) #{:?}", output_layout, key));
         self.statements.push(Stmt::Node {
             id: id.clone(),
             port: None,

@@ -27,26 +27,6 @@ pub struct LlamaSession<F: FloatDataType = f32> {
 impl<F: FloatDataType> TextCompletionSession for LlamaSession<F> {
     type Error = LlamaSessionLoadingError;
 
-    fn write_to(&self, _into: &mut Vec<u8>) -> Result<(), Self::Error> {
-        // let device = fusor_core::Device::new();
-        // let tensors = self.get_tensor_map(&device);
-        // let bytes = safetensors::serialize(&tensors, &None)?;
-        // into.extend_from_slice(&bytes);
-        // Ok(())
-        todo!()
-    }
-
-    fn from_bytes(_bytes: &[u8]) -> Result<Self, Self::Error>
-    where
-        Self: std::marker::Sized,
-    {
-        // let device = fusor_core::Device::new();
-        // let tensors = fusor_core::safetensors::load_buffer(bytes, &device)?;
-
-        // Ok(Self::from_tensor_map(tensors)?)
-        todo!()
-    }
-
     fn try_clone(&self) -> Result<Self, Self::Error>
     where
         Self: std::marker::Sized,

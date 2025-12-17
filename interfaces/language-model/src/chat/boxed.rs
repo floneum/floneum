@@ -152,28 +152,6 @@ impl Clone for BoxedChatSession {
 impl ChatSession for BoxedChatSession {
     type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 
-    fn write_to(&self, into: &mut Vec<u8>) -> Result<(), Self::Error> {
-        self.session.write_to_boxed(into)
-    }
-
-    fn from_bytes(_: &[u8]) -> Result<Self, Self::Error>
-    where
-        Self: std::marker::Sized,
-    {
-        #[derive(Debug)]
-        struct FromBytesNotSupported;
-
-        impl std::error::Error for FromBytesNotSupported {}
-
-        impl std::fmt::Display for FromBytesNotSupported {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "FromBytesNotSupported")
-            }
-        }
-
-        Err(Box::new(FromBytesNotSupported))
-    }
-
     fn history(&self) -> Vec<super::ChatMessage> {
         self.session.history_boxed()
     }
@@ -183,10 +161,6 @@ impl ChatSession for BoxedChatSession {
         Self: std::marker::Sized,
     {
         self.session.try_clone_boxed()
-    }
-
-    fn to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
-        self.session.to_bytes_boxed()
     }
 }
 
@@ -226,19 +200,11 @@ where
 }
 
 trait DynChatSession {
-    fn write_to_boxed(
-        &self,
-        into: &mut Vec<u8>,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>;
-
     fn history_boxed(&self) -> Vec<super::ChatMessage>;
 
     fn try_clone_boxed(
         &self,
     ) -> Result<BoxedChatSession, Box<dyn std::error::Error + Send + Sync + 'static>>;
-
-    fn to_bytes_boxed(&self)
-        -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync + 'static>>;
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 
@@ -246,14 +212,6 @@ trait DynChatSession {
 }
 
 impl<S: ChatSession<Error: Error> + Send + Sync + Clone + 'static> DynChatSession for S {
-    fn write_to_boxed(
-        &self,
-        into: &mut Vec<u8>,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-        self.write_to(into)
-            .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)
-    }
-
     fn history_boxed(&self) -> Vec<super::ChatMessage> {
         self.history()
     }
@@ -266,13 +224,6 @@ impl<S: ChatSession<Error: Error> + Send + Sync + Clone + 'static> DynChatSessio
             .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)?;
         let session = Box::new(session) as Box<dyn DynChatSession + Send + Sync>;
         Ok(BoxedChatSession { session })
-    }
-
-    fn to_bytes_boxed(
-        &self,
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync + 'static>> {
-        self.to_bytes()
-            .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)
     }
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {

@@ -45,7 +45,6 @@ impl IndexSelectOperation {
         self.datatype
     }
 
-
     pub(crate) fn rank(&self) -> usize {
         self.value_shape.len()
     }

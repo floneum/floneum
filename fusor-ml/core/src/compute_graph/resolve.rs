@@ -487,7 +487,9 @@ impl<'a> Resolver<'a> {
             let Some(input_exec) = self.get_input_node_in_exec_graph(input_inner) else {
                 continue;
             };
-            let ComputeGraphNodeVariant::Nary(input_nary) = &self.execution_graph[input_exec].variant else {
+            let ComputeGraphNodeVariant::Nary(input_nary) =
+                &self.execution_graph[input_exec].variant
+            else {
                 continue;
             };
 
@@ -539,19 +541,29 @@ impl<'a> Resolver<'a> {
         match expr {
             NaryExpr::Input(idx) => NaryExpr::Input(idx + offset),
             NaryExpr::Op { children, function } => NaryExpr::Op {
-                children: children.iter().map(|c| Self::offset_input_indices(c, offset)).collect(),
+                children: children
+                    .iter()
+                    .map(|c| Self::offset_input_indices(c, offset))
+                    .collect(),
                 function: function.clone(),
             },
         }
     }
 
     /// Substitute Input(target_idx) with the replacement expression.
-    fn substitute_input_in_expr(expr: &NaryExpr, target_idx: usize, replacement: &NaryExpr) -> NaryExpr {
+    fn substitute_input_in_expr(
+        expr: &NaryExpr,
+        target_idx: usize,
+        replacement: &NaryExpr,
+    ) -> NaryExpr {
         match expr {
             NaryExpr::Input(idx) if *idx == target_idx => replacement.clone(),
             NaryExpr::Input(idx) => NaryExpr::Input(*idx),
             NaryExpr::Op { children, function } => NaryExpr::Op {
-                children: children.iter().map(|c| Self::substitute_input_in_expr(c, target_idx, replacement)).collect(),
+                children: children
+                    .iter()
+                    .map(|c| Self::substitute_input_in_expr(c, target_idx, replacement))
+                    .collect(),
                 function: function.clone(),
             },
         }
@@ -586,7 +598,9 @@ impl<'a> Resolver<'a> {
 
     fn collect_used_inputs(expr: &NaryExpr, used: &mut FxHashSet<usize>) {
         match expr {
-            NaryExpr::Input(idx) => { used.insert(*idx); }
+            NaryExpr::Input(idx) => {
+                used.insert(*idx);
+            }
             NaryExpr::Op { children, .. } => {
                 for child in children {
                     Self::collect_used_inputs(child, used);
@@ -599,14 +613,19 @@ impl<'a> Resolver<'a> {
         match expr {
             NaryExpr::Input(idx) => NaryExpr::Input(mapping[idx]),
             NaryExpr::Op { children, function } => NaryExpr::Op {
-                children: children.iter().map(|c| Self::remap_input_indices(c, mapping)).collect(),
+                children: children
+                    .iter()
+                    .map(|c| Self::remap_input_indices(c, mapping))
+                    .collect(),
                 function: function.clone(),
             },
         }
     }
 
     /// Try to extract ElementWiseOperation from a node variant (either ElementWise or Nary with single input).
-    fn try_get_elementwise(variant: &ComputeGraphNodeVariant) -> Option<crate::ElementWiseOperation> {
+    fn try_get_elementwise(
+        variant: &ComputeGraphNodeVariant,
+    ) -> Option<crate::ElementWiseOperation> {
         match variant {
             ComputeGraphNodeVariant::Nary(nary) => nary.try_into_elementwise_op(),
             _ => None,
@@ -641,17 +660,16 @@ impl<'a> Resolver<'a> {
         let mut new_reduce = reduce_op.clone();
         let mut existing_post = new_reduce.post_element_wise.functions.clone();
         existing_post.extend(el_op.functions.functions.iter().cloned());
-        new_reduce.post_element_wise = ElementWiseFunctions::new(
-            existing_post,
-            reduce_op.post_element_wise.input_datatype(),
-        );
+        new_reduce.post_element_wise =
+            ElementWiseFunctions::new(existing_post, reduce_op.post_element_wise.input_datatype());
 
         self.execution_graph[node_idx].variant =
             ComputeGraphNodeVariant::Reduce(new_reduce.clone());
 
         let reduce_input_inner = reduce_op.value;
         if let Some(reduce_input_exec) = self.get_input_node_in_exec_graph(reduce_input_inner) {
-            self.execution_graph.add_edge(reduce_input_exec, node_idx, ());
+            self.execution_graph
+                .add_edge(reduce_input_exec, node_idx, ());
         }
 
         if let Some(edge) = self.execution_graph.find_edge(input_exec_idx, node_idx) {
@@ -694,10 +712,15 @@ impl<'a> Resolver<'a> {
                         if let Some(idx) = self.get_input_node_in_exec_graph(second_inner) {
                             self.execution_graph.add_edge(idx, node_idx, ());
                         }
-                        if let Some(edge) = self.execution_graph.find_edge(input_exec_idx, node_idx) {
+                        if let Some(edge) = self.execution_graph.find_edge(input_exec_idx, node_idx)
+                        {
                             self.execution_graph.remove_edge(edge);
                         }
-                        self.add_physical_dependencies(graph, node_idx, &[first_inner, second_inner]);
+                        self.add_physical_dependencies(
+                            graph,
+                            node_idx,
+                            &[first_inner, second_inner],
+                        );
                         self.remove_node_if_dead(input_exec_idx);
                         return true;
                     }
@@ -713,11 +736,14 @@ impl<'a> Resolver<'a> {
             // Check first input
             if !self.check_cached(graph, matmul_op.first) {
                 if let Some(first_exec) = self.get_input_node_in_exec_graph(matmul_op.first) {
-                    if let Some(el_op) = Self::try_get_elementwise(&self.execution_graph[first_exec].variant) {
+                    if let Some(el_op) =
+                        Self::try_get_elementwise(&self.execution_graph[first_exec].variant)
+                    {
                         new_matmul.first = el_op.value;
                         let mut funcs = el_op.functions.functions.clone();
                         funcs.extend(new_matmul.pre_element_wise[0].functions.iter().cloned());
-                        new_matmul.pre_element_wise[0] = ElementWiseFunctions::new(funcs, el_op.input_datatype());
+                        new_matmul.pre_element_wise[0] =
+                            ElementWiseFunctions::new(funcs, el_op.input_datatype());
                         changed = true;
                     }
                 }
@@ -726,18 +752,22 @@ impl<'a> Resolver<'a> {
             // Check second input
             if !self.check_cached(graph, matmul_op.second) {
                 if let Some(second_exec) = self.get_input_node_in_exec_graph(matmul_op.second) {
-                    if let Some(el_op) = Self::try_get_elementwise(&self.execution_graph[second_exec].variant) {
+                    if let Some(el_op) =
+                        Self::try_get_elementwise(&self.execution_graph[second_exec].variant)
+                    {
                         new_matmul.second = el_op.value;
                         let mut funcs = el_op.functions.functions.clone();
                         funcs.extend(new_matmul.pre_element_wise[1].functions.iter().cloned());
-                        new_matmul.pre_element_wise[1] = ElementWiseFunctions::new(funcs, el_op.input_datatype());
+                        new_matmul.pre_element_wise[1] =
+                            ElementWiseFunctions::new(funcs, el_op.input_datatype());
                         changed = true;
                     }
                 }
             }
 
             if changed {
-                self.execution_graph[node_idx].variant = ComputeGraphNodeVariant::MatMul(new_matmul.clone());
+                self.execution_graph[node_idx].variant =
+                    ComputeGraphNodeVariant::MatMul(new_matmul.clone());
 
                 if new_matmul.first != matmul_op.first {
                     let old = self.get_input_node_in_exec_graph(matmul_op.first).unwrap();
@@ -759,7 +789,11 @@ impl<'a> Resolver<'a> {
                     }
                     self.remove_node_if_dead(old);
                 }
-                self.add_physical_dependencies(graph, node_idx, &[new_matmul.first, new_matmul.second]);
+                self.add_physical_dependencies(
+                    graph,
+                    node_idx,
+                    &[new_matmul.first, new_matmul.second],
+                );
                 return true;
             }
         }
@@ -819,11 +853,14 @@ impl<'a> Resolver<'a> {
 
             if !self.check_cached(graph, op.input) {
                 if let Some(input_exec) = self.get_input_node_in_exec_graph(op.input) {
-                    if let Some(el_op) = Self::try_get_elementwise(&self.execution_graph[input_exec].variant) {
+                    if let Some(el_op) =
+                        Self::try_get_elementwise(&self.execution_graph[input_exec].variant)
+                    {
                         new_op.input = el_op.value;
                         let mut funcs = el_op.functions.functions.clone();
                         funcs.extend(new_op.pre_element_wise_input.functions.iter().cloned());
-                        new_op.pre_element_wise_input = ElementWiseFunctions::new(funcs, el_op.input_datatype());
+                        new_op.pre_element_wise_input =
+                            ElementWiseFunctions::new(funcs, el_op.input_datatype());
                         changed = true;
                     }
                 }
@@ -831,18 +868,22 @@ impl<'a> Resolver<'a> {
 
             if !self.check_cached(graph, op.indexes) {
                 if let Some(indexes_exec) = self.get_input_node_in_exec_graph(op.indexes) {
-                    if let Some(el_op) = Self::try_get_elementwise(&self.execution_graph[indexes_exec].variant) {
+                    if let Some(el_op) =
+                        Self::try_get_elementwise(&self.execution_graph[indexes_exec].variant)
+                    {
                         new_op.indexes = el_op.value;
                         let mut funcs = el_op.functions.functions.clone();
                         funcs.extend(new_op.pre_element_wise_indexes.functions.iter().cloned());
-                        new_op.pre_element_wise_indexes = ElementWiseFunctions::new(funcs, el_op.input_datatype());
+                        new_op.pre_element_wise_indexes =
+                            ElementWiseFunctions::new(funcs, el_op.input_datatype());
                         changed = true;
                     }
                 }
             }
 
             if changed {
-                self.execution_graph[node_idx].variant = ComputeGraphNodeVariant::IndexSelect(new_op.clone());
+                self.execution_graph[node_idx].variant =
+                    ComputeGraphNodeVariant::IndexSelect(new_op.clone());
                 if new_op.input != op.input {
                     let old = self.get_input_node_in_exec_graph(op.input).unwrap();
                     if let Some(edge) = self.execution_graph.find_edge(old, node_idx) {
@@ -877,9 +918,11 @@ impl<'a> Resolver<'a> {
                         let mut new_idx_op = idx_op.clone();
                         let mut funcs = new_idx_op.pre_element_wise_input.functions.clone();
                         funcs.extend(el_op.functions.functions.iter().cloned());
-                        new_idx_op.pre_element_wise_input = ElementWiseFunctions::new(funcs, idx_op.input_datatype());
+                        new_idx_op.pre_element_wise_input =
+                            ElementWiseFunctions::new(funcs, idx_op.input_datatype());
 
-                        self.execution_graph[node_idx].variant = ComputeGraphNodeVariant::IndexSelect(new_idx_op.clone());
+                        self.execution_graph[node_idx].variant =
+                            ComputeGraphNodeVariant::IndexSelect(new_idx_op.clone());
 
                         if let Some(idx) = self.get_input_node_in_exec_graph(idx_op.input) {
                             self.execution_graph.add_edge(idx, node_idx, ());
@@ -890,7 +933,11 @@ impl<'a> Resolver<'a> {
                         if let Some(edge) = self.execution_graph.find_edge(input_exec, node_idx) {
                             self.execution_graph.remove_edge(edge);
                         }
-                        self.add_physical_dependencies(graph, node_idx, &[idx_op.input, idx_op.indexes]);
+                        self.add_physical_dependencies(
+                            graph,
+                            node_idx,
+                            &[idx_op.input, idx_op.indexes],
+                        );
                         self.remove_node_if_dead(input_exec);
                         return true;
                     }

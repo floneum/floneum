@@ -165,20 +165,6 @@ impl AnthropicCompatibleChatSession {
 impl ChatSession for AnthropicCompatibleChatSession {
     type Error = serde_json::Error;
 
-    fn write_to(&self, into: &mut Vec<u8>) -> Result<(), Self::Error> {
-        let json = serde_json::to_vec(self)?;
-        into.extend_from_slice(&json);
-        Ok(())
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Result<Self, Self::Error>
-    where
-        Self: std::marker::Sized,
-    {
-        let json = serde_json::from_slice(bytes)?;
-        Ok(json)
-    }
-
     fn history(&self) -> Vec<crate::ChatMessage> {
         self.messages.clone()
     }
