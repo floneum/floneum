@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::fmt::Write;
 use std::sync::Arc;
 
@@ -293,43 +294,58 @@ impl<'a> Resolver<'a> {
     // --- Rewrite Engine ---
 
     fn optimize(&mut self, graph: &mut ComputeGraphInner) {
-        let mut changed = true;
-        while changed {
-            changed = false;
-            let nodes: Vec<_> = self.execution_graph.node_indices().collect();
+        // Initialize worklist with all nodes
+        let mut worklist: VecDeque<ExecutionNodeIndex> =
+            self.execution_graph.node_indices().collect();
+        let mut in_worklist: FxHashSet<ExecutionNodeIndex> = worklist.iter().copied().collect();
 
-            for node_idx in nodes {
-                if !self.execution_graph.contains_node(node_idx) {
-                    continue;
+        while let Some(node_idx) = worklist.pop_front() {
+            in_worklist.remove(&node_idx);
+
+            if !self.execution_graph.contains_node(node_idx) {
+                continue;
+            }
+
+            // Collect neighbors before optimization (they may need re-processing)
+            let neighbors: Vec<_> = self
+                .execution_graph
+                .neighbors_undirected(node_idx)
+                .collect();
+
+            let changed = self.try_fuse_into_nary(graph, node_idx)
+                || self.try_convert_pairwise_to_elementwise(graph, node_idx)
+                || self.try_fuse_element_wise_chain(graph, node_idx)
+                || self.try_fuse_into_reduce(graph, node_idx)
+                || self.try_fuse_into_matmul(graph, node_idx)
+                || self.try_fuse_into_dequantize(graph, node_idx)
+                || self.try_fuse_into_index_select(graph, node_idx);
+
+            if changed {
+                // Re-add the current node to worklist if it still exists
+                if self.execution_graph.contains_node(node_idx) && !in_worklist.contains(&node_idx)
+                {
+                    worklist.push_back(node_idx);
+                    in_worklist.insert(node_idx);
                 }
 
-                if self.try_fuse_into_nary(graph, node_idx) {
-                    changed = true;
-                    continue;
+                // Re-add neighbors that might be affected by this change
+                for neighbor in neighbors {
+                    if self.execution_graph.contains_node(neighbor)
+                        && !in_worklist.contains(&neighbor)
+                    {
+                        worklist.push_back(neighbor);
+                        in_worklist.insert(neighbor);
+                    }
                 }
-                if self.try_convert_pairwise_to_elementwise(graph, node_idx) {
-                    changed = true;
-                    continue;
-                }
-                if self.try_fuse_element_wise_chain(graph, node_idx) {
-                    changed = true;
-                    continue;
-                }
-                if self.try_fuse_into_reduce(graph, node_idx) {
-                    changed = true;
-                    continue;
-                }
-                if self.try_fuse_into_matmul(graph, node_idx) {
-                    changed = true;
-                    continue;
-                }
-                if self.try_fuse_into_dequantize(graph, node_idx) {
-                    changed = true;
-                    continue;
-                }
-                if self.try_fuse_into_index_select(graph, node_idx) {
-                    changed = true;
-                    continue;
+
+                // Also add new neighbors that may have been created
+                if self.execution_graph.contains_node(node_idx) {
+                    for neighbor in self.execution_graph.neighbors_undirected(node_idx) {
+                        if !in_worklist.contains(&neighbor) {
+                            worklist.push_back(neighbor);
+                            in_worklist.insert(neighbor);
+                        }
+                    }
                 }
             }
         }
