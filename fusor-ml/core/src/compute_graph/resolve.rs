@@ -8,7 +8,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use wgpu::CommandEncoder;
 
 use crate::{
-    ElementWiseFunctions, ElementWiseOperation,
+    ElementWiseFunctions,
     mir::{
         inputs::{KernelInputValue, MirValue},
         kernel::GenericKernel,
@@ -312,13 +312,15 @@ impl<'a> Resolver<'a> {
                 .neighbors_undirected(node_idx)
                 .collect();
 
-            let changed = self.try_fuse_into_nary(graph, node_idx)
-                || self.try_convert_pairwise_to_elementwise(graph, node_idx)
-                || self.try_fuse_element_wise_chain(graph, node_idx)
-                || self.try_fuse_into_reduce(graph, node_idx)
+            // First try to fuse elementwise into specialized ops (reduce, matmul, etc.)
+            // Then convert remaining elementwise/pairwise to nary and fuse naries together
+            let changed = self.try_fuse_into_reduce(graph, node_idx)
                 || self.try_fuse_into_matmul(graph, node_idx)
                 || self.try_fuse_into_dequantize(graph, node_idx)
-                || self.try_fuse_into_index_select(graph, node_idx);
+                || self.try_fuse_into_index_select(graph, node_idx)
+                || self.try_convert_elementwise_to_nary(graph, node_idx)
+                || self.try_convert_pairwise_to_nary(graph, node_idx)
+                || self.try_fuse_naries(graph, node_idx);
 
             if changed {
                 // Re-add the current node to worklist if it still exists
@@ -397,323 +399,209 @@ impl<'a> Resolver<'a> {
 
     // Rules
 
-    /// Fuse chains of PairWise and ElementWise operations into a single Nary operation.
-    /// This allows combining operations like `(a + b) * c` into one kernel.
-    fn try_fuse_into_nary(
+    /// Convert an ElementWise operation to a simple Nary operation with one input.
+    fn try_convert_elementwise_to_nary(
         &mut self,
         graph: &mut ComputeGraphInner,
         node_idx: ExecutionNodeIndex,
     ) -> bool {
         let node_variant = self.execution_graph[node_idx].variant.clone();
 
-        match &node_variant {
-            ComputeGraphNodeVariant::PairWise(op) => {
-                self.try_fuse_pairwise_into_nary(graph, node_idx, op.clone())
-            }
-            ComputeGraphNodeVariant::ElementWise(op) => {
-                self.try_fuse_elementwise_into_nary(graph, node_idx, op.clone())
-            }
-            _ => false,
-        }
-    }
-
-    fn try_fuse_pairwise_into_nary(
-        &mut self,
-        graph: &mut ComputeGraphInner,
-        node_idx: ExecutionNodeIndex,
-        op: crate::PairWiseOperation,
-    ) -> bool {
-        let (first, second, shape, output_datatype, function) = (
-            op.first,
-            op.second,
-            op.shape(),
-            op.function.datatype,
-            op.function.clone(),
-        );
-
-        // Check if at least one input can be fused
-        let first_can_fuse = self.can_fuse_into_nary(graph, first);
-        let second_can_fuse = self.can_fuse_into_nary(graph, second);
-
-        if !first_can_fuse && !second_can_fuse {
+        let ComputeGraphNodeVariant::ElementWise(op) = node_variant else {
             return false;
-        }
-
-        // Collect all inputs and build expression tree
-        let mut inputs = Vec::new();
-        let left_expr = self.collect_nary_expr_recursive(graph, first, &mut inputs);
-        let right_expr = self.collect_nary_expr_recursive(graph, second, &mut inputs);
-
-        let expression = NaryExpr::Op {
-            children: vec![left_expr, right_expr],
-            function: function.to_nary_function(output_datatype, output_datatype),
         };
 
-        let nary = NaryOperation {
-            inputs: inputs.clone(),
-            expression,
-            shape: shape.into(),
-            output_datatype,
-        };
-
-        // Update the node to be an Nary operation
-        self.execution_graph[node_idx].variant = ComputeGraphNodeVariant::Nary(nary.clone());
-
-        // Remove edges from old inputs
-        if let Some(first_exec) = self.get_input_node_in_exec_graph(first) {
-            if let Some(edge) = self.execution_graph.find_edge(first_exec, node_idx) {
-                self.execution_graph.remove_edge(edge);
-            }
-        }
-        if let Some(second_exec) = self.get_input_node_in_exec_graph(second) {
-            if let Some(edge) = self.execution_graph.find_edge(second_exec, node_idx) {
-                self.execution_graph.remove_edge(edge);
-            }
-        }
-
-        // Add edges from new inputs (the leaves of the expression tree)
-        for input in &inputs {
-            if let Some(input_exec) = self.get_input_node_in_exec_graph(*input) {
-                self.execution_graph.add_edge(input_exec, node_idx, ());
-            }
-        }
-
-        self.add_physical_dependencies(graph, node_idx, &nary.inputs);
-
-        // Remove dead intermediate nodes
-        if let Some(first_exec) = self.get_input_node_in_exec_graph(first) {
-            self.remove_node_if_dead(first_exec);
-        }
-        if let Some(second_exec) = self.get_input_node_in_exec_graph(second) {
-            self.remove_node_if_dead(second_exec);
-        }
-
-        true
-    }
-
-    fn try_fuse_elementwise_into_nary(
-        &mut self,
-        graph: &mut ComputeGraphInner,
-        node_idx: ExecutionNodeIndex,
-        op: crate::ElementWiseOperation,
-    ) -> bool {
-        let input_inner = op.value;
-
-        // Check if the input can be fused (is a PairWise or ElementWise that we can absorb)
-        if !self.can_fuse_into_nary(graph, input_inner) {
-            return false;
-        }
-
-        // Collect all inputs and build expression tree
-        let mut inputs = Vec::new();
-        let child_expr = self.collect_nary_expr_recursive(graph, input_inner, &mut inputs);
-        let expression = self.wrap_with_element_wise_functions(child_expr, &op.functions);
-
+        let inputs = vec![op.value];
+        let expression = self.wrap_with_element_wise_functions(NaryExpr::Input(0), &op.functions);
         let shape: Box<[_]> = op.shape().into();
         let output_datatype = op.functions.out_datatype();
 
         let nary = NaryOperation {
-            inputs: inputs.clone(),
+            inputs,
             expression,
             shape,
             output_datatype,
         };
 
-        // Update the node to be an Nary operation
         self.execution_graph[node_idx].variant = ComputeGraphNodeVariant::Nary(nary.clone());
-
-        // Remove edge from old input
-        if let Some(input_exec) = self.get_input_node_in_exec_graph(input_inner) {
-            if let Some(edge) = self.execution_graph.find_edge(input_exec, node_idx) {
-                self.execution_graph.remove_edge(edge);
-            }
-        }
-
-        // Add edges from new inputs (the leaves of the expression tree)
-        for input in &inputs {
-            if let Some(input_exec) = self.get_input_node_in_exec_graph(*input) {
-                self.execution_graph.add_edge(input_exec, node_idx, ());
-            }
-        }
-
         self.add_physical_dependencies(graph, node_idx, &nary.inputs);
-
-        // Remove dead intermediate nodes
-        if let Some(input_exec) = self.get_input_node_in_exec_graph(input_inner) {
-            self.remove_node_if_dead(input_exec);
-        }
 
         true
     }
 
-    /// Check if a node can be fused into a parent nary operation
-    fn can_fuse_into_nary(&self, graph: &ComputeGraphInner, inner_idx: NodeIndex) -> bool {
-        // Don't fuse cached results
-        if self.check_cached(graph, inner_idx) {
-            return false;
-        }
-
-        // Get the execution node
-        let exec_idx = match self.get_input_node_in_exec_graph(inner_idx) {
-            Some(idx) => idx,
-            None => return false,
-        };
-
-        // Note: We allow nodes with multiple consumers to be fused.
-        // If a node is used multiple times in the expression tree, the subexpression
-        // will be computed multiple times. This is typically fine for elementwise ops
-        // as the kernel launch overhead savings outweigh the extra computation.
-
-        let variant = &self.execution_graph[exec_idx].variant;
-        matches!(
-            variant,
-            ComputeGraphNodeVariant::PairWise(_) | ComputeGraphNodeVariant::ElementWise(_)
-        )
-    }
-
-    /// Recursively collect expression tree from execution graph
-    fn collect_nary_expr_recursive(
-        &self,
-        graph: &ComputeGraphInner,
-        inner_idx: NodeIndex,
-        inputs: &mut Vec<NodeIndex>,
-    ) -> NaryExpr {
-        // If this is cached or not in execution graph, it's a leaf input
-        if self.check_cached(graph, inner_idx) {
-            return self.add_nary_leaf_input(inner_idx, inputs);
-        }
-
-        let exec_idx = match self.get_input_node_in_exec_graph(inner_idx) {
-            Some(idx) => idx,
-            None => return self.add_nary_leaf_input(inner_idx, inputs),
-        };
-
-        // Note: We don't check consumer count here. Even if a node has multiple consumers,
-        // we allow it to be inlined. The subexpression will be computed multiple times
-        // in the kernel, but this is typically faster than launching a separate kernel.
-
-        let variant = self.execution_graph[exec_idx].variant.clone();
-
-        match variant {
-            ComputeGraphNodeVariant::PairWise(op) => {
-                let left_expr = self.collect_nary_expr_recursive(graph, op.first, inputs);
-                let right_expr = self.collect_nary_expr_recursive(graph, op.second, inputs);
-
-                let ty = op.function.datatype;
-                NaryExpr::Op {
-                    children: vec![left_expr, right_expr],
-                    function: op.function.to_nary_function(ty, ty),
-                }
-            }
-            ComputeGraphNodeVariant::ElementWise(op) => {
-                let child_expr = self.collect_nary_expr_recursive(graph, op.value, inputs);
-                self.wrap_with_element_wise_functions(child_expr, &op.functions)
-            }
-            _ => self.add_nary_leaf_input(inner_idx, inputs),
-        }
-    }
-
-    /// Add a leaf input to the inputs list and return an Input expression
-    fn add_nary_leaf_input(&self, inner_idx: NodeIndex, inputs: &mut Vec<NodeIndex>) -> NaryExpr {
-        // Check if this input already exists (deduplication)
-        if let Some(idx) = inputs.iter().position(|&n| n == inner_idx) {
-            return NaryExpr::Input(idx);
-        }
-
-        let idx = inputs.len();
-        inputs.push(inner_idx);
-        NaryExpr::Input(idx)
-    }
-
-    fn try_convert_pairwise_to_elementwise(
+    /// Convert a PairWise operation to a simple Nary operation with two inputs.
+    fn try_convert_pairwise_to_nary(
         &mut self,
         graph: &mut ComputeGraphInner,
         node_idx: ExecutionNodeIndex,
     ) -> bool {
         let node_variant = self.execution_graph[node_idx].variant.clone();
 
-        if let ComputeGraphNodeVariant::PairWise(op) = node_variant {
-            let ty = op.function.datatype;
-            let expression = NaryExpr::Op {
-                children: vec![NaryExpr::Input(0), NaryExpr::Input(1)],
-                function: op.function.to_nary_function(ty, ty),
-            };
+        let ComputeGraphNodeVariant::PairWise(op) = node_variant else {
+            return false;
+        };
 
-            let inputs = vec![op.first, op.second];
-            let shape: Box<[_]> = op.shape().into();
-            let final_output_datatype = op.function.datatype;
-            let nary = NaryOperation {
-                inputs,
-                expression,
-                shape,
-                output_datatype: final_output_datatype,
-            };
+        let inputs = vec![op.first, op.second];
+        let ty = op.function.datatype;
+        let expression = NaryExpr::Op {
+            children: vec![NaryExpr::Input(0), NaryExpr::Input(1)],
+            function: op.function.to_nary_function(ty, ty),
+        };
+        let shape: Box<[_]> = op.shape().into();
 
-            if let Some(funcs) = nary.try_into_elementwise_op() {
-                let new_op = ElementWiseOperation::from_element_wise(
-                    funcs.value,
-                    funcs.functions,
-                    op.shape(),
-                );
-                self.execution_graph[node_idx].variant =
-                    ComputeGraphNodeVariant::ElementWise(new_op.clone());
-                self.add_physical_dependencies(graph, node_idx, &[new_op.value]);
-                return true;
-            }
-        }
-        false
+        let nary = NaryOperation {
+            inputs,
+            expression,
+            shape,
+            output_datatype: ty,
+        };
+
+        self.execution_graph[node_idx].variant = ComputeGraphNodeVariant::Nary(nary.clone());
+        self.add_physical_dependencies(graph, node_idx, &nary.inputs);
+
+        true
     }
 
-    fn try_fuse_element_wise_chain(
+    /// Fuse a Nary operation with all of its Nary inputs.
+    fn try_fuse_naries(
         &mut self,
         graph: &mut ComputeGraphInner,
         node_idx: ExecutionNodeIndex,
     ) -> bool {
         let node_variant = self.execution_graph[node_idx].variant.clone();
-        let (input_inner, funcs) = if let ComputeGraphNodeVariant::ElementWise(op) = node_variant {
-            (op.value, op.functions.clone())
-        } else {
+
+        let ComputeGraphNodeVariant::Nary(nary) = node_variant else {
             return false;
         };
 
-        if let Some(input_exec_idx) = self.get_input_node_in_exec_graph(input_inner) {
+        // Collect all fusible nary inputs
+        let mut expression = nary.expression.clone();
+        let mut all_inputs = nary.inputs.clone();
+        let mut fused_execs = Vec::new();
+
+        for (input_idx, &input_inner) in nary.inputs.iter().enumerate() {
             if self.check_cached(graph, input_inner) {
-                return false;
+                continue;
             }
+            let Some(input_exec) = self.get_input_node_in_exec_graph(input_inner) else {
+                continue;
+            };
+            let ComputeGraphNodeVariant::Nary(input_nary) = &self.execution_graph[input_exec].variant else {
+                continue;
+            };
 
-            let input_variant = self.execution_graph[input_exec_idx].variant.clone();
-            if let ComputeGraphNodeVariant::ElementWise(input_op) = input_variant {
-                let mut new_funcs = input_op.functions.functions.clone();
-                new_funcs.extend(funcs.functions.iter().cloned());
-                let new_functions =
-                    ElementWiseFunctions::new(new_funcs, input_op.functions.input_datatype());
+            // Inline: offset input nary's indices to append after current inputs
+            let offset = all_inputs.len();
+            let inlined = Self::offset_input_indices(&input_nary.expression, offset);
+            expression = Self::substitute_input_in_expr(&expression, input_idx, &inlined);
+            all_inputs.extend(input_nary.inputs.iter().copied());
+            fused_execs.push((input_exec, input_nary.inputs.clone()));
+        }
 
-                let new_op = ElementWiseOperation::from_element_wise(
-                    input_op.value,
-                    new_functions,
-                    input_op.shape(),
-                );
+        if fused_execs.is_empty() {
+            return false;
+        }
 
-                self.execution_graph[node_idx].variant =
-                    ComputeGraphNodeVariant::ElementWise(new_op.clone());
+        // Deduplicate and remove unused inputs
+        let (final_inputs, final_expression) = Self::deduplicate_inputs(all_inputs, expression);
 
-                let input_of_input_inner = input_op.value;
-                if let Some(input_of_input_exec) =
-                    self.get_input_node_in_exec_graph(input_of_input_inner)
-                {
-                    self.execution_graph
-                        .add_edge(input_of_input_exec, node_idx, ());
+        let new_nary = NaryOperation {
+            inputs: final_inputs.clone(),
+            expression: final_expression,
+            shape: nary.shape.clone(),
+            output_datatype: nary.output_datatype,
+        };
+
+        self.execution_graph[node_idx].variant = ComputeGraphNodeVariant::Nary(new_nary.clone());
+
+        // Update graph edges
+        for (input_exec, new_inputs) in fused_execs {
+            if let Some(edge) = self.execution_graph.find_edge(input_exec, node_idx) {
+                self.execution_graph.remove_edge(edge);
+            }
+            for &new_input in &new_inputs {
+                if let Some(exec) = self.get_input_node_in_exec_graph(new_input) {
+                    if self.execution_graph.find_edge(exec, node_idx).is_none() {
+                        self.execution_graph.add_edge(exec, node_idx, ());
+                    }
                 }
+            }
+            self.remove_node_if_dead(input_exec);
+        }
 
-                if let Some(edge) = self.execution_graph.find_edge(input_exec_idx, node_idx) {
-                    self.execution_graph.remove_edge(edge);
+        self.add_physical_dependencies(graph, node_idx, &new_nary.inputs);
+        true
+    }
+
+    /// Add offset to all input indices in an expression.
+    fn offset_input_indices(expr: &NaryExpr, offset: usize) -> NaryExpr {
+        match expr {
+            NaryExpr::Input(idx) => NaryExpr::Input(idx + offset),
+            NaryExpr::Op { children, function } => NaryExpr::Op {
+                children: children.iter().map(|c| Self::offset_input_indices(c, offset)).collect(),
+                function: function.clone(),
+            },
+        }
+    }
+
+    /// Substitute Input(target_idx) with the replacement expression.
+    fn substitute_input_in_expr(expr: &NaryExpr, target_idx: usize, replacement: &NaryExpr) -> NaryExpr {
+        match expr {
+            NaryExpr::Input(idx) if *idx == target_idx => replacement.clone(),
+            NaryExpr::Input(idx) => NaryExpr::Input(*idx),
+            NaryExpr::Op { children, function } => NaryExpr::Op {
+                children: children.iter().map(|c| Self::substitute_input_in_expr(c, target_idx, replacement)).collect(),
+                function: function.clone(),
+            },
+        }
+    }
+
+    /// Remove unused inputs and deduplicate, returning new inputs and remapped expression.
+    fn deduplicate_inputs(inputs: Vec<NodeIndex>, expr: NaryExpr) -> (Vec<NodeIndex>, NaryExpr) {
+        // Collect which input indices are actually used
+        let mut used_indices = FxHashSet::default();
+        Self::collect_used_inputs(&expr, &mut used_indices);
+
+        // Build mapping: old index -> new index, and collect only used inputs
+        let mut new_inputs = Vec::new();
+        let mut old_to_new = FxHashMap::default();
+
+        for old_idx in used_indices.iter().copied().collect::<Vec<_>>() {
+            let node = inputs[old_idx];
+            // Check if this node already exists in new_inputs (deduplication)
+            let new_idx = if let Some(existing) = new_inputs.iter().position(|&n| n == node) {
+                existing
+            } else {
+                let idx = new_inputs.len();
+                new_inputs.push(node);
+                idx
+            };
+            old_to_new.insert(old_idx, new_idx);
+        }
+
+        let new_expr = Self::remap_input_indices(&expr, &old_to_new);
+        (new_inputs, new_expr)
+    }
+
+    fn collect_used_inputs(expr: &NaryExpr, used: &mut FxHashSet<usize>) {
+        match expr {
+            NaryExpr::Input(idx) => { used.insert(*idx); }
+            NaryExpr::Op { children, .. } => {
+                for child in children {
+                    Self::collect_used_inputs(child, used);
                 }
-                self.add_physical_dependencies(graph, node_idx, &[input_of_input_inner]);
-                self.remove_node_if_dead(input_exec_idx);
-                return true;
             }
         }
-        false
+    }
+
+    fn remap_input_indices(expr: &NaryExpr, mapping: &FxHashMap<usize, usize>) -> NaryExpr {
+        match expr {
+            NaryExpr::Input(idx) => NaryExpr::Input(mapping[idx]),
+            NaryExpr::Op { children, function } => NaryExpr::Op {
+                children: children.iter().map(|c| Self::remap_input_indices(c, mapping)).collect(),
+                function: function.clone(),
+            },
+        }
     }
 
     fn try_fuse_into_reduce(
