@@ -312,15 +312,16 @@ impl<'a> Resolver<'a> {
                 .neighbors_undirected(node_idx)
                 .collect();
 
-            // First try to fuse elementwise into specialized ops (reduce, matmul, etc.)
-            // Then convert remaining elementwise/pairwise to nary and fuse naries together
-            let changed = self.try_fuse_into_reduce(graph, node_idx)
+            // 1. Convert elementwise/pairwise to nary (canonical form)
+            // 2. Fuse naries together (combine expression trees)
+            // 3. Try to fuse resulting nary into specialized ops (reduce, matmul, etc.)
+            let changed = self.try_convert_elementwise_to_nary(graph, node_idx)
+                || self.try_convert_pairwise_to_nary(graph, node_idx)
+                || self.try_fuse_naries(graph, node_idx)
+                || self.try_fuse_into_reduce(graph, node_idx)
                 || self.try_fuse_into_matmul(graph, node_idx)
                 || self.try_fuse_into_dequantize(graph, node_idx)
-                || self.try_fuse_into_index_select(graph, node_idx)
-                || self.try_convert_elementwise_to_nary(graph, node_idx)
-                || self.try_convert_pairwise_to_nary(graph, node_idx)
-                || self.try_fuse_naries(graph, node_idx);
+                || self.try_fuse_into_index_select(graph, node_idx);
 
             if changed {
                 // Re-add the current node to worklist if it still exists
@@ -604,53 +605,61 @@ impl<'a> Resolver<'a> {
         }
     }
 
+    /// Try to extract ElementWiseOperation from a node variant (either ElementWise or Nary with single input).
+    fn try_get_elementwise(variant: &ComputeGraphNodeVariant) -> Option<crate::ElementWiseOperation> {
+        match variant {
+            ComputeGraphNodeVariant::Nary(nary) => nary.try_into_elementwise_op(),
+            _ => None,
+        }
+    }
+
     fn try_fuse_into_reduce(
         &mut self,
         graph: &mut ComputeGraphInner,
         node_idx: ExecutionNodeIndex,
     ) -> bool {
         let node_variant = self.execution_graph[node_idx].variant.clone();
-        let (input_inner, funcs) = if let ComputeGraphNodeVariant::ElementWise(op) = node_variant {
-            (op.value, op.functions.clone())
-        } else {
+
+        let Some(el_op) = Self::try_get_elementwise(&node_variant) else {
             return false;
         };
 
-        if let Some(input_exec_idx) = self.get_input_node_in_exec_graph(input_inner) {
-            if self.check_cached(graph, input_inner) {
-                return false;
-            }
-
-            let input_variant = self.execution_graph[input_exec_idx].variant.clone();
-            if let ComputeGraphNodeVariant::Reduce(reduce_op) = input_variant {
-                let mut new_reduce = reduce_op.clone();
-                let mut existing_post = new_reduce.post_element_wise.functions.clone();
-                existing_post.extend(funcs.functions.iter().cloned());
-                new_reduce.post_element_wise = ElementWiseFunctions::new(
-                    existing_post,
-                    reduce_op.post_element_wise.input_datatype(),
-                );
-
-                self.execution_graph[node_idx].variant =
-                    ComputeGraphNodeVariant::Reduce(new_reduce.clone());
-
-                let reduce_input_inner = reduce_op.value;
-                if let Some(reduce_input_exec) =
-                    self.get_input_node_in_exec_graph(reduce_input_inner)
-                {
-                    self.execution_graph
-                        .add_edge(reduce_input_exec, node_idx, ());
-                }
-
-                if let Some(edge) = self.execution_graph.find_edge(input_exec_idx, node_idx) {
-                    self.execution_graph.remove_edge(edge);
-                }
-                self.add_physical_dependencies(graph, node_idx, &[reduce_input_inner]);
-                self.remove_node_if_dead(input_exec_idx);
-                return true;
-            }
+        let input_inner = el_op.value;
+        if self.check_cached(graph, input_inner) {
+            return false;
         }
-        false
+
+        let Some(input_exec_idx) = self.get_input_node_in_exec_graph(input_inner) else {
+            return false;
+        };
+
+        let input_variant = self.execution_graph[input_exec_idx].variant.clone();
+        let ComputeGraphNodeVariant::Reduce(reduce_op) = input_variant else {
+            return false;
+        };
+
+        let mut new_reduce = reduce_op.clone();
+        let mut existing_post = new_reduce.post_element_wise.functions.clone();
+        existing_post.extend(el_op.functions.functions.iter().cloned());
+        new_reduce.post_element_wise = ElementWiseFunctions::new(
+            existing_post,
+            reduce_op.post_element_wise.input_datatype(),
+        );
+
+        self.execution_graph[node_idx].variant =
+            ComputeGraphNodeVariant::Reduce(new_reduce.clone());
+
+        let reduce_input_inner = reduce_op.value;
+        if let Some(reduce_input_exec) = self.get_input_node_in_exec_graph(reduce_input_inner) {
+            self.execution_graph.add_edge(reduce_input_exec, node_idx, ());
+        }
+
+        if let Some(edge) = self.execution_graph.find_edge(input_exec_idx, node_idx) {
+            self.execution_graph.remove_edge(edge);
+        }
+        self.add_physical_dependencies(graph, node_idx, &[reduce_input_inner]);
+        self.remove_node_if_dead(input_exec_idx);
+        true
     }
 
     fn try_fuse_into_matmul(
@@ -660,18 +669,16 @@ impl<'a> Resolver<'a> {
     ) -> bool {
         let node_variant = self.execution_graph[node_idx].variant.clone();
 
-        // Post-op
-        if let ComputeGraphNodeVariant::ElementWise(op) = &node_variant {
-            let input_inner = op.value;
-            let funcs = op.functions.clone();
-
-            if let Some(input_exec_idx) = self.get_input_node_in_exec_graph(input_inner) {
-                if !self.check_cached(graph, input_inner) {
+        // Post-op: fuse elementwise after matmul
+        if let Some(el_op) = Self::try_get_elementwise(&node_variant) {
+            let input_inner = el_op.value;
+            if !self.check_cached(graph, input_inner) {
+                if let Some(input_exec_idx) = self.get_input_node_in_exec_graph(input_inner) {
                     let input_variant = self.execution_graph[input_exec_idx].variant.clone();
                     if let ComputeGraphNodeVariant::MatMul(matmul_op) = input_variant {
                         let mut new_matmul = matmul_op.clone();
                         let mut existing_post = new_matmul.post_element_wise.functions.clone();
-                        existing_post.extend(funcs.functions.iter().cloned());
+                        existing_post.extend(el_op.functions.functions.iter().cloned());
                         new_matmul.post_element_wise = ElementWiseFunctions::new(
                             existing_post,
                             matmul_op.post_element_wise.input_datatype(),
@@ -680,25 +687,17 @@ impl<'a> Resolver<'a> {
                         self.execution_graph[node_idx].variant =
                             ComputeGraphNodeVariant::MatMul(new_matmul.clone());
 
-                        let first_inner = matmul_op.first;
-                        let second_inner = matmul_op.second;
-
+                        let (first_inner, second_inner) = (matmul_op.first, matmul_op.second);
                         if let Some(idx) = self.get_input_node_in_exec_graph(first_inner) {
                             self.execution_graph.add_edge(idx, node_idx, ());
                         }
                         if let Some(idx) = self.get_input_node_in_exec_graph(second_inner) {
                             self.execution_graph.add_edge(idx, node_idx, ());
                         }
-
-                        if let Some(edge) = self.execution_graph.find_edge(input_exec_idx, node_idx)
-                        {
+                        if let Some(edge) = self.execution_graph.find_edge(input_exec_idx, node_idx) {
                             self.execution_graph.remove_edge(edge);
                         }
-                        self.add_physical_dependencies(
-                            graph,
-                            node_idx,
-                            &[first_inner, second_inner],
-                        );
+                        self.add_physical_dependencies(graph, node_idx, &[first_inner, second_inner]);
                         self.remove_node_if_dead(input_exec_idx);
                         return true;
                     }
@@ -706,77 +705,61 @@ impl<'a> Resolver<'a> {
             }
         }
 
-        // Pre-op
+        // Pre-op: fuse elementwise before matmul inputs
         if let ComputeGraphNodeVariant::MatMul(matmul_op) = &node_variant {
-            let first_inner = matmul_op.first;
-            let second_inner = matmul_op.second;
-            let mut changed_any = false;
             let mut new_matmul = matmul_op.clone();
+            let mut changed = false;
 
-            if let Some(first_exec_idx) = self.get_input_node_in_exec_graph(first_inner) {
-                if !self.check_cached(graph, first_inner) {
-                    let first_variant = self.execution_graph[first_exec_idx].variant.clone();
-                    if let ComputeGraphNodeVariant::ElementWise(el_op) = first_variant {
+            // Check first input
+            if !self.check_cached(graph, matmul_op.first) {
+                if let Some(first_exec) = self.get_input_node_in_exec_graph(matmul_op.first) {
+                    if let Some(el_op) = Self::try_get_elementwise(&self.execution_graph[first_exec].variant) {
                         new_matmul.first = el_op.value;
-                        let mut new_funcs = el_op.functions.functions.clone();
-                        new_funcs.extend(new_matmul.pre_element_wise[0].functions.iter().cloned());
-                        new_matmul.pre_element_wise[0] =
-                            ElementWiseFunctions::new(new_funcs, el_op.input_datatype());
-                        changed_any = true;
+                        let mut funcs = el_op.functions.functions.clone();
+                        funcs.extend(new_matmul.pre_element_wise[0].functions.iter().cloned());
+                        new_matmul.pre_element_wise[0] = ElementWiseFunctions::new(funcs, el_op.input_datatype());
+                        changed = true;
                     }
                 }
             }
 
-            if let Some(second_exec_idx) = self.get_input_node_in_exec_graph(second_inner) {
-                if !self.check_cached(graph, second_inner) {
-                    let second_variant = self.execution_graph[second_exec_idx].variant.clone();
-                    if let ComputeGraphNodeVariant::ElementWise(el_op) = second_variant {
+            // Check second input
+            if !self.check_cached(graph, matmul_op.second) {
+                if let Some(second_exec) = self.get_input_node_in_exec_graph(matmul_op.second) {
+                    if let Some(el_op) = Self::try_get_elementwise(&self.execution_graph[second_exec].variant) {
                         new_matmul.second = el_op.value;
-                        let mut new_funcs = el_op.functions.functions.clone();
-                        new_funcs.extend(new_matmul.pre_element_wise[1].functions.iter().cloned());
-                        new_matmul.pre_element_wise[1] =
-                            ElementWiseFunctions::new(new_funcs, el_op.input_datatype());
-                        changed_any = true;
+                        let mut funcs = el_op.functions.functions.clone();
+                        funcs.extend(new_matmul.pre_element_wise[1].functions.iter().cloned());
+                        new_matmul.pre_element_wise[1] = ElementWiseFunctions::new(funcs, el_op.input_datatype());
+                        changed = true;
                     }
                 }
             }
 
-            if changed_any {
-                self.execution_graph[node_idx].variant =
-                    ComputeGraphNodeVariant::MatMul(new_matmul.clone());
+            if changed {
+                self.execution_graph[node_idx].variant = ComputeGraphNodeVariant::MatMul(new_matmul.clone());
 
                 if new_matmul.first != matmul_op.first {
-                    let old_first_exec =
-                        self.get_input_node_in_exec_graph(matmul_op.first).unwrap();
-                    if let Some(edge) = self.execution_graph.find_edge(old_first_exec, node_idx) {
+                    let old = self.get_input_node_in_exec_graph(matmul_op.first).unwrap();
+                    if let Some(edge) = self.execution_graph.find_edge(old, node_idx) {
                         self.execution_graph.remove_edge(edge);
                     }
-                    if let Some(new_first_exec) =
-                        self.get_input_node_in_exec_graph(new_matmul.first)
-                    {
-                        self.execution_graph.add_edge(new_first_exec, node_idx, ());
+                    if let Some(new) = self.get_input_node_in_exec_graph(new_matmul.first) {
+                        self.execution_graph.add_edge(new, node_idx, ());
                     }
-                    self.remove_node_if_dead(old_first_exec);
+                    self.remove_node_if_dead(old);
                 }
-
                 if new_matmul.second != matmul_op.second {
-                    let old_second_exec =
-                        self.get_input_node_in_exec_graph(matmul_op.second).unwrap();
-                    if let Some(edge) = self.execution_graph.find_edge(old_second_exec, node_idx) {
+                    let old = self.get_input_node_in_exec_graph(matmul_op.second).unwrap();
+                    if let Some(edge) = self.execution_graph.find_edge(old, node_idx) {
                         self.execution_graph.remove_edge(edge);
                     }
-                    if let Some(new_second_exec) =
-                        self.get_input_node_in_exec_graph(new_matmul.second)
-                    {
-                        self.execution_graph.add_edge(new_second_exec, node_idx, ());
+                    if let Some(new) = self.get_input_node_in_exec_graph(new_matmul.second) {
+                        self.execution_graph.add_edge(new, node_idx, ());
                     }
-                    self.remove_node_if_dead(old_second_exec);
+                    self.remove_node_if_dead(old);
                 }
-                self.add_physical_dependencies(
-                    graph,
-                    node_idx,
-                    &[new_matmul.first, new_matmul.second],
-                );
+                self.add_physical_dependencies(graph, node_idx, &[new_matmul.first, new_matmul.second]);
                 return true;
             }
         }
@@ -790,35 +773,36 @@ impl<'a> Resolver<'a> {
         node_idx: ExecutionNodeIndex,
     ) -> bool {
         let node_variant = self.execution_graph[node_idx].variant.clone();
-        let (input_inner, funcs) = if let ComputeGraphNodeVariant::ElementWise(op) = node_variant {
-            (op.value, op.functions.clone())
-        } else {
+        let Some(el_op) = Self::try_get_elementwise(&node_variant) else {
             return false;
         };
 
-        if let Some(input_exec_idx) = self.get_input_node_in_exec_graph(input_inner) {
-            if self.check_cached(graph, input_inner) {
-                return false;
-            }
-
-            let input_variant = self.execution_graph[input_exec_idx].variant.clone();
-            if let ComputeGraphNodeVariant::Dequantize(deq_op) = input_variant {
-                let mut new_deq = deq_op.clone();
-                let mut existing_post = new_deq.post_dequantize.functions.clone();
-                existing_post.extend(funcs.functions.iter().cloned());
-                new_deq.post_dequantize = ElementWiseFunctions::new(existing_post, deq_op.datatype);
-
-                self.execution_graph[node_idx].variant =
-                    ComputeGraphNodeVariant::Dequantize(new_deq);
-
-                if let Some(edge) = self.execution_graph.find_edge(input_exec_idx, node_idx) {
-                    self.execution_graph.remove_edge(edge);
-                }
-                self.remove_node_if_dead(input_exec_idx);
-                return true;
-            }
+        let input_inner = el_op.value;
+        if self.check_cached(graph, input_inner) {
+            return false;
         }
-        false
+
+        let Some(input_exec_idx) = self.get_input_node_in_exec_graph(input_inner) else {
+            return false;
+        };
+
+        let input_variant = self.execution_graph[input_exec_idx].variant.clone();
+        let ComputeGraphNodeVariant::Dequantize(deq_op) = input_variant else {
+            return false;
+        };
+
+        let mut new_deq = deq_op.clone();
+        let mut existing_post = new_deq.post_dequantize.functions.clone();
+        existing_post.extend(el_op.functions.functions.iter().cloned());
+        new_deq.post_dequantize = ElementWiseFunctions::new(existing_post, deq_op.datatype);
+
+        self.execution_graph[node_idx].variant = ComputeGraphNodeVariant::Dequantize(new_deq);
+
+        if let Some(edge) = self.execution_graph.find_edge(input_exec_idx, node_idx) {
+            self.execution_graph.remove_edge(edge);
+        }
+        self.remove_node_if_dead(input_exec_idx);
+        true
     }
 
     fn try_fuse_into_index_select(
@@ -828,41 +812,37 @@ impl<'a> Resolver<'a> {
     ) -> bool {
         let node_variant = self.execution_graph[node_idx].variant.clone();
 
+        // Pre-op: fuse elementwise into index_select inputs
         if let ComputeGraphNodeVariant::IndexSelect(op) = &node_variant {
             let mut new_op = op.clone();
             let mut changed = false;
 
-            if let Some(input_exec) = self.get_input_node_in_exec_graph(op.input) {
-                if !self.check_cached(graph, op.input) {
-                    let input_variant = self.execution_graph[input_exec].variant.clone();
-                    if let ComputeGraphNodeVariant::ElementWise(el_op) = input_variant {
+            if !self.check_cached(graph, op.input) {
+                if let Some(input_exec) = self.get_input_node_in_exec_graph(op.input) {
+                    if let Some(el_op) = Self::try_get_elementwise(&self.execution_graph[input_exec].variant) {
                         new_op.input = el_op.value;
-                        let mut new_funcs = el_op.functions.functions.clone();
-                        new_funcs.extend(new_op.pre_element_wise_input.functions.iter().cloned());
-                        new_op.pre_element_wise_input =
-                            ElementWiseFunctions::new(new_funcs, el_op.input_datatype());
+                        let mut funcs = el_op.functions.functions.clone();
+                        funcs.extend(new_op.pre_element_wise_input.functions.iter().cloned());
+                        new_op.pre_element_wise_input = ElementWiseFunctions::new(funcs, el_op.input_datatype());
                         changed = true;
                     }
                 }
             }
 
-            if let Some(indexes_exec) = self.get_input_node_in_exec_graph(op.indexes) {
-                if !self.check_cached(graph, op.indexes) {
-                    let indexes_variant = self.execution_graph[indexes_exec].variant.clone();
-                    if let ComputeGraphNodeVariant::ElementWise(el_op) = indexes_variant {
+            if !self.check_cached(graph, op.indexes) {
+                if let Some(indexes_exec) = self.get_input_node_in_exec_graph(op.indexes) {
+                    if let Some(el_op) = Self::try_get_elementwise(&self.execution_graph[indexes_exec].variant) {
                         new_op.indexes = el_op.value;
-                        let mut new_funcs = el_op.functions.functions.clone();
-                        new_funcs.extend(new_op.pre_element_wise_indexes.functions.iter().cloned());
-                        new_op.pre_element_wise_indexes =
-                            ElementWiseFunctions::new(new_funcs, el_op.input_datatype());
+                        let mut funcs = el_op.functions.functions.clone();
+                        funcs.extend(new_op.pre_element_wise_indexes.functions.iter().cloned());
+                        new_op.pre_element_wise_indexes = ElementWiseFunctions::new(funcs, el_op.input_datatype());
                         changed = true;
                     }
                 }
             }
 
             if changed {
-                self.execution_graph[node_idx].variant =
-                    ComputeGraphNodeVariant::IndexSelect(new_op.clone());
+                self.execution_graph[node_idx].variant = ComputeGraphNodeVariant::IndexSelect(new_op.clone());
                 if new_op.input != op.input {
                     let old = self.get_input_node_in_exec_graph(op.input).unwrap();
                     if let Some(edge) = self.execution_graph.find_edge(old, node_idx) {
@@ -888,19 +868,18 @@ impl<'a> Resolver<'a> {
             }
         }
 
-        if let ComputeGraphNodeVariant::ElementWise(el_op) = &node_variant {
-            if let Some(input_exec) = self.get_input_node_in_exec_graph(el_op.value) {
-                if !self.check_cached(graph, el_op.value) {
+        // Post-op: fuse elementwise after index_select
+        if let Some(el_op) = Self::try_get_elementwise(&node_variant) {
+            if !self.check_cached(graph, el_op.value) {
+                if let Some(input_exec) = self.get_input_node_in_exec_graph(el_op.value) {
                     let input_variant = self.execution_graph[input_exec].variant.clone();
                     if let ComputeGraphNodeVariant::IndexSelect(idx_op) = input_variant {
                         let mut new_idx_op = idx_op.clone();
-                        let mut new_funcs = new_idx_op.pre_element_wise_input.functions.clone();
-                        new_funcs.extend(el_op.functions.functions.iter().cloned());
-                        new_idx_op.pre_element_wise_input =
-                            ElementWiseFunctions::new(new_funcs, idx_op.input_datatype());
+                        let mut funcs = new_idx_op.pre_element_wise_input.functions.clone();
+                        funcs.extend(el_op.functions.functions.iter().cloned());
+                        new_idx_op.pre_element_wise_input = ElementWiseFunctions::new(funcs, idx_op.input_datatype());
 
-                        self.execution_graph[node_idx].variant =
-                            ComputeGraphNodeVariant::IndexSelect(new_idx_op.clone());
+                        self.execution_graph[node_idx].variant = ComputeGraphNodeVariant::IndexSelect(new_idx_op.clone());
 
                         if let Some(idx) = self.get_input_node_in_exec_graph(idx_op.input) {
                             self.execution_graph.add_edge(idx, node_idx, ());
@@ -908,15 +887,10 @@ impl<'a> Resolver<'a> {
                         if let Some(idx) = self.get_input_node_in_exec_graph(idx_op.indexes) {
                             self.execution_graph.add_edge(idx, node_idx, ());
                         }
-
                         if let Some(edge) = self.execution_graph.find_edge(input_exec, node_idx) {
                             self.execution_graph.remove_edge(edge);
                         }
-                        self.add_physical_dependencies(
-                            graph,
-                            node_idx,
-                            &[idx_op.input, idx_op.indexes],
-                        );
+                        self.add_physical_dependencies(graph, node_idx, &[idx_op.input, idx_op.indexes]);
                         self.remove_node_if_dead(input_exec);
                         return true;
                     }

@@ -36,6 +36,25 @@ async fn test_gelu_is_optimized() {
 
 #[cfg(test)]
 #[tokio::test]
+async fn test_reduce_then_gelu_is_optimized() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., -2.], [-3., 4.], [5., -6.]];
+
+    let tensor = Tensor::new(&device, &data);
+
+    let tensor = tensor.sum_keepdim(0).gelu();
+
+    // 2 kernels: one for reduce, one for gelu
+    // sum_keepdim = sum().unsqueeze(), so Resize is between Reduce and Gelu,
+    // preventing fusion since we only check immediate inputs
+    assert_eq!(tensor.count_kernels_to_resolve(), 2);
+}
+
+#[cfg(test)]
+#[tokio::test]
 async fn test_gelu() {
     use std::f32;
 
