@@ -13,7 +13,6 @@ use kalosm_sample::{CreateParserState, Parser};
 use llm_samplers::types::Sampler;
 use minijinja::ErrorKind;
 
-
 fn get_new_tokens(
     messages: &[ChatMessage],
     session: &mut LlamaChatSession,

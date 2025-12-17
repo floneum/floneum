@@ -255,7 +255,11 @@ impl LlamaBuilder {
     ///     .build_with_loading_handler(|progress| match progress {
     ///         ModelLoadingProgress::Downloading { source, progress } => {
     ///             let progress_percent = (progress.progress * 100) as u32;
-    ///             let elapsed = progress.start_time.expect("start time is available on native targets").elapsed().as_secs_f32();
+    ///             let elapsed = progress
+    ///                 .start_time
+    ///                 .expect("start time is available on native targets")
+    ///                 .elapsed()
+    ///                 .as_secs_f32();
     ///             println!("Downloading file {source} {progress_percent}% ({elapsed}s)");
     ///         }
     ///         ModelLoadingProgress::Loading { progress } => {
