@@ -6,7 +6,6 @@ use std::{
 use crate::{
     ElementWiseFunction, MaxRank, Tensor,
     compute_graph::NodeIndex,
-    mir::operation::Operation,
     tensor::{DataType, DataTypeEnum},
 };
 

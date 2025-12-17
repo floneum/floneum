@@ -62,14 +62,6 @@ impl ElementWiseFunctions {
             self.input_datatype
         }
     }
-
-    pub fn iter(&self) -> impl Iterator<Item = &ElementWiseFunction> {
-        self.functions.iter()
-    }
-
-    pub fn push(&mut self, function: ElementWiseFunction) {
-        self.functions.push(function);
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -92,18 +84,6 @@ impl ElementWiseOperation {
                 input_datatype,
                 functions: vec![functions],
             },
-            shape: shape.into(),
-        }
-    }
-
-    pub fn from_element_wise(
-        value: NodeIndex,
-        functions: ElementWiseFunctions,
-        shape: impl Into<Box<[usize]>>,
-    ) -> Self {
-        Self {
-            value,
-            functions,
             shape: shape.into(),
         }
     }

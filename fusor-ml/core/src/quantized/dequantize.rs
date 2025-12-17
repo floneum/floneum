@@ -28,10 +28,6 @@ impl DequantizeOperation {
         }
     }
 
-    pub(crate) fn set_post_element_wise(&mut self, post_dequantize: ElementWiseFunctions) {
-        self.post_dequantize = post_dequantize;
-    }
-
     fn elements_per_block(&self) -> u32 {
         self.matrix.datatype.block_size() as u32
     }

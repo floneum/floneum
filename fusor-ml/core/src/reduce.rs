@@ -38,14 +38,6 @@ impl ReduceOperation {
         }
     }
 
-    pub fn set_post_element_wise(&mut self, kernel: ElementWiseFunctions) {
-        self.post_element_wise = kernel;
-    }
-
-    pub fn set_pre_element_wise(&mut self, kernel: ElementWiseFunctions) {
-        self.pre_element_wise = kernel;
-    }
-
     pub fn add_pre_element_wise_functions(&self, kernel: &mut GenericKernel) -> Vec<Function> {
         self.pre_element_wise.add_functions(kernel)
     }
@@ -63,10 +55,6 @@ impl ReduceOperation {
                 ("b".to_string(), self.function.datatype().to_string()),
             ],
         )
-    }
-
-    pub fn reduce_datatype(&self) -> DataTypeEnum {
-        self.pre_element_wise.out_datatype()
     }
 
     pub fn out_datatype(&self) -> DataTypeEnum {

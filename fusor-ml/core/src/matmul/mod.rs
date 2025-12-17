@@ -111,14 +111,6 @@ impl MatMulOperation {
     pub fn rank(&self) -> u32 {
         self.out_shape.len() as u32
     }
-
-    pub(crate) fn set_pre_element_wise(&mut self, pre_element_wise: [ElementWiseFunctions; 2]) {
-        self.pre_element_wise = pre_element_wise;
-    }
-
-    pub(crate) fn set_post_element_wise(&mut self, post_element_wise: ElementWiseFunctions) {
-        self.post_element_wise = post_element_wise;
-    }
 }
 
 impl Operation for MatMulOperation {

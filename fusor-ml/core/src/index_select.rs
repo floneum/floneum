@@ -45,9 +45,6 @@ impl IndexSelectOperation {
         self.datatype
     }
 
-    pub(crate) fn indexes_datatype(&self) -> DataTypeEnum {
-        DataTypeEnum::U32
-    }
 
     pub(crate) fn rank(&self) -> usize {
         self.value_shape.len()
@@ -73,22 +70,6 @@ impl IndexSelectOperation {
                 }
             })
             .collect()
-    }
-
-    pub fn set_pre_element_wise_input(
-        &mut self,
-        pre_element_wise: ElementWiseFunctions,
-    ) -> &mut Self {
-        self.pre_element_wise_input = pre_element_wise;
-        self
-    }
-
-    pub fn set_pre_element_wise_indexes(
-        &mut self,
-        pre_element_wise: ElementWiseFunctions,
-    ) -> &mut Self {
-        self.pre_element_wise_indexes = pre_element_wise;
-        self
     }
 
     fn build_index_kernel(&self, kernel: &mut GenericKernel) {
