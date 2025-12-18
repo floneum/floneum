@@ -4,7 +4,9 @@ use crate::raw::Model;
 use crate::token_stream::TokenOutputStream;
 use crate::token_stream::TokenOutputStreamError;
 use crate::LlamaConfigJson;
+use fusor_core::CastTensor;
 use fusor_core::Device;
+use fusor_core::FloatDataType;
 use fusor_core::ShardedVarBuilder;
 use fusor_gguf::GgufMetadata;
 use fusor_gguf::GgufValue;
@@ -75,19 +77,23 @@ impl From<image::ImageError> for LlamaModelError {
 }
 
 /// The inner, synchronous Llama model.
-pub(crate) struct LlamaModel {
-    pub(crate) model: Model<half::f16>,
+pub(crate) struct LlamaModel<F: FloatDataType = half::f16> {
+    pub(crate) model: Model<F>,
     pub(crate) device: Device,
     pub(crate) tokenizer: Arc<Tokenizer>,
 }
 
-impl LlamaModel {
+impl<F: FloatDataType> LlamaModel<F>
+where
+    F: CastTensor<f32> + Send + Sync + 'static,
+    f32: CastTensor<F>,
+{
     pub(crate) fn forward(
-        model: &Model<half::f16>,
+        model: &Model<F>,
         device: &Device,
         tokens: &[u32],
         images: &[(image::DynamicImage, MediaHints)],
-        cache: Option<&mut LlamaCache<half::f16>>,
+        cache: Option<&mut LlamaCache<F>>,
         logits_vec: &mut Vec<f32>,
         #[allow(unused)] tokenizer: &Tokenizer,
     ) -> Result<(), LlamaModelError> {
@@ -104,7 +110,7 @@ impl LlamaModel {
         }
 
         let logits = model.forward(tokens, images, device, cache)?.squeeze(0);
-        // Cast f16 logits back to f32 for sampling
+        // Cast logits back to f32 for sampling
         let logits: fusor_core::Tensor<1, f32> = logits.cast();
         futures::executor::block_on(async move {
             let len = logits.shape()[0];
@@ -121,7 +127,7 @@ impl LlamaModel {
 
     /// Create a new sync Llama model from a builder.
     pub(crate) async fn from_builder(
-        builder: crate::LlamaBuilder,
+        builder: crate::LlamaBuilder<F>,
         mut handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
     ) -> Result<Self, LlamaSourceError> {
         let device = builder.get_device().await?;
@@ -346,7 +352,7 @@ impl LlamaModel {
 
     pub(crate) fn _infer(
         &mut self,
-        settings: InferenceSettings,
+        settings: InferenceSettings<F>,
         mut on_token: Box<dyn FnMut(String) -> Result<(), LlamaModelError> + Send + Sync>,
         finished: &tokio::sync::oneshot::Sender<Result<(), LlamaModelError>>,
     ) -> Result<(), LlamaModelError> {

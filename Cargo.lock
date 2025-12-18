@@ -4485,6 +4485,7 @@ dependencies = [
  "futures-util",
  "image 0.25.8",
  "kalosm",
+ "kalosm-common",
  "kalosm-learning",
  "kalosm-model-types",
  "kalosm-sample",

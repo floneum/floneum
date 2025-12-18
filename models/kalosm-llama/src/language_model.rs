@@ -1,3 +1,4 @@
+use fusor_core::{CastTensor, FloatDataType};
 use kalosm_language_model::{
     ContentChunk, CreateDefaultChatConstraintsForType, CreateDefaultCompletionConstraintsForType,
     CreateTextCompletionSession, GenerationParameters, MessageContent,
@@ -18,8 +19,12 @@ use crate::{
     UnstructuredGenerationTask,
 };
 
-impl ModelBuilder for LlamaBuilder {
-    type Model = Llama;
+impl<F: FloatDataType> ModelBuilder for LlamaBuilder<F>
+where
+    F: CastTensor<f32> + Send + Sync + 'static,
+    f32: CastTensor<F>,
+{
+    type Model = Llama<F>;
     type Error = LlamaSourceError;
 
     async fn start_with_loading_handler(
@@ -41,8 +46,12 @@ impl ModelBuilder for LlamaBuilder {
     }
 }
 
-impl CreateTextCompletionSession for Llama {
-    type Session = LlamaSession<half::f16>;
+impl<F: FloatDataType> CreateTextCompletionSession for Llama<F>
+where
+    F: CastTensor<f32> + Send + Sync + 'static,
+    f32: CastTensor<F>,
+{
+    type Session = LlamaSession<F>;
     type Error = LlamaModelError;
 
     fn new_session(&self) -> Result<Self::Session, Self::Error> {
@@ -50,7 +59,11 @@ impl CreateTextCompletionSession for Llama {
     }
 }
 
-impl<S: Sampler + 'static> TextCompletionModel<S> for Llama {
+impl<F: FloatDataType, S: Sampler + 'static> TextCompletionModel<S> for Llama<F>
+where
+    F: CastTensor<f32> + Send + Sync + 'static,
+    f32: CastTensor<F>,
+{
     async fn stream_text_with_callback<'a>(
         &'a self,
         session: &'a mut Self::Session,
@@ -103,24 +116,34 @@ impl<S: Sampler + 'static> TextCompletionModel<S> for Llama {
     }
 }
 
-impl<T: Parse + 'static> CreateDefaultChatConstraintsForType<T> for Llama {
-    type DefaultConstraints = ArcParser<T>;
-
-    fn create_default_constraints() -> Self::DefaultConstraints {
-        T::new_parser().boxed()
-    }
-}
-
-impl<T: Parse + 'static> CreateDefaultCompletionConstraintsForType<T> for Llama {
-    type DefaultConstraints = ArcParser<T>;
-
-    fn create_default_constraints() -> Self::DefaultConstraints {
-        T::new_parser().boxed()
-    }
-}
-
-impl<S, Constraints> StructuredTextCompletionModel<Constraints, S> for Llama
+impl<F: FloatDataType, T: Parse + 'static> CreateDefaultChatConstraintsForType<T> for Llama<F>
 where
+    F: CastTensor<f32> + Send + Sync + 'static,
+    f32: CastTensor<F>,
+{
+    type DefaultConstraints = ArcParser<T>;
+
+    fn create_default_constraints() -> Self::DefaultConstraints {
+        T::new_parser().boxed()
+    }
+}
+
+impl<F: FloatDataType, T: Parse + 'static> CreateDefaultCompletionConstraintsForType<T> for Llama<F>
+where
+    F: CastTensor<f32> + Send + Sync + 'static,
+    f32: CastTensor<F>,
+{
+    type DefaultConstraints = ArcParser<T>;
+
+    fn create_default_constraints() -> Self::DefaultConstraints {
+        T::new_parser().boxed()
+    }
+}
+
+impl<F: FloatDataType, S, Constraints> StructuredTextCompletionModel<Constraints, S> for Llama<F>
+where
+    F: CastTensor<f32> + Send + Sync + 'static,
+    f32: CastTensor<F>,
     <Constraints as Parser>::Output: Send,
     Constraints: CreateParserState + Send + 'static,
     S: Sampler + 'static,
