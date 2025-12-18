@@ -318,7 +318,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tensor_cache_first_append() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let mut cache = TensorCache::new(1, 2);
 
         let data = [[[1.0, 2.0]], [[3.0, 4.0]]];
@@ -338,7 +338,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tensor_cache_multiple_appends() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let mut cache = TensorCache::new(1, 3);
 
         let data1 = [[[1.0, 2.0]]];
@@ -364,7 +364,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tensor_cache_reset() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let mut cache = TensorCache::new(1, 3);
 
         let data = [[[1.0, 2.0]]];
@@ -379,7 +379,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_kv_cache_first_append() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let mut cache = KvCache::new(1, 2);
 
         let key_data = [[[[1.0, 2.0]]]];
@@ -403,7 +403,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_kv_cache_multiple_appends() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let mut cache = KvCache::new(1, 3);
 
         let key_data1 = [[[[1.0, 2.0]]]];
@@ -438,7 +438,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_kv_cache_reset() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let mut cache = KvCache::new(1, 3);
 
         let key_data = [[[[1.0, 2.0]]]];
@@ -456,7 +456,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_attention_mask_causal() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         let seq_len = 3;
         let mask: AttentionMask<f32> = AttentionMask::causal(&device, seq_len);
@@ -481,7 +481,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_attention_mask_apply_4d() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         let mask = AttentionMask::causal(&device, 2);
 
@@ -505,7 +505,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_attention_mask_apply_3d() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         let mask = AttentionMask::causal(&device, 2);
 
@@ -525,7 +525,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mask_cache() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let cache: MaskCache<f32> = MaskCache::default();
 
         let mask1 = cache.get_mask(3, 0, None, &device);
@@ -541,7 +541,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mask_cache_with_offset() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let cache: MaskCache<f32> = MaskCache::default();
 
         // Test with seqlen_offset
@@ -552,7 +552,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mask_cache_sliding_window() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let cache: MaskCache<f32> = MaskCache::default();
 
         let mask = cache.get_mask(4, 0, Some(2), &device);

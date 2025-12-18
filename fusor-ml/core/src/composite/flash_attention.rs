@@ -557,7 +557,7 @@ impl Operation for FlashAttentionOperation {
 async fn test_flash_attention() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     // Test flash attention - 4D tensors [batch, heads, seq, dim]
     let q_data = [[[[1.0f32, 0.0], [0.0, 1.0]]]]; // [1, 1, 2, 2]
@@ -603,7 +603,7 @@ async fn test_flash_attention() {
 async fn test_flash_attention_causal_mask() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     // Test flash attention with causal mask - 4D tensors [batch, heads, seq, dim]
     let q_data = [[[[1.0f32, 0.0], [0.0, 1.0]]]]; // [1, 1, 2, 2]
@@ -673,7 +673,7 @@ async fn test_flash_attention_causal_mask() {
 async fn test_flash_attention_masked_fuzz() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     // Test multiple random configurations
     for _iteration in 0..100 {
@@ -805,7 +805,7 @@ async fn test_flash_attention_masked_fuzz() {
 async fn test_flash_attention_kv_cache_fuzz() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     // Fuzz test for KV cache scenarios with various dimension combinations
     for _iteration in 0..50 {
@@ -921,7 +921,7 @@ async fn test_flash_attention_kv_cache_fuzz() {
 async fn test_flash_attention_gqa_fuzz() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     // Fuzz test for Grouped-Query Attention (GQA) and Multi-Query Attention (MQA)
     // where K/V have fewer heads than Q

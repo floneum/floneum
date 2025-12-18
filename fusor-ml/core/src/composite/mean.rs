@@ -25,7 +25,7 @@ impl<const N: usize, D: FloatDataType> Tensor<N, D> {
 async fn test_mean() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
     let a = Tensor::new(&device, &[[1.0f32, 2.0, 3.0], [4.0, 5.0, 6.0]]);
     let mean0: Tensor<1, f32> = a.mean(0);
     let mean1: Tensor<1, f32> = a.mean(1);

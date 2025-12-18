@@ -86,7 +86,7 @@ impl<D: DataType> TensorSlice<3, D> {
 async fn test_to_vec2() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.]];
     let tensor = Tensor::new(&device, &data);

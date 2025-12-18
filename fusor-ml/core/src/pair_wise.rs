@@ -120,7 +120,7 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
 async fn test_pair_wise_add() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data_a = [[1., 2.], [3., 4.], [5., 6.]];
     let data_b = [[1., 2.], [3., 4.], [5., 6.]];
@@ -144,7 +144,7 @@ async fn test_pair_wise_add() {
 async fn test_pair_wise_add_f16() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
     if !device.f16_supported() {
         return;
     }
@@ -179,7 +179,7 @@ async fn test_pair_wise_add_f16() {
 async fn test_pair_wise_add_u32() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data_a = [[1_u32, 2_u32], [3_u32, 4_u32], [5_u32, 6_u32]];
     let data_b = [[1_u32, 2_u32], [3_u32, 4_u32], [5_u32, 6_u32]];
@@ -203,7 +203,7 @@ async fn test_pair_wise_add_u32() {
 async fn test_pair_wise_add_const_mul_const_add_fused() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data_a = [[1., 2.], [3., 4.], [5., 6.]];
     let data_b = [[1., 2.], [3., 4.], [5., 6.]];
@@ -227,7 +227,7 @@ async fn test_pair_wise_add_const_mul_const_add_fused() {
 async fn test_pair_wise_add_sub_const_fused() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data_a = [[1., 2.], [3., 4.], [5., 6.]];
     let data_b = [[1., 2.], [3., 4.], [5., 6.]];
@@ -251,7 +251,7 @@ async fn test_pair_wise_add_sub_const_fused() {
 async fn test_pair_wise_add_sparse() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data_a = [[1., 2.], [3., 4.], [5., 6.]];
     let data_b = [[1., 2.], [3., 4.], [5., 6.]];
@@ -302,7 +302,7 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
 async fn test_pair_wise_sub() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data_a = [[1., 2.], [3., 4.], [5., 6.]];
     let data_b = [[1., 2.], [3., 4.], [5., 6.]];
@@ -354,7 +354,7 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
 async fn test_pair_wise_mul() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data_a = [[1., 2.], [3., 4.], [5., 6.]];
     let data_b = [[1., 2.], [3., 4.], [5., 6.]];
@@ -406,7 +406,7 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
 async fn test_pair_wise_div() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data_a = [[1., 4.], [3., 4.], [5., 6.]];
     let data_b = [[1., 2.], [3., 4.], [5., 6.]];
@@ -449,7 +449,7 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
 async fn test_pair_wise_pow() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data_a = [[1., 2.], [3., 4.], [5., 6.]];
     let data_b = [[1., 2.], [3., 4.], [5., 6.]];

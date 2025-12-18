@@ -150,7 +150,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_sliding_window_view_1d() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         let input_data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
         let input = Tensor::new(&device, &input_data);
@@ -182,7 +182,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_sliding_window_view_2d() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         let input_data = [
             [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],

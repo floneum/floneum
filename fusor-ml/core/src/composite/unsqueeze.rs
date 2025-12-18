@@ -52,7 +52,7 @@ impl<const R1: usize, D: DataType> Tensor<R1, D> {
 async fn test_unsqueeze() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -72,7 +72,7 @@ async fn test_unsqueeze() {
 async fn test_unsqueeze_dims() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);

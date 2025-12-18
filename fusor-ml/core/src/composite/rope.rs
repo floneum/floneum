@@ -70,7 +70,7 @@ async fn test_rope_interleaved() {
     use candle_core::IndexOp;
 
     let candle_device = candle_core::Device::Cpu;
-    let device = crate::Device::new().await.unwrap();
+    let device = crate::Device::test_instance();
 
     let pos_shape = [11, 32];
     let cos = (0..pos_shape[0])

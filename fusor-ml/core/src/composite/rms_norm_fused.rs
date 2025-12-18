@@ -545,7 +545,7 @@ impl Operation for RmsNormOperation {
 async fn test_rms_norm_fused() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     // Test data: 3x2 tensor
     let input = Tensor::new(&device, &[[1.0f32, 2.0], [3.0, 4.0], [5.0, 6.0]]);
@@ -580,7 +580,7 @@ async fn test_rms_norm_fused() {
 async fn test_rms_norm_fused_vs_composite() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     // Test with random-ish data
     let input = Tensor::new(&device, &[[1.0f32, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]);
@@ -618,7 +618,7 @@ async fn test_rms_norm_fused_vs_composite() {
 async fn test_rms_norm_fused_with_bias() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let input = Tensor::new(&device, &[[1.0f32, 2.0], [3.0, 4.0]]);
     let weight = Tensor::new(&device, &[2.0f32, 3.0]);
@@ -656,7 +656,7 @@ async fn test_rms_norm_fused_with_bias() {
 async fn test_rms_norm_fused_large() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     // Test with a larger hidden dimension (512)
     let hidden_size = 512;

@@ -60,7 +60,7 @@ impl<const R1: usize, D: DataType> Tensor<R1, D> {
 async fn test_cat() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data1 = [[1., -2.], [-3., 4.], [5., -6.]];
     let tensor1 = Tensor::new(&device, &data1);
@@ -93,7 +93,7 @@ async fn test_cat() {
 async fn test_multi_dim_cat() {
     use crate::{D, Device};
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data1 = vec![vec![vec![1f32; 32]; 11]; 3];
     let tensor1 = Tensor::new(&device, &data1).reshape([1, 3, 11, 32, 1]);

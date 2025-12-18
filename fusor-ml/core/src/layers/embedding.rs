@@ -141,7 +141,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_embedding_1d_input() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         // Create embedding table: (3, 2) - 3 embeddings, each of dimension 2
         let emb_data = [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]];
@@ -172,7 +172,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_embedding_2d_input() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         // Create embedding table: (3, 2) - 3 embeddings, each of dimension 2
         let emb_data = [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]];
@@ -205,7 +205,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_embedding_properties() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         let emb_data = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
         let embeddings = Tensor::new(&device, &emb_data);

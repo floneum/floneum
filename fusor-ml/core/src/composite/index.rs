@@ -225,7 +225,7 @@ where
 async fn test_index() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[[1., 2.], [3., 4.]], [[5., 6.], [7., 8.]]];
     let tensor = Tensor::new(&device, &data);
@@ -243,7 +243,7 @@ async fn test_index() {
 async fn test_index_4d() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[[[1., 2.], [3., 4.]], [[5., 6.], [7., 8.]]]];
     let tensor = Tensor::new(&device, &data);

@@ -256,7 +256,7 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
 async fn test_transpose() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -276,7 +276,7 @@ async fn test_transpose() {
 async fn test_broadcast_as() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.]];
     let tensor = Tensor::new(&device, &data);
@@ -297,7 +297,7 @@ async fn test_broadcast_as() {
 async fn test_broadcast_as_non_continuous() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2., -1.], [3., 4., -1.]];
     let tensor = Tensor::new(&device, &data);
@@ -321,7 +321,7 @@ async fn test_broadcast_as_non_continuous() {
 async fn test_broadcast_together_first_larger() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data1 = [[1., 2.], [3., 4.]];
     let tensor1 = Tensor::new(&device, &data1);
@@ -350,7 +350,7 @@ async fn test_broadcast_together_first_larger() {
 async fn test_broadcast_together_second_larger() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data1 = [[1., 2.], [3., 4.]];
     let tensor1 = Tensor::new(&device, &data1);
@@ -379,7 +379,7 @@ async fn test_broadcast_together_second_larger() {
 async fn test_broadcast_together_same_size() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data1 = [[1.], [2.]];
     let tensor1 = Tensor::new(&device, &data1);

@@ -225,7 +225,7 @@ async fn test_dequantize_smol_lm() {
     use crate::Device;
     use fusor_gguf::GgufMetadata;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let url = "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf";
     let bytes = reqwest::get(url).await.unwrap().bytes().await.unwrap();

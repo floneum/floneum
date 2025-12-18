@@ -1612,7 +1612,7 @@ where
             rand::prelude::Distribution<<B as fusor_gguf::GgufBlock>::AsBytes>,
     {
         let dtype = T::WGSL_TYPE;
-        let device = crate::Device::new().await.unwrap();
+        let device = crate::Device::test_instance();
         let mut kernel_body = String::new();
         if unrolled {
             B::unrolled_dequantize_block(
@@ -1820,7 +1820,7 @@ where
             rand::prelude::Distribution<<B as fusor_gguf::GgufBlock>::AsBytes>,
     {
         let dtype = T::WGSL_TYPE;
-        let device = crate::Device::new().await.unwrap();
+        let device = crate::Device::test_instance();
         let mut kernel_body = String::new();
 
         // Dequantize each mat4x4 block and write it to output

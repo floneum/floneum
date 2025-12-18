@@ -324,7 +324,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_rope_fused_interleaved() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         let pos_shape = [11, 32]; // seq_len=11, head_dim/2=32 -> head_dim=64
         let cos_data: Vec<Vec<f32>> = (0..pos_shape[0])
@@ -405,7 +405,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_rope_fused_normal() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         let pos_shape = [11, 32]; // seq_len=11, head_dim/2=32 -> head_dim=64
         let cos_data: Vec<Vec<f32>> = (0..pos_shape[0])

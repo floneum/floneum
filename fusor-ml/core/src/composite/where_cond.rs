@@ -178,7 +178,7 @@ impl Operation for WhereCondOperation {
 async fn test_where_cond() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = Tensor::arange(&device, 0., 10.);
     let even = Tensor::arange(&device, 0, 10) % 2;

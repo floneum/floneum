@@ -298,7 +298,7 @@ impl<const R: usize, T: crate::DataType> Tensor<R, T> {
 async fn test_index_select_dim_0() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2., 3.], [4., 5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -319,7 +319,7 @@ async fn test_index_select_large_dim_0() {
 
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     const SIZE_1: usize = 100;
     const SIZE_0: usize = 100;
@@ -346,7 +346,7 @@ async fn test_index_select_large_dim_0() {
 async fn test_index_select_dim_1() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2., 3.], [4., 5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -367,7 +367,7 @@ async fn test_index_select_large_dim_1() {
 
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     const SIZE_1: usize = 100;
     const SIZE_0: usize = 100;
@@ -396,7 +396,7 @@ async fn test_index_select_large_dim_1() {
 async fn test_index_select_fused() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2., 3.], [4., 5., 6.]];
     let tensor = Tensor::new(&device, &data);

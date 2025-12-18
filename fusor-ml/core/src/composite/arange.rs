@@ -28,7 +28,7 @@ impl<D: DataType> Tensor<1, D> {
 async fn test_arange() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
     let data = Tensor::arange(&device, 0., 10.);
     let as_slice = data.as_slice().await.unwrap();
     println!("{as_slice:?}");
@@ -40,7 +40,7 @@ async fn test_arange() {
 async fn test_arange_step() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
     let data = Tensor::arange_step(&device, 0., 10., 2.);
     let as_slice = data.as_slice().await.unwrap();
     println!("{as_slice:?}");

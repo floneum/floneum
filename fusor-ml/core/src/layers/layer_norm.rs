@@ -68,7 +68,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_layer_norm_shape() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         // Create weight and bias
         let weight_data = [1.0, 1.0, 1.0];
@@ -89,7 +89,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_layer_norm_properties() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         let weight_data = [1.0, 1.0];
         let bias_data = [0.0, 0.0];

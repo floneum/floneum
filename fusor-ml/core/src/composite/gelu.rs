@@ -23,7 +23,7 @@ impl<const R: usize, D: FloatDataType + DataType> Tensor<R, D> {
 async fn test_gelu_is_optimized() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., -2.], [-3., 4.], [5., -6.]];
 
@@ -39,7 +39,7 @@ async fn test_gelu_is_optimized() {
 async fn test_reduce_then_gelu_is_optimized() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., -2.], [-3., 4.], [5., -6.]];
 
@@ -60,7 +60,7 @@ async fn test_gelu() {
 
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., -2.], [-3., 4.], [5., -6.]];
 
@@ -88,7 +88,7 @@ async fn fuzz_gelu() {
 
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     for i in 0..1000 {
         // let random: f32 = rand::random_range(-1e3..1e3);

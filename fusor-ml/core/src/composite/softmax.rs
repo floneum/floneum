@@ -510,7 +510,7 @@ impl Operation for SoftmaxOperation {
 async fn test_softmax_slow() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [1f32, -2., -3., 4., 5., -6.];
     let max = data.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
@@ -538,7 +538,7 @@ async fn test_softmax_slow() {
 async fn test_softmax() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [1f32, -2., -3., 4., 5., -6.];
     let max = data.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
@@ -567,7 +567,7 @@ async fn test_softmax() {
 async fn test_softmax_large() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data: [f32; 1024] = std::array::from_fn(|_| rand::random::<f32>() * 10.0 - 5.0);
     let max = data.iter().cloned().fold(f32::NEG_INFINITY, f32::max);

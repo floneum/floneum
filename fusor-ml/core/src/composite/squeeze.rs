@@ -48,7 +48,7 @@ impl<const R1: usize, D: DataType> Tensor<R1, D> {
 async fn test_squeeze_dim0() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[[1., 2.], [3., 4.], [5., 6.]]];
     let tensor = Tensor::new(&device, &data);
@@ -68,7 +68,7 @@ async fn test_squeeze_dim0() {
 async fn test_squeeze_dim2() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[[1.], [2.]], [[3.], [4.]], [[5.], [6.]]];
     let tensor = Tensor::new(&device, &data);
@@ -88,7 +88,7 @@ async fn test_squeeze_dim2() {
 async fn test_squeeze_dims() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[[[1.], [2.]], [[3.], [4.]], [[5.], [6.]]]];
     let tensor = Tensor::new(&device, &data);
