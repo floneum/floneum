@@ -58,9 +58,10 @@ pub(crate) fn general_sgemv(
     )
     .unwrap();
 
-    let storage_type = maybe_vec_storage_type(SGEMV_CHUNK_SIZE, dtype);
+    // Always accumulate in f32 for precision, convert to output dtype at the end
+    let acc_storage_type = maybe_vec_storage_type(SGEMV_CHUNK_SIZE, DataTypeEnum::F32);
 
-    writeln!(kernel, "var acc = {storage_type}();").unwrap();
+    writeln!(kernel, "var acc = {acc_storage_type}();").unwrap();
 
     // Find the reduce size in blocks rounded up
     writeln!(
@@ -134,13 +135,15 @@ pub(crate) fn general_sgemv(
         .unwrap();
 
         let acc_indexed = maybe_vec_storage_index(SGEMV_CHUNK_SIZE, "acc", "acc_offset");
+        // Always convert a_cache to f32 for the dot product since dequantize outputs f32
+        // and we accumulate in f32 for precision
         dequantize_vec4_block(
             kernel,
             op.matrix.datatype,
             "chunk".to_string(),
             DataTypeEnum::F32,
             |index, data, code| {
-                writeln!(code, "{acc_indexed} += dot(a_cache[{index}], {data});").unwrap();
+                writeln!(code, "{acc_indexed} += dot(vec4<f32>(a_cache[{index}]), {data});").unwrap();
             },
         );
 
@@ -168,7 +171,7 @@ pub(crate) fn general_sgemv(
         if blocksize > subgroup_size {
             let local_data = kernel.add_global_array(
                 KernelGlobalSpace::Workgroup,
-                maybe_vec_storage_type_enum(SGEMV_CHUNK_SIZE, dtype),
+                maybe_vec_storage_type_enum(SGEMV_CHUNK_SIZE, DataTypeEnum::F32),
                 subgroup_size.to_string(),
             );
             let subgroup_id = kernel.subgroup_index();
@@ -200,7 +203,7 @@ pub(crate) fn general_sgemv(
                 writeln!(kernel, "}}").unwrap();
                 writeln!(kernel, "else {{").unwrap();
                 {
-                    writeln!(kernel, "acc = {storage_type}();").unwrap();
+                    writeln!(kernel, "acc = {acc_storage_type}();").unwrap();
                 }
                 writeln!(kernel, "}}").unwrap();
             }
@@ -219,7 +222,7 @@ pub(crate) fn general_sgemv(
     else {
         let local_data = kernel.add_global_array(
             KernelGlobalSpace::Workgroup,
-            maybe_vec_storage_type_enum(SGEMV_CHUNK_SIZE, dtype),
+            maybe_vec_storage_type_enum(SGEMV_CHUNK_SIZE, DataTypeEnum::F32),
             blocksize.to_string(),
         );
         let mut offset = blocksize;
@@ -271,12 +274,9 @@ pub(crate) fn general_sgemv(
         output_indices.push("m_idx".to_string());
         output_indices.push("output_index".to_string());
         output.strided_index(kernel, output_indices);
-        writeln!(
-            kernel,
-            "] = {};",
-            maybe_vec_storage_index(SGEMV_CHUNK_SIZE, "acc", "acc_offset")
-        )
-        .unwrap();
+        // Convert from f32 accumulator to output dtype (single element per iteration)
+        let acc_val = maybe_vec_storage_index(SGEMV_CHUNK_SIZE, "acc", "acc_offset");
+        writeln!(kernel, "] = {dtype}({acc_val});").unwrap();
     }
     if SGEMV_CHUNK_SIZE > 1 {
         writeln!(kernel, "}}").unwrap();

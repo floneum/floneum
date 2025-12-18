@@ -129,7 +129,7 @@ async fn setup_smol_lm_matrix_with_source(
     use fusor_gguf::GgufMetadata;
     use kalosm_common::Cache;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let cache = Cache::default();
     let bytes = cache.get_bytes(&source, |_| {}).await.unwrap();
