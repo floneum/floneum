@@ -134,8 +134,8 @@ pub trait DocumentTableBuilderHybridExt<C: Connection, E, K: Chunker>: Sized {
     ///
     /// # Example
     /// ```rust,no_run
-    /// use surrealdb::{Surreal, engine::local::Db};
     /// use kalosm::language::*;
+    /// use surrealdb::{engine::local::Db, Surreal}
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let db: Surreal<Db> = todo!();
