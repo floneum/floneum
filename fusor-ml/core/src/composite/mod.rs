@@ -22,6 +22,6 @@ mod squeeze;
 mod to_vec;
 mod unsqueeze;
 mod variance;
-mod where_cond;
+pub(crate) mod where_cond;
 mod zeros;
 mod zeros_like;

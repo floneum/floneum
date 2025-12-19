@@ -246,6 +246,14 @@ impl LazyTensorData {
         Self::from_parts(device, info, key)
     }
 
+    pub(crate) fn where_cond(&self, operation: crate::composite::where_cond::WhereCondOperation) -> Self {
+        let device = self.device.clone();
+        let info = self.info.clone();
+        let key = device.compute_graph().create_where_cond(operation);
+
+        Self::from_parts(device, info, key)
+    }
+
     pub(crate) fn element_wise(&self, function: ElementWiseOperation) -> Self {
         let device = self.device.clone();
         let mut info = self.info.clone();

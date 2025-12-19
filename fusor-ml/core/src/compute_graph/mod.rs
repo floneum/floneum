@@ -14,9 +14,10 @@ mod visualize;
 
 use crate::{
     DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, QMatrix,
-    ReduceOperation, compute_graph::resolve::ResolverResult, dequantize::DequantizeOperation,
-    index_select::IndexSelectOperation, map_layout::MapLayoutOperation, mir::operation::Operation,
-    nary_wise::NaryOperation, quantized::matmul::QMatMulOperation, resize::ResizeOperation,
+    ReduceOperation, composite::where_cond::WhereCondOperation, compute_graph::resolve::ResolverResult,
+    dequantize::DequantizeOperation, index_select::IndexSelectOperation,
+    map_layout::MapLayoutOperation, mir::operation::Operation, nary_wise::NaryOperation,
+    quantized::matmul::QMatMulOperation, resize::ResizeOperation,
     slice_assign::SliceAssignOperation, tensor::TensorData, visit_tiled::MaybeQData,
 };
 
@@ -95,6 +96,10 @@ impl ComputeGraph {
         self.create_node(ComputeGraphNodeVariant::Custom(op))
     }
 
+    pub(crate) fn create_where_cond(&self, op: WhereCondOperation) -> NodeIndex {
+        self.create_node(ComputeGraphNodeVariant::WhereCond(op))
+    }
+
     pub(crate) fn resolve(&self, key: NodeIndex, device: &Device) -> ResolverResult {
         let mut encoder = device
             .wgpu_device()
@@ -162,6 +167,7 @@ pub(crate) enum ComputeGraphNodeVariant {
     Tensor(TensorData),
     Reduce(ReduceOperation),
     IndexSelect(IndexSelectOperation),
+    WhereCond(WhereCondOperation),
     Custom(Arc<dyn Operation + Send + Sync>),
 }
 
@@ -195,6 +201,11 @@ impl ComputeGraphNodeVariant {
             ComputeGraphNodeVariant::IndexSelect(op) => {
                 f(op.input);
                 f(op.indexes);
+            }
+            ComputeGraphNodeVariant::WhereCond(op) => {
+                f(op.condition);
+                f(op.on_true);
+                f(op.on_false);
             }
             ComputeGraphNodeVariant::Dequantize(_) => {}
             ComputeGraphNodeVariant::Tensor(_) => {}

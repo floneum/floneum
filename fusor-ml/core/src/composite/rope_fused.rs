@@ -1,319 +1,210 @@
-use std::fmt::Write;
 use std::sync::Arc;
 
 use crate::{
-    DataType, Device, Tensor, TensorData,
+    DataType, Tensor,
     compute_graph::NodeIndex,
-    layout::TILE_SIZE,
-    mir::{
-        inputs::MirValue, kernel::GenericKernel, operation::Operation,
-        workgroup_shape::WorkgroupShape,
-    },
+    nary_wise::NaryExpr,
     tensor::DataTypeEnum,
-    visit_tiled::{
-        MaybeQTensorInput, build_visit_tiled_kernel, titled_map_dispatch_size,
-        titled_map_workgroup_size_constraints,
-    },
 };
 
 impl<D: DataType> Tensor<4, D> {
     /// Apply fused interleaved RoPE (rotary position embedding).
     /// This pairs adjacent elements: (0, 1), (2, 3), etc.
     pub fn rope_fused(&self, cos: &Tensor<2, D>, sin: &Tensor<2, D>) -> Tensor<4, D> {
-        self.rope_fused_impl(cos, sin, true)
+        self.rope_fused_impl(cos, sin, RopeMode::Interleaved)
     }
 
     /// Apply fused normal RoPE (rotary position embedding).
     /// This pairs first half with second half: (0, head_dim/2), (1, head_dim/2+1), etc.
     pub fn rope_normal_fused(&self, cos: &Tensor<2, D>, sin: &Tensor<2, D>) -> Tensor<4, D> {
-        self.rope_fused_impl(cos, sin, false)
+        self.rope_fused_impl(cos, sin, RopeMode::Normal)
     }
 
     fn rope_fused_impl(
         &self,
         cos: &Tensor<2, D>,
         sin: &Tensor<2, D>,
-        interleaved: bool,
+        mode: RopeMode,
     ) -> Tensor<4, D> {
-        let [_, _, sequence_length, _] = *self.shape();
+        let [_, _, sequence_length, head_dim] = *self.shape();
         // Narrow cos/sin to the sequence length
         let cos = cos.narrow(0, 0, sequence_length);
         let sin = sin.narrow(0, 0, sequence_length);
 
-        let operation = RopeFusedOperation::new(
-            self.key(),
-            cos.key(),
-            sin.key(),
-            self.datatype(),
-            self.shape(),
-            interleaved,
-        );
-        let data = self.data();
+        let operation = RopeFusedOperation {
+            input: self.key(),
+            cos: cos.key(),
+            sin: sin.key(),
+            datatype: self.datatype(),
+            shape: (*self.shape()).into(),
+            mode,
+            head_dim,
+        }
+        .to_nary();
 
-        Tensor::from_parts(data.custom(Arc::new(operation)))
+        Tensor::from_parts(self.data().custom(Arc::new(operation)))
     }
+}
+
+/// Determines how element pairs are formed for RoPE
+#[derive(Debug, Clone, Copy)]
+enum RopeMode {
+    /// Pairs adjacent elements: (0, 1), (2, 3), etc.
+    Interleaved,
+    /// Pairs first half with second half: (0, half), (1, half+1), etc.
+    Normal,
 }
 
 #[derive(Debug, Clone)]
 struct RopeFusedOperation {
-    pub(crate) input: NodeIndex,
-    pub(crate) cos: NodeIndex,
-    pub(crate) sin: NodeIndex,
-    pub(crate) datatype: DataTypeEnum,
-    pub(crate) shape: Box<[usize]>,
-    pub(crate) interleaved: bool,
+    input: NodeIndex,
+    cos: NodeIndex,
+    sin: NodeIndex,
+    datatype: DataTypeEnum,
+    shape: Box<[usize]>,
+    mode: RopeMode,
+    head_dim: usize,
 }
 
 impl RopeFusedOperation {
-    pub fn new(
-        input: NodeIndex,
-        cos: NodeIndex,
-        sin: NodeIndex,
-        datatype: DataTypeEnum,
-        shape: &[usize],
-        interleaved: bool,
-    ) -> Self {
-        Self {
-            input,
-            cos,
-            sin,
-            datatype,
-            shape: shape.into(),
-            interleaved,
-        }
-    }
-
     fn rank(&self) -> usize {
         self.shape.len()
     }
 
-    fn kernel(
-        &self,
-        device: &Device,
-        _workgroup_shape: &WorkgroupShape,
-        kernel: &mut GenericKernel,
-    ) {
-        // We add cos and sin inputs manually first (bindings 0 and 1)
-        let cos_input = kernel.add_tensor_input(2, true, self.datatype);
-        let sin_input = kernel.add_tensor_input(2, true, self.datatype);
+    fn to_nary(&self) -> crate::nary_wise::NaryOperation {
+        crate::nary_wise::NaryOperation {
+            inputs: vec![self.input, self.cos, self.sin],
+            expression: self.build_expr(),
+            shape: self.shape.clone(),
+            output_datatype: self.datatype,
+        }
+    }
 
-        // Then we let build_visit_tiled_kernel handle input (binding 2) and output (binding 3)
-        let datatypes = vec![
-            self.datatype.into(), // input
-            self.datatype.into(), // output
-        ];
+    /// Build the RoPE expression: input * cos + neighbor * sin_with_sign
+    fn build_expr(&self) -> NaryExpr {
+        let rank = self.rank();
+        let dim_seq_idx = rank - 2;
+        let dim_last_idx = rank - 1;
 
-        let interleaved = self.interleaved;
-        let head_dim = *self.shape.last().unwrap();
+        // Current input value
+        let input_val = NaryExpr::input(0, self.datatype);
 
-        build_visit_tiled_kernel(
-            device,
-            &self.shape,
-            TILE_SIZE,
-            datatypes,
-            |kernel, indexes, tensors, values| {
-                let input_tensor = &tensors[0]; // This is 'self'
-                let input_val = &values[0];
+        // Build cos/sin index based on mode
+        let cos_sin_index = self.build_cos_sin_index(dim_seq_idx, dim_last_idx);
+        let cos_val = NaryExpr::indexed_input(1, cos_sin_index.clone());
+        let sin_val = NaryExpr::indexed_input(2, cos_sin_index);
 
-                // Output
-                let output_index = &indexes[1];
-                let out_tensor = &tensors[1];
+        // Build neighbor access
+        let neighbor_last_dim = self.build_neighbor_index_component(dim_last_idx);
+        let neighbor_index = self.build_index_with_replaced_last(neighbor_last_dim);
+        let neighbor_val = NaryExpr::indexed_input(0, neighbor_index);
 
-                let rank = self.rank();
-                // Dimensions are dim_0, dim_1, ..., dim_{rank-1}
-                // For rank 4: dim_0=batch, dim_1=head, dim_2=seq, dim_3=head_dim
-
-                let dim_last = format!("dim_{}", rank - 1);
-                let dim_seq = format!("dim_{}", rank - 2);
-
-                if interleaved {
-                    // Interleaved RoPE: pairs (0,1), (2,3), etc.
-                    // Cos/Sin index: [dim_seq, dim_last / 2]
-                    let freq_idx_0 = dim_seq;
-                    let freq_idx_1 = format!("{} / 2u", dim_last);
-
-                    let cos_idx_var = "cos_idx";
-                    let sin_idx_var = "sin_idx";
-
-                    write!(kernel, "let {} = ", cos_idx_var).unwrap();
-                    cos_input.strided_index(kernel, vec![freq_idx_0.clone(), freq_idx_1.clone()]);
-                    writeln!(kernel, ";").unwrap();
-
-                    write!(kernel, "let {} = ", sin_idx_var).unwrap();
-                    sin_input.strided_index(kernel, vec![freq_idx_0.clone(), freq_idx_1.clone()]);
-                    writeln!(kernel, ";").unwrap();
-
-                    let cos_val = format!("{}[{}]", cos_input, cos_idx_var);
-                    let sin_val = format!("{}[{}]", sin_input, sin_idx_var);
-
-                    // Neighbor index
-                    let neighbor_last_dim = "neighbor_last_dim";
-                    writeln!(kernel, "let is_even = ({} % 2u) == 0u;", dim_last).unwrap();
-                    writeln!(
-                        kernel,
-                        "let {} = select({} - 1u, {} + 1u, is_even);",
-                        neighbor_last_dim, dim_last, dim_last
-                    )
-                    .unwrap();
-
-                    let neighbor_idx_var = "neighbor_idx";
-                    write!(kernel, "let {} = ", neighbor_idx_var).unwrap();
-
-                    // Reconstruct neighbor dims: dim_0, ..., dim_{rank-2}, neighbor_last_dim
-                    let mut neighbor_dims = Vec::new();
-                    for i in 0..rank - 1 {
-                        neighbor_dims.push(format!("dim_{}", i));
-                    }
-                    neighbor_dims.push(neighbor_last_dim.to_string());
-
-                    match input_tensor {
-                        MaybeQTensorInput::Tensor(t) => t.strided_index(kernel, neighbor_dims),
-                        _ => panic!("Expected tensor input"),
-                    }
-                    writeln!(kernel, ";").unwrap();
-
-                    let neighbor_val = format!("{}[{}]", input_tensor, neighbor_idx_var);
-
-                    format!(
-                        "{out_tensor}[{output_index}] = {input_val} * {cos_val} + {neighbor_val} * select({sin_val}, -{sin_val}, is_even);"
-                    )
-                } else {
-                    // Normal RoPE: pairs (0, half), (1, half+1), etc.
-                    // For d < half: output[d] = x[d] * cos - x[d + half] * sin
-                    // For d >= half: output[d] = x[d] * cos + x[d - half] * sin
-                    let half = head_dim / 2;
-
-                    // Cos/Sin index: [dim_seq, dim_last % half]
-                    // (cos/sin are the same for both halves)
-                    let freq_idx_0 = dim_seq;
-                    let freq_idx_1 = format!("{} % {}u", dim_last, half);
-
-                    let cos_idx_var = "cos_idx";
-                    let sin_idx_var = "sin_idx";
-
-                    write!(kernel, "let {} = ", cos_idx_var).unwrap();
-                    cos_input.strided_index(kernel, vec![freq_idx_0.clone(), freq_idx_1.clone()]);
-                    writeln!(kernel, ";").unwrap();
-
-                    write!(kernel, "let {} = ", sin_idx_var).unwrap();
-                    sin_input.strided_index(kernel, vec![freq_idx_0.clone(), freq_idx_1.clone()]);
-                    writeln!(kernel, ";").unwrap();
-
-                    let cos_val = format!("{}[{}]", cos_input, cos_idx_var);
-                    let sin_val = format!("{}[{}]", sin_input, sin_idx_var);
-
-                    // Neighbor index
-                    let neighbor_last_dim = "neighbor_last_dim";
-                    writeln!(kernel, "let in_first_half = {} < {}u;", dim_last, half).unwrap();
-                    writeln!(
-                        kernel,
-                        "let {} = select({} - {}u, {} + {}u, in_first_half);",
-                        neighbor_last_dim, dim_last, half, dim_last, half
-                    )
-                    .unwrap();
-
-                    let neighbor_idx_var = "neighbor_idx";
-                    write!(kernel, "let {} = ", neighbor_idx_var).unwrap();
-
-                    // Reconstruct neighbor dims: dim_0, ..., dim_{rank-2}, neighbor_last_dim
-                    let mut neighbor_dims = Vec::new();
-                    for i in 0..rank - 1 {
-                        neighbor_dims.push(format!("dim_{}", i));
-                    }
-                    neighbor_dims.push(neighbor_last_dim.to_string());
-
-                    match input_tensor {
-                        MaybeQTensorInput::Tensor(t) => t.strided_index(kernel, neighbor_dims),
-                        _ => panic!("Expected tensor input"),
-                    }
-                    writeln!(kernel, ";").unwrap();
-
-                    let neighbor_val = format!("{}[{}]", input_tensor, neighbor_idx_var);
-
-                    // For first half: x * cos - neighbor * sin
-                    // For second half: x * cos + neighbor * sin
-                    format!(
-                        "{out_tensor}[{output_index}] = {input_val} * {cos_val} + {neighbor_val} * select({sin_val}, -{sin_val}, in_first_half);"
-                    )
-                }
-            },
-            kernel,
+        // Build sign selector for sin
+        let sign_condition = self.build_sign_condition(dim_last_idx);
+        let neg_sin = NaryExpr::neg(sin_val.clone(), self.datatype);
+        let sin_with_sign = NaryExpr::select(
+            sign_condition,
+            sin_val,
+            neg_sin,
+            DataTypeEnum::U32,
+            self.datatype,
         );
-    }
-}
 
-impl Operation for RopeFusedOperation {
-    fn workgroup_shape_constraints(
-        &self,
-        device: &crate::Device,
-    ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
-        titled_map_workgroup_size_constraints(&self.shape, device)
+        // Final expression: input * cos + neighbor * sin_with_sign
+        let input_times_cos = NaryExpr::mul(input_val, cos_val, self.datatype);
+        let neighbor_times_sin = NaryExpr::mul(neighbor_val, sin_with_sign, self.datatype);
+        NaryExpr::add(input_times_cos, neighbor_times_sin, self.datatype)
     }
 
-    fn dispatch_size(
-        &self,
-        workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
-        _: &[crate::mir::inputs::MirValue],
-    ) -> [u32; 3] {
-        titled_map_dispatch_size(TILE_SIZE, *workgroup_shape, &self.shape)
-    }
+    /// Build the index expression for accessing cos/sin values
+    fn build_cos_sin_index(&self, dim_seq_idx: usize, dim_last_idx: usize) -> NaryExpr {
+        let dim_seq = NaryExpr::dim_index(dim_seq_idx);
+        let dim_last = NaryExpr::dim_index(dim_last_idx);
 
-    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
-        f(self.cos);
-        f(self.sin);
-        f(self.input);
-    }
-
-    fn inputs(
-        &self,
-        nodes: &crate::compute_graph::ComputeGraphInner,
-    ) -> Vec<crate::mir::inputs::MirValue> {
-        let input = nodes.get_cached_result(self.input).unwrap();
-        let cos = nodes.get_cached_result(self.cos).unwrap();
-        let sin = nodes.get_cached_result(self.sin).unwrap();
-
-        let output_tensor =
-            TensorData::new_for_shape(input.device(), input.layout().shape(), self.datatype);
-
-        // Order must match kernel binding order: cos, sin, input, output
-        vec![
-            cos.clone().into(),
-            sin.clone().into(),
-            input.clone().into(),
-            output_tensor.into(),
-        ]
-    }
-
-    fn build_kernel(
-        &self,
-        graph: &crate::compute_graph::ComputeGraphInner,
-        workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
-        _: &[MirValue],
-        kernel: &mut GenericKernel,
-    ) {
-        self.kernel(&graph.device, workgroup_shape, kernel);
-    }
-
-    fn output(&self, _: &crate::compute_graph::ComputeGraphInner, inputs: &[MirValue]) -> MirValue {
-        // Output is the last input
-        inputs[3].clone()
-    }
-
-    fn name(&self) -> String {
-        let mode = if self.interleaved {
-            "interleaved"
-        } else {
-            "normal"
+        let cos_sin_dim = match self.mode {
+            // Interleaved: index = dim_last / 2
+            RopeMode::Interleaved => {
+                NaryExpr::unary_op(dim_last, "div2", "let output = input / 2u;", DataTypeEnum::U32, DataTypeEnum::U32)
+            }
+            // Normal: index = dim_last % half
+            RopeMode::Normal => {
+                let half = self.head_dim / 2;
+                NaryExpr::unary_op(
+                    dim_last,
+                    "mod_half",
+                    format!("let output = input % {}u;", half),
+                    DataTypeEnum::U32,
+                    DataTypeEnum::U32,
+                )
+            }
         };
-        format!("rope_fused_{}_{}_{}", mode, self.rank(), self.datatype)
+
+        NaryExpr::make_index(vec![dim_seq, cos_sin_dim])
     }
 
-    fn output_layout(
-        &self,
-        layouts: &rustc_hash::FxHashMap<NodeIndex, crate::TensorLayoutInfo>,
-    ) -> crate::TensorLayoutInfo {
-        let input = layouts.get(&self.input).unwrap();
-        input.clone()
+    /// Build the expression for computing the neighbor's last dimension index
+    fn build_neighbor_index_component(&self, dim_last_idx: usize) -> NaryExpr {
+        let dim_last = NaryExpr::dim_index(dim_last_idx);
+
+        match self.mode {
+            // Interleaved: neighbor at dim_last ± 1 based on parity
+            RopeMode::Interleaved => NaryExpr::unary_op(
+                dim_last,
+                "neighbor_idx",
+                "let output = select(input - 1u, input + 1u, (input % 2u) == 0u);",
+                DataTypeEnum::U32,
+                DataTypeEnum::U32,
+            ),
+            // Normal: neighbor at dim_last ± half based on position
+            RopeMode::Normal => {
+                let half = self.head_dim / 2;
+                NaryExpr::unary_op(
+                    dim_last,
+                    "neighbor_idx",
+                    format!(
+                        "let output = select(input - {}u, input + {}u, input < {}u);",
+                        half, half, half
+                    ),
+                    DataTypeEnum::U32,
+                    DataTypeEnum::U32,
+                )
+            }
+        }
+    }
+
+    /// Build the condition expression for selecting sin sign
+    fn build_sign_condition(&self, dim_last_idx: usize) -> NaryExpr {
+        let dim_last = NaryExpr::dim_index(dim_last_idx);
+
+        match self.mode {
+            // Interleaved: sign based on dim_last % 2 (even = -sin, odd = +sin)
+            RopeMode::Interleaved => NaryExpr::unary_op(
+                dim_last,
+                "mod2",
+                "let output = input % 2u;",
+                DataTypeEnum::U32,
+                DataTypeEnum::U32,
+            ),
+            // Normal: sign based on dim_last / half (first half = -sin, second half = +sin)
+            RopeMode::Normal => {
+                let half = self.head_dim / 2;
+                NaryExpr::unary_op(
+                    dim_last,
+                    "div_half",
+                    format!("let output = input / {}u;", half),
+                    DataTypeEnum::U32,
+                    DataTypeEnum::U32,
+                )
+            }
+        }
+    }
+
+    /// Build an index expression that uses all current dimensions except replaces the last one
+    fn build_index_with_replaced_last(&self, new_last: NaryExpr) -> NaryExpr {
+        let rank = self.rank();
+        let mut components: Vec<NaryExpr> = (0..rank - 1).map(NaryExpr::dim_index).collect();
+        components.push(new_last);
+        NaryExpr::make_index(components)
     }
 }
 

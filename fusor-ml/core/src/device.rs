@@ -342,12 +342,6 @@ impl Device {
     }
 }
 
-/// Shared device for tests to avoid creating too many GPU devices.
-/// On some drivers (especially NVIDIA on Windows), creating many GPU devices
-/// in quick succession can cause crashes or resource exhaustion.
-#[cfg(test)]
-static TEST_DEVICE: OnceLock<Device> = OnceLock::new();
-
 #[cfg(test)]
 impl Device {
     /// Get a shared device for tests. This reuses the same device across all tests
@@ -356,10 +350,21 @@ impl Device {
     /// Note: This must be called outside of an async context to avoid deadlocks.
     /// Use it at the start of tests before awaiting anything else.
     pub fn test_instance() -> Self {
-        TEST_DEVICE
-            .get_or_init(|| {
-                pollster::block_on(Device::new()).expect("Failed to create test device")
-            })
-            .clone()
+        #[cfg(target_os = "macos")]
+        {
+            pollster::block_on(Device::new()).expect("Failed to create test device")
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            /// Shared device for tests to avoid creating too many GPU devices.
+            /// On some drivers (especially NVIDIA on Windows), creating many GPU devices
+            /// in quick succession can cause crashes or resource exhaustion.
+            static TEST_DEVICE: OnceLock<Device> = OnceLock::new();
+            TEST_DEVICE
+                .get_or_init(|| {
+                    pollster::block_on(Device::new()).expect("Failed to create test device")
+                })
+                .clone()
+        }
     }
 }

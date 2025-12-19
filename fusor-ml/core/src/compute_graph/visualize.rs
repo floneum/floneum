@@ -239,6 +239,33 @@ impl GraphVisPass {
         self.identities.insert(key, id.clone());
     }
 
+    fn visit_where_cond(
+        &mut self,
+        key: NodeIndex,
+        operation: &crate::composite::where_cond::WhereCondOperation,
+    ) {
+        let condition = self.identities.get(&operation.condition).unwrap();
+        let on_true = self.identities.get(&operation.on_true).unwrap();
+        let on_false = self.identities.get(&operation.on_false).unwrap();
+        let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
+        let id = Identity::quoted(format!("where_cond ({}) #{:?}", output_layout, key));
+        self.statements.push(Stmt::Node {
+            id: id.clone(),
+            port: None,
+            attr: None,
+        });
+        self.statements.push(Stmt::Edge(
+            Edge::head_node(condition.clone(), None).arrow_to_node(id.clone(), None),
+        ));
+        self.statements.push(Stmt::Edge(
+            Edge::head_node(on_true.clone(), None).arrow_to_node(id.clone(), None),
+        ));
+        self.statements.push(Stmt::Edge(
+            Edge::head_node(on_false.clone(), None).arrow_to_node(id.clone(), None),
+        ));
+        self.identities.insert(key, id.clone());
+    }
+
     fn visit_custom(
         &mut self,
         key: NodeIndex,
@@ -322,6 +349,9 @@ impl ComputeGraphInner {
                 }
                 ComputeGraphNodeVariant::IndexSelect(op) => {
                     graph_vis_pass.visit_index_select(node, op)
+                }
+                ComputeGraphNodeVariant::WhereCond(op) => {
+                    graph_vis_pass.visit_where_cond(node, op)
                 }
                 ComputeGraphNodeVariant::Custom(op) => graph_vis_pass.visit_custom(node, op),
             }

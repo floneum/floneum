@@ -1,17 +1,7 @@
-use std::sync::Arc;
-
 use crate::{
-    DataType, Device, Tensor, TensorData,
+    DataType, Tensor,
     compute_graph::NodeIndex,
-    layout::TILE_SIZE,
-    mir::{
-        inputs::MirValue, kernel::GenericKernel, operation::Operation,
-        workgroup_shape::WorkgroupShape,
-    },
     tensor::DataTypeEnum,
-    visit_tiled::{
-        build_visit_tiled_kernel, titled_map_dispatch_size, titled_map_workgroup_size_constraints,
-    },
 };
 
 impl<const R: usize, D: DataType> Tensor<R, D> {
@@ -29,12 +19,12 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
         );
         let data = on_true.data();
 
-        Tensor::from_parts(data.custom(Arc::new(operation)))
+        Tensor::from_parts(data.where_cond(operation))
     }
 }
 
 #[derive(Debug, Clone)]
-struct WhereCondOperation {
+pub(crate) struct WhereCondOperation {
     pub(crate) condition: NodeIndex,
     pub(crate) on_true: NodeIndex,
     pub(crate) on_false: NodeIndex,
@@ -62,114 +52,21 @@ impl WhereCondOperation {
         }
     }
 
-    fn rank(&self) -> u32 {
-        self.shape.len() as _
-    }
+    pub(crate) fn to_nary(&self) -> crate::nary_wise::NaryOperation {
+        use crate::nary_wise::NaryExpr;
 
-    fn kernel(
-        &self,
-        device: &Device,
-        _workgroup_shape: &WorkgroupShape,
-        kernel: &mut GenericKernel,
-    ) {
-        let datatypes = vec![
-            self.condition_datatype.into(),
-            self.output_datatype.into(),
-            self.output_datatype.into(),
-            self.output_datatype.into(),
-        ];
-
-        build_visit_tiled_kernel(
-            device,
-            &self.shape,
-            TILE_SIZE,
-            datatypes,
-            |_kernel, indexes, tensors, values| {
-                let condition_value = &values[0];
-                let on_true_value = &values[1];
-                let on_false_value = &values[2];
-                let output_index = &indexes[3];
-                let out_tensor = &tensors[3];
-
-                let condition_datatype = self.condition_datatype;
-
-                format!(
-                    "{out_tensor}[{output_index}] = select({on_false_value}, {on_true_value}, {condition_value} != {condition_datatype}(0));"
-                )
-            },
-            kernel,
-        );
-    }
-}
-
-impl Operation for WhereCondOperation {
-    fn workgroup_shape_constraints(
-        &self,
-        device: &crate::Device,
-    ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
-        titled_map_workgroup_size_constraints(&self.shape, device)
-    }
-
-    fn dispatch_size(
-        &self,
-        workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
-        _: &[crate::mir::inputs::MirValue],
-    ) -> [u32; 3] {
-        titled_map_dispatch_size(TILE_SIZE, *workgroup_shape, &self.shape)
-    }
-
-    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
-        f(self.condition);
-        f(self.on_true);
-        f(self.on_false);
-    }
-
-    fn inputs(
-        &self,
-        nodes: &crate::compute_graph::ComputeGraphInner,
-    ) -> Vec<crate::mir::inputs::MirValue> {
-        let condition = nodes.get_cached_result(self.condition).unwrap();
-        let on_true = nodes.get_cached_result(self.on_true).unwrap();
-        let on_false = nodes.get_cached_result(self.on_false).unwrap();
-
-        let output_tensor = TensorData::new_for_shape(
-            condition.device(),
-            condition.layout().shape(),
-            self.output_datatype,
-        );
-
-        vec![
-            condition.clone().into(),
-            on_true.clone().into(),
-            on_false.clone().into(),
-            output_tensor.into(),
-        ]
-    }
-
-    fn build_kernel(
-        &self,
-        graph: &crate::compute_graph::ComputeGraphInner,
-        workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
-        _: &[MirValue],
-        kernel: &mut GenericKernel,
-    ) {
-        self.kernel(&graph.device, workgroup_shape, kernel);
-    }
-
-    fn output(&self, _: &crate::compute_graph::ComputeGraphInner, inputs: &[MirValue]) -> MirValue {
-        inputs[3].clone()
-    }
-
-    fn name(&self) -> String {
-        format!("where_cond_{}_{}", self.rank(), self.output_datatype)
-    }
-
-    fn output_layout(
-        &self,
-        layouts: &rustc_hash::FxHashMap<NodeIndex, crate::TensorLayoutInfo>,
-    ) -> crate::TensorLayoutInfo {
-        let on_true = layouts.get(&self.on_true).unwrap();
-        on_true.clone()
+        crate::nary_wise::NaryOperation {
+            inputs: vec![self.condition, self.on_true, self.on_false],
+            expression: NaryExpr::select(
+                NaryExpr::input(0, self.condition_datatype),
+                NaryExpr::input(1, self.output_datatype),
+                NaryExpr::input(2, self.output_datatype),
+                self.condition_datatype,
+                self.output_datatype,
+            ),
+            shape: self.shape.clone(),
+            output_datatype: self.output_datatype,
+        }
     }
 }
 

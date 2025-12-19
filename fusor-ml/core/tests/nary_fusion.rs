@@ -93,3 +93,21 @@ async fn test_nary_same_input_multiple_times() {
     assert_eq!(output[[0, 0]], 3.0);
     assert_eq!(output[[1, 1]], 12.0);
 }
+
+#[tokio::test]
+async fn test_nary_where_cond_basic() {
+    let device = Device::new().await.unwrap();
+    let condition = Tensor::new(&device, &[[0u32, 1], [1, 0]]);
+    let on_true = Tensor::new(&device, &[[10., 20.], [30., 40.]]);
+    let on_false = Tensor::new(&device, &[[1., 2.], [3., 4.]]);
+
+    // Basic where_cond
+    let result = condition.where_cond(&on_true, &on_false);
+    assert_eq!(result.count_kernels_to_resolve(), 1);
+    let output = result.as_slice().await.unwrap();
+
+    assert_eq!(output[[0, 0]], 1.);   // condition=0 -> on_false
+    assert_eq!(output[[0, 1]], 20.);  // condition=1 -> on_true
+    assert_eq!(output[[1, 0]], 30.);  // condition=1 -> on_true
+    assert_eq!(output[[1, 1]], 4.);   // condition=0 -> on_false
+}

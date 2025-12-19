@@ -96,6 +96,11 @@ impl TryFrom<MirValue> for MaybeQData {
 pub(crate) enum VisitTiledInputType {
     Quantized(GgmlType),
     Dequantized(DataTypeEnum),
+    /// Dequantized tensor with explicit rank (for inputs with different rank than output)
+    DequantizedWithRank {
+        datatype: DataTypeEnum,
+        rank: u32,
+    },
 }
 
 impl From<DataTypeEnum> for VisitTiledInputType {
@@ -157,6 +162,9 @@ fn build_tiled_map_kernel(
             }
             VisitTiledInputType::Dequantized(ty) => {
                 MaybeQTensorInput::Tensor(kernel.add_tensor_input(rank, true, *ty))
+            }
+            VisitTiledInputType::DequantizedWithRank { datatype, rank: input_rank } => {
+                MaybeQTensorInput::Tensor(kernel.add_tensor_input(*input_rank, true, *datatype))
             }
         })
         .collect::<Vec<_>>();
