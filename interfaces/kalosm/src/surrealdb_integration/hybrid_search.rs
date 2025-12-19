@@ -961,8 +961,6 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
-    use surrealdb::RecordIdKey;
 
     #[test]
     fn test_normalize_scores() {
@@ -1008,7 +1006,7 @@ mod tests {
         let normalized = normalize_scores(&scores).unwrap();
 
         // All should be in [0, 1]
-        assert!(normalized.iter().all(|&n| n >= 0.0 && n <= 1.0));
+        assert!(normalized.iter().all(|&n| (0.0..=1.0).contains(&n)));
         // Max should be 1.0
         assert!((normalized[0] - 1.0).abs() < 0.001);
     }
