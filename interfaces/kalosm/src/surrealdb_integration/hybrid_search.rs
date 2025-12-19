@@ -134,10 +134,11 @@ pub trait DocumentTableBuilderHybridExt<C: Connection, E, K: Chunker>: Sized {
     ///
     /// # Example
     /// ```rust,no_run
+    /// use surrealdb::{Surreal, engine::local::Db};
     /// use kalosm::language::*;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let db = todo!();
+    /// # let db: Surreal<Db> = todo!();
     /// // Use default "body" field
     /// let table1 = db
     ///     .document_table_builder("documents")
@@ -639,7 +640,7 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
     /// * `weight` - Weight for semantic score (0.0 to 1.0)
     ///
     /// # Example
-    /// ```
+    /// ```rust,ignore
     /// // Setting semantic weight to 0.8 will set keyword weight to 0.2
     /// builder.with_semantic_weight(0.8)
     /// ```
@@ -660,7 +661,7 @@ impl<'a, C: Connection, R, M: Embedder, K: Chunker> HybridSearchBuilder<'a, C, R
     /// * `weight` - Weight for keyword score (0.0 to 1.0)
     ///
     /// # Example
-    /// ```
+    /// ```rust,ignore
     /// // Setting keyword weight to 0.4 will set semantic weight to 0.6
     /// builder.with_keyword_weight(0.4)
     /// ```
