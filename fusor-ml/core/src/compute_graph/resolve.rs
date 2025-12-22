@@ -339,7 +339,7 @@ impl<'a> Resolver<'a> {
                 || self.try_convert_where_cond_to_nary(graph, node_idx)
                 || self.try_fuse_naries(graph, node_idx)
                 || self.try_fuse_into_reduce(graph, node_idx)
-                || self.try_fuse_into_matmul(graph, node_idx)
+                // || self.try_fuse_into_matmul(graph, node_idx)
                 || self.try_fuse_into_dequantize(graph, node_idx);
 
             if changed {
