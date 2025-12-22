@@ -339,7 +339,7 @@ impl<'a> Resolver<'a> {
                 || self.try_convert_where_cond_to_nary(graph, node_idx)
                 || self.try_fuse_naries(graph, node_idx)
                 || self.try_fuse_into_reduce(graph, node_idx)
-                // || self.try_fuse_into_matmul(graph, node_idx)
+                || self.try_fuse_into_matmul(graph, node_idx)
                 || self.try_fuse_into_dequantize(graph, node_idx);
 
             if changed {
@@ -756,7 +756,7 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    /// Try to extract ElementWiseOperation from a node variant (either ElementWise or Nary with single input).
+    /// Try to extract ElementWiseOperation from a node variant (only Nary with single input can be converted).
     fn try_get_elementwise(
         variant: &ComputeGraphNodeVariant,
     ) -> Option<crate::ElementWiseOperation> {
@@ -869,10 +869,7 @@ impl<'a> Resolver<'a> {
                     Self::try_get_elementwise(&self.execution_graph[first_exec].variant)
             {
                 new_matmul.first = el_op.value;
-                let mut funcs = el_op.functions.functions.clone();
-                funcs.extend(new_matmul.pre_element_wise[0].functions.iter().cloned());
-                new_matmul.pre_element_wise[0] =
-                    ElementWiseFunctions::new(funcs, el_op.input_datatype());
+                new_matmul.pre_element_wise[0] = el_op.functions.clone();
                 changed = true;
             }
 
@@ -883,10 +880,7 @@ impl<'a> Resolver<'a> {
                     Self::try_get_elementwise(&self.execution_graph[second_exec].variant)
             {
                 new_matmul.second = el_op.value;
-                let mut funcs = el_op.functions.functions.clone();
-                funcs.extend(new_matmul.pre_element_wise[1].functions.iter().cloned());
-                new_matmul.pre_element_wise[1] =
-                    ElementWiseFunctions::new(funcs, el_op.input_datatype());
+                new_matmul.pre_element_wise[1] = el_op.functions.clone();
                 changed = true;
             }
 

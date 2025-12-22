@@ -116,16 +116,17 @@ pub(super) fn build_kernel(
         kernel.add_tensor_input(matmul.rank(), true, matmul.post_element_wise.out_datatype());
 
     const PADDING: u32 = 1; // Add padding for bank conflict avoidance
+    let cache_dtype = matmul.matmul_dtype();
     let cache_a_size = if double_buffer { 2 } else { 1 } * block_m_size * (block_k_size + PADDING);
     let cache_a = kernel.add_global_array(
         KernelGlobalSpace::Workgroup,
-        matmul.datatype,
+        cache_dtype,
         cache_a_size.to_string(),
     );
     let cache_b_size = if double_buffer { 2 } else { 1 } * block_n_size * (block_k_size + PADDING);
     let cache_b = kernel.add_global_array(
         KernelGlobalSpace::Workgroup,
-        matmul.datatype,
+        cache_dtype,
         cache_b_size.to_string(),
     );
 

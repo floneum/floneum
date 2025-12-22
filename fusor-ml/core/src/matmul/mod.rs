@@ -183,7 +183,8 @@ impl Operation for MatMulOperation {
         let mut out_shape = a_shape.to_vec();
         out_shape[second_to_last_dim] = a_shape[second_to_last_dim];
         out_shape[last_dim] = b_shape[last_dim];
-        let output_tensor = TensorData::new_for_shape(device, &out_shape, a.datatype());
+        let output_tensor =
+            TensorData::new_for_shape(device, &out_shape, self.post_element_wise.out_datatype());
         vec![a.into(), b.into(), output_tensor.into()]
     }
 
