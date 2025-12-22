@@ -87,17 +87,17 @@ impl RopeFusedOperation {
         let dim_last_idx = rank - 1;
 
         // Current input value
-        let input_val = NaryExpr::input(0, self.datatype);
+        let input_val = NaryExpr::input(0, rank);
 
         // Build cos/sin index based on mode
-        let cos_sin_index = self.build_cos_sin_index(dim_seq_idx, dim_last_idx);
-        let cos_val = NaryExpr::indexed_input(1, cos_sin_index.clone());
-        let sin_val = NaryExpr::indexed_input(2, cos_sin_index);
+        let cos_sin_indices = self.build_cos_sin_indices(dim_seq_idx, dim_last_idx);
+        let cos_val = NaryExpr::indexed_input(1, cos_sin_indices.clone());
+        let sin_val = NaryExpr::indexed_input(2, cos_sin_indices);
 
         // Build neighbor access
         let neighbor_last_dim = self.build_neighbor_index_component(dim_last_idx);
-        let neighbor_index = self.build_index_with_replaced_last(neighbor_last_dim);
-        let neighbor_val = NaryExpr::indexed_input(0, neighbor_index);
+        let neighbor_indices = self.build_indices_with_replaced_last(neighbor_last_dim);
+        let neighbor_val = NaryExpr::indexed_input(0, neighbor_indices);
 
         // Build sign selector for sin
         let sign_condition = self.build_sign_condition(dim_last_idx);
@@ -116,10 +116,10 @@ impl RopeFusedOperation {
         NaryExpr::add(input_times_cos, neighbor_times_sin, self.datatype)
     }
 
-    /// Build the index expression for accessing cos/sin values
-    fn build_cos_sin_index(&self, dim_seq_idx: usize, dim_last_idx: usize) -> NaryExpr {
-        let dim_seq = NaryExpr::dim_index(dim_seq_idx);
-        let dim_last = NaryExpr::dim_index(dim_last_idx);
+    /// Build the index expressions for accessing cos/sin values (returns Vec for indexed_input)
+    fn build_cos_sin_indices(&self, dim_seq_idx: usize, dim_last_idx: usize) -> Vec<NaryExpr> {
+        let dim_seq = NaryExpr::DimIndex(dim_seq_idx);
+        let dim_last = NaryExpr::DimIndex(dim_last_idx);
 
         let cos_sin_dim = match self.mode {
             // Interleaved: index = dim_last / 2
@@ -139,12 +139,12 @@ impl RopeFusedOperation {
             }
         };
 
-        NaryExpr::make_index(vec![dim_seq, cos_sin_dim])
+        vec![dim_seq, cos_sin_dim]
     }
 
     /// Build the expression for computing the neighbor's last dimension index
     fn build_neighbor_index_component(&self, dim_last_idx: usize) -> NaryExpr {
-        let dim_last = NaryExpr::dim_index(dim_last_idx);
+        let dim_last = NaryExpr::DimIndex(dim_last_idx);
 
         match self.mode {
             // Interleaved: neighbor at dim_last ± 1 based on parity
@@ -174,7 +174,7 @@ impl RopeFusedOperation {
 
     /// Build the condition expression for selecting sin sign
     fn build_sign_condition(&self, dim_last_idx: usize) -> NaryExpr {
-        let dim_last = NaryExpr::dim_index(dim_last_idx);
+        let dim_last = NaryExpr::DimIndex(dim_last_idx);
 
         match self.mode {
             // Interleaved: sign based on dim_last % 2 (even = -sin, odd = +sin)
@@ -199,12 +199,12 @@ impl RopeFusedOperation {
         }
     }
 
-    /// Build an index expression that uses all current dimensions except replaces the last one
-    fn build_index_with_replaced_last(&self, new_last: NaryExpr) -> NaryExpr {
+    /// Build index expressions that use all current dimensions except replaces the last one
+    fn build_indices_with_replaced_last(&self, new_last: NaryExpr) -> Vec<NaryExpr> {
         let rank = self.rank();
-        let mut components: Vec<NaryExpr> = (0..rank - 1).map(NaryExpr::dim_index).collect();
+        let mut components: Vec<NaryExpr> = (0..rank - 1).map(NaryExpr::DimIndex).collect();
         components.push(new_last);
-        NaryExpr::make_index(components)
+        components
     }
 }
 

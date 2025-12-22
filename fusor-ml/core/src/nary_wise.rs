@@ -40,42 +40,39 @@ pub(crate) enum NaryExpr {
         children: Vec<NaryExpr>,
         function: NaryFunction,
     },
-    /// Index into input tensor using computed index expression
-    /// The index expression should evaluate to an array of indices (one per dimension)
+    /// Index into input tensor using computed index expressions
     IndexedInput {
         /// Which input to access (index into inputs array)
         input_idx: usize,
-        /// Expression that computes the index (should evaluate to array of indices)
-        index: Box<NaryExpr>,
+        /// Index expressions, one per dimension of the input tensor.
+        /// Each element evaluates to a u32 index.
+        /// For element-wise access, use `vec![DimIndex(0), DimIndex(1), ..., DimIndex(rank-1)]`.
+        indices: Vec<NaryExpr>,
     },
-    /// Get current output index as array of all dimension indices
-    /// For a 3D tensor, evaluates to vec3<u32>(dim_0, dim_1, dim_2)
-    Dim,
-    /// Extract single component from array expression
-    /// Used to get a specific dimension index from Dim
-    Component {
-        /// Which component to extract (0-indexed)
-        component: usize,
-        /// Expression that evaluates to an array
-        expr: Box<NaryExpr>,
-    },
+    /// Get current output dimension index
+    DimIndex(usize),
 }
 
 impl NaryExpr {
-    /// Create an input expression that accesses at the current dimension indices
-    pub fn input(input_idx: usize, _output_type: DataTypeEnum) -> Self {
+    /// Create an input expression that accesses at the current dimension indices (element-wise)
+    pub fn input(input_idx: usize, rank: usize) -> Self {
         NaryExpr::IndexedInput {
             input_idx,
-            index: Box::new(NaryExpr::Dim),
+            indices: (0..rank).map(NaryExpr::DimIndex).collect(),
         }
     }
 
-    /// Create an expression that gets a single dimension index
-    pub fn dim_index(dim_idx: usize) -> Self {
-        NaryExpr::Component {
-            component: dim_idx,
-            expr: Box::new(NaryExpr::Dim),
+    /// Create an input expression with custom index expressions
+    pub fn indexed_input(input_idx: usize, indices: Vec<NaryExpr>) -> Self {
+        NaryExpr::IndexedInput {
+            input_idx,
+            indices,
         }
+    }
+
+    /// Check if indices represent element-wise access (just DimIndex(0), DimIndex(1), ..., DimIndex(rank-1))
+    pub(crate) fn is_elementwise_indices(indices: &[NaryExpr]) -> bool {
+        indices.iter().enumerate().all(|(i, idx)| matches!(idx, NaryExpr::DimIndex(d) if *d == i))
     }
 
     /// Create a select expression (ternary operator)
@@ -168,42 +165,53 @@ impl NaryExpr {
         }
     }
 
-    /// Create an index vector (vec2, vec3, or vec4) from dimension components
-    pub fn make_index(components: Vec<NaryExpr>) -> NaryExpr {
-        let rank = components.len();
-        let (operation, input_names) = match rank {
-            2 => (
-                "let output = vec2<u32>(a, b);".to_string(),
-                vec!["a".to_string(), "b".to_string()],
-            ),
-            3 => (
-                "let output = vec3<u32>(a, b, c);".to_string(),
-                vec!["a".to_string(), "b".to_string(), "c".to_string()],
-            ),
-            4 => (
-                "let output = vec4<u32>(a, b, c, d);".to_string(),
-                vec!["a".to_string(), "b".to_string(), "c".to_string(), "d".to_string()],
-            ),
-            _ => panic!("Unsupported rank {} for make_index", rank),
-        };
+    /// Create an index_select expression
+    ///
+    /// This creates an expression that:
+    /// - Accesses the index tensor (input 1) at the select dimension to get the index value
+    /// - Uses that index value to access the main tensor (input 0) along the select dimension
+    /// - Uses normal output dimensions for all other dimensions
+    ///
+    /// For a tensor with rank R, selecting along dimension D:
+    /// - Input 0: main tensor (rank R)
+    /// - Input 1: index tensor (rank 1, u32)
+    /// - Output: tensor with shape where dimension D is replaced with index tensor length
+    pub fn index_select(rank: usize, select_dimension: usize) -> NaryExpr {
+        // Build the index components for the main tensor access
+        let index_components: Vec<NaryExpr> = (0..rank)
+            .map(|dim| {
+                if dim == select_dimension {
+                    // For the select dimension, look up the index in the index tensor
+                    // The index tensor is 1D, accessed at the current output's select_dimension position
+                    NaryExpr::indexed_input(1, vec![NaryExpr::DimIndex(select_dimension)])
+                } else {
+                    // For other dimensions, use the current output dimension index directly
+                    NaryExpr::DimIndex(dim)
+                }
+            })
+            .collect();
 
-        NaryExpr::Op {
-            children: components,
-            function: NaryFunction {
-                name: Some(format!("make_vec{}", rank)),
-                operation,
-                input_names,
-                input_types: vec![DataTypeEnum::U32; rank],
-                output_type: DataTypeEnum::U32,
-            },
-        }
+        // Access the main tensor with the computed index
+        NaryExpr::indexed_input(0, index_components)
     }
 
-    /// Create an indexed input access with a custom index expression
-    pub fn indexed_input(input_idx: usize, index: NaryExpr) -> NaryExpr {
-        NaryExpr::IndexedInput {
-            input_idx,
-            index: Box::new(index),
+    /// Check if an expression uses custom indexing (not element-wise) for a specific input
+    /// Returns true if the input is accessed with custom indexing, meaning buffer reuse is unsafe
+    pub fn uses_custom_indexing_for_input(&self, target_input_idx: usize) -> bool {
+        match self {
+            NaryExpr::Op { children, .. } => {
+                children.iter().any(|c| c.uses_custom_indexing_for_input(target_input_idx))
+            }
+            NaryExpr::IndexedInput { input_idx, indices } => {
+                if *input_idx == target_input_idx {
+                    // Custom indexing if indices is NOT the simple element-wise pattern
+                    !Self::is_elementwise_indices(indices)
+                } else {
+                    // Recurse into the index expressions
+                    indices.iter().any(|c| c.uses_custom_indexing_for_input(target_input_idx))
+                }
+            }
+            NaryExpr::DimIndex(_) => false,
         }
     }
 
@@ -214,13 +222,15 @@ impl NaryExpr {
                 let child_names: Vec<_> = children.iter().map(|c| c.name()).collect();
                 format!("{}({})", function.name(), child_names.join(","))
             }
-            NaryExpr::IndexedInput { input_idx, index } => {
-                format!("input_{}[{}]", input_idx, index.name())
+            NaryExpr::IndexedInput { input_idx, indices } => {
+                if Self::is_elementwise_indices(indices) {
+                    format!("input_{}", input_idx)
+                } else {
+                    let idx_names: Vec<_> = indices.iter().map(|c| c.name()).collect();
+                    format!("input_{}[{}]", input_idx, idx_names.join(","))
+                }
             }
-            NaryExpr::Dim => "dim".to_string(),
-            NaryExpr::Component { component, expr } => {
-                format!("{}.{}", expr.name(), component)
-            }
+            NaryExpr::DimIndex(dim) => format!("dim_{}", dim),
         }
     }
 }
@@ -238,21 +248,23 @@ pub(crate) struct NaryOperation {
 }
 
 impl NaryOperation {
-    /// Generate WGSL code for evaluating the expression tree
+    /// Generate WGSL code for evaluating the expression tree.
+    /// Returns (value_string, actual_datatype) where actual_datatype is the type of the returned value.
     fn generate_expr_code(
         &self,
         expr: &NaryExpr,
         kernel: &mut GenericKernel,
         input_values: &[String],
         input_tensors: &[crate::visit_tiled::MaybeQTensorInput],
+        input_datatypes: &[DataTypeEnum],
         current_dims: &[String],
         temp_counter: &mut usize,
-        functions_cache: &mut Vec<(String, Function)>,
-    ) -> String {
+        functions_cache: &mut Vec<(String, Vec<DataTypeEnum>, Function)>,
+    ) -> (String, DataTypeEnum) {
         match expr {
             NaryExpr::Op { children, function } => {
                 // Recursively evaluate all children
-                let child_values: Vec<String> = children
+                let child_results: Vec<(String, DataTypeEnum)> = children
                     .iter()
                     .map(|child| {
                         self.generate_expr_code(
@@ -260,6 +272,7 @@ impl NaryOperation {
                             kernel,
                             input_values,
                             input_tensors,
+                            input_datatypes,
                             current_dims,
                             temp_counter,
                             functions_cache,
@@ -267,10 +280,24 @@ impl NaryOperation {
                     })
                     .collect();
 
-                // Check if we already have this function cached
-                let func = if let Some((_, cached_func)) = functions_cache
+                // Cast child values to expected types if needed
+                let child_values: Vec<String> = child_results
                     .iter()
-                    .find(|(op, _)| *op == function.operation)
+                    .zip(&function.input_types)
+                    .map(|((value, actual_type), expected_type)| {
+                        if actual_type == expected_type {
+                            value.clone()
+                        } else {
+                            // Insert type cast
+                            format!("{}({})", expected_type, value)
+                        }
+                    })
+                    .collect();
+
+                // Check if we already have this function cached (by operation AND types)
+                let func = if let Some((_, _, cached_func)) = functions_cache
+                    .iter()
+                    .find(|(op, types, _)| *op == function.operation && *types == function.input_types)
                 {
                     cached_func.clone()
                 } else {
@@ -284,7 +311,7 @@ impl NaryOperation {
                             .zip(&function.input_types)
                             .map(|(name, ty)| (name.clone(), ty.to_string())),
                     );
-                    functions_cache.push((function.operation.clone(), func.clone()));
+                    functions_cache.push((function.operation.clone(), function.input_types.clone(), func.clone()));
                     func
                 };
 
@@ -295,36 +322,35 @@ impl NaryOperation {
                 // Call function with child values
                 writeln!(kernel, "let {temp_name} = {};", func.call(child_values)).unwrap();
 
-                temp_name
+                (temp_name, function.output_type)
             }
-            NaryExpr::IndexedInput { input_idx, index } => {
+            NaryExpr::IndexedInput { input_idx, indices } => {
                 use crate::visit_tiled::MaybeQTensorInput;
 
-                // Check if index is just Dim (equivalent to old Normal mapping)
-                if matches!(index.as_ref(), NaryExpr::Dim) {
-                    // Normal mapping - just use the pre-computed value
-                    input_values[*input_idx].clone()
+                let actual_type = input_datatypes[*input_idx];
+
+                // Check if this is element-wise access (can use pre-computed value)
+                if NaryExpr::is_elementwise_indices(indices) {
+                    (input_values[*input_idx].clone(), actual_type)
                 } else {
-                    // Get the rank of the input tensor
-                    let input_rank = match &input_tensors[*input_idx] {
-                        MaybeQTensorInput::Tensor(t) => t.rank() as usize,
-                        MaybeQTensorInput::QTensor(q) => q.rank as usize,
-                    };
+                    // Custom indexing - evaluate each index expression
+                    let dims: Vec<String> = indices
+                        .iter()
+                        .map(|idx_expr| {
+                            let (value, _) = self.generate_expr_code(
+                                idx_expr,
+                                kernel,
+                                input_values,
+                                input_tensors,
+                                input_datatypes,
+                                current_dims,
+                                temp_counter,
+                                functions_cache,
+                            );
+                            value
+                        })
+                        .collect();
 
-                    // Extract dimension expressions from the index tree
-                    // If it's an Op that makes a vec, we can directly use its children
-                    let dims: Vec<String> = self.extract_index_dimensions(
-                        index,
-                        input_rank,
-                        kernel,
-                        input_values,
-                        input_tensors,
-                        current_dims,
-                        temp_counter,
-                        functions_cache,
-                    );
-
-                    // Generate strided index call with computed dimension expressions
                     let custom_idx_var = format!("custom_idx_{}", *temp_counter);
                     *temp_counter += 1;
 
@@ -339,118 +365,12 @@ impl NaryOperation {
                     }
                     writeln!(kernel, ";").unwrap();
 
-                    // Return the custom indexed value
-                    format!("{}[{}]", input_tensors[*input_idx], custom_idx_var)
+                    (format!("{}[{}]", input_tensors[*input_idx], custom_idx_var), actual_type)
                 }
             }
-            NaryExpr::Dim => {
-                // Dim evaluates to an array of all current dimension indices
-                // We need to store it in a temp variable because WGSL doesn't allow
-                // indexing directly into constructor expressions
-                let rank = current_dims.len();
-                let temp_name = format!("dim_vec_{}", *temp_counter);
-                *temp_counter += 1;
-
-                if rank <= 4 {
-                    // Use WGSL vec types for small ranks
-                    writeln!(
-                        kernel,
-                        "let {} = vec{}<u32>({});",
-                        temp_name,
-                        rank,
-                        current_dims.join(", ")
-                    )
-                    .unwrap();
-                } else {
-                    // Use array for larger ranks
-                    writeln!(
-                        kernel,
-                        "let {} = array<u32, {}>({});",
-                        temp_name,
-                        rank,
-                        current_dims.join(", ")
-                    )
-                    .unwrap();
-                }
-
-                temp_name
-            }
-            NaryExpr::Component { component, expr } => {
-                // First evaluate the expression to get the array
-                let array_val = self.generate_expr_code(
-                    expr,
-                    kernel,
-                    input_values,
-                    input_tensors,
-                    current_dims,
-                    temp_counter,
-                    functions_cache,
-                );
-
-                // Then extract the component
-                format!("{}[{}u]", array_val, component)
-            }
-        }
-    }
-
-    /// Extract dimension expressions from an index expression tree.
-    /// This avoids creating intermediate vec types by directly extracting each dimension
-    /// as a separate WGSL expression.
-    fn extract_index_dimensions(
-        &self,
-        index: &NaryExpr,
-        expected_rank: usize,
-        kernel: &mut GenericKernel,
-        input_values: &[String],
-        input_tensors: &[crate::visit_tiled::MaybeQTensorInput],
-        current_dims: &[String],
-        temp_counter: &mut usize,
-        functions_cache: &mut Vec<(String, Function)>,
-    ) -> Vec<String> {
-        match index {
-            // If the index is an Op that constructs a vec (name starts with "make_vec"),
-            // directly use its children as dimension expressions
-            NaryExpr::Op { children, function }
-                if function.name.as_ref().is_some_and(|n| n.starts_with("make_vec")) =>
-            {
-                assert_eq!(
-                    children.len(),
-                    expected_rank,
-                    "Index vec has wrong number of dimensions: expected {}, got {}",
-                    expected_rank,
-                    children.len()
-                );
-                children
-                    .iter()
-                    .map(|child| {
-                        self.generate_expr_code(
-                            child,
-                            kernel,
-                            input_values,
-                            input_tensors,
-                            current_dims,
-                            temp_counter,
-                            functions_cache,
-                        )
-                    })
-                    .collect()
-            }
-            // If the index is Dim, use the current dimension variables directly
-            NaryExpr::Dim => current_dims.to_vec(),
-            // For other cases, evaluate the index and extract each component
-            _ => {
-                let index_val = self.generate_expr_code(
-                    index,
-                    kernel,
-                    input_values,
-                    input_tensors,
-                    current_dims,
-                    temp_counter,
-                    functions_cache,
-                );
-                (0..expected_rank)
-                    .map(|i| format!("{}[{}u]", index_val, i))
-                    .collect()
+            NaryExpr::DimIndex(dim) => {
+                // Return the current dimension variable directly
+                (current_dims[*dim].clone(), DataTypeEnum::U32)
             }
         }
     }
@@ -468,11 +388,8 @@ impl NaryOperation {
                     // This is a limitation - we can't easily get it without graph access
                     output_datatype
                 }
-                NaryExpr::Dim => {
-                    panic!("Dim cannot be the root expression for ElementWise conversion");
-                }
-                NaryExpr::Component { .. } => {
-                    panic!("Component cannot be the root expression for ElementWise conversion");
+                NaryExpr::DimIndex(_) => {
+                    panic!("DimIndex cannot be the root expression for ElementWise conversion");
                 }
             };
 
@@ -510,27 +427,18 @@ impl NaryOperation {
                         writeln!(function_body, "}}",)?;
                         Ok(())
                     }
-                    NaryExpr::IndexedInput { index, .. } => {
-                        // Only index = Dim (normal mapping) can be converted to ElementWise
-                        if matches!(index.as_ref(), NaryExpr::Dim) {
+                    NaryExpr::IndexedInput { indices, .. } => {
+                        // Only element-wise access can be converted
+                        if NaryExpr::is_elementwise_indices(indices) {
                             writeln!(function_body, "let output_{this_output} = input;")
                         } else {
-                            // Custom indexing cannot be converted to ElementWise
-                            // (requires multi-dimensional indexing)
                             panic!(
-                                "IndexedInput with custom index cannot be converted to ElementWise operation"
+                                "IndexedInput with custom indices cannot be converted to ElementWise operation"
                             );
                         }
                     }
-                    NaryExpr::Dim => {
-                        // Dim cannot be converted to ElementWise
-                        // (operates on indices, not tensor values)
-                        panic!("Dim cannot be converted to ElementWise operation");
-                    }
-                    NaryExpr::Component { .. } => {
-                        // Component cannot be converted to ElementWise
-                        // (operates on indices, not tensor values)
-                        panic!("Component cannot be converted to ElementWise operation");
+                    NaryExpr::DimIndex(_) => {
+                        panic!("DimIndex cannot be converted to ElementWise operation");
                     }
                 }
             }
@@ -580,11 +488,30 @@ impl Operation for NaryOperation {
         let mut mir_inputs: Vec<MirValue> = self
             .inputs
             .iter()
-            .map(|idx| nodes.get_result_or_qmatrix(*idx).unwrap().into())
+            .enumerate()
+            .map(|(i, idx)| {
+                // If this input uses custom indexing, we need the dequantized tensor,
+                // not the raw QMatrix (custom indexing doesn't work on quantized data)
+                if self.expression.uses_custom_indexing_for_input(i) {
+                    // Try to get the cached (dequantized) result first
+                    if let Some(cached) = nodes.get_result(*idx) {
+                        return cached.into();
+                    }
+                }
+                // Otherwise use the normal path which may return QMatrix for Dequantize nodes
+                nodes.get_result_or_qmatrix(*idx).unwrap().into()
+            })
             .collect();
 
         // Check if we can reuse an input allocation for output
+        // We can only reuse if:
+        // 1. The input matches datatype, is owned, and doesn't overlap
+        // 2. The input is NOT accessed with custom indexing (which would cause read/write races)
         let reuse_index = mir_inputs.iter().enumerate().find_map(|(i, input)| {
+            // Don't reuse if this input is accessed with custom indexing
+            if self.expression.uses_custom_indexing_for_input(i) {
+                return None;
+            }
             if let Ok(data) = std::convert::TryInto::<MaybeQData>::try_into(input.clone())
                 && data.datatype() == self.output_datatype.into()
                 && data.owned()
@@ -612,6 +539,10 @@ impl Operation for NaryOperation {
             .iter()
             .enumerate()
             .find_map(|(i, input)| {
+                // Don't reuse if this input is accessed with custom indexing
+                if self.expression.uses_custom_indexing_for_input(i) {
+                    return None;
+                }
                 if let Ok(data) = std::convert::TryInto::<MaybeQData>::try_into(input.clone())
                     && data.datatype() == self.output_datatype.into()
                     && data.owned()
@@ -642,6 +573,10 @@ impl Operation for NaryOperation {
             .iter()
             .enumerate()
             .find_map(|(i, input)| {
+                // Don't reuse if this input is accessed with custom indexing
+                if self.expression.uses_custom_indexing_for_input(i) {
+                    return None;
+                }
                 if let Ok(data) = std::convert::TryInto::<MaybeQData>::try_into(input.clone())
                     && data.datatype() == self.output_datatype.into()
                     && data.owned()
@@ -654,40 +589,39 @@ impl Operation for NaryOperation {
 
         let output_tensor_index = reuse_index.unwrap_or(self.inputs.len());
 
-        // Collect datatypes and ranks for all inputs
-        let datatypes: Vec<_> = inputs
+        // Collect inputs with datatypes and ranks for all inputs
+        let tiled_inputs: Vec<_> = inputs
             .iter()
-            .filter_map(|input| {
-                let data: MaybeQData = input.clone().try_into().ok()?;
+            .enumerate()
+            .filter_map(|(_i, input)| {
+                let result: Result<MaybeQData, _> = input.clone().try_into();
+                result.ok()
+            })
+            .map(|data| {
                 let datatype = data.datatype();
                 let input_rank = data.layout().shape().len() as u32;
-                let output_rank = self.shape.len() as u32;
-
-                // Use DequantizedWithRank if the input has a different rank than the output
-                if input_rank != output_rank {
-                    // Extract DataTypeEnum from VisitTiledInputType
-                    match datatype {
-                        crate::visit_tiled::VisitTiledInputType::Dequantized(dt) => {
-                            Some(crate::visit_tiled::VisitTiledInputType::DequantizedWithRank {
-                                datatype: dt,
-                                rank: input_rank,
-                            })
-                        }
-                        _ => Some(datatype), // For quantized types, use the original
-                    }
-                } else {
-                    Some(datatype)
-                }
+                crate::visit_tiled::VisitTiledInput::new(datatype, input_rank)
             })
             .collect();
 
-        let mut functions_cache: Vec<(String, Function)> = Vec::new();
+        // Extract DataTypeEnum for each input for type checking during code generation
+        let input_datatypes: Vec<DataTypeEnum> = tiled_inputs
+            .iter()
+            .take(self.inputs.len())
+            .map(|input| match input.datatype {
+                crate::visit_tiled::VisitTiledInputType::Quantized(_) => DataTypeEnum::F32, // Quantized dequantizes to f32
+                crate::visit_tiled::VisitTiledInputType::Dequantized(d) => d,
+            })
+            .collect();
+
+        let mut functions_cache: Vec<(String, Vec<DataTypeEnum>, Function)> = Vec::new();
 
         build_visit_tiled_kernel(
             &graph.device,
             &self.shape,
             TILE_SIZE,
-            datatypes,
+            tiled_inputs,
+            output_tensor_index,
             |kernel, indexes, tensors, values| {
                 let input_values: Vec<_> = values[..self.inputs.len()].to_vec();
                 let input_tensors = &tensors[..self.inputs.len()];
@@ -701,11 +635,12 @@ impl Operation for NaryOperation {
                 let current_dims: Vec<String> = (0..rank).map(|i| format!("dim_{}", i)).collect();
 
                 // Generate expression tree evaluation
-                let result = self.generate_expr_code(
+                let (result, _result_type) = self.generate_expr_code(
                     &self.expression,
                     kernel,
                     &input_values,
                     input_tensors,
+                    &input_datatypes,
                     &current_dims,
                     &mut temp_counter,
                     &mut functions_cache,

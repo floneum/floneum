@@ -75,14 +75,19 @@ impl Operation for SliceAssignOperation {
         let value: MaybeQData = inputs[1].clone().try_into().unwrap();
         assert_eq!(input.layout().shape(), value.layout().shape());
         let datatype = input.datatype();
+        let rank = input.layout().shape().len() as u32;
 
-        let datatypes = vec![datatype; 2];
+        let tiled_inputs = vec![
+            crate::visit_tiled::VisitTiledInput::new(datatype, rank),
+            crate::visit_tiled::VisitTiledInput::new(datatype, rank),
+        ];
 
         build_visit_tiled_kernel(
             &graph.device,
             input.layout().shape(),
             TILE_SIZE,
-            datatypes,
+            tiled_inputs,
+            0, // output is the first tensor (target)
             |_, indexes, tensors, values| {
                 let target_index = &indexes[0];
                 let target_tensor = &tensors[0];

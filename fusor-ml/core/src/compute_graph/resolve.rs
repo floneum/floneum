@@ -240,12 +240,12 @@ impl<'a> Resolver<'a> {
         match &node.variant {
             ComputeGraphNodeVariant::ElementWise(op) => {
                 let inputs = vec![op.value];
-                let input_datatype = op.functions.input_datatype();
+                let shape: Box<[_]> = op.shape().into();
+                let rank = shape.len();
                 // Construct NaryExpr for simple unary chain
                 let expression =
-                    self.wrap_with_element_wise_functions(NaryExpr::input(0, input_datatype), &op.functions);
+                    self.wrap_with_element_wise_functions(NaryExpr::input(0, rank), &op.functions);
 
-                let shape: Box<[_]> = op.shape().into();
                 let final_output_datatype = op.functions.out_datatype();
                 let nary = NaryOperation {
                     inputs,
@@ -257,13 +257,14 @@ impl<'a> Resolver<'a> {
             }
             ComputeGraphNodeVariant::PairWise(op) => {
                 let inputs = vec![op.first, op.second];
+                let shape: Box<[_]> = op.shape().into();
+                let rank = shape.len();
                 let ty = op.function.datatype;
                 let expression = NaryExpr::Op {
-                    children: vec![NaryExpr::input(0, ty), NaryExpr::input(1, ty)],
+                    children: vec![NaryExpr::input(0, rank), NaryExpr::input(1, rank)],
                     function: op.function.to_nary_function(ty, ty),
                 };
 
-                let shape: Box<[_]> = op.shape().into();
                 let final_output_datatype = op.function.datatype;
                 let nary = NaryOperation {
                     inputs,
@@ -279,7 +280,21 @@ impl<'a> Resolver<'a> {
             ComputeGraphNodeVariant::MapLayout(op) => Some(Arc::new(op.clone())),
             ComputeGraphNodeVariant::Resize(op) => Some(Arc::new(op.clone())),
             ComputeGraphNodeVariant::SliceAssign(op) => Some(Arc::new(op.clone())),
-            ComputeGraphNodeVariant::IndexSelect(op) => Some(Arc::new(op.clone())),
+            ComputeGraphNodeVariant::IndexSelect(op) => {
+                // Convert IndexSelect to NaryOperation
+                // Let the nary fusion optimization handle combining with element-wise ops
+                let inputs = vec![op.input, op.indexes];
+                let rank = op.rank();
+                let expression = NaryExpr::index_select(rank, op.dimension);
+
+                let nary = NaryOperation {
+                    inputs,
+                    expression,
+                    shape: op.output_shape(),
+                    output_datatype: op.datatype,
+                };
+                Some(Arc::new(nary))
+            }
             ComputeGraphNodeVariant::QMatMul(op) => Some(Arc::new(QMatMulOperation::new(
                 op.input_datatype,
                 &op.in_shape,
@@ -317,14 +332,15 @@ impl<'a> Resolver<'a> {
             // 1. Convert elementwise/pairwise/where_cond to nary (canonical form)
             // 2. Fuse naries together (combine expression trees)
             // 3. Try to fuse resulting nary into specialized ops (reduce, matmul, etc.)
+            // Note: IndexSelect is converted to Nary in lower_node, not during optimization,
+            // because its custom indexing pattern doesn't fuse well with other naries.
             let changed = self.try_convert_elementwise_to_nary(graph, node_idx)
                 || self.try_convert_pairwise_to_nary(graph, node_idx)
                 || self.try_convert_where_cond_to_nary(graph, node_idx)
                 || self.try_fuse_naries(graph, node_idx)
                 || self.try_fuse_into_reduce(graph, node_idx)
                 || self.try_fuse_into_matmul(graph, node_idx)
-                || self.try_fuse_into_dequantize(graph, node_idx)
-                || self.try_fuse_into_index_select(graph, node_idx);
+                || self.try_fuse_into_dequantize(graph, node_idx);
 
             if changed {
                 // Re-add the current node to worklist if it still exists
@@ -416,9 +432,9 @@ impl<'a> Resolver<'a> {
         };
 
         let inputs = vec![op.value];
-        let input_datatype = op.functions.input_datatype();
-        let expression = self.wrap_with_element_wise_functions(NaryExpr::input(0, input_datatype), &op.functions);
         let shape: Box<[_]> = op.shape().into();
+        let rank = shape.len();
+        let expression = self.wrap_with_element_wise_functions(NaryExpr::input(0, rank), &op.functions);
         let output_datatype = op.functions.out_datatype();
 
         let nary = NaryOperation {
@@ -447,12 +463,13 @@ impl<'a> Resolver<'a> {
         };
 
         let inputs = vec![op.first, op.second];
+        let shape: Box<[_]> = op.shape().into();
+        let rank = shape.len();
         let ty = op.function.datatype;
         let expression = NaryExpr::Op {
-            children: vec![NaryExpr::input(0, ty), NaryExpr::input(1, ty)],
+            children: vec![NaryExpr::input(0, rank), NaryExpr::input(1, rank)],
             function: op.function.to_nary_function(ty, ty),
         };
-        let shape: Box<[_]> = op.shape().into();
 
         let nary = NaryOperation {
             inputs,
@@ -511,6 +528,10 @@ impl<'a> Resolver<'a> {
             let Some(input_exec) = self.get_input_node_in_exec_graph(input_inner) else {
                 continue;
             };
+            // Check if the node still exists (it may have been removed during optimization)
+            if !self.execution_graph.contains_node(input_exec) {
+                continue;
+            }
             let ComputeGraphNodeVariant::Nary(input_nary) =
                 &self.execution_graph[input_exec].variant
             else {
@@ -520,9 +541,15 @@ impl<'a> Resolver<'a> {
             // Inline: offset input nary's indices to append after current inputs
             let offset = all_inputs.len();
             let inlined = Self::offset_input_indices(&input_nary.expression, offset);
-            expression = Self::substitute_input_in_expr(&expression, input_idx, &inlined);
-            all_inputs.extend(input_nary.inputs.iter().copied());
-            fused_execs.push((input_exec, input_nary.inputs.clone()));
+            let (new_expression, success) = Self::substitute_input_in_expr(&expression, input_idx, &inlined);
+
+            // Only fuse if substitution was successful
+            // If not, the expression still references the original input which must remain
+            if success {
+                expression = new_expression;
+                all_inputs.extend(input_nary.inputs.iter().copied());
+                fused_execs.push((input_exec, input_nary.inputs.clone()));
+            }
         }
 
         if fused_execs.is_empty() {
@@ -570,86 +597,101 @@ impl<'a> Resolver<'a> {
                     .collect(),
                 function: function.clone(),
             },
-            NaryExpr::IndexedInput { input_idx, index } => NaryExpr::IndexedInput {
+            NaryExpr::IndexedInput { input_idx, indices } => NaryExpr::IndexedInput {
                 input_idx: input_idx + offset,
-                index: Box::new(Self::offset_input_indices(index, offset)),
+                indices: indices.iter().map(|c| Self::offset_input_indices(c, offset)).collect(),
             },
-            NaryExpr::Dim => {
-                // Dim doesn't reference inputs, return as-is
-                NaryExpr::Dim
-            }
-            NaryExpr::Component { component, expr } => NaryExpr::Component {
-                component: *component,
-                expr: Box::new(Self::offset_input_indices(expr, offset)),
-            },
+            NaryExpr::DimIndex(dim) => NaryExpr::DimIndex(*dim),
         }
     }
 
-    /// Substitute IndexedInput(target_idx) with Dim index with the replacement expression.
+    /// Substitute IndexedInput(target_idx) with element-wise access with the replacement expression.
+    /// Returns (new_expression, success) where success is true if all references to target_idx
+    /// were successfully substituted. If false, the input should NOT be removed from the graph.
     fn substitute_input_in_expr(
         expr: &NaryExpr,
         target_idx: usize,
         replacement: &NaryExpr,
-    ) -> NaryExpr {
-        /// Helper to extract input_idx from an IndexedInput with Dim index (normal mapping)
-        fn get_normal_input_idx(expr: &NaryExpr) -> Option<usize> {
+    ) -> (NaryExpr, bool) {
+        /// Helper to extract input_idx from an IndexedInput with element-wise access
+        fn get_elementwise_input_idx(expr: &NaryExpr) -> Option<usize> {
             match expr {
-                NaryExpr::IndexedInput { input_idx, index } if matches!(index.as_ref(), NaryExpr::Dim) => {
-                    Some(*input_idx)
-                }
+                NaryExpr::IndexedInput { input_idx, indices } if NaryExpr::is_elementwise_indices(indices) => Some(*input_idx),
                 _ => None,
             }
         }
 
         match expr {
-            NaryExpr::Op { children, function } => NaryExpr::Op {
-                children: children
+            NaryExpr::Op { children, function } => {
+                let mut all_success = true;
+                let new_children: Vec<_> = children
                     .iter()
-                    .map(|c| Self::substitute_input_in_expr(c, target_idx, replacement))
-                    .collect(),
-                function: function.clone(),
+                    .map(|c| {
+                        let (new_c, success) = Self::substitute_input_in_expr(c, target_idx, replacement);
+                        all_success &= success;
+                        new_c
+                    })
+                    .collect();
+                (NaryExpr::Op {
+                    children: new_children,
+                    function: function.clone(),
+                }, all_success)
             },
-            NaryExpr::IndexedInput { input_idx, index } => {
+            NaryExpr::IndexedInput { input_idx, indices } => {
                 if *input_idx == target_idx {
-                    // Check if this is a normal mapping (index = Dim)
-                    if matches!(index.as_ref(), NaryExpr::Dim) {
-                        // Normal mapping can be fully replaced with any expression
-                        replacement.clone()
+                    // Check if this is element-wise access
+                    if NaryExpr::is_elementwise_indices(indices) {
+                        // Element-wise can be fully replaced with any expression
+                        (replacement.clone(), true)
                     } else {
-                        // Custom mapping can only substitute if replacement is also an IndexedInput with Dim index
-                        if let Some(new_idx) = get_normal_input_idx(replacement) {
-                            NaryExpr::IndexedInput {
+                        // Custom indexing can only substitute if replacement is also element-wise
+                        if let Some(new_idx) = get_elementwise_input_idx(replacement) {
+                            let mut all_success = true;
+                            let new_indices: Vec<_> = indices
+                                .iter()
+                                .map(|c| {
+                                    let (new_c, success) = Self::substitute_input_in_expr(c, target_idx, replacement);
+                                    all_success &= success;
+                                    new_c
+                                })
+                                .collect();
+                            (NaryExpr::IndexedInput {
                                 input_idx: new_idx,
-                                index: Box::new(Self::substitute_input_in_expr(index, target_idx, replacement)),
-                            }
+                                indices: new_indices,
+                            }, all_success)
                         } else {
                             // Cannot fuse complex expression into custom indexed input
-                            // Still recurse into the index expression
-                            NaryExpr::IndexedInput {
+                            let all_success = false;
+                            let new_indices: Vec<_> = indices
+                                .iter()
+                                .map(|c| {
+                                    let (new_c, _) = Self::substitute_input_in_expr(c, target_idx, replacement);
+                                    new_c
+                                })
+                                .collect();
+                            (NaryExpr::IndexedInput {
                                 input_idx: *input_idx,
-                                index: Box::new(Self::substitute_input_in_expr(index, target_idx, replacement)),
-                            }
+                                indices: new_indices,
+                            }, all_success)
                         }
                     }
                 } else {
-                    // Recurse into the index expression
-                    NaryExpr::IndexedInput {
+                    // Recurse into the index expressions
+                    let mut all_success = true;
+                    let new_indices: Vec<_> = indices.iter()
+                        .map(|c| {
+                            let (new_c, s) = Self::substitute_input_in_expr(c, target_idx, replacement);
+                            all_success &= s;
+                            new_c
+                        })
+                        .collect();
+                    (NaryExpr::IndexedInput {
                         input_idx: *input_idx,
-                        index: Box::new(Self::substitute_input_in_expr(index, target_idx, replacement)),
-                    }
+                        indices: new_indices,
+                    }, all_success)
                 }
             }
-            NaryExpr::Dim => {
-                // Dim doesn't reference inputs, return as-is
-                NaryExpr::Dim
-            }
-            NaryExpr::Component { component, expr } => {
-                // Recurse into the expression
-                NaryExpr::Component {
-                    component: *component,
-                    expr: Box::new(Self::substitute_input_in_expr(expr, target_idx, replacement)),
-                }
-            }
+            NaryExpr::DimIndex(dim) => (NaryExpr::DimIndex(*dim), true),
         }
     }
 
@@ -687,16 +729,13 @@ impl<'a> Resolver<'a> {
                     Self::collect_used_inputs(child, used);
                 }
             }
-            NaryExpr::IndexedInput { input_idx, index } => {
+            NaryExpr::IndexedInput { input_idx, indices } => {
                 used.insert(*input_idx);
-                Self::collect_used_inputs(index, used);
+                for c in indices {
+                    Self::collect_used_inputs(c, used);
+                }
             }
-            NaryExpr::Dim => {
-                // Dim doesn't reference inputs
-            }
-            NaryExpr::Component { expr, .. } => {
-                Self::collect_used_inputs(expr, used);
-            }
+            NaryExpr::DimIndex(_) => {}
         }
     }
 
@@ -709,18 +748,11 @@ impl<'a> Resolver<'a> {
                     .collect(),
                 function: function.clone(),
             },
-            NaryExpr::IndexedInput { input_idx, index } => NaryExpr::IndexedInput {
+            NaryExpr::IndexedInput { input_idx, indices } => NaryExpr::IndexedInput {
                 input_idx: mapping[input_idx],
-                index: Box::new(Self::remap_input_indices(index, mapping)),
+                indices: indices.iter().map(|c| Self::remap_input_indices(c, mapping)).collect(),
             },
-            NaryExpr::Dim => {
-                // Dim doesn't reference inputs, return as-is
-                NaryExpr::Dim
-            }
-            NaryExpr::Component { component, expr } => NaryExpr::Component {
-                component: *component,
-                expr: Box::new(Self::remap_input_indices(expr, mapping)),
-            },
+            NaryExpr::DimIndex(dim) => NaryExpr::DimIndex(*dim),
         }
     }
 
@@ -930,106 +962,6 @@ impl<'a> Resolver<'a> {
         }
         self.remove_node_if_dead(input_exec_idx);
         true
-    }
-
-    fn try_fuse_into_index_select(
-        &mut self,
-        graph: &mut ComputeGraphInner,
-        node_idx: ExecutionNodeIndex,
-    ) -> bool {
-        let node_variant = self.execution_graph[node_idx].variant.clone();
-
-        // Pre-op: fuse elementwise into index_select inputs
-        if let ComputeGraphNodeVariant::IndexSelect(op) = &node_variant {
-            let mut new_op = op.clone();
-            let mut changed = false;
-
-            if !self.check_cached(graph, op.input)
-                && let Some(input_exec) = self.get_input_node_in_exec_graph(op.input)
-                && let Some(el_op) =
-                    Self::try_get_elementwise(&self.execution_graph[input_exec].variant)
-            {
-                new_op.input = el_op.value;
-                let mut funcs = el_op.functions.functions.clone();
-                funcs.extend(new_op.pre_element_wise_input.functions.iter().cloned());
-                new_op.pre_element_wise_input =
-                    ElementWiseFunctions::new(funcs, el_op.input_datatype());
-                changed = true;
-            }
-
-            if !self.check_cached(graph, op.indexes)
-                && let Some(indexes_exec) = self.get_input_node_in_exec_graph(op.indexes)
-                && let Some(el_op) =
-                    Self::try_get_elementwise(&self.execution_graph[indexes_exec].variant)
-            {
-                new_op.indexes = el_op.value;
-                let mut funcs = el_op.functions.functions.clone();
-                funcs.extend(new_op.pre_element_wise_indexes.functions.iter().cloned());
-                new_op.pre_element_wise_indexes =
-                    ElementWiseFunctions::new(funcs, el_op.input_datatype());
-                changed = true;
-            }
-
-            if changed {
-                self.execution_graph[node_idx].variant =
-                    ComputeGraphNodeVariant::IndexSelect(new_op.clone());
-                if new_op.input != op.input {
-                    let old = self.get_input_node_in_exec_graph(op.input).unwrap();
-                    if let Some(edge) = self.execution_graph.find_edge(old, node_idx) {
-                        self.execution_graph.remove_edge(edge);
-                    }
-                    if let Some(new) = self.get_input_node_in_exec_graph(new_op.input) {
-                        self.execution_graph.add_edge(new, node_idx, ());
-                    }
-                    self.remove_node_if_dead(old);
-                }
-                if new_op.indexes != op.indexes {
-                    let old = self.get_input_node_in_exec_graph(op.indexes).unwrap();
-                    if let Some(edge) = self.execution_graph.find_edge(old, node_idx) {
-                        self.execution_graph.remove_edge(edge);
-                    }
-                    if let Some(new) = self.get_input_node_in_exec_graph(new_op.indexes) {
-                        self.execution_graph.add_edge(new, node_idx, ());
-                    }
-                    self.remove_node_if_dead(old);
-                }
-                self.add_physical_dependencies(graph, node_idx, &[new_op.input, new_op.indexes]);
-                return true;
-            }
-        }
-
-        // Post-op: fuse elementwise after index_select
-        if let Some(el_op) = Self::try_get_elementwise(&node_variant)
-            && !self.check_cached(graph, el_op.value)
-            && let Some(input_exec) = self.get_input_node_in_exec_graph(el_op.value)
-        {
-            let input_variant = self.execution_graph[input_exec].variant.clone();
-            if let ComputeGraphNodeVariant::IndexSelect(idx_op) = input_variant {
-                let mut new_idx_op = idx_op.clone();
-                let mut funcs = new_idx_op.pre_element_wise_input.functions.clone();
-                funcs.extend(el_op.functions.functions.iter().cloned());
-                new_idx_op.pre_element_wise_input =
-                    ElementWiseFunctions::new(funcs, idx_op.input_datatype());
-
-                self.execution_graph[node_idx].variant =
-                    ComputeGraphNodeVariant::IndexSelect(new_idx_op.clone());
-
-                if let Some(idx) = self.get_input_node_in_exec_graph(idx_op.input) {
-                    self.execution_graph.add_edge(idx, node_idx, ());
-                }
-                if let Some(idx) = self.get_input_node_in_exec_graph(idx_op.indexes) {
-                    self.execution_graph.add_edge(idx, node_idx, ());
-                }
-                if let Some(edge) = self.execution_graph.find_edge(input_exec, node_idx) {
-                    self.execution_graph.remove_edge(edge);
-                }
-                self.add_physical_dependencies(graph, node_idx, &[idx_op.input, idx_op.indexes]);
-                self.remove_node_if_dead(input_exec);
-                return true;
-            }
-        }
-
-        false
     }
 
     fn should_extend_kernel(&mut self, _: Vec<MirValue>, _: &[Vec<MirValue>]) -> bool {

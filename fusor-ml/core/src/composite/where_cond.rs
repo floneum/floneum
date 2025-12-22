@@ -55,12 +55,13 @@ impl WhereCondOperation {
     pub(crate) fn to_nary(&self) -> crate::nary_wise::NaryOperation {
         use crate::nary_wise::NaryExpr;
 
+        let rank = self.shape.len();
         crate::nary_wise::NaryOperation {
             inputs: vec![self.condition, self.on_true, self.on_false],
             expression: NaryExpr::select(
-                NaryExpr::input(0, self.condition_datatype),
-                NaryExpr::input(1, self.output_datatype),
-                NaryExpr::input(2, self.output_datatype),
+                NaryExpr::input(0, rank),
+                NaryExpr::input(1, rank),
+                NaryExpr::input(2, rank),
                 self.condition_datatype,
                 self.output_datatype,
             ),

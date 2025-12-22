@@ -96,11 +96,6 @@ impl TryFrom<MirValue> for MaybeQData {
 pub(crate) enum VisitTiledInputType {
     Quantized(GgmlType),
     Dequantized(DataTypeEnum),
-    /// Dequantized tensor with explicit rank (for inputs with different rank than output)
-    DequantizedWithRank {
-        datatype: DataTypeEnum,
-        rank: u32,
-    },
 }
 
 impl From<DataTypeEnum> for VisitTiledInputType {
@@ -129,22 +124,37 @@ impl Display for MaybeQTensorInput {
     }
 }
 
+/// Input descriptor for tiled kernel generation, including datatype and rank
+#[derive(Clone, Copy)]
+pub(crate) struct VisitTiledInput {
+    pub datatype: VisitTiledInputType,
+    pub rank: u32,
+}
+
+impl VisitTiledInput {
+    pub fn new(datatype: VisitTiledInputType, rank: u32) -> Self {
+        Self { datatype, rank }
+    }
+}
+
 pub(crate) fn build_visit_tiled_kernel(
     device: &Device,
     shape: &[usize],
     tile_size: u32,
-    datatypes: Vec<VisitTiledInputType>,
+    inputs: Vec<VisitTiledInput>,
+    output_tensor_idx: usize,
     modify_data: impl FnMut(&mut GenericKernel, &[String], &[MaybeQTensorInput], &[String]) -> String,
     kernel: &mut GenericKernel,
 ) {
-    build_tiled_map_kernel(device, shape, tile_size, &datatypes, kernel, modify_data);
+    build_tiled_map_kernel(device, shape, tile_size, &inputs, output_tensor_idx, kernel, modify_data);
 }
 
 fn build_tiled_map_kernel(
     _device: &Device,
     shape: &[usize],
     tile_size: u32,
-    datatypes: &[VisitTiledInputType],
+    inputs: &[VisitTiledInput],
+    output_tensor_idx: usize,
     kernel: &mut GenericKernel,
     mut modify_data: impl FnMut(
         &mut GenericKernel,
@@ -153,18 +163,15 @@ fn build_tiled_map_kernel(
         &[String],
     ) -> String,
 ) {
-    let rank = shape.len() as u32;
-    let tensors = datatypes
+    let output_rank = shape.len() as u32;
+    let tensors = inputs
         .iter()
-        .map(|ty| match ty {
+        .map(|input| match input.datatype {
             VisitTiledInputType::Quantized(ty) => {
-                MaybeQTensorInput::QTensor(kernel.add_q_matrix_input(rank, *ty))
+                MaybeQTensorInput::QTensor(kernel.add_q_matrix_input(input.rank, ty))
             }
             VisitTiledInputType::Dequantized(ty) => {
-                MaybeQTensorInput::Tensor(kernel.add_tensor_input(rank, true, *ty))
-            }
-            VisitTiledInputType::DequantizedWithRank { datatype, rank: input_rank } => {
-                MaybeQTensorInput::Tensor(kernel.add_tensor_input(*input_rank, true, *datatype))
+                MaybeQTensorInput::Tensor(kernel.add_tensor_input(input.rank, true, ty))
             }
         })
         .collect::<Vec<_>>();
@@ -179,12 +186,12 @@ fn build_tiled_map_kernel(
             .unwrap()
     }
 
-    let quantized_block = datatypes
+    let quantized_block = inputs
         .iter()
         .enumerate()
-        .find_map(|(i, tensor)| match tensor {
-            VisitTiledInputType::Quantized(tensor) => Some((
-                tensor,
+        .find_map(|(i, input)| match input.datatype {
+            VisitTiledInputType::Quantized(ty) => Some((
+                ty,
                 match &tensors[i] {
                     MaybeQTensorInput::Tensor(_) => panic!("Expected a qtensor"),
                     MaybeQTensorInput::QTensor(tensor) => tensor,
@@ -193,7 +200,15 @@ fn build_tiled_map_kernel(
             _ => None,
         });
 
-    let first = first_tensor_input(&tensors);
+    // Use the output tensor for shape bindings and bounds checking (not first input)
+    // This is important when input shapes differ from output shape (e.g., index_select)
+    let output_tensor = match &tensors[output_tensor_idx] {
+        MaybeQTensorInput::Tensor(tensor) => tensor,
+        MaybeQTensorInput::QTensor(_) => panic!("Output must be a tensor, not a quantized matrix"),
+    };
+
+    // Note: first_tensor_input is no longer used since we use output_tensor for shape bindings
+    let _first = first_tensor_input(&tensors);
 
     // Compute flat global thread index
     let num_workgroups = kernel.num_workgroups();
@@ -233,9 +248,10 @@ fn build_tiled_map_kernel(
         writeln!(kernel, "var remaining_index = flat_index;").unwrap();
 
         // Generate strides for all dimensions (row-major order)
-        for i in (0..rank).rev() {
-            let shape_binding = first.shape_binding(i);
-            if i == rank - 1 {
+        // Use output_tensor shape bindings for dimension computation
+        for i in (0..output_rank).rev() {
+            let shape_binding = output_tensor.shape_binding(i);
+            if i == output_rank - 1 {
                 // Last dimension: need to account for block size in quantized case
                 writeln!(kernel, "let dim_{i} = remaining_index % {shape_binding};").unwrap();
                 writeln!(
@@ -263,15 +279,15 @@ fn build_tiled_map_kernel(
         writeln!(
             kernel,
             "let block_dim_{} = dim_{} / {};",
-            rank - 1,
-            rank - 1,
+            output_rank - 1,
+            output_rank - 1,
             block_size
         )
         .unwrap();
         writeln!(
             kernel,
             "let block_offset = dim_{} % {};",
-            rank - 1,
+            output_rank - 1,
             block_size
         )
         .unwrap();
@@ -280,16 +296,16 @@ fn build_tiled_map_kernel(
         write!(kernel, "let chunk = &{quantized_input}[").unwrap();
         quantized_input.strided_index(
             kernel,
-            (0..rank - 1)
+            (0..output_rank - 1)
                 .map(|i| format!("dim_{i}"))
-                .chain(std::iter::once(format!("block_dim_{}", rank - 1))),
+                .chain(std::iter::once(format!("block_dim_{}", output_rank - 1))),
         );
         writeln!(kernel, "];").unwrap();
 
         writeln!(kernel, "let sub_block_index = block_offset / 16u;").unwrap();
         let handled = dequantize_mat4x4_block(
             kernel,
-            *quantized_type,
+            quantized_type,
             "sub_block_index",
             "chunk".to_string(),
             DataTypeEnum::F32,
@@ -308,17 +324,17 @@ fn build_tiled_map_kernel(
                 writeln!(kernel, "let val = {val}[col][row];").unwrap();
 
                 // Recalculate dimensions for the current element
-                for i in 0..rank {
-                    if i == rank - 1 {
+                for i in 0..output_rank {
+                    if i == output_rank - 1 {
                         writeln!(kernel, "let current_dim_{i} = dim_{i} + i;").unwrap();
                     } else {
                         writeln!(kernel, "let current_dim_{i} = dim_{i};").unwrap();
                     }
                 }
 
-                first_tensor_input(&tensors).check_bounds(
+                output_tensor.check_bounds(
                     kernel,
-                    (0..rank).map(|i| format!("current_dim_{i}")),
+                    (0..output_rank).map(|i| format!("current_dim_{i}")),
                     |kernel| {
                         let mut values = Vec::new();
                         for (index, tensor) in tensors.iter().enumerate() {
@@ -327,7 +343,7 @@ fn build_tiled_map_kernel(
                                     writeln!(kernel, "let index_{index} = ",).unwrap();
                                     tensor.strided_index(
                                         kernel,
-                                        (0..rank).map(|i| format!("current_dim_{i}")),
+                                        (0..output_rank).map(|i| format!("current_dim_{i}")),
                                     );
                                     writeln!(kernel, ";").unwrap();
                                     values.push(format!("{tensor}[index_{index}]"));
@@ -337,7 +353,7 @@ fn build_tiled_map_kernel(
                                 }
                             }
                         }
-                        let indexes = (0..datatypes.len())
+                        let indexes = (0..inputs.len())
                             .map(|i| format!("index_{i}"))
                             .collect::<Vec<_>>();
 
@@ -374,8 +390,9 @@ fn build_tiled_map_kernel(
         writeln!(kernel, "var remaining_index = flat_index;").unwrap();
 
         // Generate indices for all dimensions (row-major order)
-        for i in (0..rank).rev() {
-            let shape_binding = first.shape_binding(i);
+        // Use output_tensor shape bindings for dimension computation
+        for i in (0..output_rank).rev() {
+            let shape_binding = output_tensor.shape_binding(i);
             writeln!(kernel, "let dim_{i} = remaining_index % {shape_binding};").unwrap();
             if i > 0 {
                 writeln!(
@@ -387,22 +404,22 @@ fn build_tiled_map_kernel(
         }
         writeln!(kernel).unwrap();
 
-        // Bounds check and data access
-        first_tensor_input(&tensors).check_bounds(
+        // Bounds check and data access (use output tensor's shape for bounds)
+        output_tensor.check_bounds(
             kernel,
-            (0..rank).map(|i| format!("dim_{i}")),
+            (0..output_rank).map(|i| format!("dim_{i}")),
             |kernel| {
                 for (index, tensor) in tensors.iter().enumerate() {
                     writeln!(kernel, "let index_{index} = ",).unwrap();
                     match tensor {
                         MaybeQTensorInput::Tensor(tensor) => {
-                            tensor.strided_index(kernel, (0..rank).map(|i| format!("dim_{i}")))
+                            tensor.strided_index(kernel, (0..output_rank).map(|i| format!("dim_{i}")))
                         }
                         MaybeQTensorInput::QTensor(_) => unreachable!(),
                     }
                     writeln!(kernel, ";").unwrap();
                 }
-                let indexes = (0..datatypes.len())
+                let indexes = (0..inputs.len())
                     .map(|i| format!("index_{i}"))
                     .collect::<Vec<_>>();
                 let values = tensors
