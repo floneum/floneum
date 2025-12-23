@@ -14,10 +14,10 @@ mod visualize;
 
 use crate::{
     DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, QMatrix,
-    ReduceOperation, composite::where_cond::WhereCondOperation, compute_graph::resolve::ResolverResult,
-    dequantize::DequantizeOperation, index_select::IndexSelectOperation,
-    map_layout::MapLayoutOperation, mir::operation::Operation, nary_wise::NaryOperation,
-    quantized::matmul::QMatMulOperation, resize::ResizeOperation,
+    ReduceOperation, composite::where_cond::WhereCondOperation,
+    compute_graph::resolve::ResolverResult, dequantize::DequantizeOperation,
+    index_select::IndexSelectOperation, map_layout::MapLayoutOperation, mir::operation::Operation,
+    nary_wise::NaryOperation, quantized::matmul::QMatMulOperation, resize::ResizeOperation,
     slice_assign::SliceAssignOperation, tensor::TensorData, visit_tiled::MaybeQData,
 };
 

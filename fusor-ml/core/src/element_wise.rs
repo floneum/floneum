@@ -88,10 +88,6 @@ impl ElementWiseOperation {
         }
     }
 
-    pub fn input_datatype(&self) -> DataTypeEnum {
-        self.functions.input_datatype
-    }
-
     pub fn shape(&self) -> &[usize] {
         &self.shape
     }

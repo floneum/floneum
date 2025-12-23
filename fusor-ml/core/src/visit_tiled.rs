@@ -146,7 +146,15 @@ pub(crate) fn build_visit_tiled_kernel(
     modify_data: impl FnMut(&mut GenericKernel, &[String], &[MaybeQTensorInput], &[String]) -> String,
     kernel: &mut GenericKernel,
 ) {
-    build_tiled_map_kernel(device, shape, tile_size, &inputs, output_tensor_idx, kernel, modify_data);
+    build_tiled_map_kernel(
+        device,
+        shape,
+        tile_size,
+        &inputs,
+        output_tensor_idx,
+        kernel,
+        modify_data,
+    );
 }
 
 fn build_tiled_map_kernel(
@@ -412,9 +420,8 @@ fn build_tiled_map_kernel(
                 for (index, tensor) in tensors.iter().enumerate() {
                     writeln!(kernel, "let index_{index} = ",).unwrap();
                     match tensor {
-                        MaybeQTensorInput::Tensor(tensor) => {
-                            tensor.strided_index(kernel, (0..output_rank).map(|i| format!("dim_{i}")))
-                        }
+                        MaybeQTensorInput::Tensor(tensor) => tensor
+                            .strided_index(kernel, (0..output_rank).map(|i| format!("dim_{i}"))),
                         MaybeQTensorInput::QTensor(_) => unreachable!(),
                     }
                     writeln!(kernel, ";").unwrap();

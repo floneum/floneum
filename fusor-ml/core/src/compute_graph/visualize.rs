@@ -350,9 +350,7 @@ impl ComputeGraphInner {
                 ComputeGraphNodeVariant::IndexSelect(op) => {
                     graph_vis_pass.visit_index_select(node, op)
                 }
-                ComputeGraphNodeVariant::WhereCond(op) => {
-                    graph_vis_pass.visit_where_cond(node, op)
-                }
+                ComputeGraphNodeVariant::WhereCond(op) => graph_vis_pass.visit_where_cond(node, op),
                 ComputeGraphNodeVariant::Custom(op) => graph_vis_pass.visit_custom(node, op),
             }
         }

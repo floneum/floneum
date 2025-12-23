@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    DataType, Tensor,
-    compute_graph::NodeIndex,
-    nary_wise::NaryExpr,
-    tensor::DataTypeEnum,
+    DataType, Tensor, compute_graph::NodeIndex, nary_wise::NaryExpr, tensor::DataTypeEnum,
 };
 
 impl<D: DataType> Tensor<4, D> {
@@ -123,9 +120,13 @@ impl RopeFusedOperation {
 
         let cos_sin_dim = match self.mode {
             // Interleaved: index = dim_last / 2
-            RopeMode::Interleaved => {
-                NaryExpr::unary_op(dim_last, "div2", "let output = input / 2u;", DataTypeEnum::U32, DataTypeEnum::U32)
-            }
+            RopeMode::Interleaved => NaryExpr::unary_op(
+                dim_last,
+                "div2",
+                "let output = input / 2u;",
+                DataTypeEnum::U32,
+                DataTypeEnum::U32,
+            ),
             // Normal: index = dim_last % half
             RopeMode::Normal => {
                 let half = self.head_dim / 2;

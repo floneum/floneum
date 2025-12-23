@@ -143,7 +143,11 @@ pub(crate) fn general_sgemv(
             "chunk".to_string(),
             DataTypeEnum::F32,
             |index, data, code| {
-                writeln!(code, "{acc_indexed} += dot(vec4<f32>(a_cache[{index}]), {data});").unwrap();
+                writeln!(
+                    code,
+                    "{acc_indexed} += dot(vec4<f32>(a_cache[{index}]), {data});"
+                )
+                .unwrap();
             },
         );
 

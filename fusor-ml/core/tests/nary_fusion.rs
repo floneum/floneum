@@ -106,8 +106,8 @@ async fn test_nary_where_cond_basic() {
     assert_eq!(result.count_kernels_to_resolve(), 1);
     let output = result.as_slice().await.unwrap();
 
-    assert_eq!(output[[0, 0]], 1.);   // condition=0 -> on_false
-    assert_eq!(output[[0, 1]], 20.);  // condition=1 -> on_true
-    assert_eq!(output[[1, 0]], 30.);  // condition=1 -> on_true
-    assert_eq!(output[[1, 1]], 4.);   // condition=0 -> on_false
+    assert_eq!(output[[0, 0]], 1.); // condition=0 -> on_false
+    assert_eq!(output[[0, 1]], 20.); // condition=1 -> on_true
+    assert_eq!(output[[1, 0]], 30.); // condition=1 -> on_true
+    assert_eq!(output[[1, 1]], 4.); // condition=0 -> on_false
 }

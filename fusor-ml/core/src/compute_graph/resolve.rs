@@ -434,7 +434,8 @@ impl<'a> Resolver<'a> {
         let inputs = vec![op.value];
         let shape: Box<[_]> = op.shape().into();
         let rank = shape.len();
-        let expression = self.wrap_with_element_wise_functions(NaryExpr::input(0, rank), &op.functions);
+        let expression =
+            self.wrap_with_element_wise_functions(NaryExpr::input(0, rank), &op.functions);
         let output_datatype = op.functions.out_datatype();
 
         let nary = NaryOperation {
@@ -541,7 +542,8 @@ impl<'a> Resolver<'a> {
             // Inline: offset input nary's indices to append after current inputs
             let offset = all_inputs.len();
             let inlined = Self::offset_input_indices(&input_nary.expression, offset);
-            let (new_expression, success) = Self::substitute_input_in_expr(&expression, input_idx, &inlined);
+            let (new_expression, success) =
+                Self::substitute_input_in_expr(&expression, input_idx, &inlined);
 
             // Only fuse if substitution was successful
             // If not, the expression still references the original input which must remain
@@ -599,7 +601,10 @@ impl<'a> Resolver<'a> {
             },
             NaryExpr::IndexedInput { input_idx, indices } => NaryExpr::IndexedInput {
                 input_idx: input_idx + offset,
-                indices: indices.iter().map(|c| Self::offset_input_indices(c, offset)).collect(),
+                indices: indices
+                    .iter()
+                    .map(|c| Self::offset_input_indices(c, offset))
+                    .collect(),
             },
             NaryExpr::DimIndex(dim) => NaryExpr::DimIndex(*dim),
         }
@@ -616,7 +621,11 @@ impl<'a> Resolver<'a> {
         /// Helper to extract input_idx from an IndexedInput with element-wise access
         fn get_elementwise_input_idx(expr: &NaryExpr) -> Option<usize> {
             match expr {
-                NaryExpr::IndexedInput { input_idx, indices } if NaryExpr::is_elementwise_indices(indices) => Some(*input_idx),
+                NaryExpr::IndexedInput { input_idx, indices }
+                    if NaryExpr::is_elementwise_indices(indices) =>
+                {
+                    Some(*input_idx)
+                }
                 _ => None,
             }
         }
@@ -627,16 +636,20 @@ impl<'a> Resolver<'a> {
                 let new_children: Vec<_> = children
                     .iter()
                     .map(|c| {
-                        let (new_c, success) = Self::substitute_input_in_expr(c, target_idx, replacement);
+                        let (new_c, success) =
+                            Self::substitute_input_in_expr(c, target_idx, replacement);
                         all_success &= success;
                         new_c
                     })
                     .collect();
-                (NaryExpr::Op {
-                    children: new_children,
-                    function: function.clone(),
-                }, all_success)
-            },
+                (
+                    NaryExpr::Op {
+                        children: new_children,
+                        function: function.clone(),
+                    },
+                    all_success,
+                )
+            }
             NaryExpr::IndexedInput { input_idx, indices } => {
                 if *input_idx == target_idx {
                     // Check if this is element-wise access
@@ -650,45 +663,58 @@ impl<'a> Resolver<'a> {
                             let new_indices: Vec<_> = indices
                                 .iter()
                                 .map(|c| {
-                                    let (new_c, success) = Self::substitute_input_in_expr(c, target_idx, replacement);
+                                    let (new_c, success) =
+                                        Self::substitute_input_in_expr(c, target_idx, replacement);
                                     all_success &= success;
                                     new_c
                                 })
                                 .collect();
-                            (NaryExpr::IndexedInput {
-                                input_idx: new_idx,
-                                indices: new_indices,
-                            }, all_success)
+                            (
+                                NaryExpr::IndexedInput {
+                                    input_idx: new_idx,
+                                    indices: new_indices,
+                                },
+                                all_success,
+                            )
                         } else {
                             // Cannot fuse complex expression into custom indexed input
                             let all_success = false;
                             let new_indices: Vec<_> = indices
                                 .iter()
                                 .map(|c| {
-                                    let (new_c, _) = Self::substitute_input_in_expr(c, target_idx, replacement);
+                                    let (new_c, _) =
+                                        Self::substitute_input_in_expr(c, target_idx, replacement);
                                     new_c
                                 })
                                 .collect();
-                            (NaryExpr::IndexedInput {
-                                input_idx: *input_idx,
-                                indices: new_indices,
-                            }, all_success)
+                            (
+                                NaryExpr::IndexedInput {
+                                    input_idx: *input_idx,
+                                    indices: new_indices,
+                                },
+                                all_success,
+                            )
                         }
                     }
                 } else {
                     // Recurse into the index expressions
                     let mut all_success = true;
-                    let new_indices: Vec<_> = indices.iter()
+                    let new_indices: Vec<_> = indices
+                        .iter()
                         .map(|c| {
-                            let (new_c, s) = Self::substitute_input_in_expr(c, target_idx, replacement);
+                            let (new_c, s) =
+                                Self::substitute_input_in_expr(c, target_idx, replacement);
                             all_success &= s;
                             new_c
                         })
                         .collect();
-                    (NaryExpr::IndexedInput {
-                        input_idx: *input_idx,
-                        indices: new_indices,
-                    }, all_success)
+                    (
+                        NaryExpr::IndexedInput {
+                            input_idx: *input_idx,
+                            indices: new_indices,
+                        },
+                        all_success,
+                    )
                 }
             }
             NaryExpr::DimIndex(dim) => (NaryExpr::DimIndex(*dim), true),
@@ -750,7 +776,10 @@ impl<'a> Resolver<'a> {
             },
             NaryExpr::IndexedInput { input_idx, indices } => NaryExpr::IndexedInput {
                 input_idx: mapping[input_idx],
-                indices: indices.iter().map(|c| Self::remap_input_indices(c, mapping)).collect(),
+                indices: indices
+                    .iter()
+                    .map(|c| Self::remap_input_indices(c, mapping))
+                    .collect(),
             },
             NaryExpr::DimIndex(dim) => NaryExpr::DimIndex(*dim),
         }

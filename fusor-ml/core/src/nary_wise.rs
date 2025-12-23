@@ -31,7 +31,6 @@ impl NaryFunction {
     }
 }
 
-
 /// Expression tree node supporting any arity operations
 #[derive(Clone, Debug)]
 pub(crate) enum NaryExpr {
@@ -64,15 +63,15 @@ impl NaryExpr {
 
     /// Create an input expression with custom index expressions
     pub fn indexed_input(input_idx: usize, indices: Vec<NaryExpr>) -> Self {
-        NaryExpr::IndexedInput {
-            input_idx,
-            indices,
-        }
+        NaryExpr::IndexedInput { input_idx, indices }
     }
 
     /// Check if indices represent element-wise access (just DimIndex(0), DimIndex(1), ..., DimIndex(rank-1))
     pub(crate) fn is_elementwise_indices(indices: &[NaryExpr]) -> bool {
-        indices.iter().enumerate().all(|(i, idx)| matches!(idx, NaryExpr::DimIndex(d) if *d == i))
+        indices
+            .iter()
+            .enumerate()
+            .all(|(i, idx)| matches!(idx, NaryExpr::DimIndex(d) if *d == i))
     }
 
     /// Create a select expression (ternary operator)
@@ -199,16 +198,18 @@ impl NaryExpr {
     /// Returns true if the input is accessed with custom indexing, meaning buffer reuse is unsafe
     pub fn uses_custom_indexing_for_input(&self, target_input_idx: usize) -> bool {
         match self {
-            NaryExpr::Op { children, .. } => {
-                children.iter().any(|c| c.uses_custom_indexing_for_input(target_input_idx))
-            }
+            NaryExpr::Op { children, .. } => children
+                .iter()
+                .any(|c| c.uses_custom_indexing_for_input(target_input_idx)),
             NaryExpr::IndexedInput { input_idx, indices } => {
                 if *input_idx == target_input_idx {
                     // Custom indexing if indices is NOT the simple element-wise pattern
                     !Self::is_elementwise_indices(indices)
                 } else {
                     // Recurse into the index expressions
-                    indices.iter().any(|c| c.uses_custom_indexing_for_input(target_input_idx))
+                    indices
+                        .iter()
+                        .any(|c| c.uses_custom_indexing_for_input(target_input_idx))
                 }
             }
             NaryExpr::DimIndex(_) => false,
@@ -295,10 +296,10 @@ impl NaryOperation {
                     .collect();
 
                 // Check if we already have this function cached (by operation AND types)
-                let func = if let Some((_, _, cached_func)) = functions_cache
-                    .iter()
-                    .find(|(op, types, _)| *op == function.operation && *types == function.input_types)
-                {
+                let func = if let Some((_, _, cached_func)) =
+                    functions_cache.iter().find(|(op, types, _)| {
+                        *op == function.operation && *types == function.input_types
+                    }) {
                     cached_func.clone()
                 } else {
                     // Create the function with proper input names and types
@@ -311,7 +312,11 @@ impl NaryOperation {
                             .zip(&function.input_types)
                             .map(|(name, ty)| (name.clone(), ty.to_string())),
                     );
-                    functions_cache.push((function.operation.clone(), function.input_types.clone(), func.clone()));
+                    functions_cache.push((
+                        function.operation.clone(),
+                        function.input_types.clone(),
+                        func.clone(),
+                    ));
                     func
                 };
 
@@ -365,7 +370,10 @@ impl NaryOperation {
                     }
                     writeln!(kernel, ";").unwrap();
 
-                    (format!("{}[{}]", input_tensors[*input_idx], custom_idx_var), actual_type)
+                    (
+                        format!("{}[{}]", input_tensors[*input_idx], custom_idx_var),
+                        actual_type,
+                    )
                 }
             }
             NaryExpr::DimIndex(dim) => {

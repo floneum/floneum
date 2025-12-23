@@ -1,8 +1,4 @@
-use crate::{
-    DataType, Tensor,
-    compute_graph::NodeIndex,
-    tensor::DataTypeEnum,
-};
+use crate::{DataType, Tensor, compute_graph::NodeIndex, tensor::DataTypeEnum};
 
 impl<const R: usize, D: DataType> Tensor<R, D> {
     pub fn where_cond<D2>(self, on_true: &Tensor<R, D2>, on_false: &Tensor<R, D2>) -> Tensor<R, D2>
