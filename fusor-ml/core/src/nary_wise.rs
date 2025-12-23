@@ -251,6 +251,7 @@ pub(crate) struct NaryOperation {
 impl NaryOperation {
     /// Generate WGSL code for evaluating the expression tree.
     /// Returns (value_string, actual_datatype) where actual_datatype is the type of the returned value.
+    #[allow(clippy::too_many_arguments)]
     fn generate_expr_code(
         &self,
         expr: &NaryExpr,
@@ -600,8 +601,7 @@ impl Operation for NaryOperation {
         // Collect inputs with datatypes and ranks for all inputs
         let tiled_inputs: Vec<_> = inputs
             .iter()
-            .enumerate()
-            .filter_map(|(_i, input)| {
+            .filter_map(|input| {
                 let result: Result<MaybeQData, _> = input.clone().try_into();
                 result.ok()
             })
