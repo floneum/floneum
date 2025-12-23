@@ -33,6 +33,8 @@ pub mod language {
 
     #[cfg(feature = "surrealdb")]
     pub use crate::surrealdb_integration::document_table::*;
+    #[cfg(feature = "surrealdb")]
+    pub use crate::surrealdb_integration::hybrid_search::*;
 }
 #[cfg(feature = "sound")]
 pub mod sound {
