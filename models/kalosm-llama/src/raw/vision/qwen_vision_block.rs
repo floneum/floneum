@@ -1,45 +1,58 @@
-use candle_core::{DType, Result, Tensor, D};
-use candle_nn::Module;
-use candle_transformers::{
-    quantized_nn::{Linear, RmsNorm},
-    quantized_var_builder::VarBuilder,
+use fusor_core::{
+    cache::{AttentionMask, KvCache},
+    layers::{Linear, RmsNorm},
+    CastTensor, Device, FloatDataType, Tensor, VarBuilder, D,
 };
-use kalosm_common::{qmatmul_from_qtensor, AttentionMask, KvCache};
 
 use crate::raw::{
     attention_layer::{forward_attention_qkv, LlamaFeedForward},
     rope::RopeCache,
 };
 
-pub(crate) struct VisionBlock {
-    norm1: RmsNorm,
-    norm2: RmsNorm,
-    mlp: LlamaFeedForward,
-    attn: VisionAttention,
+pub(crate) struct VisionBlock<F: FloatDataType> {
+    norm1: RmsNorm<1, F>,
+    norm2: RmsNorm<1, F>,
+    mlp: LlamaFeedForward<F>,
+    attn: VisionAttention<F>,
 }
 
-impl VisionBlock {
+impl<F: FloatDataType> VisionBlock<F>
+where
+    f32: CastTensor<F>,
+    F: CastTensor<f32>,
+{
     pub(crate) fn new(
-        vb: &VarBuilder,
+        vb: &mut VarBuilder,
+        device: &Device,
         head_count: usize,
         head_dim: usize,
         embed_dim: usize,
         layer_norm_eps: f64,
-    ) -> Result<Self> {
-        let device = vb.device();
-        let norm1 = RmsNorm::new(embed_dim, layer_norm_eps, vb.pp("ln1"))?;
-        let norm2 = RmsNorm::new(embed_dim, layer_norm_eps, vb.pp("ln2"))?;
+    ) -> fusor_core::Result<Self> {
+        // norm1, norm2
+        let norm1_weight = vb.get("ln1.weight", device)?.dequantize();
+        let norm1 = RmsNorm::new(norm1_weight, None, layer_norm_eps as f32);
 
+        let norm2_weight = vb.get("ln2.weight", device)?.dequantize();
+        let norm2 = RmsNorm::new(norm2_weight, None, layer_norm_eps as f32);
+
+        // MLP
+        let gate = vb.get("ffn_gate.weight", device)?;
+        let gate_bias = vb.get("ffn_gate.bias", device)?.dequantize();
+        let down = vb.get("ffn_down.weight", device)?;
+        let down_bias = vb.get("ffn_down.bias", device)?.dequantize();
+        let up = vb.get("ffn_up.weight", device)?;
+        let up_bias = vb.get("ffn_up.bias", device)?.dequantize();
         let mlp = LlamaFeedForward::new_with_bias(
-            qmatmul_from_qtensor(vb.get_no_shape("ffn_gate.weight")?)?,
-            Some(vb.get_no_shape("ffn_gate.bias")?.dequantize(device)?),
-            qmatmul_from_qtensor(vb.get_no_shape("ffn_down.weight")?)?,
-            Some(vb.get_no_shape("ffn_down.bias")?.dequantize(device)?),
-            qmatmul_from_qtensor(vb.get_no_shape("ffn_up.weight")?)?,
-            Some(vb.get_no_shape("ffn_up.bias")?.dequantize(device)?),
+            gate,
+            Some(gate_bias),
+            down,
+            Some(down_bias),
+            up,
+            Some(up_bias),
         );
 
-        let attn = VisionAttention::new(vb, head_count, head_dim, embed_dim)?;
+        let attn = VisionAttention::new(vb, device, head_count, head_dim, embed_dim)?;
 
         Ok(Self {
             norm1,
@@ -51,45 +64,65 @@ impl VisionBlock {
 
     pub(crate) fn forward(
         &self,
-        xs: &Tensor,
+        xs: &Tensor<2, F>,
         cu_seqlens: &[u32],
-        rope_cache: &RopeCache,
-        cache: Option<&mut KvCache>,
-    ) -> Result<Tensor> {
-        let xs = xs.to_dtype(DType::F32)?;
-        let after_norm = self.norm1.forward(&xs)?;
+        rope_cache: &RopeCache<F>,
+        cache: Option<&mut KvCache<F>>,
+    ) -> fusor_core::Result<Tensor<2, F>> {
+        let xs_3d = xs.unsqueeze(0); // [1, seq, dim]
+        let after_norm = self.norm1.forward(&xs_3d);
         let after_attention = self
             .attn
             .forward(&after_norm, cu_seqlens, rope_cache, cache)?;
-        let xs = (&xs + after_attention)?;
-        &xs + self.mlp.forward(&self.norm2.forward(&xs)?)?
+
+        let xs_3d = xs_3d + after_attention;
+        let after_norm2 = self.norm2.forward(&xs_3d);
+        let mlp_out = self.mlp.forward(&after_norm2); // LlamaFeedForward expects Tensor<3, F>
+
+        let out = xs_3d + mlp_out;
+
+        Ok(out.squeeze(0))
     }
 }
 
-struct VisionAttention {
-    q: Linear,
-    k: Linear,
-    v: Linear,
-    proj: Linear,
+struct VisionAttention<F: FloatDataType> {
+    q: Linear<F>,
+    k: Linear<F>,
+    v: Linear<F>,
+    proj: Linear<F>,
     head_count: usize,
     head_dim: usize,
     embed_dim: usize,
 }
 
-impl VisionAttention {
-    fn new(vb: &VarBuilder, head_count: usize, head_dim: usize, embed_dim: usize) -> Result<Self> {
-        let q = vb.get_no_shape("attn_q.weight")?;
-        let q_bias = vb.get_no_shape("attn_q.bias")?.dequantize(vb.device())?;
-        let q = Linear::from_arc(q, Some(q_bias))?;
-        let k = vb.get_no_shape("attn_k.weight")?;
-        let k_bias = vb.get_no_shape("attn_k.bias")?.dequantize(vb.device())?;
-        let k = Linear::from_arc(k, Some(k_bias))?;
-        let v = vb.get_no_shape("attn_v.weight")?;
-        let v_bias = vb.get_no_shape("attn_v.bias")?.dequantize(vb.device())?;
-        let v = Linear::from_arc(v, Some(v_bias))?;
-        let proj = vb.get_no_shape("attn_out.weight")?;
-        let proj_bias = vb.get_no_shape("attn_out.bias")?.dequantize(vb.device())?;
-        let proj = Linear::from_arc(proj, Some(proj_bias))?;
+impl<F: FloatDataType> VisionAttention<F>
+where
+    f32: CastTensor<F>,
+    F: CastTensor<f32>,
+{
+    fn new(
+        vb: &mut VarBuilder,
+        device: &Device,
+        head_count: usize,
+        head_dim: usize,
+        embed_dim: usize,
+    ) -> fusor_core::Result<Self> {
+        let q = Linear::new(
+            vb.get("attn_q.weight", device)?,
+            Some(vb.get("attn_q.bias", device)?.dequantize()),
+        );
+        let k = Linear::new(
+            vb.get("attn_k.weight", device)?,
+            Some(vb.get("attn_k.bias", device)?.dequantize()),
+        );
+        let v = Linear::new(
+            vb.get("attn_v.weight", device)?,
+            Some(vb.get("attn_v.bias", device)?.dequantize()),
+        );
+        let proj = Linear::new(
+            vb.get("attn_out.weight", device)?,
+            Some(vb.get("attn_out.bias", device)?.dequantize()),
+        );
 
         Ok(Self {
             q,
@@ -104,92 +137,90 @@ impl VisionAttention {
 
     fn forward(
         &self,
-        xs: &Tensor,
+        xs: &Tensor<3, F>, // [1, seq, dim]
         cu_seqlens: &[u32],
-        rope_cache: &RopeCache,
-        cache: Option<&mut KvCache>,
-    ) -> Result<Tensor> {
-        let seq_len = xs.dim(0)?;
+        rope_cache: &RopeCache<F>,
+        cache: Option<&mut KvCache<F>>,
+    ) -> fusor_core::Result<Tensor<3, F>> {
+        let [bsz, seq_len, _] = *xs.shape();
 
-        // First, pass the input through the qkv layer
-        let q = xs.apply(&self.q)?.reshape((seq_len, self.head_count, ()))?;
+        // qkv
+        let q = self
+            .q
+            .forward(xs)
+            .reshape([seq_len, self.head_count, self.head_dim]);
+        let k = self
+            .k
+            .forward(xs)
+            .reshape([seq_len, self.head_count, self.head_dim]);
+        let v = self
+            .v
+            .forward(xs)
+            .reshape([seq_len, self.head_count, self.head_dim]);
 
-        let k = xs.apply(&self.k)?.reshape((seq_len, self.head_count, ()))?;
+        let sin = rope_cache.sin();
+        let cos = rope_cache.cos();
 
-        let v = xs.apply(&self.v)?.reshape((seq_len, self.head_count, ()))?;
+        // sin/cos: [total_seq, head_dim/2]
+        // Expand to [total_seq, head_count, head_dim]
+        let sin = Tensor::cat(vec![sin.clone(); 2], D::Minus1)
+            .unsqueeze(1)
+            .expand([seq_len, self.head_count, self.head_dim]);
+        let cos = Tensor::cat(vec![cos.clone(); 2], D::Minus1)
+            .unsqueeze(1)
+            .expand([seq_len, self.head_count, self.head_dim]);
 
-        fn apply_rotary_pos_emb_vision(
-            rope_cache: &RopeCache,
-            q: &Tensor,
-            k: &Tensor,
-        ) -> candle_core::Result<(Tensor, Tensor)> {
-            let sin = rope_cache.sin();
-            let cos = rope_cache.cos();
-            let sin = Tensor::cat(&[sin, sin], D::Minus1)?.unsqueeze(1)?;
-            let cos = Tensor::cat(&[cos, cos], D::Minus1)?.unsqueeze(1)?;
-
-            Ok((
-                (q.broadcast_mul(&cos)? + rotate_half(q)?.broadcast_mul(&sin)?)?,
-                (k.broadcast_mul(&cos)? + rotate_half(k)?.broadcast_mul(&sin)?)?,
-            ))
-        }
-
-        fn rotate_half(xs: &Tensor) -> Result<Tensor> {
-            let last_dim = xs.dim(D::Minus1)?;
-            let xs1 = xs.narrow(D::Minus1, 0, last_dim / 2)?;
-            let xs2 = xs.narrow(D::Minus1, last_dim / 2, last_dim - last_dim / 2)?;
-            Tensor::cat(&[&xs2.neg()?, &xs1], D::Minus1)
-        }
-
-        let (q, k) = apply_rotary_pos_emb_vision(rope_cache, &q, &k)?;
-
-        let q = q.squeeze(0)?;
-        let k = k.squeeze(0)?;
-
-        // Convert from [seq_len, head_count, batch_size] to [head_count, seq_len, batch_size]
-        let query_states = q.transpose(0, 1)?.unsqueeze(0)?.contiguous()?;
-        let key_states = k.transpose(0, 1)?.unsqueeze(0)?.contiguous()?;
-        let value_states = v.transpose(0, 1)?.unsqueeze(0)?.contiguous()?;
-
-        let (key_states, value_states) = match cache {
-            None => (key_states, value_states),
-            Some(cache) => cache.append(&key_states, &value_states)?,
+        // Rotate half
+        let rotate_half = |x: &Tensor<3, F>| {
+            // x: [seq, heads, dim]
+            let last_dim = x.shape().last().copied().unwrap();
+            let half = last_dim / 2;
+            let x1 = x.narrow(D::Minus1, 0, half);
+            let x2 = x.narrow(D::Minus1, half, half);
+            Tensor::cat([-x2, x1], D::Minus1)
         };
 
-        let bsz = 1;
+        let q_embed = (q.clone() * cos.clone()) + (rotate_half(&q) * sin.clone());
+        let k_embed = (k.clone() * cos) + (rotate_half(&k) * sin);
 
-        let mut attention_mask = vec![vec![1u32; seq_len]; seq_len];
+        // Transpose to [heads, seq, dim] -> [1, heads, seq, dim] (batch=1)
+        let query_states = q_embed.transpose(0, 1).unsqueeze(0);
+        let key_states = k_embed.transpose(0, 1).unsqueeze(0);
+        let value_states = v.transpose(0, 1).unsqueeze(0);
+
+        // Cache append
+        let (key_states, value_states) = match cache {
+            None => (key_states, value_states),
+            Some(cache) => cache.append(&key_states, &value_states),
+        };
+
+        // Mask
+        let mut mask_vec = vec![f32::NEG_INFINITY; seq_len * seq_len];
         for pair in cu_seqlens.windows(2) {
-            let [last, next] = pair else { unreachable!() };
-            let last = *last as usize;
-            let next = *next as usize;
-            #[allow(clippy::needless_range_loop)]
+            let last = pair[0] as usize;
+            let next = pair[1] as usize;
             for i in last..next {
                 for j in last..next {
-                    attention_mask[i][j] = 0;
+                    mask_vec[i * seq_len + j] = 0.0;
                 }
             }
         }
-        let attention_mask = AttentionMask::new(
-            Tensor::from_iter(
-                attention_mask.iter().flatten().copied(),
-                query_states.device(),
-            )?
-            .reshape((1, 1, seq_len, seq_len))?,
-        );
 
-        forward_attention_qkv(
+        let mask_tensor = Tensor::new(xs.device(), &mask_vec).reshape([seq_len, seq_len]);
+        let mask = AttentionMask::new(mask_tensor.cast());
+
+        let output = forward_attention_qkv(
             &query_states,
             &key_states,
             &value_states,
             &self.proj,
-            Some(&attention_mask),
-            self.head_count,
+            Some(&mask),
             self.head_dim,
             bsz,
             seq_len,
             self.embed_dim,
-        )?
-        .squeeze(0)
+        );
+
+        Ok(output)
     }
 }

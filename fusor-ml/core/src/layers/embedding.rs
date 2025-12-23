@@ -1,4 +1,4 @@
-use crate::{DataType, Device, NextRank, QMatrix, Result, Tensor, VarBuilder};
+use crate::{CastTensor, DataType, Device, NextRank, QMatrix, Result, Tensor, VarBuilder};
 
 /// Embedding layer for token/position embeddings
 ///
@@ -119,6 +119,19 @@ impl<T: DataType> Embedding<T> {
     pub fn embedding_dim(&self) -> usize {
         self.embedding_dim
     }
+
+    /// Cast the Embedding layer to a different data type
+    pub fn cast<U: DataType>(self) -> Embedding<U>
+    where
+        T: CastTensor<U>,
+    {
+        Embedding {
+            embeddings_quantized: self.embeddings_quantized,
+            embeddings: self.embeddings.cast(),
+            num_embeddings: self.num_embeddings,
+            embedding_dim: self.embedding_dim,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -128,7 +141,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_embedding_1d_input() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         // Create embedding table: (3, 2) - 3 embeddings, each of dimension 2
         let emb_data = [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]];
@@ -159,7 +172,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_embedding_2d_input() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         // Create embedding table: (3, 2) - 3 embeddings, each of dimension 2
         let emb_data = [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]];
@@ -192,7 +205,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_embedding_properties() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         let emb_data = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
         let embeddings = Tensor::new(&device, &emb_data);

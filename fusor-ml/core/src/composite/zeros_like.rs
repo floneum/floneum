@@ -12,7 +12,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 async fn test_zeros_like() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.]];
     let tensor = Tensor::new(&device, &data);

@@ -1162,10 +1162,10 @@ impl WgslQuantizedType for BlockQ4K {
         )
         .unwrap();
 
+        let shift_4 = shift_right_scale(4);
         writeln!(
             code,
-            "let scale = scales_vec[sub_chunk / 2 + (scale_group % 2)*2] * select(1.0, {}, sub_chunk >= 2u);",
-            shift_right_scale(4)
+            "let scale = scales_vec[sub_chunk / 2 + (scale_group % 2)*2] * select({datatype}(1.0), {datatype}({shift_4}), sub_chunk >= 2u);"
         )
         .unwrap();
         writeln!(
@@ -1612,7 +1612,7 @@ where
             rand::prelude::Distribution<<B as fusor_gguf::GgufBlock>::AsBytes>,
     {
         let dtype = T::WGSL_TYPE;
-        let device = crate::Device::new().await.unwrap();
+        let device = crate::Device::test_instance();
         let mut kernel_body = String::new();
         if unrolled {
             B::unrolled_dequantize_block(
@@ -1820,7 +1820,7 @@ where
             rand::prelude::Distribution<<B as fusor_gguf::GgufBlock>::AsBytes>,
     {
         let dtype = T::WGSL_TYPE;
-        let device = crate::Device::new().await.unwrap();
+        let device = crate::Device::test_instance();
         let mut kernel_body = String::new();
 
         // Dequantize each mat4x4 block and write it to output

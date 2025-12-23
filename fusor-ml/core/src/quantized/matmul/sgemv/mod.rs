@@ -32,6 +32,19 @@ pub mod q_n;
 pub(crate) const SGEMV_CHUNK_SIZE: u32 = 2; // This is the size of the chunk each thread will process at a time
 pub(crate) const SGEMV_VECTOR_SIZE: u32 = 4; // This is the size of the chunk we will dot at a time
 
+/// Check if the device can support specialized SGEMV kernels that require 2 subgroups per workgroup.
+/// This requires the workgroup to be large enough to fit 2 subgroups, which means:
+/// max_subgroup_size >= 2 * min_subgroup_size
+fn can_use_specialized_sgemv(device: &Device) -> bool {
+    if !device.subgroups_supported() {
+        return false;
+    }
+    let limits = device.limits();
+    // The workgroup is constrained to be <= max_subgroup_size, so we need
+    // max_subgroup_size >= 2 * min_subgroup_size to fit 2 subgroups
+    limits.max_subgroup_size >= 2 * limits.min_subgroup_size
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn sgemv(
     op: &QMatMulOperation,
@@ -46,8 +59,10 @@ pub(crate) fn sgemv(
     graph: &crate::compute_graph::ComputeGraphInner,
 ) {
     let device = &graph.device;
+    // Check if we can use specialized SGEMV (requires 2 subgroups per workgroup)
+    let use_specialized = can_use_specialized_sgemv(device);
     match op.matrix.datatype {
-        GgmlType::Q6K if device.subgroups_supported() => q6k_sgemv(
+        GgmlType::Q6K if use_specialized => q6k_sgemv(
             op,
             generic_kernel,
             workgroup_size,
@@ -58,7 +73,7 @@ pub(crate) fn sgemv(
             _m_size,
             k_size,
         ),
-        GgmlType::Q4K if device.subgroups_supported() => q4k_sgemv(
+        GgmlType::Q4K if use_specialized => q4k_sgemv(
             op,
             generic_kernel,
             workgroup_size,
@@ -69,7 +84,7 @@ pub(crate) fn sgemv(
             _m_size,
             k_size,
         ),
-        GgmlType::Q4_0 | GgmlType::Q5_0 if device.subgroups_supported() => q_n_sgemv(
+        GgmlType::Q4_0 | GgmlType::Q5_0 if use_specialized => q_n_sgemv(
             op,
             generic_kernel,
             workgroup_size,
@@ -80,7 +95,7 @@ pub(crate) fn sgemv(
             _m_size,
             k_size,
         ),
-        GgmlType::Q8_0 if device.subgroups_supported() => q_8_0_sgemv(
+        GgmlType::Q8_0 if use_specialized => q_8_0_sgemv(
             op,
             generic_kernel,
             workgroup_size,
@@ -109,7 +124,8 @@ pub(crate) fn sgemv(
 pub(crate) fn dispatch_size(matrix: &QMatrix, n: u32, m: u32, batch_size: u32) -> [u32; 3] {
     // Use Y dimension to handle M (each workgroup handles one M value)
     // and X dimension for N (output dimension)
-    if matrix.device.subgroups_supported() {
+    // Only use specialized dispatch sizes if we can use specialized SGEMV
+    if can_use_specialized_sgemv(&matrix.device) {
         if matrix.datatype == GgmlType::Q6K {
             return [n.div_ceil(Q6K_SGEMV_CHUNK_SIZE * 2), m, batch_size];
         }

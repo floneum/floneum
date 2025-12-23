@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    DataType, DataTypeEnum, LastRank, Layout, Tensor, TensorData,
+    D, DataType, DataTypeEnum, Dim, LastRank, Layout, Tensor, TensorData,
     compute_graph::NodeIndex,
     min_for_dtype,
     mir::{
@@ -16,10 +16,10 @@ use crate::{
     },
 };
 
-impl<const R: usize, D: DataType> Tensor<R, D> {
-    pub fn softmax_slow<const R2: usize>(&self, dim: usize) -> Self
+impl<const R: usize, T: DataType> Tensor<R, T> {
+    pub fn softmax_slow<const R2: usize>(&self, dim: impl Dim<R>) -> Self
     where
-        Tensor<R, D>: LastRank<R2, D>,
+        Tensor<R, T>: LastRank<R2, T>,
     {
         let size = *self.shape();
         let max = self.max(dim);
@@ -31,16 +31,17 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 
     pub fn softmax_slow_last_dim<const R2: usize>(&self) -> Self
     where
-        Tensor<R, D>: LastRank<R2, D>,
+        Tensor<R, T>: LastRank<R2, T>,
     {
-        self.softmax_slow(self.rank() - 1)
+        self.softmax_slow(D::Minus1)
     }
 
-    pub fn softmax<const R2: usize>(&self, axis: usize) -> Self
+    pub fn softmax<const R2: usize>(&self, axis: impl Dim<R>) -> Self
     where
-        Tensor<R, D>: LastRank<R2, D>,
+        Tensor<R, T>: LastRank<R2, T>,
     {
-        let operation = SoftmaxOperation::new(self.key(), self.datatype(), axis, self.shape());
+        let operation =
+            SoftmaxOperation::new(self.key(), self.datatype(), axis.resolve(), self.shape());
         let data = self.data();
 
         Self::from_parts(data.custom(Arc::new(operation)))
@@ -48,9 +49,9 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 
     pub fn softmax_last_dim<const R2: usize>(&self) -> Self
     where
-        Tensor<R, D>: LastRank<R2, D>,
+        Tensor<R, T>: LastRank<R2, T>,
     {
-        self.softmax(self.rank() - 1)
+        self.softmax(D::Minus1)
     }
 }
 
@@ -509,7 +510,7 @@ impl Operation for SoftmaxOperation {
 async fn test_softmax_slow() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [1f32, -2., -3., 4., 5., -6.];
     let max = data.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
@@ -537,7 +538,7 @@ async fn test_softmax_slow() {
 async fn test_softmax() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [1f32, -2., -3., 4., 5., -6.];
     let max = data.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
@@ -566,7 +567,7 @@ async fn test_softmax() {
 async fn test_softmax_large() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data: [f32; 1024] = std::array::from_fn(|_| rand::random::<f32>() * 10.0 - 5.0);
     let max = data.iter().cloned().fold(f32::NEG_INFINITY, f32::max);

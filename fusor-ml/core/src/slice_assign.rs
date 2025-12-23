@@ -46,16 +46,9 @@ impl Operation for SliceAssignOperation {
     fn dispatch_size(
         &self,
         workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[crate::mir::inputs::MirValue],
+        _inputs: &[crate::mir::inputs::MirValue],
     ) -> [u32; 3] {
-        let inputs: Box<[_]> = inputs
-            .iter()
-            .map(|input| {
-                let tensor: MaybeQData = input.clone().try_into().unwrap();
-                tensor
-            })
-            .collect();
-        titled_map_dispatch_size(TILE_SIZE, *workgroup_shape, &inputs)
+        titled_map_dispatch_size(TILE_SIZE, *workgroup_shape, &self.shape())
     }
 
     fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
@@ -82,14 +75,19 @@ impl Operation for SliceAssignOperation {
         let value: MaybeQData = inputs[1].clone().try_into().unwrap();
         assert_eq!(input.layout().shape(), value.layout().shape());
         let datatype = input.datatype();
+        let rank = input.layout().shape().len() as u32;
 
-        let datatypes = vec![datatype; 2];
+        let tiled_inputs = vec![
+            crate::visit_tiled::VisitTiledInput::new(datatype, rank),
+            crate::visit_tiled::VisitTiledInput::new(datatype, rank),
+        ];
 
         build_visit_tiled_kernel(
             &graph.device,
             input.layout().shape(),
             TILE_SIZE,
-            datatypes,
+            tiled_inputs,
+            0, // output is the first tensor (target)
             |_, indexes, tensors, values| {
                 let target_index = &indexes[0];
                 let target_tensor = &tensors[0];
@@ -132,7 +130,7 @@ impl<const R: usize, T: crate::DataType> Tensor<R, T> {
 async fn test_slice_assign() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);

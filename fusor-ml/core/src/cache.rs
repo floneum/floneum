@@ -162,6 +162,11 @@ pub struct AttentionMask<T> {
 }
 
 impl<T: FloatDataType> AttentionMask<T> {
+    /// Create a new attention mask
+    pub fn new(mask: Tensor<2, T>) -> Self {
+        Self { mask }
+    }
+
     /// Create a causal mask for the given sequence length
     ///
     /// mask[i, j] = -inf if j > i (can't attend to future), 0 otherwise
@@ -175,7 +180,7 @@ impl<T: FloatDataType> AttentionMask<T> {
         }
 
         let mask = Tensor::new(device, mask_data.chunks(seq_len).collect::<Vec<_>>());
-        Self { mask }
+        Self::new(mask)
     }
 
     /// Apply the mask to attention scores
@@ -208,12 +213,20 @@ impl<T: FloatDataType> AttentionMask<T> {
 }
 
 /// Mask cache for efficiently managing attention masks
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct MaskCache<T> {
     #[allow(clippy::type_complexity)]
     masks: std::sync::Arc<
         std::sync::RwLock<std::collections::HashMap<(usize, Option<usize>), AttentionMask<T>>>,
     >,
+}
+
+impl<T> Default for MaskCache<T> {
+    fn default() -> Self {
+        Self {
+            masks: Default::default(),
+        }
+    }
 }
 
 impl<T: FloatDataType> MaskCache<T> {
@@ -265,9 +278,11 @@ impl<T: FloatDataType> MaskCache<T> {
             // Pad the mask on the left with zeros
             let mask_tensor = mask.mask();
             let shape = mask_tensor.shape();
-            let zeros = Tensor::zeros(device, [shape[0], seqlen_offset]);
-            // Concatenate along dimension 1 (columns)
-            let padded_mask = Tensor::cat([zeros, mask_tensor.clone()], 1);
+            let zeros = Tensor::zeros(device, [shape[0], seqlen_offset + shape[1]]);
+            let padded_mask = zeros.slice_assign(
+                [0..shape[0], seqlen_offset..(seqlen_offset + shape[1])],
+                mask_tensor,
+            );
             AttentionMask { mask: padded_mask }
         } else {
             mask
@@ -303,7 +318,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tensor_cache_first_append() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let mut cache = TensorCache::new(1, 2);
 
         let data = [[[1.0, 2.0]], [[3.0, 4.0]]];
@@ -323,7 +338,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tensor_cache_multiple_appends() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let mut cache = TensorCache::new(1, 3);
 
         let data1 = [[[1.0, 2.0]]];
@@ -349,7 +364,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tensor_cache_reset() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let mut cache = TensorCache::new(1, 3);
 
         let data = [[[1.0, 2.0]]];
@@ -364,7 +379,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_kv_cache_first_append() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let mut cache = KvCache::new(1, 2);
 
         let key_data = [[[[1.0, 2.0]]]];
@@ -388,7 +403,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_kv_cache_multiple_appends() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let mut cache = KvCache::new(1, 3);
 
         let key_data1 = [[[[1.0, 2.0]]]];
@@ -405,25 +420,25 @@ mod tests {
 
         let (k_result, v_result) = cache.append(&key2, &value2);
 
-        assert_eq!(k_result.shape(), &[1, 1, 2, 2]);
-        assert_eq!(v_result.shape(), &[1, 1, 2, 2]);
+        assert_eq!(k_result.shape(), &[1, 2, 1, 2]);
+        assert_eq!(v_result.shape(), &[1, 2, 1, 2]);
 
         let k_output = k_result.as_slice().await.unwrap();
         let v_output = v_result.as_slice().await.unwrap();
 
         assert_eq!(k_output[[0, 0, 0, 0]], 1.0);
         assert_eq!(k_output[[0, 0, 0, 1]], 2.0);
-        assert_eq!(k_output[[0, 0, 1, 0]], 5.0);
-        assert_eq!(k_output[[0, 0, 1, 1]], 6.0);
+        assert_eq!(k_output[[0, 1, 0, 0]], 5.0);
+        assert_eq!(k_output[[0, 1, 0, 1]], 6.0);
         assert_eq!(v_output[[0, 0, 0, 0]], 3.0);
         assert_eq!(v_output[[0, 0, 0, 1]], 4.0);
-        assert_eq!(v_output[[0, 0, 1, 0]], 7.0);
-        assert_eq!(v_output[[0, 0, 1, 1]], 8.0);
+        assert_eq!(v_output[[0, 1, 0, 0]], 7.0);
+        assert_eq!(v_output[[0, 1, 0, 1]], 8.0);
     }
 
     #[tokio::test]
     async fn test_kv_cache_reset() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let mut cache = KvCache::new(1, 3);
 
         let key_data = [[[[1.0, 2.0]]]];
@@ -441,7 +456,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_attention_mask_causal() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         let seq_len = 3;
         let mask: AttentionMask<f32> = AttentionMask::causal(&device, seq_len);
@@ -466,7 +481,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_attention_mask_apply_4d() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         let mask = AttentionMask::causal(&device, 2);
 
@@ -490,7 +505,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_attention_mask_apply_3d() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         let mask = AttentionMask::causal(&device, 2);
 
@@ -510,7 +525,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mask_cache() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let cache: MaskCache<f32> = MaskCache::default();
 
         let mask1 = cache.get_mask(3, 0, None, &device);
@@ -526,7 +541,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mask_cache_with_offset() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let cache: MaskCache<f32> = MaskCache::default();
 
         // Test with seqlen_offset
@@ -537,7 +552,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mask_cache_sliding_window() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let cache: MaskCache<f32> = MaskCache::default();
 
         let mask = cache.get_mask(4, 0, Some(2), &device);

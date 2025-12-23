@@ -1,8 +1,9 @@
-use crate::{DataType, Tensor};
+use crate::{DataType, Dim, Tensor};
 
 impl<const R: usize, D: DataType> Tensor<R, D> {
-    pub fn narrow(&self, axis: usize, start: usize, length: usize) -> Self {
+    pub fn narrow(&self, axis: impl Dim<R>, start: usize, length: usize) -> Self {
         let shape = self.shape();
+        let axis = axis.resolve();
         assert!(start + length <= shape[axis]);
         assert!(axis < R);
         self.slice(std::array::from_fn(|i| {
@@ -20,7 +21,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 async fn test_narrow() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);

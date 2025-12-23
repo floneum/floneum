@@ -43,7 +43,7 @@ impl<const N: usize, T> Tensor<N, T> {
 async fn test_layer_norm() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let tensor = Tensor::new(&device, &[[1., 2.], [3., 4.], [5., 6.]]);
     let weight = Tensor::new(&device, &[2., 3.]);
@@ -62,7 +62,7 @@ async fn test_layer_norm() {
 async fn test_batched_layer_norm() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let tensor = Tensor::new(
         &device,

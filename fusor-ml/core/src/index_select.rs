@@ -1,10 +1,4 @@
-use crate::{
-    DataTypeEnum, ElementWiseFunctions, TILE_SIZE, Tensor, TensorData,
-    compute_graph::NodeIndex,
-    mir::{kernel::GenericKernel, operation::Operation},
-    padded_tensor_size,
-};
-use std::fmt::Write;
+use crate::{DataTypeEnum, Tensor, compute_graph::NodeIndex};
 
 #[derive(Debug, Clone)]
 pub(crate) struct IndexSelectOperation {
@@ -12,11 +6,8 @@ pub(crate) struct IndexSelectOperation {
     pub(crate) indexes: NodeIndex,
     pub(crate) datatype: DataTypeEnum,
     pub(crate) dimension: usize,
-    pub(crate) tile_size: u32,
     pub(crate) value_shape: Box<[usize]>,
     pub(crate) indexes_shape: Box<[usize]>,
-    pub(crate) pre_element_wise_input: ElementWiseFunctions,
-    pub(crate) pre_element_wise_indexes: ElementWiseFunctions,
 }
 
 impl IndexSelectOperation {
@@ -33,20 +24,9 @@ impl IndexSelectOperation {
             indexes,
             datatype,
             dimension,
-            tile_size: TILE_SIZE,
             value_shape: value_shape.to_vec().into_boxed_slice(),
             indexes_shape: indexes_shape.to_vec().into_boxed_slice(),
-            pre_element_wise_input: ElementWiseFunctions::empty(datatype),
-            pre_element_wise_indexes: ElementWiseFunctions::empty(DataTypeEnum::U32),
         }
-    }
-
-    pub(crate) fn input_datatype(&self) -> DataTypeEnum {
-        self.datatype
-    }
-
-    pub(crate) fn indexes_datatype(&self) -> DataTypeEnum {
-        DataTypeEnum::U32
     }
 
     pub(crate) fn rank(&self) -> usize {
@@ -74,231 +54,6 @@ impl IndexSelectOperation {
             })
             .collect()
     }
-
-    pub fn set_pre_element_wise_input(
-        &mut self,
-        pre_element_wise: ElementWiseFunctions,
-    ) -> &mut Self {
-        self.pre_element_wise_input = pre_element_wise;
-        self
-    }
-
-    pub fn set_pre_element_wise_indexes(
-        &mut self,
-        pre_element_wise: ElementWiseFunctions,
-    ) -> &mut Self {
-        self.pre_element_wise_indexes = pre_element_wise;
-        self
-    }
-
-    fn build_index_kernel(&self, kernel: &mut GenericKernel) {
-        assert!(
-            self.rank() <= 3,
-            "IndexSelect only supports up to 3 rank tensors"
-        );
-
-        let tile_size = self.tile_size;
-        let rank = self.rank();
-
-        let global_id = kernel.global_id();
-        let input = kernel.add_tensor_input(self.rank() as u32, false, self.datatype);
-        let indexes = kernel.add_tensor_input(1, false, DataTypeEnum::U32);
-        let output = kernel.add_tensor_input(self.rank() as u32, true, self.datatype);
-
-        let pre_element_wise_value = self.pre_element_wise_input.add_functions(kernel);
-        let process_value_input = |input: &str| {
-            pre_element_wise_value
-                .iter()
-                .fold(input.to_string(), |acc, f| f.call(vec![acc]))
-        };
-        let pre_element_wise_indexes = self.pre_element_wise_indexes.add_functions(kernel);
-        let process_index_input = |input: &str| {
-            pre_element_wise_indexes
-                .iter()
-                .fold(input.to_string(), |acc, f| f.call(vec![acc]))
-        };
-
-        for i in 0..self.rank() {
-            let index = ["x", "y", "z"][i];
-            writeln!(
-                kernel,
-                "let tile_index_{i} = {global_id}.{index} * {tile_size};"
-            )
-            .unwrap();
-        }
-        writeln!(kernel, "\n").unwrap();
-
-        for i in 0..rank {
-            writeln!(kernel, "for (var local_index_{i} = 0u; local_index_{i} < {tile_size}; local_index_{i}++) {{").unwrap();
-        }
-
-        for i in 0..rank {
-            writeln!(
-                kernel,
-                "let merged_index_{i} = tile_index_{i} + local_index_{i};"
-            )
-            .unwrap();
-        }
-
-        output.check_bounds(
-            kernel,
-            (0..).map(|i| format!("merged_index_{i}")),
-            |kernel| {
-                let dimension = self.dimension;
-                writeln!(
-                    kernel,
-                    "let select_index_value = {indexes}[merged_index_{dimension}];",
-                )
-                .unwrap();
-                write!(kernel, "let select_index = ",).unwrap();
-                write!(kernel, "{}", process_index_input("select_index_value")).unwrap();
-                writeln!(kernel, ";").unwrap();
-                write!(kernel, "let input_index = ",).unwrap();
-                input.strided_index(
-                    kernel,
-                    (0..).map(|i| {
-                        if i == self.dimension {
-                            "select_index".to_string()
-                        } else {
-                            format!("merged_index_{i}")
-                        }
-                    }),
-                );
-                writeln!(kernel, ";").unwrap();
-
-                write!(kernel, "let output_index = ",).unwrap();
-                output.strided_index(kernel, (0..).map(|i| format!("merged_index_{i}")));
-                writeln!(kernel, ";").unwrap();
-
-                writeln!(kernel, "let input = {input}[input_index];",).unwrap();
-
-                write!(kernel, "{output}[output_index] = ").unwrap();
-                write!(kernel, "{}", process_value_input("input")).unwrap();
-                writeln!(kernel, ";").unwrap();
-            },
-        );
-
-        for _ in 0..rank {
-            writeln!(kernel, "}}").unwrap();
-        }
-    }
-}
-
-impl Operation for IndexSelectOperation {
-    fn workgroup_shape_constraints(
-        &self,
-        _: &crate::Device,
-    ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
-        let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::new();
-        constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));
-        constraints.add_constraint(2, crate::mir::workgroup_shape::Constraint::Equals(1));
-        constraints
-    }
-
-    fn dispatch_size(
-        &self,
-        workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[crate::mir::inputs::MirValue],
-    ) -> [u32; 3] {
-        let output = inputs[2].as_tensor().unwrap();
-        let output_shape = output.layout().shape();
-        let workgroup_shape_x = workgroup_shape.x();
-        let workgroup_shape_y = workgroup_shape.y();
-        let workgroup_shape_z = workgroup_shape.z();
-        let workgroup_size_x = output_shape
-            .first()
-            .map(|x| (*x as u32).div_ceil(self.tile_size * workgroup_shape_x))
-            .unwrap_or(1);
-        let workgroup_size_y = output_shape
-            .get(1)
-            .map(|x| (*x as u32).div_ceil(self.tile_size * workgroup_shape_y))
-            .unwrap_or(1);
-        let workgroup_size_z = output_shape
-            .get(2)
-            .map(|x| (*x as u32).div_ceil(self.tile_size * workgroup_shape_z))
-            .unwrap_or(1);
-        [workgroup_size_x, workgroup_size_y, workgroup_size_z]
-    }
-
-    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
-        f(self.input);
-        f(self.indexes);
-    }
-
-    fn inputs(
-        &self,
-        nodes: &crate::compute_graph::ComputeGraphInner,
-    ) -> Vec<crate::mir::inputs::MirValue> {
-        let value = nodes.get_result(self.input).unwrap();
-        let indexes = nodes.get_result(self.indexes).unwrap();
-        let device = value.device();
-        let value_shape = value.layout().shape();
-        let indexes_shape = indexes.layout().shape();
-        let output_shape: Box<[usize]> =
-            IndexSelectOperation::calc_output_shape(self.dimension, value_shape, indexes_shape);
-        let size = padded_tensor_size(
-            (output_shape.iter().copied().product::<usize>() * value.datatype().element_size())
-                as u64,
-        );
-        let output_buf = device.create_buffer(
-            size,
-            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-        );
-        let output_tensor =
-            TensorData::new_from_buffer(device, output_buf, &output_shape, value.datatype());
-        // Make sure the output tensor has the correct shape
-        assert!(
-            output_tensor
-                .layout()
-                .shape()
-                .iter()
-                .zip(value.layout().shape())
-                .enumerate()
-                .all(|(i, (a, b))| if i == self.dimension {
-                    a == &indexes.layout().shape()[0]
-                } else {
-                    a == b
-                })
-        );
-
-        vec![value.into(), indexes.into(), output_tensor.into()]
-    }
-
-    fn build_kernel(
-        &self,
-        _: &crate::compute_graph::ComputeGraphInner,
-        _: &crate::mir::workgroup_shape::WorkgroupShape,
-        _: &[crate::mir::inputs::MirValue],
-        kernel: &mut GenericKernel,
-    ) {
-        self.build_index_kernel(kernel);
-    }
-
-    fn output(
-        &self,
-        _: &crate::compute_graph::ComputeGraphInner,
-        inputs: &[crate::mir::inputs::MirValue],
-    ) -> crate::mir::inputs::MirValue {
-        inputs[2].clone()
-    }
-
-    fn name(&self) -> String {
-        format!(
-            "index_select_{}_{}_{}_to_{}",
-            self.dimension,
-            self.datatype,
-            self.value_shape
-                .iter()
-                .map(|x| x.to_string())
-                .collect::<Vec<_>>()
-                .join("x"),
-            self.indexes_shape
-                .iter()
-                .map(|x| x.to_string())
-                .collect::<Vec<_>>()
-                .join("x")
-        )
-    }
 }
 
 impl<const R: usize, T: crate::DataType> Tensor<R, T> {
@@ -313,7 +68,7 @@ impl<const R: usize, T: crate::DataType> Tensor<R, T> {
 async fn test_index_select_dim_0() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2., 3.], [4., 5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -334,7 +89,7 @@ async fn test_index_select_large_dim_0() {
 
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     const SIZE_1: usize = 100;
     const SIZE_0: usize = 100;
@@ -361,7 +116,7 @@ async fn test_index_select_large_dim_0() {
 async fn test_index_select_dim_1() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2., 3.], [4., 5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -382,7 +137,7 @@ async fn test_index_select_large_dim_1() {
 
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     const SIZE_1: usize = 100;
     const SIZE_0: usize = 100;
@@ -408,10 +163,51 @@ async fn test_index_select_large_dim_1() {
 
 #[cfg(test)]
 #[tokio::test]
+async fn test_multiply_before_index_select() {
+    use crate::Device;
+
+    let device = Device::test_instance();
+
+    // Test that multiply works correctly
+    let data = [[1., 2., 3.], [4., 5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+    let tensor = tensor * 3.;
+    let as_slice = tensor.as_slice().await.unwrap();
+    println!("multiply result: {as_slice:?}");
+    let expected_data = [[3., 6., 9.], [12., 15., 18.]];
+    let expected_tensor = Tensor::new(&device, &expected_data);
+    let expected_as_slice = expected_tensor.as_slice().await.unwrap();
+    assert_eq!(as_slice, expected_as_slice);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_index_select_prefused() {
+    use crate::Device;
+
+    let device = Device::test_instance();
+
+    // Test just tensor * 3. -> index_select (pre-fusion only)
+    let data = [[1., 2., 3.], [4., 5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+    let indexes = Tensor::new(&device, &[1, 0]);
+    let tensor = (tensor * 3.).index_select(1, &indexes);
+    let as_slice = tensor.as_slice().await.unwrap();
+    println!("prefused: {as_slice:?}");
+    // tensor * 3 = [[3, 6, 9], [12, 15, 18]]
+    // index_select(1, [1, 0]) -> [[6, 3], [15, 12]]
+    let expected_data = [[6., 3.], [15., 12.]];
+    let expected_tensor = Tensor::new(&device, &expected_data);
+    let expected_as_slice = expected_tensor.as_slice().await.unwrap();
+    assert_eq!(as_slice, expected_as_slice);
+}
+
+#[cfg(test)]
+#[tokio::test]
 async fn test_index_select_fused() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2., 3.], [4., 5., 6.]];
     let tensor = Tensor::new(&device, &data);

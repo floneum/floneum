@@ -1,22 +1,24 @@
-use super::debug_assert_none_nan;
-use super::rope::RopeImplementation;
-use super::silu::fast_cpu_silu;
-use candle_core::quantized::QTensor;
-use candle_core::{quantized::QMatMul, Module, Tensor};
-use candle_core::{Device, D};
-use candle_transformers::quantized_nn::{Linear, RmsNorm};
-use kalosm_common::AttentionMask;
-use kalosm_common::KvCache;
+use crate::raw::rope::RopeImplementation;
 
-pub enum FeedForwardVariant {
+use fusor_core::cache::AttentionMask;
+use fusor_core::cache::KvCache;
+use fusor_core::layers::Linear;
+use fusor_core::layers::RmsNorm;
+use fusor_core::CastTensor;
+use fusor_core::FloatDataType;
+use fusor_core::QMatrix;
+use fusor_core::Tensor;
+use fusor_core::D;
+
+pub enum FeedForwardVariant<F: FloatDataType = f32> {
     // Used by the Llama, Qwen, and Gemma models
-    Llama(LlamaFeedForward),
+    Llama(LlamaFeedForward<F>),
     // Used by the Phi models
     Phi(PhiFeedForward),
 }
 
-impl FeedForwardVariant {
-    pub(crate) fn forward(&self, x: &Tensor) -> candle_core::Result<Tensor> {
+impl<F: FloatDataType> FeedForwardVariant<F> {
+    pub(crate) fn forward(&self, x: &Tensor<3, F>) -> Tensor<3, F> {
         match self {
             FeedForwardVariant::Llama(ffn) => ffn.forward(x),
             FeedForwardVariant::Phi(ffn) => ffn.forward(x),
@@ -25,41 +27,37 @@ impl FeedForwardVariant {
 }
 
 pub struct PhiFeedForward {
-    pub up: QMatMul,
-    pub down: QMatMul,
+    pub up: QMatrix,
+    pub down: QMatrix,
     pub feed_forward_length: usize,
 }
 
 impl PhiFeedForward {
-    pub(crate) fn forward(&self, x: &Tensor) -> candle_core::Result<Tensor> {
-        let up_states = x.apply(&self.up)?;
-        let gate = up_states
-            .narrow(D::Minus1, 0, self.feed_forward_length)
-            .unwrap();
-        let up_states = up_states
-            .narrow(
-                D::Minus1,
-                self.feed_forward_length,
-                self.feed_forward_length,
-            )
-            .unwrap();
-        let gate = fast_cpu_silu(&gate)?;
-        let up_states = (up_states * gate)?;
-        up_states.apply(&self.down)
+    pub(crate) fn forward<F: FloatDataType>(&self, x: &Tensor<3, F>) -> Tensor<3, F> {
+        let up_states = x.q_mat_mul(&self.up);
+        let gate = up_states.narrow(D::Minus1, 0, self.feed_forward_length);
+        let up_states = up_states.narrow(
+            D::Minus1,
+            self.feed_forward_length,
+            self.feed_forward_length,
+        );
+        let gate = gate.silu();
+        let up_states = up_states * gate;
+        up_states.q_mat_mul(&self.down)
     }
 }
 
-pub struct LlamaFeedForward {
-    gate: QMatMul,
-    gate_bias: Option<Tensor>,
-    down: QMatMul,
-    down_bias: Option<Tensor>,
-    up: QMatMul,
-    up_bias: Option<Tensor>,
+pub struct LlamaFeedForward<F: FloatDataType = f32> {
+    gate: QMatrix,
+    gate_bias: Option<Tensor<1, F>>,
+    down: QMatrix,
+    down_bias: Option<Tensor<1, F>>,
+    up: QMatrix,
+    up_bias: Option<Tensor<1, F>>,
 }
 
-impl LlamaFeedForward {
-    pub(crate) fn new(gate: QMatMul, down: QMatMul, up: QMatMul) -> Self {
+impl<F: FloatDataType> LlamaFeedForward<F> {
+    pub(crate) fn new(gate: QMatrix, down: QMatrix, up: QMatrix) -> Self {
         Self {
             gate,
             down,
@@ -71,12 +69,12 @@ impl LlamaFeedForward {
     }
 
     pub(crate) fn new_with_bias(
-        gate: QMatMul,
-        gate_bias: Option<Tensor>,
-        down: QMatMul,
-        down_bias: Option<Tensor>,
-        up: QMatMul,
-        up_bias: Option<Tensor>,
+        gate: QMatrix,
+        gate_bias: Option<Tensor<1, F>>,
+        down: QMatrix,
+        down_bias: Option<Tensor<1, F>>,
+        up: QMatrix,
+        up_bias: Option<Tensor<1, F>>,
     ) -> Self {
         Self {
             gate,
@@ -88,388 +86,236 @@ impl LlamaFeedForward {
         }
     }
 
-    pub(crate) fn forward(&self, x: &Tensor) -> candle_core::Result<Tensor> {
-        let device = x.device();
-        if matches!(device, Device::Cpu) {
-            std::thread::scope(|scope| {
-                let w1 = scope.spawn(|| {
-                    let mut w1 = self.gate.forward(x)?;
-                    if let Some(ref bias) = self.gate_bias {
-                        w1 = w1.broadcast_add(bias)?;
-                    }
-                    fast_cpu_silu(&w1)
-                });
-
-                let mut w3 = self.up.forward(x)?;
-                if let Some(ref bias) = self.up_bias {
-                    w3 = w3.broadcast_add(bias)?;
-                }
-                let w1 = w1
-                    .join()
-                    .map_err(|_| candle_core::Error::Msg("Failed to join thread".to_string()))
-                    .unwrap()
-                    .unwrap();
-
-                let mut up = self.down.forward(&(&w1 * w3)?)?;
-
-                if let Some(ref bias) = self.down_bias {
-                    up = up.broadcast_add(bias)?;
-                }
-
-                Ok(up)
-            })
-        } else {
-            let mut w1 = self.gate.forward(x)?;
-            if let Some(ref bias) = self.gate_bias {
-                w1 = w1.broadcast_add(bias)?;
-            }
-            let w1 = fast_cpu_silu(&w1)?;
-
-            let mut w3 = self.up.forward(x)?;
-            if let Some(ref bias) = self.up_bias {
-                w3 = w3.broadcast_add(bias)?;
-            }
-
-            let mut up = self.down.forward(&(&w1 * w3)?)?;
-            if let Some(ref bias) = self.down_bias {
-                up = up.broadcast_add(bias)?;
-            }
-            Ok(up)
+    pub(crate) fn forward(&self, x: &Tensor<3, F>) -> Tensor<3, F> {
+        let mut w1 = x.q_mat_mul(&self.gate);
+        if let Some(ref bias) = self.gate_bias {
+            w1 = w1.add_(bias);
         }
+        let w1 = w1.silu();
+
+        let mut w3 = x.q_mat_mul(&self.up);
+        if let Some(ref bias) = self.up_bias {
+            w3 = w3.add_(bias);
+        }
+
+        let mut up = (w1 * w3).q_mat_mul(&self.down);
+        if let Some(ref bias) = self.down_bias {
+            up = up.add_(bias);
+        }
+        up
     }
 }
 
-pub enum AttentionVariant {
-    Separate(SeparateAttention),
+pub enum AttentionVariant<F: FloatDataType = f32> {
+    Separate(Box<SeparateAttention<F>>),
     Grouped(GroupedAttention),
 }
 
-pub struct AttentionBias {
-    bias_q: Tensor,
-    bias_k: Tensor,
-    bias_v: Tensor,
+pub struct AttentionBias<F: FloatDataType = f32> {
+    bias_q: Tensor<1, F>,
+    bias_k: Tensor<1, F>,
+    bias_v: Tensor<1, F>,
 }
 
-impl AttentionBias {
-    pub fn new(q: Tensor, k: Tensor, v: Tensor) -> Self {
+impl<F: FloatDataType> AttentionBias<F> {
+    pub fn new(q: Tensor<1, F>, k: Tensor<1, F>, v: Tensor<1, F>) -> Self {
         Self {
             bias_q: q,
             bias_k: k,
             bias_v: v,
         }
     }
-
-    pub fn from_qtensor(q: &QTensor, k: &QTensor, v: &QTensor) -> candle_core::Result<Self> {
-        Ok(Self::new(
-            q.dequantize(&q.device())?,
-            k.dequantize(&k.device())?,
-            v.dequantize(&v.device())?,
-        ))
-    }
 }
 
-pub struct SeparateAttention {
-    pub attention_wq: QMatMul,
-    pub attention_q_norm: Option<RmsNorm>,
-    pub attention_wk: QMatMul,
-    pub attention_k_norm: Option<RmsNorm>,
-    pub attention_wv: QMatMul,
-    pub bias: Option<AttentionBias>,
+pub struct SeparateAttention<F: FloatDataType = f32> {
+    pub attention_wq: QMatrix,
+    pub attention_q_norm: Option<RmsNorm<1, F>>,
+    pub attention_wk: QMatrix,
+    pub attention_k_norm: Option<RmsNorm<1, F>>,
+    pub attention_wv: QMatrix,
+    pub bias: Option<AttentionBias<F>>,
     pub interleaved_rope: bool,
 }
 
-impl SeparateAttention {
+impl<F: FloatDataType> SeparateAttention<F>
+where
+    F: CastTensor<f32>,
+    f32: CastTensor<F>,
+{
     #[allow(clippy::too_many_arguments)]
     fn forward(
         &self,
         num_heads: usize,
         head_dim: usize,
         num_key_value_heads: usize,
-        hidden_states: &Tensor,
-        rope_cache: &RopeImplementation,
+        hidden_states: &Tensor<3, F>,
+        rope_cache: &RopeImplementation<F>,
         start_pos: usize,
-        pos_ids: Option<&Tensor>,
-    ) -> candle_core::Result<(Tensor, Tensor, Tensor)> {
-        let b_sz = hidden_states.dims()[0];
-        let seq_len = hidden_states.dims()[1];
-        let device = hidden_states.device();
+        pos_ids: Option<&Tensor<2, F>>,
+    ) -> (Tensor<4, F>, Tensor<4, F>, Tensor<4, F>) {
+        let [b_sz, seq_len, _] = *hidden_states.shape();
 
-        if matches!(device, Device::Cpu) {
-            std::thread::scope(|s| -> Result<_, candle_core::Error> {
-                let query_states: std::thread::ScopedJoinHandle<'_, candle_core::Result<Tensor>> =
-                    s.spawn(|| {
-                        let mut query_states = self.attention_wq.forward(hidden_states)?;
+        let query_states = {
+            let mut query_states = hidden_states.q_mat_mul(&self.attention_wq);
 
-                        if let Some(bias) = &self.bias {
-                            query_states = query_states.broadcast_add(&bias.bias_q)?;
-                        }
+            if let Some(bias) = &self.bias {
+                query_states = query_states.add_(&bias.bias_q);
+            }
 
-                        let mut query = query_states
-                            .reshape((b_sz, seq_len, num_heads, head_dim))
-                            .unwrap()
-                            .transpose(1, 2)
-                            .unwrap();
+            let mut query = query_states
+                .reshape([b_sz, seq_len, num_heads, head_dim])
+                .transpose(1, 2);
+            if let Some(norm) = &self.attention_q_norm {
+                query = norm.forward(&query);
+            }
+            query
+        };
+        let key_states = {
+            let mut key_states = hidden_states.q_mat_mul(&self.attention_wk);
 
-                        if let Some(norm) = &self.attention_q_norm {
-                            query = norm.forward(&query.contiguous()?)?;
-                        }
+            if let Some(bias) = &self.bias {
+                key_states = key_states.add_(&bias.bias_k);
+            }
 
-                        Ok(query)
-                    });
-                let key_states: std::thread::ScopedJoinHandle<'_, candle_core::Result<Tensor>> = s
-                    .spawn(|| {
-                        let mut key_states = self.attention_wk.forward(hidden_states)?;
+            let mut key = key_states
+                .reshape([b_sz, seq_len, num_key_value_heads, head_dim])
+                .transpose(1, 2);
+            if let Some(norm) = &self.attention_k_norm {
+                key = norm.forward(&key);
+            }
 
-                        if let Some(bias) = &self.bias {
-                            key_states = key_states.broadcast_add(&bias.bias_k)?;
-                        }
+            key
+        };
+        let value_states = {
+            let mut value_states = hidden_states.q_mat_mul(&self.attention_wv);
 
-                        let mut key = key_states
-                            .reshape((b_sz, seq_len, num_key_value_heads, head_dim))
-                            .unwrap()
-                            .transpose(1, 2)
-                            .unwrap();
+            if let Some(bias) = &self.bias {
+                value_states = value_states.add_(&bias.bias_v);
+            }
 
-                        if let Some(norm) = &self.attention_k_norm {
-                            key = norm.forward(&key.contiguous()?)?;
-                        }
+            value_states
+                .reshape([b_sz, seq_len, num_key_value_heads, head_dim])
+                .transpose(1, 2)
+        };
 
-                        Ok(key)
-                    });
-                let value_states = s.spawn(|| {
-                    let mut value_states = self.attention_wv.forward(hidden_states)?;
-
-                    if let Some(bias) = &self.bias {
-                        value_states = value_states.broadcast_add(&bias.bias_v)?;
-                    }
-
-                    value_states
-                        .reshape((b_sz, seq_len, num_key_value_heads, head_dim))
-                        .unwrap()
-                        .transpose(1, 2)
-                });
-
-                let query_states = query_states
-                    .join()
-                    .map_err(|_| candle_core::Error::Msg("failed to join query states".to_string()))
-                    .unwrap()
-                    .unwrap();
-                let key_states = key_states
-                    .join()
-                    .map_err(|_| candle_core::Error::Msg("failed to join key states".to_string()))
-                    .unwrap()
-                    .unwrap();
-
-                let (query_states, key_states) = rope_cache
-                    .forward(
-                        &query_states,
-                        &key_states,
-                        start_pos,
-                        pos_ids,
-                        self.interleaved_rope,
-                    )
-                    .unwrap();
-
-                let value_states = value_states
-                    .join()
-                    .map_err(|_| candle_core::Error::Msg("failed to join value states".to_string()))
-                    .unwrap()
-                    .unwrap();
-
-                Ok((query_states, key_states, value_states))
-            })
-        } else {
-            let query_states = {
-                let mut query_states = self.attention_wq.forward(hidden_states)?;
-
-                if let Some(bias) = &self.bias {
-                    query_states = query_states.broadcast_add(&bias.bias_q)?;
-                }
-
-                let mut query = query_states
-                    .reshape((b_sz, seq_len, num_heads, head_dim))
-                    .unwrap()
-                    .transpose(1, 2)
-                    .unwrap();
-
-                if let Some(norm) = &self.attention_q_norm {
-                    query = norm.forward(&query.contiguous()?)?;
-                }
-
-                query
-            };
-            let key_states = {
-                let mut key_states = self.attention_wk.forward(hidden_states)?;
-
-                if let Some(bias) = &self.bias {
-                    key_states = key_states.broadcast_add(&bias.bias_k)?;
-                }
-
-                let mut key = key_states
-                    .reshape((b_sz, seq_len, num_key_value_heads, head_dim))
-                    .unwrap()
-                    .transpose(1, 2)
-                    .unwrap();
-
-                if let Some(norm) = &self.attention_k_norm {
-                    key = norm.forward(&key.contiguous()?)?;
-                }
-
-                key
-            };
-            let value_states = {
-                let mut value_states = self.attention_wv.forward(hidden_states)?;
-
-                if let Some(bias) = &self.bias {
-                    value_states = value_states.broadcast_add(&bias.bias_v)?;
-                }
-
-                value_states
-                    .reshape((b_sz, seq_len, num_key_value_heads, head_dim))
-                    .unwrap()
-                    .transpose(1, 2)
-                    .unwrap()
-            };
-
-            let (query_states, key_states) = rope_cache
-                .forward(
-                    &query_states,
-                    &key_states,
-                    start_pos,
-                    pos_ids,
-                    self.interleaved_rope,
-                )
-                .unwrap();
-
-            Ok((query_states, key_states, value_states))
-        }
+        let (query_states, key_states) = rope_cache.forward(
+            &query_states,
+            &key_states,
+            start_pos,
+            pos_ids,
+            self.interleaved_rope,
+        );
+        (query_states, key_states, value_states)
     }
 }
 
 pub struct GroupedAttention {
-    pub attention_qkv: QMatMul,
+    pub attention_qkv: QMatrix,
 }
 
 impl GroupedAttention {
     #[allow(clippy::too_many_arguments)]
-    fn forward(
+    fn forward<F: FloatDataType>(
         &self,
         num_heads: usize,
         head_dim: usize,
         num_key_value_heads: usize,
-        x: &Tensor,
-        rope_cache: &RopeImplementation,
+        x: &Tensor<3, F>,
+        rope_cache: &RopeImplementation<F>,
         start_pos: usize,
-        pos_ids: Option<&Tensor>,
-    ) -> candle_core::Result<(Tensor, Tensor, Tensor)> {
-        let b_sz = x.dims()[0];
-        let seq_len = x.dims()[1];
-        let qkv = self.attention_qkv.forward(x)?;
+        pos_ids: Option<&Tensor<2, F>>,
+    ) -> (Tensor<4, F>, Tensor<4, F>, Tensor<4, F>)
+    where
+        f32: CastTensor<F>,
+    {
+        let [b_sz, seq_len, _] = *x.shape();
+        let qkv = x.q_mat_mul(&self.attention_qkv);
 
         let query_pos = num_heads * head_dim;
-        let query_states = qkv.narrow(D::Minus1, 0, query_pos)?;
-        let key_states = qkv
-            .narrow(D::Minus1, query_pos, num_key_value_heads * head_dim)
-            .unwrap();
-        let value_states = qkv
-            .narrow(
-                D::Minus1,
-                query_pos + num_key_value_heads * head_dim,
-                num_key_value_heads * head_dim,
-            )
-            .unwrap();
+        let query_states = qkv.narrow(D::Minus1, 0, query_pos);
+        let key_states = qkv.narrow(D::Minus1, query_pos, num_key_value_heads * head_dim);
+        let value_states = qkv.narrow(
+            D::Minus1,
+            query_pos + num_key_value_heads * head_dim,
+            num_key_value_heads * head_dim,
+        );
 
         let query_states = query_states
-            .reshape((b_sz, seq_len, num_heads, head_dim))
-            .unwrap()
-            .transpose(1, 2)
-            .unwrap();
+            .reshape([b_sz, seq_len, num_heads, head_dim])
+            .transpose(1, 2);
         let key_states = key_states
-            .reshape((b_sz, seq_len, num_key_value_heads, head_dim))
-            .unwrap()
-            .transpose(1, 2)
-            .unwrap();
+            .reshape([b_sz, seq_len, num_key_value_heads, head_dim])
+            .transpose(1, 2);
         let value_states = value_states
-            .reshape((b_sz, seq_len, num_key_value_heads, head_dim))
-            .unwrap()
-            .transpose(1, 2)
-            .unwrap();
+            .reshape([b_sz, seq_len, num_key_value_heads, head_dim])
+            .transpose(1, 2);
 
-        let (query_states, key_states) = rope_cache
-            .forward(&query_states, &key_states, start_pos, pos_ids, false)
-            .unwrap();
+        let (query_states, key_states) =
+            rope_cache.forward(&query_states, &key_states, start_pos, pos_ids, false);
 
-        Ok((query_states, key_states, value_states))
+        (query_states, key_states, value_states)
     }
 }
 
-pub struct LlamaAttention {
-    pub attention_variant: AttentionVariant,
-    pub attention_wo: Linear,
-    pub attention_norm: RmsNorm,
-    pub post_attention_norm: Option<RmsNorm>,
-    pub feed_forward_variant: FeedForwardVariant,
-    pub ffn_norm: RmsNorm,
-    pub post_ffn_norm: Option<RmsNorm>,
+pub struct LlamaAttention<F: FloatDataType = f32> {
+    pub attention_variant: AttentionVariant<F>,
+    pub attention_wo: Linear<F>,
+    pub attention_norm: RmsNorm<1, F>,
+    pub post_attention_norm: Option<RmsNorm<1, F>>,
+    pub feed_forward_variant: FeedForwardVariant<F>,
+    pub ffn_norm: RmsNorm<1, F>,
+    pub post_ffn_norm: Option<RmsNorm<1, F>>,
     pub n_head: usize,
     pub n_kv_head: usize,
     pub head_dim: usize,
     pub hidden_size: usize,
-    pub rope_cache: RopeImplementation,
+    pub rope_cache: RopeImplementation<F>,
     pub(crate) sliding_window_size: Option<usize>,
 }
 
-impl LlamaAttention {
+impl<F: FloatDataType> LlamaAttention<F>
+where
+    F: CastTensor<f32>,
+    f32: CastTensor<F>,
+{
     pub(crate) fn forward(
         &self,
-        hidden_states: &Tensor,
-        attention_mask: Option<&AttentionMask>,
+        hidden_states: &Tensor<3, F>,
+        attention_mask: Option<&AttentionMask<F>>,
         start_pos: usize,
-        pos_ids: Option<&Tensor>,
-        cache: Option<&mut KvCache>,
-    ) -> candle_core::Result<Tensor> {
-        let bsz = hidden_states.dims()[0];
-        let q_len = hidden_states.dims()[1];
+        pos_ids: Option<&Tensor<2, F>>,
+        cache: Option<&mut KvCache<F>>,
+    ) -> Tensor<3, F> {
+        let [b_sz, q_len, _] = *hidden_states.shape();
         let hidden_size = self.hidden_size;
         let num_heads = self.n_head;
         let head_dim = self.head_dim;
         let num_key_value_heads = self.n_kv_head;
-        let num_key_value_groups = num_heads / num_key_value_heads;
 
         let (query_states, key_states, value_states) = match self.attention_variant {
-            AttentionVariant::Separate(ref attention) => attention
-                .forward(
-                    num_heads,
-                    head_dim,
-                    num_key_value_heads,
-                    hidden_states,
-                    &self.rope_cache,
-                    start_pos,
-                    pos_ids,
-                )
-                .unwrap(),
-            AttentionVariant::Grouped(ref attention) => attention
-                .forward(
-                    num_heads,
-                    head_dim,
-                    num_key_value_heads,
-                    hidden_states,
-                    &self.rope_cache,
-                    start_pos,
-                    pos_ids,
-                )
-                .unwrap(),
+            AttentionVariant::Separate(ref attention) => attention.forward(
+                num_heads,
+                head_dim,
+                num_key_value_heads,
+                hidden_states,
+                &self.rope_cache,
+                start_pos,
+                pos_ids,
+            ),
+            AttentionVariant::Grouped(ref attention) => attention.forward(
+                num_heads,
+                head_dim,
+                num_key_value_heads,
+                hidden_states,
+                &self.rope_cache,
+                start_pos,
+                pos_ids,
+            ),
         };
-        debug_assert_none_nan(&query_states);
-        debug_assert_none_nan(&key_states);
-        debug_assert_none_nan(&value_states);
-
-        let key_states = repeat_kv(key_states.clone(), num_key_value_groups)?;
-        let value_states = repeat_kv(value_states, num_key_value_groups)?;
 
         let (key_states, value_states) = match cache {
             None => (key_states, value_states),
-            Some(cache) => cache.append(&key_states, &value_states)?,
+            Some(cache) => cache.append(&key_states, &value_states),
         };
 
         forward_attention_qkv(
@@ -478,72 +324,48 @@ impl LlamaAttention {
             &value_states,
             &self.attention_wo,
             attention_mask,
-            num_heads,
             head_dim,
-            bsz,
+            b_sz,
             q_len,
             hidden_size,
         )
     }
 }
 
-fn repeat_kv(x: Tensor, num_key_value_groups: usize) -> candle_core::Result<Tensor> {
-    if num_key_value_groups == 1 {
-        Ok(x)
-    } else {
-        let (b_sz, n_kv_head, seq_len, head_dim) = x.dims4()?;
-        Tensor::cat(&vec![&x; num_key_value_groups], 2)
-            .unwrap()
-            .reshape((b_sz, n_kv_head * num_key_value_groups, seq_len, head_dim))
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn forward_attention_qkv(
-    query_states: &Tensor,
-    key_states: &Tensor,
-    value_states: &Tensor,
-    attention_wo: &Linear,
-    attention_mask: Option<&AttentionMask>,
-    num_heads: usize,
+pub(crate) fn forward_attention_qkv<F: FloatDataType>(
+    query_states: &Tensor<4, F>,
+    key_states: &Tensor<4, F>,
+    value_states: &Tensor<4, F>,
+    attention_wo: &Linear<F>,
+    attention_mask: Option<&AttentionMask<F>>,
     head_dim: usize,
-    bsz: usize,
+    b_sz: usize,
     q_len: usize,
     hidden_size: usize,
-) -> candle_core::Result<Tensor> {
+) -> Tensor<3, F> {
     let scale = 1. / (head_dim as f64).sqrt();
-    let mut attn_output = {
-        let mut attn_weights = (query_states.matmul(&key_states.t()?)? * scale)?;
-        debug_assert_none_nan(&attn_weights);
+    let attn_output = {
+        // let mut attn_weights = query_states.mat_mul(&key_states.t()) * scale as f32;
 
-        if let Some(attention_mask) = attention_mask {
-            attention_mask.forward(&mut attn_weights)?;
-            debug_assert_none_nan(&attn_weights);
-        }
+        // if let Some(attention_mask) = attention_mask {
+        //     attention_mask.forward(&mut attn_weights);
+        // }
 
-        attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
-        debug_assert_none_nan(&attn_weights);
+        // attn_weights = attn_weights.softmax_last_dim();
 
-        attn_weights.matmul(value_states)?
+        // attn_weights.mat_mul(value_states)
+        query_states.flash_attention(
+            key_states,
+            value_states,
+            scale as f32,
+            attention_mask.map(|m| m.mask()),
+        )
     };
 
-    debug_assert_none_nan(&attn_output);
+    let attn_output = attn_output.transpose(1, 2);
 
-    if attn_output.dims() != [bsz, num_heads, q_len, head_dim] {
-        return Err(candle_core::Error::Msg(format!(
-            "`attn_output` should be of size {:?}, but is {:?}",
-            [bsz, num_heads, q_len, head_dim],
-            attn_output.dims()
-        )));
-    }
+    let attn_output = attn_output.reshape([b_sz, q_len, hidden_size]);
 
-    attn_output = attn_output.transpose(1, 2)?;
-
-    attn_output = attn_output.reshape(&[bsz, q_len, hidden_size])?;
-
-    attn_output = attention_wo.forward(&attn_output)?;
-
-    debug_assert_none_nan(&attn_output);
-
-    Ok(attn_output)
+    attention_wo.forward(&attn_output)
 }

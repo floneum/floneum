@@ -104,16 +104,12 @@ impl MatMulOperation {
         }
     }
 
+    pub fn matmul_dtype(&self) -> DataTypeEnum {
+        self.pre_element_wise[0].out_datatype()
+    }
+
     pub fn rank(&self) -> u32 {
         self.out_shape.len() as u32
-    }
-
-    pub(crate) fn set_pre_element_wise(&mut self, pre_element_wise: [ElementWiseFunctions; 2]) {
-        self.pre_element_wise = pre_element_wise;
-    }
-
-    pub(crate) fn set_post_element_wise(&mut self, post_element_wise: ElementWiseFunctions) {
-        self.post_element_wise = post_element_wise;
     }
 }
 
@@ -187,7 +183,8 @@ impl Operation for MatMulOperation {
         let mut out_shape = a_shape.to_vec();
         out_shape[second_to_last_dim] = a_shape[second_to_last_dim];
         out_shape[last_dim] = b_shape[last_dim];
-        let output_tensor = TensorData::new_for_shape(device, &out_shape, a.datatype());
+        let output_tensor =
+            TensorData::new_for_shape(device, &out_shape, self.post_element_wise.out_datatype());
         vec![a.into(), b.into(), output_tensor.into()]
     }
 
@@ -287,7 +284,7 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_matrix_vector_mul() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     // Test matrix-vector multiplication: [2x3] * [3x1] = [2x1]
     let matrix = [[1., 2., 3.], [4., 5., 6.]];
@@ -305,7 +302,7 @@ async fn test_matrix_vector_mul() {
 #[cfg(test)]
 #[tokio::test]
 async fn test_matrix_vector_mul_non_contiguous() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     // Test with non-contiguous tensors
     let matrix = [[1., 2., 3., 10.], [4., 5., 6., 11.]];
@@ -325,7 +322,7 @@ async fn test_matrix_vector_mul_non_contiguous() {
 #[cfg(test)]
 #[tokio::test]
 async fn test_multi_row_matrix_vector_mul() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     // Test matrix-vector multiplication with multiple rows: [3x2] * [2x1] = [3x1]
     let matrix = [[1., 2.], [3., 4.], [5., 6.]];
@@ -344,7 +341,7 @@ async fn test_multi_row_matrix_vector_mul() {
 #[cfg(test)]
 #[tokio::test]
 async fn test_batched_matrix_vector_mul() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     // Test simpler batched case first: [1x2x3] * [1x3x1] = [1x2x1]
     let matrices = [[[1., 2., 3.], [4., 5., 6.]]];
@@ -363,7 +360,7 @@ async fn test_batched_matrix_vector_mul() {
 #[cfg(test)]
 #[tokio::test]
 async fn test_full_batched_matrix_vector_mul() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     // Test batched matrix-vector multiplication: [2x2x3] * [2x3x1] = [2x2x1]
     let matrices = [
@@ -389,7 +386,7 @@ async fn test_full_batched_matrix_vector_mul() {
 #[cfg(test)]
 #[tokio::test]
 async fn test_matmul() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data_a = [[1.], [3.]];
     let data_b = [[1., 2.]];
@@ -408,7 +405,7 @@ async fn test_matmul() {
 #[cfg(test)]
 #[tokio::test]
 async fn test_asymetric_matmul() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data_a = [[1., 2.], [3., 4.], [5., 6.]];
     let data_b = [[1., 2.], [3., 4.]];
@@ -429,7 +426,7 @@ async fn test_asymetric_matmul() {
 #[cfg(test)]
 #[tokio::test]
 async fn test_matmul_fused() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data_a = [[1.], [3.]];
     let data_b = [[1., 2.]];
@@ -450,7 +447,8 @@ async fn test_matmul_fused() {
 async fn test_transposed_matmul() {
     use candle_core::IndexOp;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
+    // This test uses regular tensor ops, not quantized matmul, so CPU is fine
     let candle_device = candle_core::Device::Cpu;
 
     let data_a = [[1.], [3.]];
@@ -500,7 +498,7 @@ async fn test_transposed_matmul() {
 #[cfg(test)]
 #[tokio::test]
 async fn test_batched_matmul() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data_a = [[[1.], [3.]], [[2.], [6.]]];
     let data_b = [[[1., 2.]], [[2., 4.]]];
@@ -524,7 +522,7 @@ async fn test_batched_matmul() {
 #[cfg(test)]
 #[tokio::test]
 async fn test_matmul_f16() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
     if !device.f16_supported() {
         return;
     }
@@ -549,7 +547,7 @@ async fn test_matmul_f16() {
 async fn fuzz_matmul() {
     use rand::Rng;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let min_size = 1;
     let max_size = 512;
@@ -608,7 +606,7 @@ async fn fuzz_matmul() {
 #[tokio::test]
 async fn fuzz_batched_matmul() {
     use rand::Rng;
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let min_batch_size = 2;
     let max_batch_size = 4;

@@ -13,6 +13,7 @@ pub use tensor::*;
 pub(crate) use element_wise::*;
 pub use matmul::*;
 pub(crate) use pair_wise::*;
+pub use resize::ShapeWithOneHole;
 pub use varbuilder::{ShardedVarBuilder, VarBuilder};
 
 pub mod cache;
@@ -26,6 +27,7 @@ mod layout;
 mod map_layout;
 pub mod matmul;
 mod mir;
+mod nary_wise;
 mod pair_wise;
 mod quantized;
 mod quantized_types_wgsl;

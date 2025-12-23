@@ -39,7 +39,15 @@ pub(crate) fn general_sgemv(
     let device = &graph.device;
 
     // Handle batch dimensions
-    writeln!(kernel, "let batch_idx = {global_id}.z;").unwrap();
+    writeln!(kernel, "var batch_idx = {global_id}.z;").unwrap();
+
+    // Decompose the batch index for higher-dimensional tensors
+    for dim in (0..input_a.rank()).rev().skip(2) {
+        let shape = input_a.shape_binding(dim);
+        writeln!(kernel, "let batch_idx_{dim} = batch_idx % {shape};").unwrap();
+        writeln!(kernel, "batch_idx = batch_idx / {shape};").unwrap();
+    }
+
     // Handle M dimension - each workgroup handles one M value
     writeln!(kernel, "let m_idx = {global_id}.y;").unwrap();
 
@@ -50,9 +58,10 @@ pub(crate) fn general_sgemv(
     )
     .unwrap();
 
-    let storage_type = maybe_vec_storage_type(SGEMV_CHUNK_SIZE, dtype);
+    // Always accumulate in f32 for precision, convert to output dtype at the end
+    let acc_storage_type = maybe_vec_storage_type(SGEMV_CHUNK_SIZE, DataTypeEnum::F32);
 
-    writeln!(kernel, "var acc = {storage_type}();").unwrap();
+    writeln!(kernel, "var acc = {acc_storage_type}();").unwrap();
 
     // Find the reduce size in blocks rounded up
     writeln!(
@@ -84,14 +93,15 @@ pub(crate) fn general_sgemv(
             for i in 0..SGEMV_VECTOR_SIZE {
                 writeln!(kernel, "let input_a_{i}_index = index * {elements_per_block} + i * {SGEMV_VECTOR_SIZE} + {i};").unwrap();
                 write!(kernel, "let input_a_{i} = {input_a}[").unwrap();
-                input_a.strided_index(
-                    kernel,
-                    vec![
-                        "batch_idx".to_string(),
-                        "m_idx".to_string(),
-                        format!("input_a_{i}_index"),
-                    ],
-                );
+                let mut indices = Vec::new();
+                // Add batch indices first
+                for dim in (0..input_a.rank()).rev().skip(2) {
+                    indices.push(format!("batch_idx_{dim}"));
+                }
+                // Then add M and K indices
+                indices.push("m_idx".to_string());
+                indices.push(format!("input_a_{i}_index"));
+                input_a.strided_index(kernel, indices);
                 writeln!(kernel, "];").unwrap();
             }
             // The pack them into a vector and write to the cache
@@ -120,18 +130,24 @@ pub(crate) fn general_sgemv(
         };
         writeln!(
             kernel,
-            "let chunk = {input_b}[{index} * k_block_size + index];"
+            "let chunk = &{input_b}[{index} * k_block_size + index];"
         )
         .unwrap();
 
         let acc_indexed = maybe_vec_storage_index(SGEMV_CHUNK_SIZE, "acc", "acc_offset");
+        // Always convert a_cache to f32 for the dot product since dequantize outputs f32
+        // and we accumulate in f32 for precision
         dequantize_vec4_block(
             kernel,
             op.matrix.datatype,
             "chunk".to_string(),
             DataTypeEnum::F32,
             |index, data, code| {
-                writeln!(code, "{acc_indexed} += dot(a_cache[{index}], {data});").unwrap();
+                writeln!(
+                    code,
+                    "{acc_indexed} += dot(vec4<f32>(a_cache[{index}]), {data});"
+                )
+                .unwrap();
             },
         );
 
@@ -159,7 +175,7 @@ pub(crate) fn general_sgemv(
         if blocksize > subgroup_size {
             let local_data = kernel.add_global_array(
                 KernelGlobalSpace::Workgroup,
-                maybe_vec_storage_type_enum(SGEMV_CHUNK_SIZE, dtype),
+                maybe_vec_storage_type_enum(SGEMV_CHUNK_SIZE, DataTypeEnum::F32),
                 subgroup_size.to_string(),
             );
             let subgroup_id = kernel.subgroup_index();
@@ -191,7 +207,7 @@ pub(crate) fn general_sgemv(
                 writeln!(kernel, "}}").unwrap();
                 writeln!(kernel, "else {{").unwrap();
                 {
-                    writeln!(kernel, "acc = {storage_type}();").unwrap();
+                    writeln!(kernel, "acc = {acc_storage_type}();").unwrap();
                 }
                 writeln!(kernel, "}}").unwrap();
             }
@@ -210,7 +226,7 @@ pub(crate) fn general_sgemv(
     else {
         let local_data = kernel.add_global_array(
             KernelGlobalSpace::Workgroup,
-            maybe_vec_storage_type_enum(SGEMV_CHUNK_SIZE, dtype),
+            maybe_vec_storage_type_enum(SGEMV_CHUNK_SIZE, DataTypeEnum::F32),
             blocksize.to_string(),
         );
         let mut offset = blocksize;
@@ -253,20 +269,18 @@ pub(crate) fn general_sgemv(
             writeln!(kernel, "let output_index = workgroup_offset;").unwrap();
         }
         write!(kernel, "{output}[").unwrap();
-        output.strided_index(
-            kernel,
-            vec![
-                "batch_idx".to_string(),
-                "m_idx".to_string(),
-                "output_index".to_string(),
-            ],
-        );
-        writeln!(
-            kernel,
-            "] = {};",
-            maybe_vec_storage_index(SGEMV_CHUNK_SIZE, "acc", "acc_offset")
-        )
-        .unwrap();
+        let mut output_indices = Vec::new();
+        // Add batch indices first
+        for dim in (0..output.rank()).rev().skip(2) {
+            output_indices.push(format!("batch_idx_{dim}"));
+        }
+        // Then add M and N indices
+        output_indices.push("m_idx".to_string());
+        output_indices.push("output_index".to_string());
+        output.strided_index(kernel, output_indices);
+        // Convert from f32 accumulator to output dtype (single element per iteration)
+        let acc_val = maybe_vec_storage_index(SGEMV_CHUNK_SIZE, "acc", "acc_offset");
+        writeln!(kernel, "] = {dtype}({acc_val});").unwrap();
     }
     if SGEMV_CHUNK_SIZE > 1 {
         writeln!(kernel, "}}").unwrap();

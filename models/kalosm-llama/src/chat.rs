@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{model::LlamaModelError, session::LlamaSessionLoadingError, Llama, LlamaSession};
-use kalosm_common::accelerated_device_if_available;
+use fusor_core::{CastTensor, FloatDataType};
 use kalosm_language_model::{
     ChatMessage, ChatModel, ChatSession, ContentChunk, CreateChatSession,
     CreateTextCompletionSession, MessageContent, MessageType, StructuredChatModel,
@@ -14,13 +14,10 @@ use kalosm_sample::{CreateParserState, Parser};
 use llm_samplers::types::Sampler;
 use minijinja::ErrorKind;
 
-#[cfg(test)]
-use pretty_assertions::assert_eq;
-
-fn get_new_tokens(
+fn get_new_tokens<F: FloatDataType>(
     messages: &[ChatMessage],
-    session: &mut LlamaChatSession,
-    model: &Llama,
+    session: &mut LlamaChatSession<F>,
+    model: &Llama<F>,
 ) -> Result<String, LlamaModelError> {
     let chat_template = model
         .config
@@ -52,16 +49,24 @@ fn get_new_tokens(
     Ok(new_text.to_string())
 }
 
-impl CreateChatSession for Llama {
+impl<F: FloatDataType> CreateChatSession for Llama<F>
+where
+    F: CastTensor<f32> + Send + Sync + 'static,
+    f32: CastTensor<F>,
+{
     type Error = LlamaModelError;
-    type ChatSession = LlamaChatSession;
+    type ChatSession = LlamaChatSession<F>;
 
     fn new_chat_session(&self) -> Result<Self::ChatSession, Self::Error> {
         Ok(LlamaChatSession::new(self.new_session()?))
     }
 }
 
-impl<S: Sampler + 'static> ChatModel<S> for Llama {
+impl<F: FloatDataType, S: Sampler + 'static> ChatModel<S> for Llama<F>
+where
+    F: CastTensor<f32> + Send + Sync + 'static,
+    f32: CastTensor<F>,
+{
     fn add_messages_with_callback<'a>(
         &'a self,
         session: &'a mut Self::ChatSession,
@@ -102,8 +107,10 @@ impl<S: Sampler + 'static> ChatModel<S> for Llama {
     }
 }
 
-impl<S, Constraints> StructuredChatModel<Constraints, S> for Llama
+impl<F: FloatDataType, S, Constraints> StructuredChatModel<Constraints, S> for Llama<F>
 where
+    F: CastTensor<f32> + Send + Sync + 'static,
+    f32: CastTensor<F>,
     <Constraints as Parser>::Output: Send,
     Constraints: CreateParserState + Send + 'static,
     S: Sampler + 'static,
@@ -162,104 +169,22 @@ where
 }
 
 /// A Llama chat session.
-#[derive(Clone)]
-pub struct LlamaChatSession {
+pub struct LlamaChatSession<F: FloatDataType = half::f16> {
     history: Vec<ChatMessage>,
-    session: LlamaSession,
+    session: LlamaSession<F>,
 }
 
-impl ChatSession for LlamaChatSession {
+impl<F: FloatDataType> Clone for LlamaChatSession<F> {
+    fn clone(&self) -> Self {
+        Self {
+            history: self.history.clone(),
+            session: self.session.clone(),
+        }
+    }
+}
+
+impl<F: FloatDataType> ChatSession for LlamaChatSession<F> {
     type Error = LlamaSessionLoadingError;
-
-    fn write_to(&self, into: &mut Vec<u8>) -> Result<(), Self::Error> {
-        let device = accelerated_device_if_available()?;
-
-        let history_items = self.history.len() as u32;
-        let mut all_bytes = Vec::new();
-        all_bytes.extend_from_slice(&history_items.to_le_bytes());
-        for item in &self.history {
-            let ty = match item.role() {
-                MessageType::UserMessage => 0u8,
-                MessageType::ModelAnswer => 1,
-                MessageType::SystemPrompt => 2,
-            };
-            all_bytes.extend_from_slice(&ty.to_le_bytes());
-            let text_content = item
-                .content()
-                .chunks()
-                .iter()
-                .fold(String::new(), |acc, chunk| {
-                    let content = match chunk {
-                        ContentChunk::Text(text) => text,
-                        ContentChunk::Media(_) => return acc,
-                    };
-                    acc + content
-                });
-            let content_bytes = text_content.as_bytes();
-            let content_bytes_len = content_bytes.len() as u32;
-            all_bytes.extend_from_slice(&content_bytes_len.to_le_bytes());
-            all_bytes.extend_from_slice(content_bytes);
-        }
-
-        let tensors = self.session.get_tensor_map(&device);
-        let bytes = safetensors::serialize(&tensors, &None)?;
-        all_bytes.extend_from_slice(&bytes);
-
-        into.extend_from_slice(&all_bytes);
-
-        Ok(())
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Result<Self, Self::Error>
-    where
-        Self: std::marker::Sized,
-    {
-        let mut history_items = Vec::new();
-        let mut cursor_pos = 0;
-        let history_item_count = u32::from_le_bytes(
-            bytes
-                .get(..4)
-                .ok_or(LlamaSessionLoadingError::InvalidChatMessages)?
-                .try_into()
-                .map_err(|_| LlamaSessionLoadingError::InvalidChatMessages)?,
-        );
-        cursor_pos += 4;
-        history_items.reserve(history_item_count as usize);
-        for _ in 0..history_item_count {
-            let ty = bytes[cursor_pos];
-            let ty = match ty {
-                0 => MessageType::UserMessage,
-                1 => MessageType::ModelAnswer,
-                2 => MessageType::SystemPrompt,
-                _ => return Err(LlamaSessionLoadingError::InvalidChatMessages),
-            };
-            cursor_pos += 1;
-            let content_bytes_len = u32::from_le_bytes(
-                bytes[cursor_pos..cursor_pos + 4]
-                    .try_into()
-                    .map_err(|_| LlamaSessionLoadingError::InvalidChatMessages)?,
-            );
-            cursor_pos += 4;
-            let content_bytes = &bytes[cursor_pos..cursor_pos + content_bytes_len as usize];
-            cursor_pos += content_bytes_len as usize;
-            let item = ChatMessage::new(
-                ty,
-                String::from_utf8(content_bytes.to_vec())
-                    .map_err(|_| LlamaSessionLoadingError::InvalidChatMessages)?,
-            );
-            history_items.push(item);
-        }
-
-        let device = accelerated_device_if_available()?;
-        let tensors = candle_core::safetensors::load_buffer(&bytes[cursor_pos..], &device)?;
-
-        let session = LlamaSession::from_tensor_map(tensors)?;
-
-        Ok(Self {
-            history: history_items,
-            session,
-        })
-    }
 
     fn history(&self) -> Vec<ChatMessage> {
         self.history.clone()
@@ -273,36 +198,10 @@ impl ChatSession for LlamaChatSession {
     }
 }
 
-#[test]
-fn test_serialize_deserialize_chat_session() {
-    use crate::raw::LlamaConfig;
-
-    let config = LlamaConfig::mock_test();
-    let session = LlamaChatSession {
-        history: vec![
-            ChatMessage::new(MessageType::UserMessage, "Hello, world!".to_string()),
-            ChatMessage::new(
-                MessageType::ModelAnswer,
-                "I'm doing great. How can I help you today?".to_string(),
-            ),
-            ChatMessage::new(
-                MessageType::SystemPrompt,
-                "The assistant will act like a pirate.".to_string(),
-            ),
-        ],
-        session: LlamaSession::new(&config),
-    };
-
-    let bytes = session.to_bytes().unwrap();
-    let session = LlamaChatSession::from_bytes(&bytes).unwrap();
-
-    assert_eq!(session.history, session.history);
-}
-
-impl LlamaChatSession {
+impl<F: FloatDataType> LlamaChatSession<F> {
     #[allow(clippy::too_many_arguments)]
     /// Creates a new chat history.
-    fn new(session: LlamaSession) -> Self {
+    fn new(session: LlamaSession<F>) -> Self {
         Self {
             history: Vec::new(),
             session,

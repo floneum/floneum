@@ -1,19 +1,13 @@
 use std::{
     fmt::Display,
     ops::{Add, Div, Mul, Neg, Rem, Sub},
-    sync::OnceLock,
 };
 
 use crate::{
     Tensor,
-    compute_graph::{ComputeGraphInner, NodeIndex},
-    layout::TILE_SIZE,
-    mir::{function::Function, inputs::MirValue, kernel::GenericKernel, operation::Operation},
-    tensor::{DataType, DataTypeEnum, TensorData},
-    visit_tiled::{
-        MaybeQData, build_visit_tiled_kernel, titled_map_dispatch_size,
-        titled_map_workgroup_size_constraints,
-    },
+    compute_graph::NodeIndex,
+    mir::{function::Function, kernel::GenericKernel},
+    tensor::{DataType, DataTypeEnum},
 };
 
 #[cfg(test)]
@@ -22,7 +16,7 @@ use crate::Device;
 #[derive(Clone, Debug)]
 pub(crate) struct ElementWiseFunctions {
     input_datatype: DataTypeEnum,
-    functions: Vec<ElementWiseFunction>,
+    pub(crate) functions: Vec<ElementWiseFunction>,
 }
 
 impl ElementWiseFunctions {
@@ -68,14 +62,6 @@ impl ElementWiseFunctions {
             self.input_datatype
         }
     }
-
-    pub fn iter(&self) -> impl Iterator<Item = &ElementWiseFunction> {
-        self.functions.iter()
-    }
-
-    pub fn push(&mut self, function: ElementWiseFunction) {
-        self.functions.push(function);
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -102,30 +88,8 @@ impl ElementWiseOperation {
         }
     }
 
-    pub fn from_element_wise(
-        value: NodeIndex,
-        functions: ElementWiseFunctions,
-        shape: impl Into<Box<[usize]>>,
-    ) -> Self {
-        Self {
-            value,
-            functions,
-            shape: shape.into(),
-        }
-    }
-
-    pub fn input_datatype(&self) -> DataTypeEnum {
-        self.functions.input_datatype
-    }
-
     pub fn shape(&self) -> &[usize] {
         &self.shape
-    }
-
-    fn requires_new_tensor(&self, tensor: &MaybeQData) -> bool {
-        let output_type = self.functions.out_datatype();
-        let re_use_allocation = self.functions.input_datatype == output_type && tensor.owned();
-        !re_use_allocation
     }
 
     pub(crate) fn name(&self) -> String {
@@ -135,129 +99,6 @@ impl ElementWiseOperation {
             .map(|f| f.name())
             .collect::<Vec<_>>()
             .join("_")
-    }
-}
-
-impl Operation for ElementWiseOperation {
-    fn workgroup_shape_constraints(
-        &self,
-        device: &crate::Device,
-    ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
-        titled_map_workgroup_size_constraints(self.shape(), device)
-    }
-
-    fn dispatch_size(
-        &self,
-        workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[crate::mir::inputs::MirValue],
-    ) -> [u32; 3] {
-        let inputs: Box<[_]> = inputs
-            .iter()
-            .map(|input| {
-                let tensor: MaybeQData = input.clone().try_into().unwrap();
-                tensor
-            })
-            .collect();
-        titled_map_dispatch_size(TILE_SIZE, *workgroup_shape, &inputs)
-    }
-
-    fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
-        f(self.value);
-    }
-
-    fn inputs(&self, nodes: &ComputeGraphInner) -> Vec<crate::mir::inputs::MirValue> {
-        let input = nodes.get_result_or_qmatrix(self.value).unwrap();
-        let requires_new_tensor = self.requires_new_tensor(&input);
-
-        if requires_new_tensor {
-            let output_type = self.functions.out_datatype();
-            let new_tensor =
-                TensorData::new_for_shape(input.device(), input.layout().shape(), output_type)
-                    .into();
-            return vec![input.into(), new_tensor];
-        }
-
-        vec![input.into()]
-    }
-
-    fn output(&self, _: &ComputeGraphInner, inputs: &[MirValue]) -> MirValue {
-        let tensor: MaybeQData = inputs[0].clone().try_into().unwrap();
-        let output_tensor = inputs.get(1).map(|input| {
-            let MirValue::Tensor(tensor) = input.clone() else {
-                panic!("expected tensor input");
-            };
-            tensor
-        });
-        match output_tensor {
-            Some(output_tensor) => output_tensor.into(),
-            None => tensor.into(),
-        }
-    }
-
-    fn build_kernel(
-        &self,
-        graph: &ComputeGraphInner,
-        _: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[crate::mir::inputs::MirValue],
-        kernel: &mut GenericKernel,
-    ) {
-        let tensor: MaybeQData = inputs[0].clone().try_into().unwrap();
-        let output_tensor = inputs.get(1).map(|input| {
-            let MirValue::Tensor(tensor) = input.clone() else {
-                panic!("expected tensor input");
-            };
-            tensor
-        });
-        let layout = tensor.layout();
-        let shape = layout.shape();
-        let output_type = self.functions.out_datatype();
-
-        let functions = OnceLock::new();
-        let mut datatypes = vec![tensor.datatype()];
-        if output_tensor.is_some() {
-            datatypes.push(output_type.into());
-        }
-        build_visit_tiled_kernel(
-            &graph.device,
-            shape,
-            TILE_SIZE,
-            datatypes,
-            |kernel, indexes, tensors, values| match (indexes, tensors, values) {
-                ([index], [tensor], [value]) => {
-                    let result = functions
-                        .get_or_init(|| self.functions.add_functions(kernel))
-                        .iter()
-                        .fold(value.to_string(), |acc, f| f.call(vec![acc]));
-                    format!("{tensor}[{index}] = {result};")
-                }
-                ([_, out_index], [_, output], [value, _]) => {
-                    let result = functions
-                        .get_or_init(|| self.functions.add_functions(kernel))
-                        .iter()
-                        .fold(value.to_string(), |acc, f| f.call(vec![acc]));
-                    format!("{output}[{out_index}] = {result};")
-                }
-                _ => panic!("invalid number of tensors"),
-            },
-            kernel,
-        );
-    }
-
-    fn name(&self) -> String {
-        let functions = self
-            .functions
-            .functions
-            .iter()
-            .map(|f| f.name())
-            .collect::<Vec<_>>()
-            .join("_");
-        let shape = self
-            .shape
-            .iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-            .join("x");
-        format!("element_wise_{functions}_{shape}")
     }
 }
 
@@ -285,6 +126,19 @@ impl ElementWiseFunction {
     pub(crate) fn name(&self) -> &str {
         self.name.as_deref().unwrap_or("element_wise")
     }
+
+    pub(crate) fn to_nary_function(
+        &self,
+        input_type: DataTypeEnum,
+    ) -> crate::nary_wise::NaryFunction {
+        crate::nary_wise::NaryFunction {
+            name: self.name.clone(),
+            operation: self.operation.clone(),
+            input_names: vec!["input".to_string()],
+            input_types: vec![input_type],
+            output_type: self.datatype,
+        }
+    }
 }
 
 impl<const R: usize, T: DataType> Add<T> for Tensor<R, T> {
@@ -304,7 +158,7 @@ impl<const R: usize, T: DataType> Add<T> for Tensor<R, T> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_add_const() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [
         [[1., 2.], [1., 2.]],
@@ -354,7 +208,7 @@ async fn test_add_const() {
 #[cfg(test)]
 #[tokio::test]
 async fn test_add_const_4_dim() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [
         [
@@ -409,7 +263,7 @@ impl_add!(f32, half::f16, u32);
 #[cfg(test)]
 #[tokio::test]
 async fn test_add_const_reversed() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [
         [[1., 2.], [1., 2.]],
@@ -456,7 +310,7 @@ async fn test_add_const_reversed() {
 #[cfg(test)]
 #[tokio::test]
 async fn test_add_const_f16() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
     if !device.f16_supported() {
         return;
     }
@@ -502,7 +356,7 @@ async fn test_add_const_f16() {
 #[cfg(test)]
 #[tokio::test]
 async fn test_add_const_sliced() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -520,7 +374,7 @@ async fn test_add_const_sliced() {
 #[cfg(test)]
 #[tokio::test]
 async fn test_merge_add_const() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -554,7 +408,7 @@ impl<const R: usize, T: DataType> Sub<T> for Tensor<R, T> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_sub_const() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -598,7 +452,7 @@ impl_sub!(f32, half::f16, u32);
 #[cfg(test)]
 #[tokio::test]
 async fn test_sub_const_reversed() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -632,7 +486,7 @@ impl<const R: usize, T: DataType> Mul<T> for Tensor<R, T> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_mul_const() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -667,7 +521,7 @@ impl_mul!(f32, half::f16, u32);
 #[cfg(test)]
 #[tokio::test]
 async fn test_mul_const_reversed() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -701,7 +555,7 @@ impl<const R: usize, T: DataType> Div<T> for Tensor<R, T> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_div_const() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -745,7 +599,7 @@ impl_div!(f32, half::f16, u32);
 #[cfg(test)]
 #[tokio::test]
 async fn test_div_const_reversed() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -779,7 +633,7 @@ impl<const R: usize> Rem<u32> for Tensor<R, u32> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_mod_const() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1, 2], [3, 4], [5, 6]];
     let tensor = Tensor::new(&device, &data);
@@ -823,7 +677,7 @@ impl_mod!(f32, half::f16, u32);
 #[cfg(test)]
 #[tokio::test]
 async fn test_mod_const_reversed() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1, 2], [3, 4], [5, 6]];
     let tensor = Tensor::new(&device, &data);
@@ -860,7 +714,7 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_eq_const() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -942,7 +796,7 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_lt_const() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -962,7 +816,7 @@ async fn test_lt_const() {
 #[cfg(test)]
 #[tokio::test]
 async fn test_lte_const() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -982,7 +836,7 @@ async fn test_lte_const() {
 #[cfg(test)]
 #[tokio::test]
 async fn test_mt_const() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -1002,7 +856,7 @@ async fn test_mt_const() {
 #[cfg(test)]
 #[tokio::test]
 async fn test_mte_const() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -1022,7 +876,7 @@ async fn test_mte_const() {
 #[cfg(test)]
 #[tokio::test]
 async fn test_eq_const_cast() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -1090,7 +944,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_exp() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -1121,7 +975,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_exp2() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -1152,7 +1006,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_log() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -1183,7 +1037,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_log2() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -1218,7 +1072,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_pow() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -1249,7 +1103,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_sqrt() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -1280,7 +1134,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_sin() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -1311,7 +1165,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_cos() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -1342,7 +1196,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_tan() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -1373,7 +1227,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_asin() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [
         [1.0f32.sin(), 2.0f32.sin()],
@@ -1408,7 +1262,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_acos() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [
         [1.0f32.cos(), 2.0f32.cos()],
@@ -1443,7 +1297,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_atan() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1. / 1., 1. / 2.], [1. / 3., 1. / 4.], [1. / 5., 1. / 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -1474,7 +1328,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_sinh() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -1505,7 +1359,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_cosh() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -1552,7 +1406,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_tanh() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -1583,7 +1437,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_asinh() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [
         [1.0f32.sinh(), 2.0f32.sinh()],
@@ -1618,7 +1472,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_acosh() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [
         [1.0f32.cosh(), 2.0f32.cosh()],
@@ -1653,7 +1507,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_atanh() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [
         [1.0f32.tanh(), 2.0f32.tanh()],
@@ -1688,7 +1542,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_abs() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., -2.], [-3., 4.], [5., -6.]];
 
@@ -1722,7 +1576,7 @@ impl<const R: usize, D: DataType> Neg for Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_neg() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., -2.], [-3., 4.], [5., -6.]];
 
@@ -1755,7 +1609,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_max() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., -2.], [-3., 4.], [5., -6.]];
 
@@ -1788,7 +1642,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
 #[cfg(test)]
 #[tokio::test]
 async fn test_min() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., -2.], [-3., 4.], [5., -6.]];
 
@@ -1865,7 +1719,7 @@ impl CastTensor<half::f16> for f32 {
 #[cfg(test)]
 #[tokio::test]
 async fn test_f32_to_f16_cast() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
     if !device.f16_supported() {
         return;
     }
@@ -1900,7 +1754,7 @@ impl CastTensor<f32> for half::f16 {
 #[cfg(test)]
 #[tokio::test]
 async fn test_f16_to_f32_cast() {
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
     if !device.f16_supported() {
         return;
     }

@@ -28,6 +28,7 @@ pub(crate) enum EnabledBuiltins {
     SubgroupIndex,
     SubgroupLocalIndex,
     SubgroupsPerWorkgroup,
+    NumWorkgroups,
 }
 
 #[derive(Debug)]
@@ -260,6 +261,11 @@ impl GenericKernel {
     pub(crate) fn workgroup_index(&mut self) -> &'static str {
         self.enabled_builtins |= EnabledBuiltins::WorkgroupIndex;
         "workgroup_index"
+    }
+
+    pub(crate) fn num_workgroups(&mut self) -> &'static str {
+        self.enabled_builtins |= EnabledBuiltins::NumWorkgroups;
+        "num_workgroups"
     }
 
     pub(crate) fn bind_group_layout(&self, device: &crate::Device) -> BindGroupLayout {
@@ -654,6 +660,12 @@ impl GenericKernel {
             .contains(EnabledBuiltins::WorkgroupIndex)
         {
             built_ins.push_str("@builtin(workgroup_id) workgroup_index: vec3<u32>, ");
+        }
+        if self
+            .enabled_builtins
+            .contains(EnabledBuiltins::NumWorkgroups)
+        {
+            built_ins.push_str("@builtin(num_workgroups) num_workgroups: vec3<u32>, ");
         }
         for _ in 0..2 {
             built_ins.pop();

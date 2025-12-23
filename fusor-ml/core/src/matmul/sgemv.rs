@@ -28,13 +28,18 @@ pub(crate) fn sgemv(
     graph: &crate::compute_graph::ComputeGraphInner,
 ) {
     let blocksize = workgroup_size.x();
-    let dtype = op.datatype;
+    let dtype = op.matmul_dtype();
     let workgroup_index = kernel.workgroup_index();
     let workgroup_local_index = kernel.workgroup_local_index();
     let device = &graph.device;
 
     let chunk_size = params.chunk_size;
     let vector_size = params.vector_size;
+
+    let input_a_val = graph.get_result(op.first).unwrap();
+    let input_b_val = graph.get_result(op.second).unwrap();
+    let input_a_datatype = input_a_val.datatype();
+    let input_b_datatype = input_b_val.datatype();
 
     let pre_element_wise_functions: OnceLock<[Vec<_>; 2]> = OnceLock::new();
     let post_element_wise_functions = OnceLock::new();
@@ -97,7 +102,7 @@ pub(crate) fn sgemv(
         for i in 0..vector_size {
             writeln!(kernel, "let input_b_{i}_index = index + {i};").unwrap();
             let b_base = format!(
-                "select({dtype}(0.0), {input_b}[b_start_index + input_b_{i}_index * {b_row_stride} + col_index * {b_col_stride}], input_b_{i}_index < {k_size})"
+                "select({input_b_datatype}(0.0), {input_b}[b_start_index + input_b_{i}_index * {b_row_stride} + col_index * {b_col_stride}], input_b_{i}_index < {k_size})"
             );
             let b_val = pef[1].iter().fold(b_base, |acc, f| f.call(vec![acc]));
             writeln!(kernel, "let input_b_{i} = {b_val};").unwrap();
@@ -130,7 +135,7 @@ pub(crate) fn sgemv(
             let a_row_stride = input_a.stride_binding(op.rank() - 2);
             let a_col_stride = input_a.stride_binding(op.rank() - 1);
             let a_base = format!(
-                "select({dtype}(0.0), {input_a}[a_start_index + {row_index} * {a_row_stride} + input_a_{i}_index * {a_col_stride}], input_a_{i}_index < {k_size} && {row_index} < {m_size})"
+                "select({input_a_datatype}(0.0), {input_a}[a_start_index + {row_index} * {a_row_stride} + input_a_{i}_index * {a_col_stride}], input_a_{i}_index < {k_size} && {row_index} < {m_size})"
             );
             let a_val = pef[0].iter().fold(a_base, |acc, f| f.call(vec![acc]));
             writeln!(kernel, "let input_a_{i} = {a_val};").unwrap();

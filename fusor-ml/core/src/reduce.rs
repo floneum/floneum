@@ -1,7 +1,7 @@
 use std::fmt::{Display, Write};
 
 use crate::{
-    ElementWiseFunctions, LastRank, LastRankInner, NextRankInner,
+    Dim, ElementWiseFunctions, LastRank, LastRankInner, NextRankInner,
     mir::{
         globals::KernelGlobalSpace,
         operation::Operation,
@@ -18,9 +18,9 @@ use crate::{
 #[derive(Debug, Clone)]
 pub(crate) struct ReduceOperation {
     pub(crate) value: NodeIndex,
-    pre_element_wise: ElementWiseFunctions,
+    pub(crate) pre_element_wise: ElementWiseFunctions,
     pub(crate) function: ReduceFunction,
-    post_element_wise: ElementWiseFunctions,
+    pub(crate) post_element_wise: ElementWiseFunctions,
     pub(crate) axis: usize,
     pub(crate) shape: Box<[usize]>,
 }
@@ -36,14 +36,6 @@ impl ReduceOperation {
             axis,
             shape: shape.into(),
         }
-    }
-
-    pub fn set_post_element_wise(&mut self, kernel: ElementWiseFunctions) {
-        self.post_element_wise = kernel;
-    }
-
-    pub fn set_pre_element_wise(&mut self, kernel: ElementWiseFunctions) {
-        self.pre_element_wise = kernel;
     }
 
     pub fn add_pre_element_wise_functions(&self, kernel: &mut GenericKernel) -> Vec<Function> {
@@ -63,10 +55,6 @@ impl ReduceOperation {
                 ("b".to_string(), self.function.datatype().to_string()),
             ],
         )
-    }
-
-    pub fn reduce_datatype(&self) -> DataTypeEnum {
-        self.pre_element_wise.out_datatype()
     }
 
     pub fn out_datatype(&self) -> DataTypeEnum {
@@ -498,14 +486,14 @@ impl ReduceFunction {
 }
 
 impl<const N: usize, D: DataType> Tensor<N, D> {
-    pub fn sum<const O: usize>(&self, dim: usize) -> Tensor<O, D>
+    pub fn sum<const O: usize>(&self, dim: impl Dim<N>) -> Tensor<O, D>
     where
         Self: LastRank<O, D>,
     {
         self.reduce(sum_fn::<D>(), dim)
     }
 
-    pub fn sum_keepdim<const O: usize>(&self, dim: usize) -> Self
+    pub fn sum_keepdim<const O: usize>(&self, dim: impl Dim<N>) -> Self
     where
         Self: LastRank<O, D>,
         <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
@@ -523,7 +511,7 @@ fn sum_fn<D: DataType>() -> ReduceFunction {
 async fn test_reduce_sum() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -549,7 +537,7 @@ async fn test_reduce_sum() {
 async fn test_reduce_sum_large() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data: [f32; 1024] = std::array::from_fn(|_| rand::random::<f32>() * 10.0 - 5.0);
     let tensor = Tensor::new(&device, &data);
@@ -573,7 +561,7 @@ async fn test_reduce_sum_large() {
 async fn test_reduce_sum_f16() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
     if !device.f16_supported() {
         return;
     }
@@ -606,7 +594,7 @@ async fn test_reduce_sum_f16() {
 async fn test_reduce_sliced_sum() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -632,7 +620,7 @@ async fn test_reduce_sliced_sum() {
 async fn test_reduce_transposed_sum() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 3., 5.], [2., 4., 6.]];
     let tensor = Tensor::new(&device, &data).t();
@@ -658,7 +646,7 @@ async fn test_reduce_transposed_sum() {
 async fn test_reduce_const_add_then_sum_fused() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -687,7 +675,7 @@ async fn test_reduce_const_add_then_sum_fused() {
 async fn test_reduce_const_sum_then_add_fused() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -713,7 +701,7 @@ async fn test_reduce_const_sum_then_add_fused() {
 async fn test_reduce_const_sum_then_cast_fused() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -730,7 +718,7 @@ async fn test_reduce_const_sum_then_cast_fused() {
 async fn test_cast_then_reduce_const_sum_fused() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data).cast::<half::f16>();
@@ -743,17 +731,17 @@ async fn test_cast_then_reduce_const_sum_fused() {
     assert_eq!(output[[1]], half::f16::from_f32(12.));
 }
 
-impl<const N: usize, D: DataType> Tensor<N, D> {
-    pub fn max<const O: usize>(&self, dim: usize) -> Tensor<O, D>
+impl<const N: usize, T: DataType> Tensor<N, T> {
+    pub fn max<const O: usize>(&self, dim: impl Dim<N>) -> Tensor<O, T>
     where
-        Self: LastRank<O, D>,
+        Self: LastRank<O, T>,
     {
-        self.reduce(max_fn::<D>(), dim)
+        self.reduce(max_fn::<T>(), dim)
     }
 
-    pub fn max_keepdim<const O: usize>(&self, dim: usize) -> Self
+    pub fn max_keepdim<const O: usize>(&self, dim: impl Dim<N>) -> Self
     where
-        Self: LastRank<O, D>,
+        Self: LastRank<O, T>,
         <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
     {
         self.max(dim).unsqueeze(dim)
@@ -774,7 +762,7 @@ fn max_fn<D: DataType>() -> ReduceFunction {
 async fn test_reduce_max() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -805,14 +793,14 @@ fn min_fn<D: DataType>() -> ReduceFunction {
 }
 
 impl<const N: usize, D: DataType> Tensor<N, D> {
-    pub fn min<const O: usize>(&self, dim: usize) -> Tensor<O, D>
+    pub fn min<const O: usize>(&self, dim: impl Dim<N>) -> Tensor<O, D>
     where
         Self: LastRank<O, D>,
     {
         self.reduce(min_fn::<D>(), dim)
     }
 
-    pub fn min_keepdim<const O: usize>(&self, dim: usize) -> Self
+    pub fn min_keepdim<const O: usize>(&self, dim: impl Dim<N>) -> Self
     where
         Self: LastRank<O, D>,
         <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
@@ -842,7 +830,7 @@ pub(crate) fn max_for_dtype(dtype: DataTypeEnum) -> &'static str {
 async fn test_reduce_min() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -868,14 +856,14 @@ fn product_fn<D: DataType>() -> ReduceFunction {
 }
 
 impl<const N: usize, D: DataType> Tensor<N, D> {
-    pub fn product<const O: usize>(&self, dim: usize) -> Tensor<O, D>
+    pub fn product<const O: usize>(&self, dim: impl Dim<N>) -> Tensor<O, D>
     where
         Self: LastRank<O, D>,
     {
         self.reduce(product_fn::<D>(), dim)
     }
 
-    pub fn product_keepdim<const O: usize>(&self, dim: usize) -> Self
+    pub fn product_keepdim<const O: usize>(&self, dim: impl Dim<N>) -> Self
     where
         Self: LastRank<O, D>,
         <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
@@ -889,7 +877,7 @@ impl<const N: usize, D: DataType> Tensor<N, D> {
 async fn test_reduce_product() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);

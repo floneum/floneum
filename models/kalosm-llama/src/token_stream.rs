@@ -249,7 +249,7 @@ impl TokenOutputStream {
                 tokens.push(token);
                 let text = self.decode(tokens).ok()?;
                 tokens.pop();
-                if text.len() > prev_text_len && text.chars().last()?.is_ascii() {
+                if text.len() > prev_text_len && text.chars().last().unwrap().is_ascii() {
                     let text = text.split_at(prev_text_len);
                     Some(text.1.to_string())
                 } else {

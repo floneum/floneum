@@ -1,4 +1,4 @@
-use crate::{DataType, LastRank, LastRankInner, SmallerRank, SmallerRankInner, Tensor};
+use crate::{DataType, Dim, LastRank, LastRankInner, SmallerRank, SmallerRankInner, Tensor};
 
 fn unchecked_squeeze<const R1: usize, const R2: usize, const DIFF: usize, D: DataType>(
     tensor: &Tensor<R1, D>,
@@ -23,11 +23,11 @@ fn unchecked_squeeze<const R1: usize, const R2: usize, const DIFF: usize, D: Dat
 }
 
 impl<const R1: usize, D: DataType> Tensor<R1, D> {
-    pub fn squeeze<const R2: usize>(&self, axis: usize) -> <Self as LastRankInner>::LastRank
+    pub fn squeeze<const R2: usize>(&self, axis: impl Dim<R1>) -> <Self as LastRankInner>::LastRank
     where
         Self: LastRank<R2, D>,
     {
-        unchecked_squeeze(self, [axis])
+        unchecked_squeeze(self, [axis.resolve()])
     }
 }
 
@@ -48,7 +48,7 @@ impl<const R1: usize, D: DataType> Tensor<R1, D> {
 async fn test_squeeze_dim0() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[[1., 2.], [3., 4.], [5., 6.]]];
     let tensor = Tensor::new(&device, &data);
@@ -68,7 +68,7 @@ async fn test_squeeze_dim0() {
 async fn test_squeeze_dim2() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[[1.], [2.]], [[3.], [4.]], [[5.], [6.]]];
     let tensor = Tensor::new(&device, &data);
@@ -88,7 +88,7 @@ async fn test_squeeze_dim2() {
 async fn test_squeeze_dims() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[[[1.], [2.]], [[3.], [4.]], [[5.], [6.]]]];
     let tensor = Tensor::new(&device, &data);

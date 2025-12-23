@@ -213,10 +213,6 @@ name = "gpt-4o-mini"
 required-features = ["language", "openai"]
 
 [[example]]
-name = "resume-chat"
-required-features = ["language"]
-
-[[example]]
 name = "segment-image"
 required-features = ["vision"]
 

@@ -90,7 +90,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_pool_1d() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         for (pool_size, stride) in [(2, 2), (3, 1), (4, 2)] {
             let input_data = &[1, 2, 3, 4, 5, 3, 12, 3, 5, 39, 29, 1];
@@ -123,7 +123,7 @@ mod tests {
     async fn test_pool_1d_vs_candle() {
         use candle_core::{Device as CandleDevice, Tensor as CandleTensor};
 
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let candle_device = CandleDevice::Cpu;
 
         // Test various configurations
@@ -191,7 +191,7 @@ mod tests {
     async fn test_pool_1d_vs_candle_multi_channel() {
         use candle_core::{Device as CandleDevice, Tensor as CandleTensor};
 
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let candle_device = CandleDevice::Cpu;
 
         let pool_size = 3;

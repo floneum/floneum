@@ -83,3 +83,11 @@ harness = false
 [[bench]]
 name = "bert_layer"
 harness = false
+
+[[bench]]
+name = "rope"
+harness = false
+
+[[bench]]
+name = "attention_comparison"
+harness = false

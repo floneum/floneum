@@ -1,7 +1,7 @@
-use crate::{FloatDataType, LastRank, LastRankInner, NextRankInner, Tensor};
+use crate::{Dim, FloatDataType, LastRank, LastRankInner, NextRankInner, Tensor};
 
 impl<const N: usize, D: FloatDataType> Tensor<N, D> {
-    pub fn var<const O: usize>(&self, dim: usize) -> Tensor<O, D>
+    pub fn var<const O: usize>(&self, dim: impl Dim<N>) -> Tensor<O, D>
     where
         Self: LastRank<O, D>,
         <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
@@ -12,7 +12,7 @@ impl<const N: usize, D: FloatDataType> Tensor<N, D> {
         sq_diff.mean(dim)
     }
 
-    pub fn var_keepdim<const O: usize>(&self, dim: usize) -> Self
+    pub fn var_keepdim<const O: usize>(&self, dim: impl Dim<N>) -> Self
     where
         Self: LastRank<O, D>,
         <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
@@ -26,7 +26,7 @@ impl<const N: usize, D: FloatDataType> Tensor<N, D> {
 async fn test_var() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
     let a = Tensor::new(&device, &[[1.0f32, 2.0, 3.0], [4.0, 5.0, 6.0]]);
     let var0: Tensor<1, f32> = a.var(0);
     let var1: Tensor<1, f32> = a.var(1);

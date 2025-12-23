@@ -141,7 +141,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_conv1d_simple() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         // Simple test: 1 input channel, 1 output channel, kernel size 3
         // Input: (1, 1, 5) - batch=1, in_channels=1, length=5
@@ -183,7 +183,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_conv1d_with_padding() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         // Input: (1, 1, 3)
         let input_data = [[[1.0, 2.0, 3.0]]];
@@ -221,7 +221,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_conv1d_multi_channel() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         // Input: (1, 2, 4) - 2 input channels
         let input_data = [[[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]];
@@ -272,7 +272,7 @@ mod tests {
     async fn test_conv1d_vs_candle_simple() {
         use candle_core::{Device as CandleDevice, Tensor as CandleTensor};
 
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let candle_device = CandleDevice::Cpu;
 
         // Input: (1, 1, 5) - batch=1, in_channels=1, length=5
@@ -330,7 +330,7 @@ mod tests {
     async fn test_conv1d_vs_candle_with_padding() {
         use candle_core::{Device as CandleDevice, Tensor as CandleTensor};
 
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let candle_device = CandleDevice::Cpu;
 
         // Input: (1, 1, 5)
@@ -381,7 +381,7 @@ mod tests {
     async fn test_conv1d_vs_candle_multi_channel() {
         use candle_core::{Device as CandleDevice, Tensor as CandleTensor};
 
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let candle_device = CandleDevice::Cpu;
 
         // Input: (2, 3, 10) - batch=2, in_channels=3, length=10

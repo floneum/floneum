@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-pub(crate) const TILE_SIZE: u32 = 16;
+pub(crate) const TILE_SIZE: u32 = 1;
 
 pub(crate) fn slice_strides(
     slices: &[Range<usize>],

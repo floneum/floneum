@@ -7,8 +7,6 @@ pub use kalosm_streams::timed_stream::*;
 #[cfg(feature = "language")]
 pub mod language {
     #![doc = include_str!("../docs/language.md")]
-    #[cfg(any(feature = "bert", feature = "llama"))]
-    pub use kalosm_common::accelerated_device_if_available;
     pub use kalosm_language::context::*;
     pub use kalosm_language::kalosm_language_model::{
         ChatModel as _, ChatModelExt as _, ChatSession as _, CreateChatSession as _,

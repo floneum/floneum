@@ -1,29 +1,29 @@
-use candle_core::{Device, Result, Tensor, D};
-
 use crate::raw::rope::create_inverse_frequency;
+use fusor_core::{CastTensor, Device, FloatDataType, Tensor};
 
-pub struct VisionRotaryEmbedding {
-    inv_freq: Tensor,
+pub struct VisionRotaryEmbedding<F> {
+    inv_freq: Tensor<2, F>,
 }
 
-impl VisionRotaryEmbedding {
-    pub(crate) fn new(dim: usize, rope_theta: f32, device: &Device) -> Result<Self> {
+impl<F> VisionRotaryEmbedding<F>
+where
+    F: FloatDataType,
+    f32: CastTensor<F>,
+{
+    pub(crate) fn new(dim: usize, rope_theta: f32, device: &Device) -> fusor_core::Result<Self> {
         Ok(Self {
-            inv_freq: create_inverse_frequency(
-                None,
-                None,
-                candle_core::DType::F32,
-                dim,
-                rope_theta,
-                device,
-            )?,
+            inv_freq: create_inverse_frequency(None, None, dim, rope_theta, device),
         })
     }
 
-    pub(crate) fn make_embeds(&self, sequence_length: u32) -> Result<Tensor> {
-        let seq = Tensor::arange(0f32, sequence_length as f32, self.inv_freq.device())?
-            .unsqueeze(D::Minus1)?;
-        seq.broadcast_matmul(&self.inv_freq)
+    pub(crate) fn make_embeds(&self, sequence_length: u32) -> fusor_core::Result<Tensor<2, F>> {
+        let seq = Tensor::arange(
+            self.inv_freq.device(),
+            F::from_f32(0.0),
+            F::from_f32(sequence_length as f32),
+        )
+        .reshape([sequence_length as usize, 1]);
+        Ok(seq.mat_mul(&self.inv_freq))
     }
 }
 

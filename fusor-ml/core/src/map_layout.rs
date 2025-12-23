@@ -1,7 +1,7 @@
 use std::{fmt::Debug, ops::Range, sync::Arc};
 
 use crate::{
-    DataType, Layout, MaxRank, Tensor, TensorData, compute_graph::NodeIndex,
+    D, DataType, Dim, Layout, MaxRank, Tensor, TensorData, compute_graph::NodeIndex,
     mir::operation::Operation, slice_shape, slice_strides,
 };
 
@@ -137,7 +137,9 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
         ))
     }
 
-    pub fn transpose(&self, first_axis: usize, second_axis: usize) -> Tensor<R, T> {
+    pub fn transpose(&self, first_axis: impl Dim<R>, second_axis: impl Dim<R>) -> Tensor<R, T> {
+        let first_axis = first_axis.resolve();
+        let second_axis = second_axis.resolve();
         assert!(first_axis < self.rank());
         assert!(second_axis < self.rank());
         self.add_map_layout(MapLayoutOperation::new(
@@ -162,9 +164,12 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
                 "The tensor must have at least 2 dimensions to transpose"
             )
         };
-        let last_dim = self.rank() - 1;
-        let second_last_dim = self.rank() - 2;
-        self.transpose(last_dim, second_last_dim)
+        self.transpose(D::Minus1, D::Minus2)
+    }
+
+    /// Alias for [`broadcast_as`](Tensor::broadcast_as)
+    pub fn expand<const R2: usize>(&self, out_shape: [usize; R2]) -> Tensor<R2, T> {
+        self.broadcast_as(out_shape)
     }
 
     pub fn broadcast_as<const R2: usize>(&self, out_shape: [usize; R2]) -> Tensor<R2, T> {
@@ -251,7 +256,7 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
 async fn test_transpose() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -271,7 +276,7 @@ async fn test_transpose() {
 async fn test_broadcast_as() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2.], [3., 4.]];
     let tensor = Tensor::new(&device, &data);
@@ -292,7 +297,7 @@ async fn test_broadcast_as() {
 async fn test_broadcast_as_non_continuous() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data = [[1., 2., -1.], [3., 4., -1.]];
     let tensor = Tensor::new(&device, &data);
@@ -316,7 +321,7 @@ async fn test_broadcast_as_non_continuous() {
 async fn test_broadcast_together_first_larger() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data1 = [[1., 2.], [3., 4.]];
     let tensor1 = Tensor::new(&device, &data1);
@@ -345,7 +350,7 @@ async fn test_broadcast_together_first_larger() {
 async fn test_broadcast_together_second_larger() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data1 = [[1., 2.], [3., 4.]];
     let tensor1 = Tensor::new(&device, &data1);
@@ -374,7 +379,7 @@ async fn test_broadcast_together_second_larger() {
 async fn test_broadcast_together_same_size() {
     use crate::Device;
 
-    let device = Device::new().await.unwrap();
+    let device = Device::test_instance();
 
     let data1 = [[1.], [2.]];
     let tensor1 = Tensor::new(&device, &data1);

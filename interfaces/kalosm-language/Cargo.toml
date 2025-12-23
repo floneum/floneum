@@ -49,9 +49,9 @@ roaring = "0.10.6"
 
 [features]
 default = ["bert", "llama"]
-metal = ["kalosm-llama?/metal"]
-cublas = ["kalosm-llama?/cuda", "kalosm-llama?/cudnn"]
-mkl = ["kalosm-llama?/mkl"]
+metal = []
+cublas = []
+mkl = []
 openai = ["kalosm-language-model/openai"]
 anthropic = ["kalosm-language-model/anthropic"]
 remote = ["kalosm-language-model/remote"]

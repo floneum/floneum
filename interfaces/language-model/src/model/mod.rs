@@ -15,80 +15,6 @@ pub trait TextCompletionSession {
     /// The type of error the session may return during operations.
     type Error: Send + Sync + 'static;
 
-    /// Serialize the session into bytes. This method is identical to [`TextCompletionSession::to_bytes`] except it can re-use an existing [`Vec`] buffer.
-    fn write_to(&self, into: &mut Vec<u8>) -> Result<(), Self::Error>;
-
-    /// # Loading sessions
-    ///
-    /// Sessions can be deserialized to and from bytes using the [`TextCompletionSession::from_bytes`] method.
-    /// Caching a session avoids re-processing the text again when the session is resumed.
-    ///
-    /// ```rust, no_run
-    /// use kalosm::language::*;
-    /// use std::io::Write;
-    ///
-    /// #[tokio::main]
-    /// async fn main() {
-    ///     let mut llm = Llama::new().await.unwrap();
-    ///     let mut session = llm.new_session().unwrap();
-    ///
-    ///     // Feed some text into the session
-    ///     llm.stream_text_with_callback(
-    ///         &mut session,
-    ///         "The capital of France is ".into(),
-    ///         GenerationParameters::new().with_max_length(0),
-    ///         |_| Ok(()),
-    ///     )
-    ///     .await
-    ///     .unwrap();
-    ///
-    ///     // Save the session to bytes
-    ///     let session_as_bytes = session.to_bytes().unwrap();
-    ///
-    ///     // And write those bytes to a file
-    ///     std::fs::write("session.bin", session_as_bytes).unwrap();
-    /// }
-    /// ```
-    fn to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
-        let mut bytes = Vec::new();
-        self.write_to(&mut bytes)?;
-        Ok(bytes)
-    }
-
-    /// # Loading sessions
-    ///
-    /// Sessions can be deserialized to and from bytes using the [`TextCompletionSession::from_bytes`] method.
-    /// Caching a session avoids re-processing the text again when the session is resumed.
-    ///
-    /// ```rust, no_run
-    /// use kalosm::language::*;
-    /// use std::io::Write;
-    ///
-    /// #[tokio::main]
-    /// async fn main() {
-    ///     let mut llm = Llama::new().await.unwrap();
-    ///     // Load a text completion session from a file
-    ///     let mut session =
-    ///         LlamaSession::from_bytes(std::fs::read("session.bin").unwrap().as_slice()).unwrap();
-    ///
-    ///     // Feed some more text into the session
-    ///     llm.stream_text_with_callback(
-    ///         &mut session,
-    ///         "The capital of France is ".into(),
-    ///         GenerationParameters::new(),
-    ///         |token| {
-    ///             println!("{token}");
-    ///             Ok(())
-    ///         },
-    ///     )
-    ///     .await
-    ///     .unwrap();
-    /// }
-    /// ```
-    fn from_bytes(bytes: &[u8]) -> Result<Self, Self::Error>
-    where
-        Self: std::marker::Sized;
-
     /// # Cloning Sessions
     ///
     /// Not all models support cloning sessions, but if a model does support cloning sessions, you can clone a session using the [`TextCompletionSession::try_clone`] method to clone a session state while retaining the original session.
@@ -136,14 +62,6 @@ pub trait TextCompletionSession {
 
 impl TextCompletionSession for () {
     type Error = Infallible;
-
-    fn write_to(&self, _into: &mut Vec<u8>) -> Result<(), Self::Error> {
-        Ok(())
-    }
-
-    fn from_bytes(_bytes: &[u8]) -> Result<(), Self::Error> {
-        Ok(())
-    }
 
     fn try_clone(&self) -> Result<(), Self::Error> {
         Ok(())

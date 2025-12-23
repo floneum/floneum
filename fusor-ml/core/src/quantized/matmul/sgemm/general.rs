@@ -79,7 +79,7 @@ pub fn general_sgemm_with_config(
     writeln!(kernel, "for (var k = 0u; k < k_block_size; k += 1u) {{").unwrap();
 
     // Pack the individual dequantized values into vectors
-    writeln!(kernel, "let chunk = {input_b}[k + x * k_block_size];").unwrap();
+    writeln!(kernel, "let chunk = &{input_b}[k + x * k_block_size];").unwrap();
 
     dequantize_vec4_block(
         kernel,

@@ -157,7 +157,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_conv_1d() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         // Input: (batch=1, in_channels=1, length=5)
         let input_data = [[[1.0f32, 2.0, 3.0, 4.0, 5.0]]];
@@ -207,7 +207,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_conv_1d_strided() {
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
 
         // Input: (batch=1, in_channels=1, length=5)
         let input_data = [[[1.0f32, 2.0, 3.0, 4.0, 5.0]]];
@@ -259,7 +259,7 @@ mod tests {
     async fn test_conv_1d_vs_candle() {
         use candle_core::{Device as CandleDevice, Tensor as CandleTensor};
 
-        let device = Device::new().await.unwrap();
+        let device = Device::test_instance();
         let candle_device = CandleDevice::Cpu;
 
         // Input: (2, 3, 8) - batch=2, in_channels=3, length=8

@@ -1,4 +1,5 @@
 use crate::{
+    DataTypeEnum,
     mir::{
         inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
@@ -38,7 +39,15 @@ pub(crate) fn q4k_sgemv(
     let elements_per_block = op.elements_per_block();
 
     // Handle batch dimensions
-    writeln!(kernel, "let batch_idx = {global_id}.z;").unwrap();
+    writeln!(kernel, "var batch_idx = {global_id}.z;").unwrap();
+
+    // Decompose the batch index for higher-dimensional tensors
+    for dim in (0..input_a.rank()).rev().skip(2) {
+        let shape = input_a.shape_binding(dim);
+        writeln!(kernel, "let batch_idx_{dim} = batch_idx % {shape};").unwrap();
+        writeln!(kernel, "batch_idx = batch_idx / {shape};").unwrap();
+    }
+
     // Handle M dimension - each workgroup handles one M value
     writeln!(kernel, "let m_idx = {global_id}.y;").unwrap();
 
@@ -65,11 +74,12 @@ pub(crate) fn q4k_sgemv(
     writeln!(kernel, "let block_offset = row * k_block_size;").unwrap();
     writeln!(kernel, "var vector_offset = thread_id * {elements_per_block} + half_subgroup_id * 64 + half_subgroup_local_id * 8;").unwrap();
 
-    let sum_storage_type = maybe_vec_storage_type(Q4K_SGEMV_CHUNK_SIZE, dtype);
+    // Always accumulate in f32 to avoid overflow, then convert to output dtype at the end
+    let sum_storage_type = maybe_vec_storage_type(Q4K_SGEMV_CHUNK_SIZE, DataTypeEnum::F32);
     writeln!(kernel, "var sum = {sum_storage_type}();",).unwrap();
 
-    writeln!(kernel, "var cached_a_low_values = array<{dtype}, 16>();",).unwrap();
-    writeln!(kernel, "var cached_a_high_values = array<{dtype}, 16>();",).unwrap();
+    writeln!(kernel, "var cached_a_low_values = array<f32, 16>();",).unwrap();
+    writeln!(kernel, "var cached_a_high_values = array<f32, 16>();",).unwrap();
 
     // Loop over all of the blocks this thread is responsible for
     writeln!(
@@ -79,58 +89,28 @@ pub(crate) fn q4k_sgemv(
     .unwrap();
     {
         // Keep track of the sum of each scale chunk of the vector for the offset calculation later
-        writeln!(kernel, "var vector_sum = vec4<{dtype}>();").unwrap();
+        writeln!(kernel, "var vector_sum = vec4<f32>();").unwrap();
 
         // First load the values of a into the cache
         for j in 0..8 {
             // Load all 4 values using strided indexing
-            write!(kernel, "let a_val_{j}_0 = {input_a}[").unwrap();
-            input_a.strided_index(
-                kernel,
-                vec![
-                    "batch_idx".to_string(),
-                    "m_idx".to_string(),
-                    format!("vector_offset + {j} + 0"),
-                ],
-            );
-            writeln!(kernel, "];").unwrap();
-
-            write!(kernel, "let a_val_{j}_1 = {input_a}[").unwrap();
-            input_a.strided_index(
-                kernel,
-                vec![
-                    "batch_idx".to_string(),
-                    "m_idx".to_string(),
-                    format!("vector_offset + {j} + 32"),
-                ],
-            );
-            writeln!(kernel, "];").unwrap();
-
-            write!(kernel, "let a_val_{j}_2 = {input_a}[").unwrap();
-            input_a.strided_index(
-                kernel,
-                vec![
-                    "batch_idx".to_string(),
-                    "m_idx".to_string(),
-                    format!("vector_offset + {j} + 128"),
-                ],
-            );
-            writeln!(kernel, "];").unwrap();
-
-            write!(kernel, "let a_val_{j}_3 = {input_a}[").unwrap();
-            input_a.strided_index(
-                kernel,
-                vec![
-                    "batch_idx".to_string(),
-                    "m_idx".to_string(),
-                    format!("vector_offset + {j} + 160"),
-                ],
-            );
-            writeln!(kernel, "];").unwrap();
+            for (idx, offset) in [(0, 0), (1, 32), (2, 128), (3, 160)] {
+                write!(kernel, "let a_val_{j}_{idx} = {input_a}[").unwrap();
+                let mut indices = Vec::new();
+                // Add batch indices first
+                for dim in (0..input_a.rank()).rev().skip(2) {
+                    indices.push(format!("batch_idx_{dim}"));
+                }
+                // Then add M and K indices
+                indices.push("m_idx".to_string());
+                indices.push(format!("vector_offset + {j} + {offset}"));
+                input_a.strided_index(kernel, indices);
+                writeln!(kernel, "];").unwrap();
+            }
 
             writeln!(
                 kernel,
-                "let vec_{j} = vec4(a_val_{j}_0, a_val_{j}_1, a_val_{j}_2, a_val_{j}_3);"
+                "let vec_{j} = vec4<f32>(f32(a_val_{j}_0), f32(a_val_{j}_1), f32(a_val_{j}_2), f32(a_val_{j}_3));"
             )
             .unwrap();
             writeln!(kernel, "vector_sum += vec_{j};").unwrap();
@@ -157,8 +137,8 @@ pub(crate) fn q4k_sgemv(
             writeln!(kernel, "let second_values_offset = data_offset + 16u;").unwrap();
 
             // Keep track of the sum of each chunk
-            writeln!(kernel, "var first_sums = vec4<{dtype}>();").unwrap();
-            writeln!(kernel, "var second_sums = vec4<{dtype}>();").unwrap();
+            writeln!(kernel, "var first_sums = vec4<f32>();").unwrap();
+            writeln!(kernel, "var second_sums = vec4<f32>();").unwrap();
 
             // Perform the dot product of the values and scales
             for j in 0..2 {
@@ -182,23 +162,23 @@ pub(crate) fn q4k_sgemv(
                     .unwrap();
                     writeln!(
                         kernel,
-                        "let first_four_values_{values}_{j} = vec4({cache}[{j}*4 + 0], {cache}[{j}*4 + 1], {cache}[{j}*4 + 2], {cache}[{j}*4 + 3]);"
+                        "let first_four_values_{values}_{j} = vec4<f32>({cache}[{j}*4 + 0], {cache}[{j}*4 + 1], {cache}[{j}*4 + 2], {cache}[{j}*4 + 3]);"
                     )
                     .unwrap();
                     writeln!(
                         kernel,
-                        "let second_four_values_{values}_{j} = vec4({cache}[{j}*4 + 8], {cache}[{j}*4 + 9], {cache}[{j}*4 + 10], {cache}[{j}*4 + 11]);"
+                        "let second_four_values_{values}_{j} = vec4<f32>({cache}[{j}*4 + 8], {cache}[{j}*4 + 9], {cache}[{j}*4 + 10], {cache}[{j}*4 + 11]);"
                     )
                     .unwrap();
                     writeln!(
                         kernel,
-                        "{sum} += vec4<{dtype}>(first_four_values_{values}_{j}.x * {dtype}(value_u32_{values}_{j} & 0x000F), first_four_values_{values}_{j}.y * {dtype}(value_u32_{values}_{j} & 0x0F00), second_four_values_{values}_{j}.x * {dtype}(value_u32_{values}_{j} & 0x00F0), second_four_values_{values}_{j}.y * {dtype}(value_u32_{values}_{j} & 0xF000));"
+                        "{sum} += vec4<f32>(first_four_values_{values}_{j}.x * f32(value_u32_{values}_{j} & 0x000F), first_four_values_{values}_{j}.y * f32(value_u32_{values}_{j} & 0x0F00), second_four_values_{values}_{j}.x * f32(value_u32_{values}_{j} & 0x00F0), second_four_values_{values}_{j}.y * f32(value_u32_{values}_{j} & 0xF000));"
                     )
                     .unwrap();
                     let shift_right_16 = shift_right_scale(16);
                     writeln!(
                         kernel,
-                        "{sum} += vec4<{dtype}>(first_four_values_{values}_{j}.z * {dtype}(value_u32_{values}_{j} & 0x000F0000), first_four_values_{values}_{j}.w * {dtype}(value_u32_{values}_{j} & 0x0F000000), second_four_values_{values}_{j}.z * {dtype}(value_u32_{values}_{j} & 0x00F00000), second_four_values_{values}_{j}.w * {dtype}(value_u32_{values}_{j} & 0xF0000000)) * {shift_right_16};"
+                        "{sum} += vec4<f32>(first_four_values_{values}_{j}.z * f32(value_u32_{values}_{j} & 0x000F0000), first_four_values_{values}_{j}.w * f32(value_u32_{values}_{j} & 0x0F000000), second_four_values_{values}_{j}.z * f32(value_u32_{values}_{j} & 0x00F00000), second_four_values_{values}_{j}.w * f32(value_u32_{values}_{j} & 0xF0000000)) * f32({shift_right_16});"
                     )
                     .unwrap();
                 }
@@ -207,10 +187,14 @@ pub(crate) fn q4k_sgemv(
             // Load the block scale and min
             writeln!(
                 kernel,
-                "let block_scale = {input_b}[local_block_offset].scale;"
+                "let block_scale = f32({input_b}[local_block_offset].scale);"
             )
             .unwrap();
-            writeln!(kernel, "let block_min = {input_b}[local_block_offset].min;").unwrap();
+            writeln!(
+                kernel,
+                "let block_min = f32({input_b}[local_block_offset].min);"
+            )
+            .unwrap();
             // Load 8 scales into a cache
             writeln!(
                 kernel,
@@ -244,12 +228,12 @@ pub(crate) fn q4k_sgemv(
 
             writeln!(
                 kernel,
-                "let odd_scales_unpacked = vec4<{dtype}>(unpack4xU8(first_two_scales | (third_two_scales << 16)));"
+                "let odd_scales_unpacked = vec4<f32>(unpack4xU8(first_two_scales | (third_two_scales << 16)));"
             )
             .unwrap();
             writeln!(
                 kernel,
-                "let even_scales_unpacked = vec4<{dtype}>(unpack4xU8(second_two_scales | (fourth_two_scales << 16)));"
+                "let even_scales_unpacked = vec4<f32>(unpack4xU8(second_two_scales | (fourth_two_scales << 16)));"
             )
             .unwrap();
 
@@ -263,23 +247,23 @@ pub(crate) fn q4k_sgemv(
             let shift_right_4 = shift_right_scale(4);
             writeln!(
                 kernel,
-                "let small_shift_sums = vec4(first_sums[0], first_sums[2], second_sums[0], second_sums[2]);"
+                "let small_shift_sums = vec4<f32>(first_sums[0], first_sums[2], second_sums[0], second_sums[2]);"
             )
             .unwrap();
             writeln!(
                 kernel,
-                "let large_shift_sums = vec4(first_sums[1], first_sums[3], second_sums[1], second_sums[3]);"
+                "let large_shift_sums = vec4<f32>(first_sums[1], first_sums[3], second_sums[1], second_sums[3]);"
             )
             .unwrap();
             writeln!(
                 kernel,
-                "let shift_4 = vec4(1, {shift_right_4}, 1, {shift_right_4});"
+                "let shift_4 = vec4<f32>(1.0, {shift_right_4}, 1.0, {shift_right_4});"
             )
             .unwrap();
             writeln!(
                 kernel,
-                r#"{indexed_sum} += {dtype}(block_scale) * dot((small_shift_sums + {shift_right_8} * large_shift_sums) * odd_scales_unpacked, shift_4) -
-                                                            {dtype}(block_min) * dot(vector_sum, even_scales_unpacked);"#
+                r#"{indexed_sum} += block_scale * dot((small_shift_sums + f32({shift_right_8}) * large_shift_sums) * odd_scales_unpacked, shift_4) -
+                                                            block_min * dot(vector_sum, even_scales_unpacked);"#
             )
             .unwrap();
             // Move forward the block offset by one row
@@ -305,12 +289,20 @@ pub(crate) fn q4k_sgemv(
         writeln!(kernel, "if {subgroup_local_index} == 0u {{").unwrap();
         {
             // Write the output to the output tensor if this is the first thread in the workgroup
+            // Convert from f32 accumulator to output dtype
             write!(kernel, "{output}[").unwrap();
             let index = format!("row + {offset}");
-            let output_indices = vec!["batch_idx".to_string(), "m_idx".to_string(), index];
+            let mut output_indices = Vec::new();
+            // Add batch indices first
+            for dim in (0..output.rank()).rev().skip(2) {
+                output_indices.push(format!("batch_idx_{dim}"));
+            }
+            // Then add M and N indices
+            output_indices.push("m_idx".to_string());
+            output_indices.push(index);
             output.strided_index(kernel, output_indices);
             let indexed = maybe_vec_storage_index(Q4K_SGEMV_CHUNK_SIZE, "sum", offset);
-            writeln!(kernel, "] = {indexed};").unwrap();
+            writeln!(kernel, "] = {dtype}({indexed});").unwrap();
         }
         writeln!(kernel, "}}").unwrap();
     }
