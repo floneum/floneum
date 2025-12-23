@@ -547,9 +547,12 @@ mod tests {
     };
 
     #[tokio::test]
-    async fn test_gpt_4o_mini() {
+    async fn test_gpt_5_mini() {
         let model = OpenAICompatibleChatModelBuilder::new()
-            .with_gpt_4o_mini()
+            .with_model("openai/gpt-5-mini")
+            .with_client(
+                crate::OpenAICompatibleClient::new().with_base_url("https://openrouter.ai/api/v1"),
+            )
             .build();
 
         let mut session = model.new_chat_session().unwrap();
@@ -590,9 +593,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_gpt_4o_mini_constrained() {
+    async fn test_gpt_5_mini_constrained() {
         let model = OpenAICompatibleChatModelBuilder::new()
-            .with_gpt_4o_mini()
+            .with_model("openai/gpt-5-mini")
+            .with_client(
+                crate::OpenAICompatibleClient::new().with_base_url("https://openrouter.ai/api/v1"),
+            )
             .build();
 
         let mut session = model.new_chat_session().unwrap();
@@ -642,7 +648,10 @@ mod tests {
         use kalosm_sample::Schema;
 
         let model = OpenAICompatibleChatModelBuilder::new()
-            .with_gpt_4o_mini()
+            .with_model("openai/gpt-4o-mini")
+            .with_client(
+                crate::OpenAICompatibleClient::new().with_base_url("https://openrouter.ai/api/v1"),
+            )
             .build();
 
         let mut session = model.new_chat_session().unwrap();
@@ -731,7 +740,10 @@ mod tests {
         use kalosm_sample::Schema;
 
         let model = OpenAICompatibleChatModelBuilder::new()
-            .with_gpt_4o_mini()
+            .with_model("openai/gpt-4o-mini")
+            .with_client(
+                crate::OpenAICompatibleClient::new().with_base_url("https://openrouter.ai/api/v1"),
+            )
             .build();
 
         let mut session = model.new_chat_session().unwrap();
@@ -825,11 +837,9 @@ mod tests {
     #[tokio::test]
     async fn test_gemini_flash() {
         let llm = OpenAICompatibleChatModel::builder()
-            .with_model("gemini-2.0-flash")
+            .with_model("google/gemini-2.5-flash-lite")
             .with_client(
-                crate::OpenAICompatibleClient::new()
-                    .with_base_url("https://generativelanguage.googleapis.com/v1beta/openai")
-                    .with_api_key(std::env::var("GEMINI_API_KEY").unwrap()),
+                crate::OpenAICompatibleClient::new().with_base_url("https://openrouter.ai/api/v1"),
             )
             .build();
         let mut generate_character = llm.chat();
