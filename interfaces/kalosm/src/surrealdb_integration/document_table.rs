@@ -112,6 +112,11 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
         &self.embedding_model
     }
 
+    /// Get the raw chunker.
+    pub fn chunker(&self) -> &K {
+        &self.chunker
+    }
+
     /// Delete the table from the database and clear the vector database. Returns the contents of the table.
     pub async fn delete_table(self) -> Result<Vec<(R, Vec<Chunk>)>, EmbeddedIndexedTableError>
     where
