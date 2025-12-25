@@ -453,9 +453,7 @@ pub(crate) fn titled_map_workgroup_size_constraints(
     // For flattened dispatch, we can use all three dimensions of the workgroup
     constraints.add_constraint(
         0,
-        crate::mir::workgroup_shape::Constraint::more_than_or_equals(
-            device.limits().min_subgroup_size,
-        ),
+        crate::mir::workgroup_shape::Constraint::more_than_or_equals(device.min_subgroup_size()),
     );
 
     constraints

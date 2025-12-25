@@ -39,10 +39,9 @@ fn can_use_specialized_sgemv(device: &Device) -> bool {
     if !device.subgroups_supported() {
         return false;
     }
-    let limits = device.limits();
     // The workgroup is constrained to be <= max_subgroup_size, so we need
     // max_subgroup_size >= 2 * min_subgroup_size to fit 2 subgroups
-    limits.max_subgroup_size >= 2 * limits.min_subgroup_size
+    device.max_subgroup_size() >= 2 * device.min_subgroup_size()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -148,14 +147,13 @@ pub(crate) fn workgroup_shape_constraints(
 ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
     let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
     if device.subgroups_supported() {
-        let limits = device.limits();
         constraints.add_constraint(
             0,
-            crate::mir::workgroup_shape::Constraint::more_than_or_equals(limits.min_subgroup_size),
+            crate::mir::workgroup_shape::Constraint::more_than_or_equals(device.min_subgroup_size()),
         );
         constraints.add_constraint(
             0,
-            crate::mir::workgroup_shape::Constraint::less_than_or_equals(limits.max_subgroup_size),
+            crate::mir::workgroup_shape::Constraint::less_than_or_equals(device.max_subgroup_size()),
         );
     }
     constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));

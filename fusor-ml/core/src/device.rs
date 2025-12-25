@@ -151,7 +151,7 @@ impl Device {
         std::thread::spawn({
             let device = device.clone();
             move || loop {
-                let Ok(status) = device.wgpu_device().poll(wgpu::PollType::Wait) else {
+                let Ok(status) = device.wgpu_device().poll(wgpu::PollType::wait_indefinitely()) else {
                     break;
                 };
                 if status == wgpu::PollStatus::QueueEmpty {
@@ -189,6 +189,14 @@ impl Device {
 
     pub fn subgroups_supported(&self) -> bool {
         self.features().contains(wgpu::Features::SUBGROUP)
+    }
+
+    pub fn min_subgroup_size(&self) -> u32 {
+        self.inner.adapter.get_info().subgroup_min_size
+    }
+
+    pub fn max_subgroup_size(&self) -> u32 {
+        self.inner.adapter.get_info().subgroup_max_size
     }
 
     pub fn f16_supported(&self) -> bool {

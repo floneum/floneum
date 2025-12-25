@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::chat_template::HuggingFaceChatTemplate;
@@ -110,7 +109,7 @@ impl<F: FloatDataType> Model<F> {
     pub fn from_gguf<R: std::io::Seek + std::io::Read>(
         source: &mut ShardedVarBuilder<R>,
         vision_ct: Option<GgufMetadata>,
-        vision_file: Option<PathBuf>,
+        vision_bytes: Option<Vec<u8>>,
         device: &Device,
         override_stop_token_string: Option<String>,
         override_chat_template: Option<String>,
@@ -405,11 +404,11 @@ impl<F: FloatDataType> Model<F> {
         }
 
         // If the model is a vision model, load the vision encoder
-        let vision_encoder = if let (Some(vision_ct), Some(vision_file)) = (vision_ct, vision_file)
+        let vision_encoder = if let (Some(vision_ct), Some(vision_bytes)) = (vision_ct, vision_bytes)
         {
             Some(vision::QwenVisionTransformer::from_gguf(
                 vision_ct,
-                &vision_file,
+                &vision_bytes,
                 device,
             ))
         } else {

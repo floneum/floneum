@@ -1,4 +1,4 @@
-use fusor_core::{CastTensor, FloatDataType};
+use fusor_core::{CastTensor, FloatDataType, WasmNotSend, WasmNotSync};
 use kalosm_language_model::{
     ContentChunk, CreateDefaultChatConstraintsForType, CreateDefaultCompletionConstraintsForType,
     CreateTextCompletionSession, GenerationParameters, MessageContent,
@@ -21,7 +21,7 @@ use crate::{
 
 impl<F: FloatDataType> ModelBuilder for LlamaBuilder<F>
 where
-    F: CastTensor<f32> + Send + Sync + 'static,
+    F: CastTensor<f32> + WasmNotSend + WasmNotSync + 'static,
     f32: CastTensor<F>,
 {
     type Model = Llama<F>;
@@ -29,7 +29,7 @@ where
 
     async fn start_with_loading_handler(
         self,
-        handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+        handler: impl FnMut(ModelLoadingProgress) + WasmNotSend + WasmNotSync + 'static,
     ) -> Result<Self::Model, Self::Error> {
         self.build_with_loading_handler(handler).await
     }
@@ -48,7 +48,7 @@ where
 
 impl<F: FloatDataType> CreateTextCompletionSession for Llama<F>
 where
-    F: CastTensor<f32> + Send + Sync + 'static,
+    F: CastTensor<f32> + WasmNotSend + WasmNotSync + 'static,
     f32: CastTensor<F>,
 {
     type Session = LlamaSession<F>;
@@ -61,7 +61,7 @@ where
 
 impl<F: FloatDataType, S: Sampler + 'static> TextCompletionModel<S> for Llama<F>
 where
-    F: CastTensor<f32> + Send + Sync + 'static,
+    F: CastTensor<f32> + WasmNotSend + WasmNotSync + 'static,
     f32: CastTensor<F>,
 {
     async fn stream_text_with_callback<'a>(
@@ -69,9 +69,9 @@ where
         session: &'a mut Self::Session,
         msg: MessageContent,
         sampler: S,
-        on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
+        on_token: impl FnMut(String) -> Result<(), Self::Error> + WasmNotSend + WasmNotSync + 'static,
     ) -> Result<(), Self::Error> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
+        let (tx, rx) = futures::channel::oneshot::channel();
         let (max_tokens, stop_on, seed) =
             match (&sampler as &dyn Any).downcast_ref::<GenerationParameters>() {
                 Some(sampler) => (
@@ -95,7 +95,7 @@ where
             }
         }
         self.task_sender
-            .send(Task::UnstructuredGeneration(UnstructuredGenerationTask {
+            .unbounded_send(Task::UnstructuredGeneration(UnstructuredGenerationTask {
                 settings: InferenceSettings::new(
                     text,
                     images,
@@ -118,7 +118,7 @@ where
 
 impl<F: FloatDataType, T: Parse + 'static> CreateDefaultChatConstraintsForType<T> for Llama<F>
 where
-    F: CastTensor<f32> + Send + Sync + 'static,
+    F: CastTensor<f32> + WasmNotSend + WasmNotSync + 'static,
     f32: CastTensor<F>,
 {
     type DefaultConstraints = ArcParser<T>;
@@ -130,7 +130,7 @@ where
 
 impl<F: FloatDataType, T: Parse + 'static> CreateDefaultCompletionConstraintsForType<T> for Llama<F>
 where
-    F: CastTensor<f32> + Send + Sync + 'static,
+    F: CastTensor<f32> + WasmNotSend + WasmNotSync + 'static,
     f32: CastTensor<F>,
 {
     type DefaultConstraints = ArcParser<T>;
@@ -142,10 +142,10 @@ where
 
 impl<F: FloatDataType, S, Constraints> StructuredTextCompletionModel<Constraints, S> for Llama<F>
 where
-    F: CastTensor<f32> + Send + Sync + 'static,
+    F: CastTensor<f32> + WasmNotSend + WasmNotSync + 'static,
     f32: CastTensor<F>,
-    <Constraints as Parser>::Output: Send,
-    Constraints: CreateParserState + Send + 'static,
+    <Constraints as Parser>::Output: WasmNotSend,
+    Constraints: CreateParserState + WasmNotSend + 'static,
     S: Sampler + 'static,
 {
     fn stream_text_with_callback_and_parser<'a>(
@@ -154,11 +154,11 @@ where
         text: MessageContent,
         sampler: S,
         parser: Constraints,
-        on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + Send + 'a {
+        on_token: impl FnMut(String) -> Result<(), Self::Error> + WasmNotSend + WasmNotSync + 'static,
+    ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + WasmNotSend + 'a {
         let mut session = session.clone();
         async move {
-            let (tx, rx) = tokio::sync::oneshot::channel();
+            let (tx, rx) = futures::channel::oneshot::channel();
             let seed = match (&sampler as &dyn Any).downcast_ref::<GenerationParameters>() {
                 Some(sampler) => sampler.seed(),
                 None => None,
@@ -167,7 +167,7 @@ where
             let on_token = Box::new(on_token);
             let resolved_message = text.resolve_media_sources().await?;
             self.task_sender
-                .send(Task::StructuredGeneration(StructuredGenerationTask {
+                .unbounded_send(Task::StructuredGeneration(StructuredGenerationTask {
                     runner: Box::new(move |model| {
                         let parser_state = parser.create_parser_state();
                         let result = generate_structured(

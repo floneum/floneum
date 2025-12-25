@@ -1,4 +1,4 @@
-use fusor_core::{CastTensor, FloatDataType};
+use fusor_core::{CastTensor, FloatDataType, WasmNotSend, WasmNotSync};
 use kalosm_language_model::{ContentChunk, MessageContent};
 use kalosm_sample::CreateParserState;
 use kalosm_sample::{LiteralParser, ParseStatus, Parser, ParserExt};
@@ -29,7 +29,7 @@ pub(crate) fn generate_structured<F, P: Parser>(
     seed: Option<u64>,
 ) -> Result<P::Output, LlamaModelError>
 where
-    F: FloatDataType + CastTensor<f32> + Send + Sync + 'static,
+    F: FloatDataType + CastTensor<f32> + WasmNotSend + WasmNotSync + 'static,
     f32: CastTensor<F>,
 {
     let eos_token = llm.model.config.stop_token_string.clone();

@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{model::LlamaModelError, session::LlamaSessionLoadingError, Llama, LlamaSession};
-use fusor_core::{CastTensor, FloatDataType};
+use fusor_core::{CastTensor, FloatDataType, WasmNotSend, WasmNotSync};
 use kalosm_language_model::{
     ChatMessage, ChatModel, ChatSession, ContentChunk, CreateChatSession,
     CreateTextCompletionSession, MessageContent, MessageType, StructuredChatModel,
@@ -51,7 +51,7 @@ fn get_new_tokens<F: FloatDataType>(
 
 impl<F: FloatDataType> CreateChatSession for Llama<F>
 where
-    F: CastTensor<f32> + Send + Sync + 'static,
+    F: CastTensor<f32> + WasmNotSend + WasmNotSync + 'static,
     f32: CastTensor<F>,
 {
     type Error = LlamaModelError;
@@ -64,7 +64,7 @@ where
 
 impl<F: FloatDataType, S: Sampler + 'static> ChatModel<S> for Llama<F>
 where
-    F: CastTensor<f32> + Send + Sync + 'static,
+    F: CastTensor<f32> + WasmNotSend + WasmNotSync + 'static,
     f32: CastTensor<F>,
 {
     fn add_messages_with_callback<'a>(
@@ -72,8 +72,8 @@ where
         session: &'a mut Self::ChatSession,
         messages: &[ChatMessage],
         sampler: S,
-        mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a {
+        mut on_token: impl FnMut(String) -> Result<(), Self::Error> + WasmNotSend + WasmNotSync + 'static,
+    ) -> impl Future<Output = Result<(), Self::Error>> + WasmNotSend + 'a {
         let new_text = get_new_tokens(messages, session, self);
         let mut content = MessageContent::new();
         for message in messages {
@@ -109,10 +109,10 @@ where
 
 impl<F: FloatDataType, S, Constraints> StructuredChatModel<Constraints, S> for Llama<F>
 where
-    F: CastTensor<f32> + Send + Sync + 'static,
+    F: CastTensor<f32> + WasmNotSend + WasmNotSync + 'static,
     f32: CastTensor<F>,
-    <Constraints as Parser>::Output: Send,
-    Constraints: CreateParserState + Send + 'static,
+    <Constraints as Parser>::Output: WasmNotSend,
+    Constraints: CreateParserState + WasmNotSend + 'static,
     S: Sampler + 'static,
 {
     fn add_message_with_callback_and_constraints<'a>(
@@ -121,13 +121,13 @@ where
         messages: &[ChatMessage],
         sampler: S,
         constraints: Constraints,
-        mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
+        mut on_token: impl FnMut(String) -> Result<(), Self::Error> + WasmNotSend + WasmNotSync + 'static,
     ) -> impl Future<
         Output = Result<
             <Constraints as kalosm_language_model::ModelConstraints>::Output,
             Self::Error,
         >,
-    > + Send
+    > + WasmNotSend
            + 'a {
         let mut content = MessageContent::new();
         for message in messages {

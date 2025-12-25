@@ -9,6 +9,7 @@ use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use kalosm_model_types::{WasmNotSend, WasmNotSendSync};
 use std::any::Any;
 use std::fmt::Debug;
 use std::future::IntoFuture;
@@ -21,6 +22,22 @@ use std::sync::Mutex;
 use std::sync::OnceLock;
 use std::sync::RwLock;
 use std::task::Poll;
+
+// On wasm32, futures don't need to be Send, and Box<dyn Any> doesn't need Send
+#[cfg(not(target_arch = "wasm32"))]
+type BoxedTaskFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
+#[cfg(target_arch = "wasm32")]
+type BoxedTaskFuture = Pin<Box<dyn Future<Output = ()>>>;
+
+#[cfg(not(target_arch = "wasm32"))]
+type BoxedAny = Box<dyn Any + Send>;
+#[cfg(target_arch = "wasm32")]
+type BoxedAny = Box<dyn Any>;
+
+#[cfg(not(target_arch = "wasm32"))]
+type BoxedIntoFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+#[cfg(target_arch = "wasm32")]
+type BoxedIntoFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 
 use super::ChatMessage;
 use super::ChatModel;
@@ -432,9 +449,9 @@ pub struct ChatResponseBuilder<
     chat_session: MaybeOwnedSession<'a, M>,
     constraints: Option<Constraints>,
     sampler: Option<Sampler>,
-    task: OnceLock<RwLock<Pin<Box<dyn Future<Output = ()> + Send>>>>,
+    task: OnceLock<RwLock<BoxedTaskFuture>>,
     #[allow(clippy::type_complexity)]
-    result: Option<Receiver<Result<Box<dyn Any + Send>, M::Error>>>,
+    result: Option<Receiver<Result<BoxedAny, M::Error>>>,
     queued_tokens: Option<UnboundedReceiver<String>>,
 }
 
@@ -594,9 +611,9 @@ impl<'a, M: CreateChatSession, Constraints, Sampler>
 
 impl<M, Sampler> ChatResponseBuilder<'_, M, NoConstraints, Sampler>
 where
-    Sampler: Send + Unpin + 'static,
-    M: ChatModel<Sampler> + Send + Sync + Clone + Unpin + 'static,
-    M::ChatSession: Send + Sync + Unpin + 'static,
+    Sampler: WasmNotSend + Unpin + 'static,
+    M: ChatModel<Sampler> + WasmNotSendSync + Clone + Unpin + 'static,
+    M::ChatSession: WasmNotSendSync + Unpin + 'static,
 {
     fn ensure_unstructured_task_started(&mut self) {
         if self.task.get().is_none() {
@@ -628,10 +645,10 @@ where
                     .await?;
                 let mut all_text = all_text.lock().unwrap();
                 let all_text = std::mem::take(&mut *all_text);
-                Ok(Box::new(all_text) as Box<dyn Any + Send>)
+                Ok(Box::new(all_text) as BoxedAny)
             };
             let wrapped = async move {
-                let result: Result<Box<dyn Any + Send>, M::Error> = future.await;
+                let result: Result<BoxedAny, M::Error> = future.await;
                 _ = result_tx.send(result);
             };
             let task = Box::pin(wrapped);
@@ -644,10 +661,10 @@ where
 
 impl<M, Sampler> Stream for ChatResponseBuilder<'_, M, NoConstraints, Sampler>
 where
-    Sampler: Send + Unpin + 'static,
-    M: ChatModel<Sampler> + Send + Sync + Clone + Unpin + 'static,
-    M::ChatSession: Send + Sync + Unpin + 'static,
-    M::Error: Send + Sync + Unpin,
+    Sampler: WasmNotSend + Unpin + 'static,
+    M: ChatModel<Sampler> + WasmNotSendSync + Clone + Unpin + 'static,
+    M::ChatSession: WasmNotSendSync + Unpin + 'static,
+    M::Error: WasmNotSendSync + Unpin,
 {
     type Item = String;
 
@@ -677,12 +694,12 @@ where
 
 impl<'a, M, Sampler> IntoFuture for ChatResponseBuilder<'a, M, NoConstraints, Sampler>
 where
-    Sampler: Send + Unpin + 'static,
-    M: ChatModel<Sampler> + Send + Sync + Unpin + Clone + 'static,
-    M::ChatSession: Clone + Send + Sync + Unpin + 'static,
+    Sampler: WasmNotSend + Unpin + 'static,
+    M: ChatModel<Sampler> + WasmNotSendSync + Unpin + Clone + 'static,
+    M::ChatSession: Clone + WasmNotSendSync + Unpin + 'static,
 {
     type Output = Result<String, M::Error>;
-    type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
+    type IntoFuture = BoxedIntoFuture<'a, Self::Output>;
 
     fn into_future(mut self) -> Self::IntoFuture {
         self.ensure_unstructured_task_started();
@@ -697,11 +714,11 @@ where
 
 impl<M, Constraints, Sampler> ChatResponseBuilder<'_, M, Constraints, Sampler>
 where
-    Constraints: ModelConstraints + Send + Sync + Unpin + 'static,
-    Sampler: Send + Unpin + 'static,
-    M: StructuredChatModel<Constraints, Sampler> + Send + Sync + Clone + Unpin + 'static,
-    M::ChatSession: Clone + Send + Sync + Unpin + 'static,
-    Constraints::Output: Send + 'static,
+    Constraints: ModelConstraints + WasmNotSendSync + Unpin + 'static,
+    Sampler: WasmNotSend + Unpin + 'static,
+    M: StructuredChatModel<Constraints, Sampler> + WasmNotSendSync + Clone + Unpin + 'static,
+    M::ChatSession: Clone + WasmNotSendSync + Unpin + 'static,
+    Constraints::Output: WasmNotSend + 'static,
 {
     fn ensure_structured_task_started(&mut self) {
         if self.task.get().is_none() {
@@ -736,10 +753,10 @@ where
                         on_token,
                     )
                     .await
-                    .map(|value| Box::new(value) as Box<dyn Any + Send>)
+                    .map(|value| Box::new(value) as BoxedAny)
             };
             let wrapped = async move {
-                let result: Result<Box<dyn Any + Send>, M::Error> = future.await;
+                let result: Result<BoxedAny, M::Error> = future.await;
                 _ = result_tx.send(result);
             };
             let task = Box::pin(wrapped);
@@ -752,12 +769,12 @@ where
 
 impl<M, Constraints, Sampler> Stream for ChatResponseBuilder<'_, M, Constraints, Sampler>
 where
-    Constraints: ModelConstraints + Send + Sync + Unpin + 'static,
-    Sampler: Send + Unpin + 'static,
-    M: StructuredChatModel<Constraints, Sampler> + Send + Sync + Clone + Unpin + 'static,
-    M::ChatSession: Clone + Send + Sync + Unpin + 'static,
-    M::Error: Send + Sync + Unpin,
-    Constraints::Output: Send + 'static,
+    Constraints: ModelConstraints + WasmNotSendSync + Unpin + 'static,
+    Sampler: WasmNotSend + Unpin + 'static,
+    M: StructuredChatModel<Constraints, Sampler> + WasmNotSendSync + Clone + Unpin + 'static,
+    M::ChatSession: Clone + WasmNotSendSync + Unpin + 'static,
+    M::Error: WasmNotSendSync + Unpin,
+    Constraints::Output: WasmNotSend + 'static,
 {
     type Item = String;
 
@@ -787,14 +804,14 @@ where
 
 impl<'a, M, Constraints, Sampler> IntoFuture for ChatResponseBuilder<'a, M, Constraints, Sampler>
 where
-    Constraints: ModelConstraints + Send + Sync + Unpin + 'static,
-    Sampler: Send + Unpin + 'static,
-    M: StructuredChatModel<Constraints, Sampler> + Send + Sync + Clone + Unpin + 'static,
-    M::ChatSession: Clone + Send + Sync + Unpin + 'static,
-    Constraints::Output: Send + 'static,
+    Constraints: ModelConstraints + WasmNotSendSync + Unpin + 'static,
+    Sampler: WasmNotSend + Unpin + 'static,
+    M: StructuredChatModel<Constraints, Sampler> + WasmNotSendSync + Clone + Unpin + 'static,
+    M::ChatSession: Clone + WasmNotSendSync + Unpin + 'static,
+    Constraints::Output: WasmNotSend + 'static,
 {
     type Output = Result<Constraints::Output, M::Error>;
-    type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
+    type IntoFuture = BoxedIntoFuture<'a, Self::Output>;
 
     fn into_future(mut self) -> Self::IntoFuture {
         self.ensure_structured_task_started();

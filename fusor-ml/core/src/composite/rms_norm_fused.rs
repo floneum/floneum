@@ -230,8 +230,7 @@ impl RmsNormOperation {
         // Phase 2: Reduce sum_sq across the workgroup
         let global_rms = kernel.add_global_value(KernelGlobalSpace::Workgroup, DataTypeEnum::F32);
         if device.subgroups_supported() {
-            let limits = device.limits();
-            let max_subgroup_size = limits.max_subgroup_size;
+            let max_subgroup_size = device.max_subgroup_size();
             let local_data = kernel.add_global_array(
                 KernelGlobalSpace::Workgroup,
                 DataTypeEnum::F32,
@@ -392,16 +391,15 @@ impl RmsNormOperation {
 impl Operation for RmsNormOperation {
     fn workgroup_shape_constraints(&self, device: &crate::Device) -> WorkgroupShapeConstraints {
         let mut constraints = WorkgroupShapeConstraints::new();
-        let limits = device.limits();
         constraints.add_constraint(
             0,
-            Constraint::less_than(limits.max_compute_workgroup_size_x + 1),
+            Constraint::less_than(device.limits().max_compute_workgroup_size_x + 1),
         );
         if device.subgroups_supported() {
             constraints
-                .add_constraint(0, Constraint::more_than_or_equals(limits.min_subgroup_size));
+                .add_constraint(0, Constraint::more_than_or_equals(device.min_subgroup_size()));
             constraints
-                .add_constraint(0, Constraint::less_than_or_equals(limits.max_subgroup_size));
+                .add_constraint(0, Constraint::less_than_or_equals(device.max_subgroup_size()));
         }
         constraints.add_constraint(1, Constraint::equals(1));
         constraints.add_constraint(2, Constraint::equals(1));

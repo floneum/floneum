@@ -232,12 +232,11 @@ impl SoftmaxOperation {
 
         // If subgroups are supported, use shuffle down reduction
         if device.subgroups_supported() {
-            let limits = device.limits();
             let subgroup_id = kernel.subgroup_index();
             let subgroup_local_id = kernel.subgroup_local_index();
             let subgroups_per_workgroup = kernel.subgroups_per_workgroup();
             let subgroup_size = kernel.subgroup_size();
-            let max_subgroup_size = limits.max_subgroup_size;
+            let max_subgroup_size = device.max_subgroup_size();
             let local_m_data = kernel.add_global_array(
                 KernelGlobalSpace::Workgroup,
                 dtype,
@@ -406,16 +405,15 @@ impl Operation for SoftmaxOperation {
         device: &crate::Device,
     ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
         let mut constraints = WorkgroupShapeConstraints::new();
-        let limits = device.limits();
         constraints.add_constraint(
             0,
-            Constraint::less_than(limits.max_compute_workgroup_size_x + 1),
+            Constraint::less_than(device.limits().max_compute_workgroup_size_x + 1),
         );
         if device.subgroups_supported() {
             constraints
-                .add_constraint(0, Constraint::more_than_or_equals(limits.min_subgroup_size));
+                .add_constraint(0, Constraint::more_than_or_equals(device.min_subgroup_size()));
             constraints
-                .add_constraint(0, Constraint::less_than_or_equals(limits.max_subgroup_size));
+                .add_constraint(0, Constraint::less_than_or_equals(device.max_subgroup_size()));
         }
         constraints.add_constraint(1, Constraint::equals(1));
         constraints.add_constraint(2, Constraint::equals(1));
