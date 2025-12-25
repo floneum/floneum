@@ -2257,7 +2257,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2547,7 +2547,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4250,7 +4250,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi 0.5.2",
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5280,7 +5280,7 @@ dependencies = [
 [[package]]
 name = "naga"
 version = "28.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#df4ae64df67353382d7a0edaca4e61ceebe75fce"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#367cd0e0f1b0af5bbc50e804fca32a5ee104b2e8"
 dependencies = [
  "arrayvec",
  "bit-set 0.8.0",
@@ -5513,7 +5513,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -7329,7 +7329,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -8442,7 +8442,7 @@ dependencies = [
  "memchr",
  "ntapi",
  "rayon",
- "windows 0.57.0",
+ "windows 0.54.0",
 ]
 
 [[package]]
@@ -8544,7 +8544,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -9673,7 +9673,7 @@ checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 [[package]]
 name = "wgpu"
 version = "28.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#df4ae64df67353382d7a0edaca4e61ceebe75fce"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#367cd0e0f1b0af5bbc50e804fca32a5ee104b2e8"
 dependencies = [
  "arrayvec",
  "bitflags 2.10.0",
@@ -9702,7 +9702,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core"
 version = "28.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#df4ae64df67353382d7a0edaca4e61ceebe75fce"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#367cd0e0f1b0af5bbc50e804fca32a5ee104b2e8"
 dependencies = [
  "arrayvec",
  "bit-set 0.8.0",
@@ -9733,7 +9733,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-apple"
 version = "28.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#df4ae64df67353382d7a0edaca4e61ceebe75fce"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#367cd0e0f1b0af5bbc50e804fca32a5ee104b2e8"
 dependencies = [
  "wgpu-hal",
 ]
@@ -9741,7 +9741,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-emscripten"
 version = "28.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#df4ae64df67353382d7a0edaca4e61ceebe75fce"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#367cd0e0f1b0af5bbc50e804fca32a5ee104b2e8"
 dependencies = [
  "wgpu-hal",
 ]
@@ -9749,7 +9749,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-windows-linux-android"
 version = "28.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#df4ae64df67353382d7a0edaca4e61ceebe75fce"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#367cd0e0f1b0af5bbc50e804fca32a5ee104b2e8"
 dependencies = [
  "wgpu-hal",
 ]
@@ -9757,7 +9757,7 @@ dependencies = [
 [[package]]
 name = "wgpu-hal"
 version = "28.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#df4ae64df67353382d7a0edaca4e61ceebe75fce"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#367cd0e0f1b0af5bbc50e804fca32a5ee104b2e8"
 dependencies = [
  "android_system_properties",
  "arrayvec",
@@ -9804,7 +9804,7 @@ dependencies = [
 [[package]]
 name = "wgpu-types"
 version = "28.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#df4ae64df67353382d7a0edaca4e61ceebe75fce"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#367cd0e0f1b0af5bbc50e804fca32a5ee104b2e8"
 dependencies = [
  "bitflags 2.10.0",
  "bytemuck",
@@ -9856,7 +9856,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -9872,16 +9872,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9252e5725dbed82865af151df558e754e4a3c2c30818359eb17465f1346a1b49"
 dependencies = [
  "windows-core 0.54.0",
- "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows"
-version = "0.57.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12342cb4d8e3b046f3d80effd474a7a02447231330ef77d71daa6fbc40681143"
-dependencies = [
- "windows-core 0.57.0",
  "windows-targets 0.52.6",
 ]
 
@@ -9918,24 +9908,12 @@ dependencies = [
 
 [[package]]
 name = "windows-core"
-version = "0.57.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2ed2439a290666cd67ecce2b0ffaad89c2a56b976b736e6ece670297897832d"
-dependencies = [
- "windows-implement 0.57.0",
- "windows-interface 0.57.0",
- "windows-result 0.1.2",
- "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows-core"
 version = "0.62.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8e83a14d34d0623b51dce9581199302a221863196a1dde71a7663a4c2be9deb"
 dependencies = [
- "windows-implement 0.60.2",
- "windows-interface 0.59.3",
+ "windows-implement",
+ "windows-interface",
  "windows-link 0.2.1",
  "windows-result 0.4.1",
  "windows-strings 0.5.1",
@@ -9954,31 +9932,9 @@ dependencies = [
 
 [[package]]
 name = "windows-implement"
-version = "0.57.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9107ddc059d5b6fbfbffdfa7a7fe3e22a226def0b2608f72e9d552763d3e1ad7"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.110",
-]
-
-[[package]]
-name = "windows-implement"
 version = "0.60.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "053e2e040ab57b9dc951b72c264860db7eb3b0200ba345b4e4c3b14f67855ddf"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.110",
-]
-
-[[package]]
-name = "windows-interface"
-version = "0.57.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29bee4b38ea3cde66011baa44dba677c432a78593e202392d1e9070cf2a7fca7"
 dependencies = [
  "proc-macro2",
  "quote",

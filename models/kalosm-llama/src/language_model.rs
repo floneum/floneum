@@ -1,10 +1,10 @@
-use fusor_core::{CastTensor, FloatDataType, WasmNotSend, WasmNotSync};
+use fusor_core::{CastTensor, FloatDataType, WasmNotSync};
 use kalosm_language_model::{
     ContentChunk, CreateDefaultChatConstraintsForType, CreateDefaultCompletionConstraintsForType,
     CreateTextCompletionSession, GenerationParameters, MessageContent,
     StructuredTextCompletionModel, TextCompletionModel,
 };
-use kalosm_model_types::{ModelBuilder, ModelLoadingProgress};
+use kalosm_model_types::{ModelBuilder, ModelLoadingProgress, WasmNotSend};
 use kalosm_sample::{ArcParser, CreateParserState, Parse, Parser, ParserExt};
 use llm_samplers::types::Sampler;
 use std::any::Any;
