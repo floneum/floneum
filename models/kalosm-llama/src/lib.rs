@@ -42,12 +42,12 @@ use crate::model::LlamaModel;
 pub use crate::session::LlamaSession;
 use fusor_core::{Device, WasmNotSend, WasmNotSync};
 use kalosm_language_model::{MediaHints, TextCompletionBuilder, TextCompletionModelExt};
+pub use kalosm_model_types::FileSource;
 use kalosm_model_types::ModelLoadingProgress;
 use kalosm_sample::{LiteralParser, StopOn};
 use model::LlamaModelError;
 use raw::LlamaConfig;
 pub use source::*;
-pub use kalosm_model_types::FileSource;
 use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -69,7 +69,8 @@ pub mod prelude {
 
 // On wasm32, callbacks don't need to be Send/Sync
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) type BoxedTokenCallback = Box<dyn FnMut(String) -> Result<(), LlamaModelError> + Send + Sync>;
+pub(crate) type BoxedTokenCallback =
+    Box<dyn FnMut(String) -> Result<(), LlamaModelError> + Send + Sync>;
 #[cfg(target_arch = "wasm32")]
 pub(crate) type BoxedTokenCallback = Box<dyn FnMut(String) -> Result<(), LlamaModelError>>;
 

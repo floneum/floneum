@@ -149,11 +149,15 @@ pub(crate) fn workgroup_shape_constraints(
     if device.subgroups_supported() {
         constraints.add_constraint(
             0,
-            crate::mir::workgroup_shape::Constraint::more_than_or_equals(device.min_subgroup_size()),
+            crate::mir::workgroup_shape::Constraint::more_than_or_equals(
+                device.min_subgroup_size(),
+            ),
         );
         constraints.add_constraint(
             0,
-            crate::mir::workgroup_shape::Constraint::less_than_or_equals(device.max_subgroup_size()),
+            crate::mir::workgroup_shape::Constraint::less_than_or_equals(
+                device.max_subgroup_size(),
+            ),
         );
     }
     constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));

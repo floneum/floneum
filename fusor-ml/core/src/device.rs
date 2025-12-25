@@ -151,7 +151,10 @@ impl Device {
         std::thread::spawn({
             let device = device.clone();
             move || loop {
-                let Ok(status) = device.wgpu_device().poll(wgpu::PollType::wait_indefinitely()) else {
+                let Ok(status) = device
+                    .wgpu_device()
+                    .poll(wgpu::PollType::wait_indefinitely())
+                else {
                     break;
                 };
                 if status == wgpu::PollStatus::QueueEmpty {

@@ -404,16 +404,16 @@ impl<F: FloatDataType> Model<F> {
         }
 
         // If the model is a vision model, load the vision encoder
-        let vision_encoder = if let (Some(vision_ct), Some(vision_bytes)) = (vision_ct, vision_bytes)
-        {
-            Some(vision::QwenVisionTransformer::from_gguf(
-                vision_ct,
-                &vision_bytes,
-                device,
-            ))
-        } else {
-            None
-        };
+        let vision_encoder =
+            if let (Some(vision_ct), Some(vision_bytes)) = (vision_ct, vision_bytes) {
+                Some(vision::QwenVisionTransformer::from_gguf(
+                    vision_ct,
+                    &vision_bytes,
+                    device,
+                ))
+            } else {
+                None
+            };
         Ok(Self {
             config,
             tok_embeddings,

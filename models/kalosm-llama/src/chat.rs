@@ -73,7 +73,7 @@ where
         session: &'a mut Self::ChatSession,
         messages: &[ChatMessage],
         sampler: S,
-        mut on_token: impl FnMut(String) -> Result<(), Self::Error>  + WasmNotSendSync + 'static,
+        mut on_token: impl FnMut(String) -> Result<(), Self::Error> + WasmNotSendSync + 'static,
     ) -> impl Future<Output = Result<(), Self::Error>> + WasmNotSend + 'a {
         let new_text = get_new_tokens(messages, session, self);
         let mut content = MessageContent::new();

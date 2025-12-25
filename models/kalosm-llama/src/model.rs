@@ -200,8 +200,8 @@ where
 
                 let config = match config_bytes {
                     Some(config_bytes) => {
-                        let config: LlamaConfigJson =
-                            serde_json::from_slice(&config_bytes).map_err(LlamaSourceError::Config)?;
+                        let config: LlamaConfigJson = serde_json::from_slice(&config_bytes)
+                            .map_err(LlamaSourceError::Config)?;
                         config.rope_scaling
                     }
                     None => None,

@@ -810,21 +810,27 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         });
 
         // Copy data to staging buffer
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         encoder.copy_buffer_to_buffer(&buffer, 0, &download, 0, size);
         queue.submit(Some(encoder.finish()));
 
         // Map the staging buffer using map_async which correctly uses WasmNotSend
         let (sender, receiver) = futures_channel::oneshot::channel();
-        download.slice(..).map_async(wgpu::MapMode::Read, move |result| {
-            _ = sender.send(result);
-        });
+        download
+            .slice(..)
+            .map_async(wgpu::MapMode::Read, move |result| {
+                _ = sender.send(result);
+            });
 
         receiver.await.map_err(|_| wgpu::BufferAsyncError)??;
 
         // Get the mapped view
         let view = download.slice(..).get_mapped_range();
-        Ok(TensorSlice::new(MappedBuffer { view }, tensor.layout().clone()))
+        Ok(TensorSlice::new(
+            MappedBuffer { view },
+            tensor.layout().clone(),
+        ))
     }
 
     #[track_caller]

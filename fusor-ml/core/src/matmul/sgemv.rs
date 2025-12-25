@@ -326,7 +326,9 @@ pub(crate) fn workgroup_shape_constraints(
     let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
     constraints.add_constraint(
         0,
-        crate::mir::workgroup_shape::Constraint::less_than(device.limits().max_compute_workgroup_size_x + 1),
+        crate::mir::workgroup_shape::Constraint::less_than(
+            device.limits().max_compute_workgroup_size_x + 1,
+        ),
     );
     constraints.add_constraint(
         0,
@@ -335,7 +337,10 @@ pub(crate) fn workgroup_shape_constraints(
     constraints.add_constraint(
         0,
         crate::mir::workgroup_shape::Constraint::less_than_or_equals(
-            device.max_subgroup_size() * params.subgroups_per_workgroup.min(device.max_subgroup_size()),
+            device.max_subgroup_size()
+                * params
+                    .subgroups_per_workgroup
+                    .min(device.max_subgroup_size()),
         ),
     );
     constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));

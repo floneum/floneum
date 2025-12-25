@@ -446,10 +446,14 @@ impl Operation for FlashAttentionOperation {
         let mut constraints = WorkgroupShapeConstraints::new();
         if device.subgroups_supported() {
             // For subgroup-based implementation, use subgroup size as base
-            constraints
-                .add_constraint(0, Constraint::more_than_or_equals(device.min_subgroup_size()));
-            constraints
-                .add_constraint(0, Constraint::less_than_or_equals(device.max_subgroup_size()));
+            constraints.add_constraint(
+                0,
+                Constraint::more_than_or_equals(device.min_subgroup_size()),
+            );
+            constraints.add_constraint(
+                0,
+                Constraint::less_than_or_equals(device.max_subgroup_size()),
+            );
         } else {
             // Fallback: fixed workgroup size
             constraints.add_constraint(0, Constraint::equals(256));

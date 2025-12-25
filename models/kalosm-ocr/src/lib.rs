@@ -187,10 +187,8 @@ impl OcrSource {
             let config_bytes = cache
                 .get_bytes(&self.config, |progress| handler(create_progress(progress)))
                 .await?;
-            let config: Config = serde_json::from_slice(
-                &config_bytes,
-            )
-            .map_err(LoadOcrError::LoadConfig)?;
+            let config: Config =
+                serde_json::from_slice(&config_bytes).map_err(LoadOcrError::LoadConfig)?;
             (config.encoder, config.decoder)
         };
 
