@@ -5280,6 +5280,7 @@ dependencies = [
 [[package]]
 name = "naga"
 version = "28.0.0"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#df4ae64df67353382d7a0edaca4e61ceebe75fce"
 dependencies = [
  "arrayvec",
  "bit-set 0.8.0",
@@ -9672,6 +9673,7 @@ checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 [[package]]
 name = "wgpu"
 version = "28.0.0"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#df4ae64df67353382d7a0edaca4e61ceebe75fce"
 dependencies = [
  "arrayvec",
  "bitflags 2.10.0",
@@ -9700,6 +9702,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core"
 version = "28.0.0"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#df4ae64df67353382d7a0edaca4e61ceebe75fce"
 dependencies = [
  "arrayvec",
  "bit-set 0.8.0",
@@ -9730,6 +9733,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-apple"
 version = "28.0.0"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#df4ae64df67353382d7a0edaca4e61ceebe75fce"
 dependencies = [
  "wgpu-hal",
 ]
@@ -9737,6 +9741,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-emscripten"
 version = "28.0.0"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#df4ae64df67353382d7a0edaca4e61ceebe75fce"
 dependencies = [
  "wgpu-hal",
 ]
@@ -9744,6 +9749,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-windows-linux-android"
 version = "28.0.0"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#df4ae64df67353382d7a0edaca4e61ceebe75fce"
 dependencies = [
  "wgpu-hal",
 ]
@@ -9751,6 +9757,7 @@ dependencies = [
 [[package]]
 name = "wgpu-hal"
 version = "28.0.0"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#df4ae64df67353382d7a0edaca4e61ceebe75fce"
 dependencies = [
  "android_system_properties",
  "arrayvec",
@@ -9797,6 +9804,7 @@ dependencies = [
 [[package]]
 name = "wgpu-types"
 version = "28.0.0"
+source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#df4ae64df67353382d7a0edaca4e61ceebe75fce"
 dependencies = [
  "bitflags 2.10.0",
  "bytemuck",
