@@ -10,6 +10,7 @@ use crate::{
         operation::Operation,
         workgroup_shape::{Constraint, WorkgroupShape, WorkgroupShapeConstraints},
     },
+    visit_tiled::distribute_workgroups,
 };
 
 impl<const R: usize, T: DataType> Tensor<R, T> {
@@ -413,8 +414,8 @@ impl Operation for RmsNormOperation {
     fn dispatch_size(&self, _: &WorkgroupShape, inputs: &[MirValue]) -> [u32; 3] {
         // One workgroup per row (all dimensions except the last)
         let trimmed_tensor: TensorData = inputs[0].as_tensor().unwrap().clone();
-        let workgroup_count = trimmed_tensor.layout().shape().iter().product::<usize>() as u32;
-        [workgroup_count, 1, 1]
+        let total_workgroups = trimmed_tensor.layout().shape().iter().product::<usize>() as u32;
+        distribute_workgroups(total_workgroups)
     }
 
     fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {

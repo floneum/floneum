@@ -9,6 +9,7 @@ use crate::{
         operation::Operation,
         workgroup_shape::{Constraint, WorkgroupShapeConstraints},
     },
+    visit_tiled::distribute_workgroups,
 };
 
 const BLOCKSIZE: u32 = 256;
@@ -163,12 +164,9 @@ impl Operation for ResizeOperation {
         inputs: &[crate::mir::inputs::MirValue],
     ) -> [u32; 3] {
         let input = inputs[1].as_tensor().unwrap();
-        [
-            (input.layout().shape().iter().product::<usize>() as u32)
-                .div_ceil(TILE_SIZE * BLOCKSIZE),
-            1,
-            1,
-        ]
+        let total_workgroups = (input.layout().shape().iter().product::<usize>() as u32)
+            .div_ceil(TILE_SIZE * BLOCKSIZE);
+        distribute_workgroups(total_workgroups)
     }
 
     fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {

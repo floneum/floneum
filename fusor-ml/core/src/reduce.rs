@@ -7,6 +7,7 @@ use crate::{
         operation::Operation,
         workgroup_shape::{Constraint, WorkgroupShape, WorkgroupShapeConstraints},
     },
+    visit_tiled::distribute_workgroups,
 };
 use crate::{
     Layout, Tensor,
@@ -379,9 +380,9 @@ impl Operation for ReduceOperation {
         inputs: &[MirValue],
     ) -> [u32; 3] {
         let output_tensor: TensorData = inputs[1].as_tensor().unwrap().clone();
-        let workgroup_size = output_tensor.layout().shape().iter().product::<usize>() as u32;
+        let total_workgroups = output_tensor.layout().shape().iter().product::<usize>() as u32;
 
-        [workgroup_size, 1, 1]
+        distribute_workgroups(total_workgroups)
     }
 
     fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {

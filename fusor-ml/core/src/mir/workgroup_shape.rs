@@ -57,19 +57,11 @@ impl WorkgroupShape {
     }
 
     pub(crate) fn linearized_workgroup_index(&self, kernel: &mut GenericKernel) -> String {
-        let mut merged = "0".to_string();
-        let mut product = 1;
-        for (component, real_size) in ["x", "y", "z"].iter().zip(self.shape()) {
-            merged += &format!(
-                " + {}.{} * {}",
-                kernel.workgroup_index(),
-                component,
-                product
-            );
-            product *= real_size;
-        }
-
-        merged
+        // Use num_workgroups builtin to correctly compute flat workgroup index
+        // when workgroups are spread across multiple dispatch dimensions
+        let wg = kernel.workgroup_index();
+        let nw = kernel.num_workgroups();
+        format!("({wg}.x + {wg}.y * {nw}.x + {wg}.z * {nw}.x * {nw}.y)")
     }
 }
 

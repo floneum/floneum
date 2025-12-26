@@ -14,6 +14,7 @@ use crate::{
         operation::Operation,
         workgroup_shape::{Constraint, WorkgroupShape, WorkgroupShapeConstraints},
     },
+    visit_tiled::distribute_workgroups,
 };
 
 impl<const R: usize, T: DataType> Tensor<R, T> {
@@ -430,9 +431,9 @@ impl Operation for SoftmaxOperation {
         inputs: &[MirValue],
     ) -> [u32; 3] {
         let trimmed_tensor: TensorData = inputs[0].as_tensor().unwrap().clone();
-        let workgroup_size = trimmed_tensor.layout().shape().iter().product::<usize>() as u32;
+        let total_workgroups = trimmed_tensor.layout().shape().iter().product::<usize>() as u32;
 
-        [workgroup_size, 1, 1]
+        distribute_workgroups(total_workgroups)
     }
 
     fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {

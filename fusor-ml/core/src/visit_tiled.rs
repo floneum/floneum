@@ -459,6 +459,20 @@ pub(crate) fn titled_map_workgroup_size_constraints(
     constraints
 }
 
+/// Maximum dispatch dimension size allowed by WebGPU
+pub(crate) const MAX_DISPATCH_DIM: u32 = 65535;
+
+/// Distribute a flat count of workgroups across 3D dispatch dimensions,
+/// respecting the WebGPU limit of 65535 per dimension.
+pub(crate) fn distribute_workgroups(total_workgroups: u32) -> [u32; 3] {
+    let x = total_workgroups.min(MAX_DISPATCH_DIM);
+    let remaining = total_workgroups.div_ceil(x);
+    let y = remaining.min(MAX_DISPATCH_DIM);
+    let z = total_workgroups.div_ceil(x * y).max(1);
+
+    [x, y, z]
+}
+
 pub(crate) fn titled_map_dispatch_size(
     tile_size: u32,
     workgroup_shape: WorkgroupShape,
@@ -474,17 +488,5 @@ pub(crate) fn titled_map_dispatch_size(
     let workgroup_volume = workgroup_shape.x() * workgroup_shape.y() * workgroup_shape.z();
     let total_workgroups = total_tiles.div_ceil(workgroup_volume);
 
-    // Distribute workgroups across x, y, z dimensions
-    // Try to keep it as flat as possible for better occupancy
-    let max_x = 65535u32; // WebGPU limit
-    let max_y = 65535u32;
-
-    let workgroup_size_x = total_workgroups.min(max_x);
-    let remaining = total_workgroups.div_ceil(workgroup_size_x);
-    let workgroup_size_y = remaining.min(max_y);
-    let workgroup_size_z = total_workgroups
-        .div_ceil(workgroup_size_x * workgroup_size_y)
-        .max(1);
-
-    [workgroup_size_x, workgroup_size_y, workgroup_size_z]
+    distribute_workgroups(total_workgroups)
 }
