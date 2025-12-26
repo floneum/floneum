@@ -1705,7 +1705,7 @@ where
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: None,
                     bind_group_layouts: &[&bind_group_layout],
-                    push_constant_ranges: &[],
+                    immediate_size: 0
                 });
         let module = device.create_shader_module(kernel);
         let pipeline =
@@ -1790,7 +1790,7 @@ where
                     _ = sender.send(result);
                 },
             );
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
+            device.wgpu_device().poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
             let output = receiver
                 .await
                 .map_err(|_| wgpu::BufferAsyncError)
@@ -1907,7 +1907,7 @@ where
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: None,
                     bind_group_layouts: &[&bind_group_layout],
-                    push_constant_ranges: &[],
+                    immediate_size: 0
                 });
         let module = device.create_shader_module(kernel);
         let pipeline =
@@ -1992,7 +1992,7 @@ where
                     _ = sender.send(result);
                 },
             );
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
+            device.wgpu_device().poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
             let output = receiver
                 .await
                 .map_err(|_| wgpu::BufferAsyncError)
