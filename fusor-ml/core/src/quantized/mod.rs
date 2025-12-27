@@ -135,8 +135,25 @@ impl QMatrix {
                     .flat_map(map)
                     .collect()
             }
-            GgmlType::F16 | GgmlType::F32 => bytes.into(),
+            GgmlType::F16 => {
+                if use_f16 {
+                    bytes.into()
+                } else {
+                    // Convert F16 to F32 when f16 is not supported
+                    bytemuck::cast_slice::<_, half::f16>(bytes)
+                        .iter()
+                        .flat_map(|f| f.to_f32().to_le_bytes())
+                        .collect()
+                }
+            }
+            GgmlType::F32 => bytes.into(),
             _ => todo!(),
+        };
+        // If we converted F16 to F32, update the stored datatype
+        let datatype = if ty == GgmlType::F16 && !use_f16 {
+            GgmlType::F32
+        } else {
+            ty
         };
         let buffer = device.create_buffer_init(
             &bytes,
@@ -149,7 +166,7 @@ impl QMatrix {
             device: device.clone(),
             shape,
             buffer,
-            datatype: ty,
+            datatype,
         })
     }
 
