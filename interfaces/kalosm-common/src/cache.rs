@@ -137,8 +137,7 @@ impl Cache {
 
                     Ok(bytes)
                 }
-                _ => Err(CacheError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                _ => Err(CacheError::Io(std::io::Error::other(
                     "Local file access not supported without the 'tokio' feature",
                 ))),
             }
@@ -190,10 +189,9 @@ impl Cache {
 
                 // Acquire exclusive lock using blocking task to avoid blocking async runtime
                 let lock_path_clone = lock_path.clone();
-                let lock_file = tokio::task::spawn_blocking(move || {
-                    use fs2::FileExt;
+                let _lock_file = tokio::task::spawn_blocking(move || {
                     let file = std::fs::File::create(&lock_path_clone)?;
-                    file.lock_exclusive()?;
+                    file.lock()?;
                     Ok::<_, std::io::Error>(file)
                 })
                 .await
@@ -201,7 +199,6 @@ impl Cache {
 
                 // Double-check if file was downloaded while we were waiting for lock
                 if is_file_current(&complete_download, &response).await {
-                    drop(lock_file);
                     let _ = tokio::fs::remove_file(&lock_path).await;
                     return Ok(complete_download);
                 }
@@ -221,7 +218,6 @@ impl Cache {
                 .await;
 
                 if let Err(e) = download_result {
-                    drop(lock_file);
                     let _ = tokio::fs::remove_file(&lock_path).await;
                     return Err(e);
                 }
@@ -231,7 +227,6 @@ impl Cache {
                     tokio::fs::rename(&incomplete_download, &complete_download).await;
 
                 // Release lock and clean up lock file
-                drop(lock_file);
                 let _ = tokio::fs::remove_file(&lock_path).await;
 
                 rename_result?;
@@ -243,6 +238,7 @@ impl Cache {
     }
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for Cache {
     fn default() -> Self {
         Self {
