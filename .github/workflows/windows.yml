@@ -86,6 +86,8 @@ jobs:
         uses: actions/checkout@v6
       
       - uses: humbletim/setup-vulkan-sdk@v1.2.1
+        with:
+          vulkan-query-version: 1.4.328.1
 
       - uses: Swatinem/rust-cache@v2
 
