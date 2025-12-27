@@ -40,8 +40,9 @@ mod token_stream;
 pub use crate::chat::LlamaChatSession;
 use crate::model::LlamaModel;
 pub use crate::session::LlamaSession;
-use fusor_core::Device;
+use fusor_core::{Device, WasmNotSend, WasmNotSync};
 use kalosm_language_model::{MediaHints, TextCompletionBuilder, TextCompletionModelExt};
+pub use kalosm_model_types::FileSource;
 use kalosm_model_types::ModelLoadingProgress;
 use kalosm_sample::{LiteralParser, StopOn};
 use model::LlamaModelError;
@@ -63,7 +64,20 @@ pub mod prelude {
     pub use crate::session::LlamaSession;
     pub use crate::{Llama, LlamaBuilder, LlamaSource};
     pub use kalosm_language_model::*;
+    pub use kalosm_model_types::FileSource;
 }
+
+// On wasm32, callbacks don't need to be Send/Sync
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) type BoxedTokenCallback =
+    Box<dyn FnMut(String) -> Result<(), LlamaModelError> + Send + Sync>;
+#[cfg(target_arch = "wasm32")]
+pub(crate) type BoxedTokenCallback = Box<dyn FnMut(String) -> Result<(), LlamaModelError>>;
+
+#[cfg(not(target_arch = "wasm32"))]
+type BoxedRunner<F> = Box<dyn FnOnce(&mut LlamaModel<F>) + Send>;
+#[cfg(target_arch = "wasm32")]
+type BoxedRunner<F> = Box<dyn FnOnce(&mut LlamaModel<F>)>;
 
 enum Task<F: FloatDataType = half::f16> {
     UnstructuredGeneration(UnstructuredGenerationTask<F>),
@@ -72,20 +86,20 @@ enum Task<F: FloatDataType = half::f16> {
 
 #[allow(clippy::type_complexity)]
 struct StructuredGenerationTask<F: FloatDataType = half::f16> {
-    runner: Box<dyn FnOnce(&mut LlamaModel<F>) + Send>,
+    runner: BoxedRunner<F>,
 }
 
 struct UnstructuredGenerationTask<F: FloatDataType = half::f16> {
     settings: InferenceSettings<F>,
-    on_token: Box<dyn FnMut(String) -> Result<(), LlamaModelError> + Send + Sync>,
-    finished: tokio::sync::oneshot::Sender<Result<(), LlamaModelError>>,
+    on_token: BoxedTokenCallback,
+    finished: futures::channel::oneshot::Sender<Result<(), LlamaModelError>>,
 }
 
 /// A quantized Llama language model with support for streaming generation.
 pub struct Llama<F: FloatDataType = half::f16> {
     config: Arc<LlamaConfig<F>>,
     tokenizer: Arc<Tokenizer>,
-    task_sender: tokio::sync::mpsc::UnboundedSender<Task<F>>,
+    task_sender: futures::channel::mpsc::UnboundedSender<Task<F>>,
 }
 
 impl<F: FloatDataType> Clone for Llama<F> {
@@ -131,7 +145,7 @@ impl Llama {
 
 impl<F> Llama<F>
 where
-    F: FloatDataType + CastTensor<f32> + Send + Sync + 'static,
+    F: FloatDataType + CastTensor<f32> + WasmNotSend + WasmNotSync + 'static,
     f32: CastTensor<F>,
 {
     /// Get the tokenizer for the model.
@@ -141,13 +155,17 @@ where
 
     #[allow(clippy::too_many_arguments)]
     fn from_build(mut model: LlamaModel<F>) -> Self {
-        let (task_sender, mut task_receiver) = tokio::sync::mpsc::unbounded_channel();
+        use futures::StreamExt;
+
+        let (task_sender, mut task_receiver) = futures::channel::mpsc::unbounded();
         let config = model.model.config.clone();
         let tokenizer = model.tokenizer.clone();
 
+        // On native targets, spawn a background thread to process tasks
+        #[cfg(not(target_arch = "wasm32"))]
         std::thread::spawn({
             move || {
-                while let Some(task) = task_receiver.blocking_recv() {
+                while let Some(task) = futures::executor::block_on(task_receiver.next()) {
                     match task {
                         Task::UnstructuredGeneration(UnstructuredGenerationTask {
                             settings,
@@ -167,6 +185,30 @@ where
                 }
             }
         });
+
+        // On wasm32, spawn a local task to process tasks since threads aren't available
+        #[cfg(target_arch = "wasm32")]
+        wasm_bindgen_futures::spawn_local(async move {
+            while let Some(task) = task_receiver.next().await {
+                match task {
+                    Task::UnstructuredGeneration(UnstructuredGenerationTask {
+                        settings,
+                        on_token,
+                        finished,
+                    }) => {
+                        let result = model._infer(settings, on_token, &finished);
+                        if let Err(err) = &result {
+                            tracing::error!("Error running model: {err}");
+                        }
+                        _ = finished.send(result);
+                    }
+                    Task::StructuredGeneration(StructuredGenerationTask { runner }) => {
+                        runner(&mut model);
+                    }
+                }
+            }
+        });
+
         Self {
             task_sender,
             config,
@@ -191,7 +233,7 @@ where
 
 impl<F> Deref for Llama<F>
 where
-    F: FloatDataType + CastTensor<f32> + Send + Sync + 'static,
+    F: FloatDataType + CastTensor<f32> + WasmNotSend + WasmNotSync + 'static,
     f32: CastTensor<F>,
 {
     type Target = dyn Fn(&str) -> TextCompletionBuilder<Self>;
@@ -286,7 +328,7 @@ impl<F: FloatDataType> LlamaBuilder<F> {
 
 impl<F: FloatDataType> LlamaBuilder<F>
 where
-    F: CastTensor<f32> + Send + Sync + 'static,
+    F: CastTensor<f32> + WasmNotSend + WasmNotSync + 'static,
     f32: CastTensor<F>,
 {
     /// Build the model with a handler for progress as the download and loading progresses.
@@ -318,7 +360,7 @@ where
     /// ```
     pub async fn build_with_loading_handler(
         self,
-        handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+        handler: impl FnMut(ModelLoadingProgress) + WasmNotSend + WasmNotSync + 'static,
     ) -> Result<Llama<F>, LlamaSourceError> {
         let model = LlamaModel::from_builder(self, handler).await?;
 

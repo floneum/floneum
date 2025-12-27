@@ -171,7 +171,7 @@ pub(crate) fn general_sgemv(
         .unwrap();
 
         // We don't need to synchronize between the whole workgroup if there is only one subgroup
-        let subgroup_size = graph.device.limits().max_subgroup_size;
+        let subgroup_size = graph.device.max_subgroup_size();
         if blocksize > subgroup_size {
             let local_data = kernel.add_global_array(
                 KernelGlobalSpace::Workgroup,

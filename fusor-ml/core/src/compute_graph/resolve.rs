@@ -73,7 +73,7 @@ impl<'a> Resolver<'a> {
     }
 
     pub(crate) fn run(&mut self, graph: &mut ComputeGraphInner) -> ResolverResult {
-        let limits = graph.device.limits();
+        let max_subgroup_size = graph.device.max_subgroup_size();
 
         // Pass 1: Build execution graph
         self.build_execution_graph(graph, self.target);
@@ -114,13 +114,13 @@ impl<'a> Resolver<'a> {
             let constraint = operation.workgroup_shape_constraints(&graph.device);
             let mut new_merged = current_constraints.clone();
             new_merged.merge(&constraint);
-            let old_best = current_constraints.solve(&limits).unwrap_or_else(|| {
+            let old_best = current_constraints.solve(max_subgroup_size).unwrap_or_else(|| {
                 panic!(
                     "Failed to find a valid workgroup shape for constraints {current_constraints:?}"
                 )
             });
             let mut extend = self.should_extend_kernel(new_inputs.clone(), &inputs);
-            extend &= new_merged.solve(&limits).is_some();
+            extend &= new_merged.solve(max_subgroup_size).is_some();
             if extend {
                 current_constraints = new_merged;
             } else {
@@ -170,7 +170,7 @@ impl<'a> Resolver<'a> {
         }
 
         if !pending_operations.is_empty() {
-            let old_best = current_constraints.solve(&limits).unwrap_or_else(|| {
+            let old_best = current_constraints.solve(max_subgroup_size).unwrap_or_else(|| {
                 panic!(
                     "Failed to find a valid workgroup shape for constraints {current_constraints:?}"
                 )

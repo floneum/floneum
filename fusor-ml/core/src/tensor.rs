@@ -8,7 +8,7 @@ use std::{
 
 use bytemuck::{AnyBitPattern, NoUninit};
 use tabbycat::Graph;
-use wgpu::{COPY_BUFFER_ALIGNMENT, util::DownloadBuffer};
+use wgpu::COPY_BUFFER_ALIGNMENT;
 
 use crate::{
     Device, Dim, ElementWiseOperation, MatMulOperation, MatMulParams, PairWiseFunction,
@@ -797,18 +797,40 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         tensor: &TensorData,
     ) -> Result<TensorSlice<R, D>, wgpu::BufferAsyncError> {
         let buffer = tensor.buffer();
-        let (sender, receiver) = futures_channel::oneshot::channel();
-        DownloadBuffer::read_buffer(
-            tensor.device.wgpu_device(),
-            tensor.device.wgpu_queue(),
-            &buffer.slice(..),
-            move |result| {
-                _ = sender.send(result);
-            },
-        );
-        let downloaded = receiver.await.map_err(|_| wgpu::BufferAsyncError)??;
+        let device = tensor.device.wgpu_device();
+        let queue = tensor.device.wgpu_queue();
+        let size = buffer.size();
 
-        Ok(TensorSlice::new(downloaded, tensor.layout().clone()))
+        // Create a staging buffer for reading
+        let download = device.create_buffer(&wgpu::BufferDescriptor {
+            size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+            label: None,
+        });
+
+        // Copy data to staging buffer
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.copy_buffer_to_buffer(buffer, 0, &download, 0, size);
+        queue.submit(Some(encoder.finish()));
+
+        // Map the staging buffer using map_async which correctly uses WasmNotSend
+        let (sender, receiver) = futures_channel::oneshot::channel();
+        download
+            .slice(..)
+            .map_async(wgpu::MapMode::Read, move |result| {
+                _ = sender.send(result);
+            });
+
+        receiver.await.map_err(|_| wgpu::BufferAsyncError)??;
+
+        // Get the mapped view
+        let view = download.slice(..).get_mapped_range();
+        Ok(TensorSlice::new(
+            MappedBuffer { view },
+            tensor.layout().clone(),
+        ))
     }
 
     #[track_caller]
@@ -1031,8 +1053,22 @@ async fn test_tensor_slice() {
     assert_eq!(as_slice.get([2, 1]), None);
 }
 
+/// A buffer that has been mapped for reading. Wraps a wgpu BufferView and provides
+/// access to its mapped contents.
+pub struct MappedBuffer {
+    view: wgpu::BufferView,
+}
+
+impl std::ops::Deref for MappedBuffer {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.view.as_ref()
+    }
+}
+
 pub struct TensorSlice<const R: usize, D> {
-    buffer: DownloadBuffer,
+    buffer: MappedBuffer,
     layout: Layout,
     datatype: PhantomData<D>,
 }
@@ -1224,7 +1260,7 @@ async fn test_tensor_compare() {
 }
 
 impl<D: DataType, const R: usize> TensorSlice<R, D> {
-    fn new(buffer: DownloadBuffer, layout: Layout) -> Self {
+    fn new(buffer: MappedBuffer, layout: Layout) -> Self {
         Self {
             buffer,
             layout,

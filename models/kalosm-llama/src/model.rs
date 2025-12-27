@@ -8,13 +8,13 @@ use fusor_core::CastTensor;
 use fusor_core::Device;
 use fusor_core::FloatDataType;
 use fusor_core::ShardedVarBuilder;
+use fusor_core::{WasmNotSend, WasmNotSync};
 use fusor_gguf::GgufMetadata;
 use fusor_gguf::GgufValue;
 use kalosm_language_model::ImageFetchError;
 use kalosm_language_model::MediaHints;
 use kalosm_model_types::ModelLoadingProgress;
 use llm_samplers::types::Logits;
-use serde::de::Error;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -85,7 +85,7 @@ pub(crate) struct LlamaModel<F: FloatDataType = half::f16> {
 
 impl<F: FloatDataType> LlamaModel<F>
 where
-    F: CastTensor<f32> + Send + Sync + 'static,
+    F: CastTensor<f32> + WasmNotSend + WasmNotSync + 'static,
     f32: CastTensor<F>,
 {
     pub(crate) fn forward(
@@ -128,83 +128,80 @@ where
     /// Create a new sync Llama model from a builder.
     pub(crate) async fn from_builder(
         builder: crate::LlamaBuilder<F>,
-        mut handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+        mut handler: impl FnMut(ModelLoadingProgress) + WasmNotSend + WasmNotSync + 'static,
     ) -> Result<Self, LlamaSourceError> {
         let device = builder.get_device().await?;
 
-        // Download the model and tokenizer. These are relatively cheep operations that can be run in the async runtime
-        let tokenizer_path = match &builder.source.tokenizer {
+        // Download the model and tokenizer. These are relatively cheap operations that can be run in the async runtime
+        let tokenizer_source = match &builder.source.tokenizer {
             Some(tokenizer) => {
                 let tokenizer_source = format!("Tokenizer ({tokenizer})");
                 let mut create_progress =
                     ModelLoadingProgress::downloading_progress(tokenizer_source);
-                let tokenizer_path = builder
+                let tokenizer_source = builder
                     .source
                     .cache
-                    .get(tokenizer, |progress| handler(create_progress(progress)))
+                    .get_bytes(tokenizer, |progress| handler(create_progress(progress)))
                     .await?;
-                Some(tokenizer_path)
+                Some(tokenizer_source)
             }
             None => None,
         };
 
         // Download the config file if it exists
-        let config_path = match &builder.source.config {
+        let config_bytes = match &builder.source.config {
             Some(config) => {
                 let config_source = format!("Config ({config})");
                 let mut create_progress = ModelLoadingProgress::downloading_progress(config_source);
-                let config_path = builder
+                let config_bytes = builder
                     .source
                     .cache
-                    .get(config, |progress| handler(create_progress(progress)))
+                    .get_bytes(config, |progress| handler(create_progress(progress)))
                     .await?;
-                Some(config_path)
+                Some(config_bytes)
             }
             None => None,
         };
 
-        let vision_model_path = match &builder.source.vision_model {
+        let vision_model_bytes = match &builder.source.vision_model {
             Some(vision_model) => {
                 let vision_model_source = format!("Vision Model ({vision_model})");
                 let mut create_progress =
                     ModelLoadingProgress::downloading_progress(vision_model_source);
-                let vision_model_path = builder
+                let vision_model_bytes = builder
                     .source
                     .cache
-                    .get(vision_model, |progress| handler(create_progress(progress)))
+                    .get_bytes(vision_model, |progress| handler(create_progress(progress)))
                     .await?;
-                Some(vision_model_path)
+                Some(vision_model_bytes)
             }
             None => None,
         };
 
         let source = format!("Model ({})", builder.source.model[0]);
         let mut create_progress = ModelLoadingProgress::downloading_progress(source);
-        let filename = builder
+        let model_bytes = builder
             .source
             .model(|progress| handler(create_progress(progress)))
             .await?;
 
         // Then actually load the model and tokenizer. This is expensive, so we do it in a blocking task
-        let (model, tokenizer) = tokio::task::spawn_blocking({
+        let load_model = {
             let device = device.clone();
-            move || {
-                let tokenizer = match tokenizer_path {
-                    Some(tokenizer_path) => {
-                        let tokenizer = Tokenizer::from_file(tokenizer_path)
+            move || -> Result<(Model<F>, Tokenizer), LlamaSourceError> {
+                let tokenizer = match tokenizer_source {
+                    Some(tokenizer_source) => {
+                        let tokenizer = Tokenizer::from_bytes(tokenizer_source)
                             .map_err(LlamaSourceError::Tokenizer)?;
                         Some(tokenizer)
                     }
                     None => None,
                 };
 
-                let config = match config_path {
-                    Some(config_path) => {
-                        let config = std::fs::read_to_string(config_path).map_err(|err| {
-                            LlamaSourceError::Config(serde_json::Error::custom(err))
-                        })?;
-                        let config: LlamaConfigJson =
-                            serde_json::from_str(&config).map_err(LlamaSourceError::Config)?;
+                let config = match config_bytes {
+                    Some(config_bytes) => {
+                        let config: LlamaConfigJson = serde_json::from_slice(&config_bytes)
+                            .map_err(LlamaSourceError::Config)?;
                         config.rope_scaling
                     }
                     None => None,
@@ -213,28 +210,25 @@ where
                 let override_stop_token_string = builder.source.override_stop_token_string;
                 let override_chat_template = builder.source.override_chat_template;
 
-                if filename.is_empty() {
+                if model_bytes.is_empty() {
                     return Err(LlamaSourceError::InvalidGguf);
                 }
 
-                // Open all files and read metadata
+                // Read metadata from all model files
                 let mut files_with_metadata = Vec::new();
-                for path in &filename {
-                    let mut file = std::fs::File::open(path)
-                        .expect("The path returned by LlamaSource::model should be valid");
-                    let metadata = GgufMetadata::read(&mut file)?;
-                    files_with_metadata.push((metadata, file));
+                for bytes in &model_bytes {
+                    let mut cursor = std::io::Cursor::new(bytes);
+                    let metadata = GgufMetadata::read(&mut cursor)?;
+                    files_with_metadata.push((metadata, cursor));
                 }
 
                 let mut source = ShardedVarBuilder::new(files_with_metadata);
 
-                let (vision_ct, vision_file) = match vision_model_path {
-                    Some(path) => {
-                        let mut file = std::fs::File::open(&path).map_err(|err| {
-                            LlamaSourceError::Model(kalosm_common::CacheError::Io(err))
-                        })?;
-                        let metadata = GgufMetadata::read(&mut file)?;
-                        (Some(metadata), Some(path))
+                let (vision_ct, vision_bytes) = match vision_model_bytes {
+                    Some(bytes) => {
+                        let mut cursor = std::io::Cursor::new(&bytes);
+                        let metadata = GgufMetadata::read(&mut cursor)?;
+                        (Some(metadata), Some(bytes))
                     }
                     None => (None, None),
                 };
@@ -331,7 +325,7 @@ where
                 let model = Model::from_gguf(
                     &mut source,
                     vision_ct,
-                    vision_file,
+                    vision_bytes,
                     &device,
                     override_stop_token_string,
                     override_chat_template,
@@ -339,9 +333,9 @@ where
                 )?;
                 Ok((model, tokenizer))
             }
-        })
-        .await
-        .map_err(|_| LlamaSourceError::ModelLoadingPanic)??;
+        };
+
+        let (model, tokenizer) = load_model()?;
 
         Ok(Self {
             model,
@@ -353,8 +347,8 @@ where
     pub(crate) fn _infer(
         &mut self,
         settings: InferenceSettings<F>,
-        mut on_token: Box<dyn FnMut(String) -> Result<(), LlamaModelError> + Send + Sync>,
-        finished: &tokio::sync::oneshot::Sender<Result<(), LlamaModelError>>,
+        mut on_token: crate::BoxedTokenCallback,
+        finished: &futures::channel::oneshot::Sender<Result<(), LlamaModelError>>,
     ) -> Result<(), LlamaModelError> {
         let InferenceSettings {
             prompt,
@@ -403,7 +397,7 @@ where
         let mut tokens_generated = 0;
         let mut logit_probs = Vec::new();
 
-        'generate: while !finished.is_closed() && tokens_generated < max_tokens {
+        'generate: while !finished.is_canceled() && tokens_generated < max_tokens {
             let new_token = text_stream
                 .sample_token(&mut sampler, logits, stop_on.as_deref(), seed)
                 .map_err(LlamaModelError::TokenOutputStreamError)?;

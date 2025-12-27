@@ -23,13 +23,12 @@ half = { version = "2.3.1" }
 
 tracing = "0.1.37"
 rand.workspace = true
-tokio = { version = "1.32.0", features = ["rt"] }
 rayon = { version = "1.8.0" }
 llm-samplers.workspace = true
 kalosm-sample.workspace = true
 kalosm-language-model = { workspace = true, features = ["sample"] }
 kalosm-model-types.workspace = true
-kalosm-common = { workspace = true, features = ["tokio"] }
+kalosm-common = { workspace = true }
 thiserror.workspace = true
 safetensors = "0.4.5"
 minijinja = { version = "2.5.0", features = ["json", "loader"] }
@@ -44,6 +43,8 @@ image.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 tokenizers = { workspace = true, features = ["fancy-regex"] }
+getrandom = { version = "0.3", features = ["wasm_js"] }
+wasm-bindgen-futures = "0.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokenizers = { workspace = true, features = ["onig"] }
@@ -58,5 +59,5 @@ kalosm-streams.workspace = true
 reqwest = { version = "0.12" }
 
 [features]
-default = ["tokio"]
+default = []
 tokio = ["kalosm-common/tokio"]

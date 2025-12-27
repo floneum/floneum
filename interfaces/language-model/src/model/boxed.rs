@@ -1,4 +1,5 @@
 use crate::MessageContent;
+use kalosm_model_types::{WasmNotSend, WasmNotSendSync};
 
 use super::{
     CreateDefaultCompletionConstraintsForType, CreateTextCompletionSession, ModelConstraints,
@@ -46,8 +47,8 @@ impl TextCompletionModel for BoxedTextCompletionModel {
         session: &'a mut Self::Session,
         text: MessageContent,
         sampler: super::GenerationParameters,
-        on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a {
+        on_token: impl FnMut(String) -> Result<(), Self::Error> + WasmNotSendSync + 'static,
+    ) -> impl Future<Output = Result<(), Self::Error>> + WasmNotSend + 'a {
         self.model
             .add_messages_with_callback_boxed(session, text, sampler, Box::new(on_token))
     }
@@ -97,8 +98,8 @@ impl<T> TextCompletionModel for BoxedStructuredTextCompletionModel<T> {
         session: &'a mut Self::Session,
         text: MessageContent,
         sampler: super::GenerationParameters,
-        on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a {
+        on_token: impl FnMut(String) -> Result<(), Self::Error> + WasmNotSendSync + 'static,
+    ) -> impl Future<Output = Result<(), Self::Error>> + WasmNotSend + 'a {
         self.model
             .add_messages_with_callback_boxed(session, text, sampler, Box::new(on_token))
     }
@@ -113,8 +114,8 @@ impl<T> StructuredTextCompletionModel<BoxedCompletionConstraintsForType<T>>
         text: MessageContent,
         sampler: super::GenerationParameters,
         parser: BoxedCompletionConstraintsForType<T>,
-        on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl Future<Output = Result<T, Self::Error>> + Send + 'a {
+        on_token: impl FnMut(String) -> Result<(), Self::Error> + WasmNotSendSync + 'static,
+    ) -> impl Future<Output = Result<T, Self::Error>> + WasmNotSend + 'a {
         self.model.add_messages_with_callback_and_parser_boxed(
             session,
             text,

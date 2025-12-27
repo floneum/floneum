@@ -1,6 +1,7 @@
 use crate::GenerationParameters;
 use crate::ModelConstraints;
 use futures_util::Future;
+use kalosm_model_types::{WasmNotSend, WasmNotSendSync};
 use serde::{Deserialize, Serialize};
 use std::fmt::Arguments;
 use std::fmt::Display;
@@ -11,7 +12,9 @@ mod task;
 pub use task::*;
 mod chat_builder;
 pub use chat_builder::*;
+#[cfg(not(target_arch = "wasm32"))]
 mod boxed;
+#[cfg(not(target_arch = "wasm32"))]
 pub use boxed::*;
 mod content;
 pub use content::*;
@@ -96,8 +99,8 @@ pub trait ChatModel<Sampler = GenerationParameters>: CreateChatSession {
         session: &'a mut Self::ChatSession,
         messages: &[ChatMessage],
         sampler: Sampler,
-        on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a;
+        on_token: impl FnMut(String) -> Result<(), Self::Error> + WasmNotSendSync + 'static,
+    ) -> impl Future<Output = Result<(), Self::Error>> + WasmNotSend + 'a;
 }
 
 /// A trait for unstructured chat models that support structured generation. While this trait is implemented for
@@ -136,8 +139,8 @@ pub trait StructuredChatModel<Constraints: ModelConstraints, Sampler = Generatio
         messages: &[ChatMessage],
         sampler: Sampler,
         constraints: Constraints,
-        on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + Send + 'a;
+        on_token: impl FnMut(String) -> Result<(), Self::Error> + WasmNotSendSync + 'static,
+    ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + WasmNotSend + 'a;
 }
 
 /// A trait that defines the default constraints for a type with this chat model.

@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use fusor_gguf::GgufReadError;
 use kalosm_common::CacheError;
 use kalosm_model_types::{FileLoadingProgress, FileSource};
@@ -184,12 +182,12 @@ impl LlamaSource {
     pub(crate) async fn model(
         &self,
         mut progress: impl FnMut(FileLoadingProgress),
-    ) -> Result<Vec<PathBuf>, LlamaSourceError> {
-        let mut paths = Vec::new();
+    ) -> Result<Vec<Vec<u8>>, LlamaSourceError> {
+        let mut model_bytes = Vec::new();
         for file in &self.model {
-            paths.push(self.cache.get(file, &mut progress).await?);
+            model_bytes.push(self.cache.get_bytes(file, &mut progress).await?);
         }
-        Ok(paths)
+        Ok(model_bytes)
     }
 
     /// A preset for Mistral7b
