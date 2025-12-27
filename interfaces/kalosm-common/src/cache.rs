@@ -180,28 +180,8 @@ impl Cache {
                 let complete_download = path.join(file);
 
                 // Quick check without lock - if file exists and is up-to-date, return it
-                if complete_download.exists() {
-                    if let Ok(metadata) = tokio::fs::metadata(&complete_download).await {
-                        if let Ok(file_last_modified) = metadata.modified() {
-                            // If the server says the file hasn't been modified since we downloaded it, we can use the local file
-                            if let Some(last_updated) = response
-                                .as_ref()
-                                .ok()
-                                .and_then(|response| {
-                                    response.headers().get(reqwest::header::LAST_MODIFIED)
-                                })
-                                .and_then(|last_updated| last_updated.to_str().ok())
-                                .and_then(|s| httpdate::parse_http_date(s).ok())
-                            {
-                                if last_updated <= file_last_modified {
-                                    return Ok(complete_download);
-                                }
-                            } else {
-                                // Or if we are offline, we can use the local file
-                                return Ok(complete_download);
-                            }
-                        }
-                    }
+                if is_file_current(&complete_download, &response).await {
+                    return Ok(complete_download);
                 }
 
                 // Need to download - acquire lock to prevent race conditions
@@ -220,30 +200,10 @@ impl Cache {
                 .map_err(|e| CacheError::Io(std::io::Error::other(e)))??;
 
                 // Double-check if file was downloaded while we were waiting for lock
-                if complete_download.exists() {
-                    if let Ok(metadata) = tokio::fs::metadata(&complete_download).await {
-                        if let Ok(file_last_modified) = metadata.modified() {
-                            if let Some(last_updated) = response
-                                .as_ref()
-                                .ok()
-                                .and_then(|response| {
-                                    response.headers().get(reqwest::header::LAST_MODIFIED)
-                                })
-                                .and_then(|last_updated| last_updated.to_str().ok())
-                                .and_then(|s| httpdate::parse_http_date(s).ok())
-                            {
-                                if last_updated <= file_last_modified {
-                                    drop(lock_file);
-                                    let _ = tokio::fs::remove_file(&lock_path).await;
-                                    return Ok(complete_download);
-                                }
-                            } else {
-                                drop(lock_file);
-                                let _ = tokio::fs::remove_file(&lock_path).await;
-                                return Ok(complete_download);
-                            }
-                        }
-                    }
+                if is_file_current(&complete_download, &response).await {
+                    drop(lock_file);
+                    let _ = tokio::fs::remove_file(&lock_path).await;
+                    return Ok(complete_download);
                 }
 
                 let incomplete_download = path.join(format!("{file}.partial"));
@@ -305,6 +265,40 @@ impl Default for Cache {
             },
             huggingface_token: None,
         }
+    }
+}
+
+/// Check if the local file exists and is up-to-date compared to the server's Last-Modified header.
+/// Returns true if the file can be used as-is, false if it needs to be downloaded.
+#[cfg(feature = "tokio")]
+async fn is_file_current(
+    path: &std::path::Path,
+    response: &Result<reqwest::Response, reqwest::Error>,
+) -> bool {
+    if !path.exists() {
+        return false;
+    }
+
+    let Ok(metadata) = tokio::fs::metadata(path).await else {
+        return false;
+    };
+
+    let Ok(file_last_modified) = metadata.modified() else {
+        return false;
+    };
+
+    // If the server says the file hasn't been modified since we downloaded it, we can use the local file
+    if let Some(last_updated) = response
+        .as_ref()
+        .ok()
+        .and_then(|response| response.headers().get(reqwest::header::LAST_MODIFIED))
+        .and_then(|last_updated| last_updated.to_str().ok())
+        .and_then(|s| httpdate::parse_http_date(s).ok())
+    {
+        last_updated <= file_last_modified
+    } else {
+        // If we're offline or the server doesn't provide Last-Modified, use the local file
+        true
     }
 }
 
