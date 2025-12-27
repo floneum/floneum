@@ -50,7 +50,7 @@ concurrency:
 jobs:
   test:
     if: github.event.pull_request.draft == false
-    runs-on: windows-latest
+    runs-on: windows-2022
     name: (${{ matrix.target }}, ${{ matrix.cfg_release_channel }})
     env:
       CFG_RELEASE_CHANNEL: ${{ matrix.cfg_release_channel }}
@@ -71,7 +71,7 @@ jobs:
       - name: disable git eol translation
         run: git config --global core.autocrlf false
 
-        # Run build
+      # Run build
       - name: Install Rustup using win.rustup.rs
         run: |
           # Disable the download progress bar which can cause perf issues
@@ -84,6 +84,8 @@ jobs:
 
       - name: checkout
         uses: actions/checkout@v6
+
+      - uses: Swatinem/rust-cache@v2
 
       - name: test
         env:
