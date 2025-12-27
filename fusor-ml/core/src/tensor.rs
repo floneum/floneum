@@ -812,7 +812,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         // Copy data to staging buffer
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        encoder.copy_buffer_to_buffer(&buffer, 0, &download, 0, size);
+        encoder.copy_buffer_to_buffer(buffer, 0, &download, 0, size);
         queue.submit(Some(encoder.finish()));
 
         // Map the staging buffer using map_async which correctly uses WasmNotSend
