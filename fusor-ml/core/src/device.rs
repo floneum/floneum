@@ -203,7 +203,8 @@ impl Device {
     }
 
     pub fn f16_supported(&self) -> bool {
-        self.features().contains(wgpu::Features::SHADER_F16)
+        // self.features().contains(wgpu::Features::SHADER_F16)
+        false
     }
 
     pub fn wgpu_adapter(&self) -> &wgpu::Adapter {

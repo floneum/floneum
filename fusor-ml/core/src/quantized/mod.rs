@@ -1646,7 +1646,7 @@ where
         };
         let mut kernel = String::new();
         let use_f16 = device.f16_supported();
-        if !use_f16 {
+        if !use_f16 && T::WGSL_TYPE == DataTypeEnum::F16 {
             // Skip test if f16 is not supported since the test uses f16 block conversion
             return;
         }
@@ -1728,8 +1728,16 @@ where
             if !block.finite() {
                 continue;
             }
-            let block_wgsl = block.into_wgsl_bytes();
-            assert_eq!(block, B::from_wgsl_bytes(block_wgsl));
+            let block_wgsl: Box<[u8]> = if use_f16 {
+                block.into_wgsl_bytes().as_ref().into()
+            } else {
+                block.into_wgsl_bytes_f32().as_ref().into()
+            };
+            // The round-trip assertion only works with f16 format
+            if use_f16 {
+                let block_wgsl_f16 = block.into_wgsl_bytes();
+                assert_eq!(block, B::from_wgsl_bytes(block_wgsl_f16));
+            }
             let output = device.create_buffer_init(
                 bytemuck::cast_slice(&vec![T::zero(); B::BLOCK_SIZE]),
                 wgpu::BufferUsages::STORAGE
@@ -1854,7 +1862,7 @@ where
 
         let mut kernel = String::new();
         let use_f16 = device.f16_supported();
-        if !use_f16 {
+        if !use_f16 && T::WGSL_TYPE == DataTypeEnum::F16 {
             // Skip test if f16 is not supported since the test uses f16 block conversion
             return;
         }
@@ -1936,8 +1944,16 @@ where
             if !block.finite() {
                 continue;
             }
-            let block_wgsl = block.into_wgsl_bytes();
-            assert_eq!(block, B::from_wgsl_bytes(block_wgsl));
+            let block_wgsl: Box<[u8]> = if use_f16 {
+                block.into_wgsl_bytes().as_ref().into()
+            } else {
+                block.into_wgsl_bytes_f32().as_ref().into()
+            };
+            // The round-trip assertion only works with f16 format
+            if use_f16 {
+                let block_wgsl_f16 = block.into_wgsl_bytes();
+                assert_eq!(block, B::from_wgsl_bytes(block_wgsl_f16));
+            }
             let output = device.create_buffer_init(
                 bytemuck::cast_slice(&vec![T::zero(); B::BLOCK_SIZE]),
                 wgpu::BufferUsages::STORAGE

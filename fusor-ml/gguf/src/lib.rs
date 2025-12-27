@@ -715,11 +715,13 @@ pub trait GgufBlock: Pod + Sized {
     const BLOCK_SIZE: usize;
 
     type Bytes: AsRef<[u8]> + Copy;
+    type BytesF32: AsRef<[u8]> + Copy;
     type AsBytes: AsRef<[u8]> + Copy;
     type Dequantized: AsRef<[f32]> + Copy;
 
     fn finite(&self) -> bool;
     fn into_wgsl_bytes(self) -> Self::Bytes;
+    fn into_wgsl_bytes_f32(self) -> Self::BytesF32;
     fn from_wgsl_bytes(bytes: Self::Bytes) -> Self;
 
     fn dequantize(&self) -> Self::Dequantized;
@@ -751,25 +753,26 @@ pub struct BlockQ4_0 {
 impl BlockQ4_0 {
     pub const WEIGHTS_SIZE: usize = Q4_0_BLOCK_SIZE / 2;
     pub const BLOCK_SIZE: usize = Q4_0_BLOCK_SIZE;
-
-    pub fn into_wgsl_bytes_f32(self) -> [u8; std::mem::size_of::<BlockQ4_0WgslF32>()] {
-        let mut bytes = [0; std::mem::size_of::<BlockQ4_0WgslF32>()];
-        let scale_f32 = self.scale.to_f32();
-        bytes[0..4].copy_from_slice(bytemuck::bytes_of(&scale_f32));
-        bytes[4..].copy_from_slice(bytemuck::cast_slice(&self.data));
-        bytes
-    }
 }
 
 impl GgufBlock for BlockQ4_0 {
     const BLOCK_SIZE: usize = Q4_0_BLOCK_SIZE;
 
     type Bytes = [u8; std::mem::size_of::<BlockQ4_0Wgsl>()];
+    type BytesF32 = [u8; std::mem::size_of::<BlockQ4_0WgslF32>()];
     type AsBytes = [u8; std::mem::size_of::<Self>()];
     type Dequantized = [f32; Q4_0_BLOCK_SIZE];
 
     fn finite(&self) -> bool {
         self.scale.is_finite()
+    }
+
+    fn into_wgsl_bytes_f32(self) -> Self::BytesF32 {
+        let mut bytes = [0; std::mem::size_of::<BlockQ4_0WgslF32>()];
+        let scale_f32 = self.scale.to_f32();
+        bytes[0..4].copy_from_slice(bytemuck::bytes_of(&scale_f32));
+        bytes[4..].copy_from_slice(bytemuck::cast_slice(&self.data));
+        bytes
     }
 
     fn into_wgsl_bytes(self) -> Self::Bytes {
@@ -848,8 +851,21 @@ impl BlockQ5_0 {
     pub const BLOCK_SIZE: usize = Q5_0_BLOCK_SIZE;
     pub const WEIGHTS_HIGH_BITS_SIZE: usize = Q5_0_BLOCK_SIZE / 8;
     pub const WEIGHTS_LOW_BITS_SIZE: usize = Q5_0_BLOCK_SIZE / 2;
+}
 
-    pub fn into_wgsl_bytes_f32(self) -> [u8; std::mem::size_of::<BlockQ5_0WgslF32>()] {
+impl GgufBlock for BlockQ5_0 {
+    const BLOCK_SIZE: usize = Q5_0_BLOCK_SIZE;
+
+    type Bytes = [u8; std::mem::size_of::<BlockQ5_0Wgsl>()];
+    type BytesF32 = [u8; std::mem::size_of::<BlockQ5_0WgslF32>()];
+    type AsBytes = [u8; std::mem::size_of::<Self>()];
+    type Dequantized = [f32; Q5_0_BLOCK_SIZE];
+
+    fn finite(&self) -> bool {
+        self.scale.is_finite()
+    }
+
+    fn into_wgsl_bytes_f32(self) -> Self::BytesF32 {
         let mut bytes = [0; std::mem::size_of::<BlockQ5_0WgslF32>()];
         let scale_offset = offset_of!(BlockQ5_0WgslF32, scale);
         let scale_f32 = self.scale.to_f32();
@@ -864,18 +880,6 @@ impl BlockQ5_0 {
         bytes[data_low_bits_offset..data_low_bits_offset + data_low_bits_bytes.len()]
             .copy_from_slice(data_low_bits_bytes);
         bytes
-    }
-}
-
-impl GgufBlock for BlockQ5_0 {
-    const BLOCK_SIZE: usize = Q5_0_BLOCK_SIZE;
-
-    type Bytes = [u8; std::mem::size_of::<BlockQ5_0Wgsl>()];
-    type AsBytes = [u8; std::mem::size_of::<Self>()];
-    type Dequantized = [f32; Q5_0_BLOCK_SIZE];
-
-    fn finite(&self) -> bool {
-        self.scale.is_finite()
     }
 
     fn into_wgsl_bytes(self) -> Self::Bytes {
@@ -970,8 +974,21 @@ pub struct BlockQ8_0 {
 impl BlockQ8_0 {
     pub const BLOCK_SIZE: usize = Q8_0_BLOCK_SIZE;
     pub const WEIGHTS_SIZE: usize = Q8_0_BLOCK_SIZE;
+}
 
-    pub fn into_wgsl_bytes_f32(self) -> [u8; std::mem::size_of::<BlockQ8_0WgslF32>()] {
+impl GgufBlock for BlockQ8_0 {
+    const BLOCK_SIZE: usize = Q8_0_BLOCK_SIZE;
+
+    type Bytes = [u8; std::mem::size_of::<BlockQ8_0Wgsl>()];
+    type BytesF32 = [u8; std::mem::size_of::<BlockQ8_0WgslF32>()];
+    type AsBytes = [u8; std::mem::size_of::<Self>()];
+    type Dequantized = [f32; Q8_0_BLOCK_SIZE];
+
+    fn finite(&self) -> bool {
+        self.scale.is_finite()
+    }
+
+    fn into_wgsl_bytes_f32(self) -> Self::BytesF32 {
         let mut bytes = [0; std::mem::size_of::<BlockQ8_0WgslF32>()];
         let scale_offset = offset_of!(BlockQ8_0WgslF32, scale);
         let scale_f32 = self.scale.to_f32();
@@ -981,18 +998,6 @@ impl BlockQ8_0 {
         let data_bytes = bytemuck::cast_slice(&self.data);
         bytes[data_offset..data_offset + data_bytes.len()].copy_from_slice(data_bytes);
         bytes
-    }
-}
-
-impl GgufBlock for BlockQ8_0 {
-    const BLOCK_SIZE: usize = Q8_0_BLOCK_SIZE;
-
-    type Bytes = [u8; std::mem::size_of::<BlockQ8_0Wgsl>()];
-    type AsBytes = [u8; std::mem::size_of::<Self>()];
-    type Dequantized = [f32; Q8_0_BLOCK_SIZE];
-
-    fn finite(&self) -> bool {
-        self.scale.is_finite()
     }
 
     fn into_wgsl_bytes(self) -> Self::Bytes {
@@ -1059,7 +1064,28 @@ impl BlockQ4K {
     pub const SCALES_SIZE: usize = 12;
     pub const WEIGHTS_SIZE: usize = K_BLOCK_SIZE / 2;
 
-    pub fn into_wgsl_bytes_f32(self) -> [u8; std::mem::size_of::<BlockQ4KWgslF32>()] {
+    pub fn scale(&self) -> f32 {
+        self.scale.to_f32()
+    }
+
+    pub fn min(&self) -> f32 {
+        self.min.to_f32()
+    }
+}
+
+impl GgufBlock for BlockQ4K {
+    const BLOCK_SIZE: usize = K_BLOCK_SIZE;
+
+    type Bytes = [u8; std::mem::size_of::<BlockQ4KWgsl>()];
+    type BytesF32 = [u8; std::mem::size_of::<BlockQ4KWgslF32>()];
+    type AsBytes = [u8; std::mem::size_of::<Self>()];
+    type Dequantized = [f32; K_BLOCK_SIZE];
+
+    fn finite(&self) -> bool {
+        self.scale.is_finite() && self.min.is_finite()
+    }
+
+    fn into_wgsl_bytes_f32(self) -> Self::BytesF32 {
         let mut bytes = [0; std::mem::size_of::<BlockQ4KWgslF32>()];
         let scale_offset = offset_of!(BlockQ4KWgslF32, scale);
         let scale_f32 = self.scale.to_f32();
@@ -1076,26 +1102,6 @@ impl BlockQ4K {
         let data_bytes = bytemuck::cast_slice(&self.data);
         bytes[data_offset..data_offset + data_bytes.len()].copy_from_slice(data_bytes);
         bytes
-    }
-
-    pub fn scale(&self) -> f32 {
-        self.scale.to_f32()
-    }
-
-    pub fn min(&self) -> f32 {
-        self.min.to_f32()
-    }
-}
-
-impl GgufBlock for BlockQ4K {
-    const BLOCK_SIZE: usize = K_BLOCK_SIZE;
-
-    type Bytes = [u8; std::mem::size_of::<BlockQ4KWgsl>()];
-    type AsBytes = [u8; std::mem::size_of::<Self>()];
-    type Dequantized = [f32; K_BLOCK_SIZE];
-
-    fn finite(&self) -> bool {
-        self.scale.is_finite() && self.min.is_finite()
     }
 
     fn into_wgsl_bytes(self) -> Self::Bytes {
@@ -1210,8 +1216,21 @@ impl BlockQ6K {
     pub const SCALES_SIZE: usize = K_BLOCK_SIZE / 16;
     pub const WEIGHTS_LOW_BITS_SIZE: usize = K_BLOCK_SIZE / 2;
     pub const WEIGHTS_HIGH_BITS_SIZE: usize = K_BLOCK_SIZE / 4;
+}
 
-    pub fn into_wgsl_bytes_f32(self) -> [u8; std::mem::size_of::<BlockQ6KWgslF32>()] {
+impl GgufBlock for BlockQ6K {
+    const BLOCK_SIZE: usize = K_BLOCK_SIZE;
+
+    type Bytes = [u8; std::mem::size_of::<BlockQ6KWgsl>()];
+    type BytesF32 = [u8; std::mem::size_of::<BlockQ6KWgslF32>()];
+    type AsBytes = [u8; std::mem::size_of::<Self>()];
+    type Dequantized = [f32; K_BLOCK_SIZE];
+
+    fn finite(&self) -> bool {
+        self.scale.is_finite()
+    }
+
+    fn into_wgsl_bytes_f32(self) -> Self::BytesF32 {
         let mut bytes = [0; std::mem::size_of::<BlockQ6KWgslF32>()];
         let data_low_bits_offset = offset_of!(BlockQ6KWgslF32, data_low_bits);
         let data_low_bits_bytes = bytemuck::cast_slice(&self.data_low_bits);
@@ -1229,18 +1248,6 @@ impl BlockQ6K {
         let scale_bytes = bytemuck::bytes_of(&scale_f32);
         bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(scale_bytes);
         bytes
-    }
-}
-
-impl GgufBlock for BlockQ6K {
-    const BLOCK_SIZE: usize = K_BLOCK_SIZE;
-
-    type Bytes = [u8; std::mem::size_of::<BlockQ6KWgsl>()];
-    type AsBytes = [u8; std::mem::size_of::<Self>()];
-    type Dequantized = [f32; K_BLOCK_SIZE];
-
-    fn finite(&self) -> bool {
-        self.scale.is_finite()
     }
 
     fn into_wgsl_bytes(self) -> Self::Bytes {

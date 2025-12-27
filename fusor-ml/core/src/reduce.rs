@@ -706,6 +706,10 @@ async fn test_reduce_const_sum_then_cast_fused() {
 
     let device = Device::test_instance();
 
+    if !device.f16_supported() {
+        return;
+    }
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
 
@@ -722,6 +726,10 @@ async fn test_cast_then_reduce_const_sum_fused() {
     use crate::Device;
 
     let device = Device::test_instance();
+
+    if !device.f16_supported() {
+        return;
+    }
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data).cast::<half::f16>();
