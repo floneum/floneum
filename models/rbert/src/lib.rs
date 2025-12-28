@@ -283,7 +283,7 @@ impl Bert {
     ) -> Result<Vec<Tensor<2, f32>>, BertError> {
         let embedding_dim = self.model.embedding_dim();
         // The batch size limit (input length * memory per token)
-        let limit = embedding_dim * 128usize.pow(2) * 2;
+        let limit = embedding_dim * 512usize.pow(2) * 2;
 
         // The sentences we are embedding may have a very different length. First we sort them so that similar length sentences are grouped together in the same batch to reduce the overhead of padding.
         let encodings = {
