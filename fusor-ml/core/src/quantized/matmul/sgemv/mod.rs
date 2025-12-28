@@ -1,5 +1,7 @@
 use fusor_gguf::GgmlType;
 
+use std::fmt::Write;
+
 use crate::{
     Device,
     mir::{
@@ -21,6 +23,7 @@ use crate::{
         q_8_0::Q_8_0_SGEMV_CHUNK_SIZE, q_n::Q_N_SGEMV_CHUNK_SIZE, q4k::Q4K_SGEMV_CHUNK_SIZE,
         q6k::Q6K_SGEMV_CHUNK_SIZE,
     },
+    visit_tiled::distribute_workgroups,
 };
 
 mod general;
@@ -31,6 +34,35 @@ pub mod q_n;
 
 pub(crate) const SGEMV_CHUNK_SIZE: u32 = 2; // This is the size of the chunk each thread will process at a time
 pub(crate) const SGEMV_VECTOR_SIZE: u32 = 4; // This is the size of the chunk we will dot at a time
+
+/// Decompose a linearized workgroup index into (n_workgroup_idx, m_idx, batch_idx)
+/// The linearization order is: n_workgroup_idx + m_idx * n_workgroups + batch_idx * n_workgroups * m_size
+/// This is used when workgroups are distributed across multiple dispatch dimensions to avoid
+/// exceeding the max 65535 workgroups per dimension limit in WebGPU.
+pub(crate) fn decompose_workgroup_index(
+    kernel: &mut GenericKernel,
+    workgroup_shape: &WorkgroupShape,
+    m_size: &str,
+    n_workgroups: &str,
+) {
+    let linearized = workgroup_shape.linearized_workgroup_index(kernel);
+
+    // Decompose linearized index: batch_idx * (n_workgroups * m_size) + m_idx * n_workgroups + n_workgroup_idx
+    writeln!(kernel, "let n_workgroups = {n_workgroups};").unwrap();
+    writeln!(kernel, "let linearized_wg = {linearized};").unwrap();
+    writeln!(
+        kernel,
+        "let batch_idx = linearized_wg / (n_workgroups * {m_size});"
+    )
+    .unwrap();
+    writeln!(
+        kernel,
+        "let remaining = linearized_wg % (n_workgroups * {m_size});"
+    )
+    .unwrap();
+    writeln!(kernel, "let m_idx = remaining / n_workgroups;").unwrap();
+    writeln!(kernel, "let n_workgroup_idx = remaining % n_workgroups;").unwrap();
+}
 
 /// Check if the device can support specialized SGEMV kernels that require 2 subgroups per workgroup.
 /// This requires the workgroup to be large enough to fit 2 subgroups, which means:
@@ -120,25 +152,32 @@ pub(crate) fn sgemv(
     }
 }
 
-pub(crate) fn dispatch_size(matrix: &QMatrix, n: u32, m: u32, batch_size: u32) -> [u32; 3] {
-    // Use Y dimension to handle M (each workgroup handles one M value)
-    // and X dimension for N (output dimension)
+/// Calculate the number of N-dimension workgroups based on matrix type
+pub(crate) fn n_workgroups(matrix: &QMatrix, n: u32) -> u32 {
     // Only use specialized dispatch sizes if we can use specialized SGEMV
     if can_use_specialized_sgemv(&matrix.device) {
         if matrix.datatype == GgmlType::Q6K {
-            return [n.div_ceil(Q6K_SGEMV_CHUNK_SIZE * 2), m, batch_size];
+            n.div_ceil(Q6K_SGEMV_CHUNK_SIZE * 2)
+        } else if matrix.datatype == GgmlType::Q4K {
+            n.div_ceil(Q4K_SGEMV_CHUNK_SIZE * 2)
+        } else if matches!(matrix.datatype, GgmlType::Q4_0 | GgmlType::Q5_0) {
+            n.div_ceil(Q_N_SGEMV_CHUNK_SIZE * 2)
+        } else if matches!(matrix.datatype, GgmlType::Q8_0) {
+            n.div_ceil(Q_8_0_SGEMV_CHUNK_SIZE * 2)
+        } else {
+            n.div_ceil(SGEMV_CHUNK_SIZE)
         }
-        if matrix.datatype == GgmlType::Q4K {
-            return [n.div_ceil(Q4K_SGEMV_CHUNK_SIZE * 2), m, batch_size];
-        }
-        if matches!(matrix.datatype, GgmlType::Q4_0 | GgmlType::Q5_0) {
-            return [n.div_ceil(Q_N_SGEMV_CHUNK_SIZE * 2), m, batch_size];
-        }
-        if matches!(matrix.datatype, GgmlType::Q8_0) {
-            return [n.div_ceil(Q_8_0_SGEMV_CHUNK_SIZE * 2), m, batch_size];
-        }
+    } else {
+        n.div_ceil(SGEMV_CHUNK_SIZE)
     }
-    [n.div_ceil(SGEMV_CHUNK_SIZE), m, batch_size]
+}
+
+pub(crate) fn dispatch_size(matrix: &QMatrix, n: u32, m: u32, batch_size: u32) -> [u32; 3] {
+    // Calculate total workgroups: n_workgroups * m * batch
+    // Use distribute_workgroups to spread across all 3 dimensions if needed
+    let n_wg = n_workgroups(matrix, n);
+    let total_workgroups = n_wg * m * batch_size;
+    distribute_workgroups(total_workgroups)
 }
 
 pub(crate) fn workgroup_shape_constraints(

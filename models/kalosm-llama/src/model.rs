@@ -16,6 +16,7 @@ use kalosm_language_model::MediaHints;
 use kalosm_model_types::ModelLoadingProgress;
 use llm_samplers::types::Logits;
 use std::collections::HashMap;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use tokenizers::Tokenizer;
@@ -94,11 +95,18 @@ where
         tokens: &[u32],
         images: &[(image::DynamicImage, MediaHints)],
         cache: Option<&mut LlamaCache<F>>,
-        logits_vec: &mut Vec<f32>,
         #[allow(unused)] tokenizer: &Tokenizer,
-    ) -> Result<(), LlamaModelError> {
+    ) -> impl kalosm_model_types::FutureWasmNotSend<Output = Result<Vec<f32>, LlamaModelError>>
+    {
         if tokens.is_empty() {
-            return Err(LlamaModelError::EmptyInput);
+            return Box::pin(async { Err(LlamaModelError::EmptyInput) })
+                as Pin<
+                    Box<
+                        dyn kalosm_model_types::FutureWasmNotSend<
+                            Output = Result<Vec<f32>, LlamaModelError>,
+                        >,
+                    >,
+                >;
         }
 
         #[cfg(debug_assertions)]
@@ -109,20 +117,24 @@ where
             );
         }
 
-        let logits = model.forward(tokens, images, device, cache)?.squeeze(0);
-        // Cast logits back to f32 for sampling
-        let logits: fusor_core::Tensor<1, f32> = logits.cast();
-        futures::executor::block_on(async move {
+        let logits = model.forward(tokens, images, device, cache);
+        Box::pin(async move {
+            let logits = logits?.squeeze(0);
+            // Cast logits back to f32 for sampling
+            let logits: fusor_core::Tensor<1, f32> = logits.cast();
             let len = logits.shape()[0];
-            let logits = logits.as_slice().await.unwrap();
-            logits_vec.clear();
+            let logits = logits
+                .as_slice()
+                .await
+                .map_err(fusor_core::Error::BufferAsyncError)?;
+            let mut logits_vec = Vec::with_capacity(len);
             for i in 0..len {
                 let logit = logits[[i]];
                 logits_vec.push(logit);
             }
-        });
 
-        Ok(())
+            Ok(logits_vec)
+        })
     }
 
     /// Create a new sync Llama model from a builder.
@@ -344,7 +356,7 @@ where
         })
     }
 
-    pub(crate) fn _infer(
+    pub(crate) async fn _infer(
         &mut self,
         settings: InferenceSettings<F>,
         mut on_token: crate::BoxedTokenCallback,
@@ -360,11 +372,6 @@ where
             seed,
         } = settings;
 
-        let mut session = session
-            .cache
-            .write()
-            .map_err(|err| LlamaModelError::Session(err.to_string()))?;
-
         let tokens = self
             .tokenizer
             .encode_fast(prompt, false)
@@ -377,16 +384,21 @@ where
                 .map_err(LlamaModelError::TokenOutputStreamError)?;
         }
 
-        let mut logit_probs = Vec::new();
-        Self::forward(
-            &self.model,
-            &self.device,
-            tokens,
-            &images,
-            Some(&mut session),
-            &mut logit_probs,
-            &self.tokenizer,
-        )?;
+        let logit_probs = {
+            let mut session_lock = session
+                .cache
+                .write()
+                .map_err(|err| LlamaModelError::Session(err.to_string()))?;
+            Self::forward(
+                &self.model,
+                &self.device,
+                tokens,
+                &images,
+                Some(&mut session_lock),
+                &self.tokenizer,
+            )
+        }
+        .await?;
         let mut logits = Logits::try_from_iter_top_k(logit_probs, 512)
             .expect("model output should be valid logits");
         // This stores a buffer of text that has been generated to check against the stop_on string. It should never be longer than the stop_on string.
@@ -395,21 +407,26 @@ where
         let stop_on_lowercase = stop_on_lowercase.as_deref();
         let stop_token = self.model.config.stop_token;
         let mut tokens_generated = 0;
-        let mut logit_probs = Vec::new();
 
         'generate: while !finished.is_canceled() && tokens_generated < max_tokens {
             let new_token = text_stream
                 .sample_token(&mut sampler, logits, stop_on.as_deref(), seed)
                 .map_err(LlamaModelError::TokenOutputStreamError)?;
-            Self::forward(
-                &self.model,
-                &self.device,
-                &[new_token],
-                &[],
-                Some(&mut session),
-                &mut logit_probs,
-                &self.tokenizer,
-            )?;
+            let logit_probs = {
+                let mut session_lock = session
+                    .cache
+                    .write()
+                    .map_err(|err| LlamaModelError::Session(err.to_string()))?;
+                Self::forward(
+                    &self.model,
+                    &self.device,
+                    &[new_token],
+                    &[],
+                    Some(&mut session_lock),
+                    &self.tokenizer,
+                )
+            }
+            .await?;
             if new_token == stop_token {
                 tracing::trace!("Stopping on stop token");
                 break;
@@ -467,7 +484,7 @@ where
                     on_token(new_text)?;
                 }
             }
-            logits = Logits::try_from_iter_top_k(logit_probs.iter().copied(), 512)
+            logits = Logits::try_from_iter_top_k(logit_probs, 512)
                 .expect("model output should be valid logits");
         }
 

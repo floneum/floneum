@@ -8,7 +8,7 @@ use crate::{
     },
     quantized::matmul::{
         QMatMulOperation,
-        sgemv::{SGEMV_CHUNK_SIZE, SGEMV_VECTOR_SIZE},
+        sgemv::{SGEMV_CHUNK_SIZE, SGEMV_VECTOR_SIZE, decompose_workgroup_index},
     },
     util::{
         maybe_vec_storage_add, maybe_vec_storage_index, maybe_vec_storage_subgroup_add,
@@ -25,36 +25,44 @@ pub(crate) fn general_sgemv(
     input_a: &TensorInput,
     input_b: &QMatrixInput,
     output: &TensorInput,
-    _n_size: &str,
-    _m_size: &str,
+    n_size: &str,
+    m_size: &str,
     k_size: &str,
     graph: &crate::compute_graph::ComputeGraphInner,
 ) {
     let blocksize = workgroup_size.x();
     let dtype = op.input_datatype;
-    let global_id = kernel.global_id();
-    let workgroup_index = kernel.workgroup_index();
     let workgroup_local_index = kernel.workgroup_local_index();
     let elements_per_block = op.elements_per_block();
     let device = &graph.device;
 
-    // Handle batch dimensions
-    writeln!(kernel, "var batch_idx = {global_id}.z;").unwrap();
+    // Calculate n_workgroups for decomposing the linearized workgroup index
+    let n_workgroups = format!("(({n_size} + {SGEMV_CHUNK_SIZE} - 1) / {SGEMV_CHUNK_SIZE})");
+
+    // Decompose linearized workgroup index into (n_workgroup_idx, m_idx, batch_idx)
+    // This handles cases where workgroups are distributed across multiple dispatch dimensions
+    decompose_workgroup_index(kernel, workgroup_size, m_size, &n_workgroups);
 
     // Decompose the batch index for higher-dimensional tensors
+    writeln!(kernel, "var batch_idx_remaining = batch_idx;").unwrap();
     for dim in (0..input_a.rank()).rev().skip(2) {
         let shape = input_a.shape_binding(dim);
-        writeln!(kernel, "let batch_idx_{dim} = batch_idx % {shape};").unwrap();
-        writeln!(kernel, "batch_idx = batch_idx / {shape};").unwrap();
+        writeln!(
+            kernel,
+            "let batch_idx_{dim} = batch_idx_remaining % {shape};"
+        )
+        .unwrap();
+        writeln!(
+            kernel,
+            "batch_idx_remaining = batch_idx_remaining / {shape};"
+        )
+        .unwrap();
     }
 
-    // Handle M dimension - each workgroup handles one M value
-    writeln!(kernel, "let m_idx = {global_id}.y;").unwrap();
-
-    // In index of the single element in the vector we are multiplying against
+    // Workgroup offset in the N dimension
     writeln!(
         kernel,
-        "let workgroup_offset = {workgroup_index}.x * {SGEMV_CHUNK_SIZE};"
+        "let workgroup_offset = n_workgroup_idx * {SGEMV_CHUNK_SIZE};"
     )
     .unwrap();
 
@@ -235,7 +243,9 @@ pub(crate) fn general_sgemv(
             writeln!(kernel, "{local_data}[{workgroup_local_index}] = acc;").unwrap();
             writeln!(kernel, "workgroupBarrier();").unwrap();
             offset /= 2;
-            writeln!(kernel, "{{").unwrap();
+            // Only threads in the first half do the reduction to avoid OOB reads
+            // (workgroup memory OOB is undefined behavior in WebGPU)
+            writeln!(kernel, "if {workgroup_local_index} < {offset}u {{").unwrap();
             writeln!(
                 kernel,
                 "let neighbor = {local_data}[{workgroup_local_index} + {offset}u];"

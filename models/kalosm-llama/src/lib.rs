@@ -41,8 +41,10 @@ pub use crate::chat::LlamaChatSession;
 use crate::model::LlamaModel;
 pub use crate::session::LlamaSession;
 use fusor_core::{Device, WasmNotSend, WasmNotSync};
+use futures::FutureExt;
 use kalosm_language_model::{MediaHints, TextCompletionBuilder, TextCompletionModelExt};
 pub use kalosm_model_types::FileSource;
+use kalosm_model_types::FutureWasmNotSend;
 use kalosm_model_types::ModelLoadingProgress;
 use kalosm_sample::{LiteralParser, StopOn};
 use model::LlamaModelError;
@@ -51,6 +53,8 @@ pub use source::*;
 use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::task::{Context, Poll};
 use tokenizers::Tokenizer;
 
 /// Re-export half::f16 for users who want to use f16 activation types
@@ -74,10 +78,16 @@ pub(crate) type BoxedTokenCallback =
 #[cfg(target_arch = "wasm32")]
 pub(crate) type BoxedTokenCallback = Box<dyn FnMut(String) -> Result<(), LlamaModelError>>;
 
+use std::future::Future;
+use std::pin::Pin;
+
 #[cfg(not(target_arch = "wasm32"))]
-type BoxedRunner<F> = Box<dyn FnOnce(&mut LlamaModel<F>) + Send>;
+type BoxedRunner<F> = Box<
+    dyn for<'a> FnOnce(&'a LlamaModel<F>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> + Send,
+>;
 #[cfg(target_arch = "wasm32")]
-type BoxedRunner<F> = Box<dyn FnOnce(&mut LlamaModel<F>)>;
+type BoxedRunner<F> =
+    Box<dyn for<'a> FnOnce(&'a LlamaModel<F>) -> Pin<Box<dyn Future<Output = ()> + 'a>>>;
 
 enum Task<F: FloatDataType = half::f16> {
     UnstructuredGeneration(UnstructuredGenerationTask<F>),
@@ -95,11 +105,42 @@ struct UnstructuredGenerationTask<F: FloatDataType = half::f16> {
     finished: futures::channel::oneshot::Sender<Result<(), LlamaModelError>>,
 }
 
+struct LlamaTask<F: FloatDataType = half::f16> {
+    sender: futures::channel::mpsc::UnboundedSender<Task<F>>,
+    task: Mutex<Pin<Box<dyn FutureWasmNotSend<Output = ()> + 'static>>>,
+}
+
+/// A future that polls the background Llama task when awaited.
+pub(crate) struct LlamaResultFuture<F: FloatDataType, T> {
+    llama: Llama<F>,
+    receiver: futures::channel::oneshot::Receiver<T>,
+}
+
+impl<F, T> Future for LlamaResultFuture<F, T>
+where
+    F: FloatDataType,
+{
+    type Output = Result<T, futures::channel::oneshot::Canceled>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let myself = self.get_mut();
+
+        // Poll the background task to make progress
+        {
+            let mut task = myself.llama.inner.task.lock().unwrap();
+            let _ = task.poll_unpin(cx);
+        }
+
+        // Poll the receiver for the result
+        Pin::new(&mut myself.receiver).poll(cx)
+    }
+}
+
 /// A quantized Llama language model with support for streaming generation.
 pub struct Llama<F: FloatDataType = half::f16> {
     config: Arc<LlamaConfig<F>>,
     tokenizer: Arc<Tokenizer>,
-    task_sender: futures::channel::mpsc::UnboundedSender<Task<F>>,
+    inner: Arc<LlamaTask<F>>,
 }
 
 impl<F: FloatDataType> Clone for Llama<F> {
@@ -107,7 +148,7 @@ impl<F: FloatDataType> Clone for Llama<F> {
         Self {
             config: self.config.clone(),
             tokenizer: self.tokenizer.clone(),
-            task_sender: self.task_sender.clone(),
+            inner: self.inner.clone(),
         }
     }
 }
@@ -161,34 +202,8 @@ where
         let config = model.model.config.clone();
         let tokenizer = model.tokenizer.clone();
 
-        // On native targets, spawn a background thread to process tasks
-        #[cfg(not(target_arch = "wasm32"))]
-        std::thread::spawn({
-            move || {
-                while let Some(task) = futures::executor::block_on(task_receiver.next()) {
-                    match task {
-                        Task::UnstructuredGeneration(UnstructuredGenerationTask {
-                            settings,
-                            on_token,
-                            finished,
-                        }) => {
-                            let result = model._infer(settings, on_token, &finished);
-                            if let Err(err) = &result {
-                                tracing::error!("Error running model: {err}");
-                            }
-                            _ = finished.send(result);
-                        }
-                        Task::StructuredGeneration(StructuredGenerationTask { runner }) => {
-                            runner(&mut model);
-                        }
-                    }
-                }
-            }
-        });
-
-        // On wasm32, spawn a local task to process tasks since threads aren't available
-        #[cfg(target_arch = "wasm32")]
-        wasm_bindgen_futures::spawn_local(async move {
+        // Create a future that processes tasks when polled
+        let task = Box::pin(async move {
             while let Some(task) = task_receiver.next().await {
                 match task {
                     Task::UnstructuredGeneration(UnstructuredGenerationTask {
@@ -196,23 +211,26 @@ where
                         on_token,
                         finished,
                     }) => {
-                        let result = model._infer(settings, on_token, &finished);
+                        let result = model._infer(settings, on_token, &finished).await;
                         if let Err(err) = &result {
                             tracing::error!("Error running model: {err}");
                         }
                         _ = finished.send(result);
                     }
                     Task::StructuredGeneration(StructuredGenerationTask { runner }) => {
-                        runner(&mut model);
+                        runner(&model).await;
                     }
                 }
             }
         });
 
         Self {
-            task_sender,
             config,
             tokenizer,
+            inner: Arc::new(LlamaTask {
+                sender: task_sender,
+                task: Mutex::new(task),
+            }),
         }
     }
 

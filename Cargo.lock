@@ -342,7 +342,7 @@ dependencies = [
  "heed",
  "memmap2",
  "nohash",
- "ordered-float 4.6.0",
+ "ordered-float",
  "page_size",
  "rand 0.8.5",
  "rayon",
@@ -4694,7 +4694,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber 0.3.22",
- "wasm-bindgen-futures",
 ]
 
 [[package]]
@@ -5420,7 +5419,6 @@ dependencies = [
 [[package]]
 name = "naga"
 version = "28.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#367cd0e0f1b0af5bbc50e804fca32a5ee104b2e8"
 dependencies = [
  "arrayvec",
  "bit-set 0.8.0",
@@ -6017,15 +6015,6 @@ name = "ordered-float"
 version = "4.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7bb71e1b3fa6ca1c61f383464aaf2bb0e2f8e772a1f01d486832464de363b951"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
-name = "ordered-float"
-version = "5.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f4779c6901a562440c3786d08192c6fbda7c1c2060edd10006b05ee35d10f2d"
 dependencies = [
  "num-traits",
 ]
@@ -9878,7 +9867,6 @@ checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 [[package]]
 name = "wgpu"
 version = "28.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#367cd0e0f1b0af5bbc50e804fca32a5ee104b2e8"
 dependencies = [
  "arrayvec",
  "bitflags 2.10.0",
@@ -9907,7 +9895,6 @@ dependencies = [
 [[package]]
 name = "wgpu-core"
 version = "28.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#367cd0e0f1b0af5bbc50e804fca32a5ee104b2e8"
 dependencies = [
  "arrayvec",
  "bit-set 0.8.0",
@@ -9938,7 +9925,6 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-apple"
 version = "28.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#367cd0e0f1b0af5bbc50e804fca32a5ee104b2e8"
 dependencies = [
  "wgpu-hal",
 ]
@@ -9946,7 +9932,6 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-emscripten"
 version = "28.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#367cd0e0f1b0af5bbc50e804fca32a5ee104b2e8"
 dependencies = [
  "wgpu-hal",
 ]
@@ -9954,7 +9939,6 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-windows-linux-android"
 version = "28.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#367cd0e0f1b0af5bbc50e804fca32a5ee104b2e8"
 dependencies = [
  "wgpu-hal",
 ]
@@ -9962,7 +9946,6 @@ dependencies = [
 [[package]]
 name = "wgpu-hal"
 version = "28.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#367cd0e0f1b0af5bbc50e804fca32a5ee104b2e8"
 dependencies = [
  "android_system_properties",
  "arrayvec",
@@ -9990,7 +9973,7 @@ dependencies = [
  "ndk-sys 0.6.0+11769913",
  "objc",
  "once_cell",
- "ordered-float 5.1.0",
+ "ordered-float",
  "parking_lot",
  "portable-atomic",
  "portable-atomic-util",
@@ -10010,7 +9993,6 @@ dependencies = [
 [[package]]
 name = "wgpu-types"
 version = "28.0.0"
-source = "git+https://github.com/ealmloff/wgpu?branch=yield-now#367cd0e0f1b0af5bbc50e804fca32a5ee104b2e8"
 dependencies = [
  "bitflags 2.10.0",
  "bytemuck",

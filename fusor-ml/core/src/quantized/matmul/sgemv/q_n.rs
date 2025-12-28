@@ -5,7 +5,7 @@ use crate::{
         kernel::GenericKernel,
         workgroup_shape::WorkgroupShape,
     },
-    quantized::matmul::QMatMulOperation,
+    quantized::matmul::{QMatMulOperation, sgemv::decompose_workgroup_index},
     shift_right_scale,
     util::{maybe_vec_storage_index, maybe_vec_storage_subgroup_add, maybe_vec_storage_type},
 };
@@ -20,32 +20,41 @@ const SUBGROUP_SIZE: u32 = 32;
 pub(crate) fn q_n_sgemv(
     op: &QMatMulOperation,
     kernel: &mut GenericKernel,
-    _: &WorkgroupShape,
+    workgroup_shape: &WorkgroupShape,
     input_a: &TensorInput,
     input_b: &QMatrixInput,
     output: &TensorInput,
-    _n_size: &str,
-    _m_size: &str,
+    n_size: &str,
+    m_size: &str,
     k_size: &str,
 ) {
     let dtype = op.input_datatype;
-    let workgroup_index = kernel.workgroup_index();
     let subgroup_index = kernel.subgroup_index();
     let subgroup_local_index = kernel.subgroup_local_index();
     let elements_per_block = op.elements_per_block();
 
-    // Handle batch dimensions
-    writeln!(kernel, "var batch_idx = {workgroup_index}.z;").unwrap();
+    // Calculate n_workgroups for this kernel type (SUBGROUP_COUNT subgroups per workgroup, Q_N_SGEMV_CHUNK_SIZE per subgroup)
+    let chunk_size = Q_N_SGEMV_CHUNK_SIZE * SUBGROUP_COUNT;
+    let n_workgroups = format!("(({n_size} + {chunk_size} - 1) / {chunk_size})");
+
+    // Decompose linearized workgroup index into (n_workgroup_idx, m_idx, batch_idx)
+    decompose_workgroup_index(kernel, workgroup_shape, m_size, &n_workgroups);
 
     // Decompose the batch index for higher-dimensional tensors
+    writeln!(kernel, "var batch_idx_remaining = batch_idx;").unwrap();
     for dim in (0..input_a.rank()).rev().skip(2) {
         let shape = input_a.shape_binding(dim);
-        writeln!(kernel, "let batch_idx_{dim} = batch_idx % {shape};").unwrap();
-        writeln!(kernel, "batch_idx = batch_idx / {shape};").unwrap();
+        writeln!(
+            kernel,
+            "let batch_idx_{dim} = batch_idx_remaining % {shape};"
+        )
+        .unwrap();
+        writeln!(
+            kernel,
+            "batch_idx_remaining = batch_idx_remaining / {shape};"
+        )
+        .unwrap();
     }
-
-    // Handle M dimension - each workgroup handles one M value
-    writeln!(kernel, "let m_idx = {workgroup_index}.y;").unwrap();
 
     // Find the reduce size in blocks rounded up
     writeln!(
@@ -54,8 +63,8 @@ pub(crate) fn q_n_sgemv(
     )
     .unwrap();
 
-    // In index of the single element in the vector we are multiplying against
-    writeln!(kernel, "let workgroup_offset = {workgroup_index}.x;").unwrap();
+    // Workgroup offset in the N dimension (from decomposed linearized index)
+    writeln!(kernel, "let workgroup_offset = n_workgroup_idx;").unwrap();
     writeln!(
         kernel,
         "let row = ({SUBGROUP_COUNT} * workgroup_offset + {subgroup_index}) * {Q_N_SGEMV_CHUNK_SIZE};"

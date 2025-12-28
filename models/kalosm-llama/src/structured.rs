@@ -17,7 +17,7 @@ use crate::token_stream::TokenOutputStream;
 use crate::{LlamaModel, LlamaSession};
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn generate_structured<F, P: Parser>(
+pub(crate) async fn generate_structured<F, P: Parser>(
     prompt: MessageContent,
     llm: &LlamaModel<F>,
     session: &mut LlamaSession<F>,
@@ -39,10 +39,6 @@ where
         }
         on_token(tok)
     };
-    let mut session = session
-        .cache
-        .write()
-        .map_err(|err| LlamaModelError::Session(err.to_string()))?;
     let tokenizer = &llm.tokenizer;
 
     let prompt_text = prompt.text();
@@ -121,19 +117,24 @@ where
     let mut logits_indexed = Vec::new();
     let mut token_cache = DetokenizationCache::new();
     let mut logits = Logits::default();
-    let mut logit_probs = Vec::new();
 
     loop {
         let tokens = token_stream.tokens();
-        LlamaModel::forward(
-            &llm.model,
-            &llm.device,
-            &tokens[tokens.len() - unprocessed_token_count..],
-            &images,
-            Some(&mut *session),
-            &mut logit_probs,
-            &llm.tokenizer,
-        )?;
+        let logit_probs = {
+            let mut session_lock = session
+                .cache
+                .write()
+                .map_err(|err| LlamaModelError::Session(err.to_string()))?;
+            LlamaModel::forward(
+                &llm.model,
+                &llm.device,
+                &tokens[tokens.len() - unprocessed_token_count..],
+                &images,
+                Some(&mut *session_lock),
+                &llm.tokenizer,
+            )
+        }
+        .await?;
         let resources = &mut SamplerResources {
             previous_tokens: tokens,
             rng: &mut rng,

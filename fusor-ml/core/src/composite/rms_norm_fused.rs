@@ -282,7 +282,9 @@ impl RmsNormOperation {
                 writeln!(kernel, "{local_data}[{workgroup_local_index}] = sum_sq;").unwrap();
                 writeln!(kernel, "workgroupBarrier();").unwrap();
                 offset /= 2;
-                writeln!(kernel, "{{").unwrap();
+                // Only threads in the first half do the reduction to avoid OOB reads
+                // (workgroup memory OOB is undefined behavior in WebGPU)
+                writeln!(kernel, "if {workgroup_local_index} < {offset}u {{").unwrap();
                 writeln!(
                     kernel,
                     "let neighbor = {local_data}[{workgroup_local_index} + {offset}u];"

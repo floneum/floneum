@@ -10,6 +10,7 @@ use crate::{
         operation::Operation,
         workgroup_shape::{Constraint, WorkgroupShape, WorkgroupShapeConstraints},
     },
+    visit_tiled::distribute_workgroups,
 };
 
 impl<const R: usize, T: DataType> Tensor<R, T> {
@@ -478,12 +479,12 @@ impl Operation for FlashAttentionOperation {
             // Subgroup-based: each workgroup (containing 1 subgroup) handles one position [batch, head, seq]
             // workgroup_size == subgroup_size, so we need total_positions workgroups
             let total_positions = (shape[0] * shape[1] * shape[2]) as u32;
-            [total_positions, 1, 1]
+            distribute_workgroups(total_positions)
         } else {
             // Fallback: each thread handles one output element [batch, head, seq, dim]
             let total_elements = (shape[0] * shape[1] * shape[2] * shape[3]) as u32;
             let total_workgroups = total_elements.div_ceil(workgroup_size);
-            [total_workgroups, 1, 1]
+            distribute_workgroups(total_workgroups)
         }
     }
 

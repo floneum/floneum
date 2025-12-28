@@ -15,8 +15,8 @@ use crate::structured::generate_structured;
 pub use crate::Llama;
 use crate::LlamaBuilder;
 use crate::{
-    InferenceSettings, LlamaSession, LlamaSourceError, StructuredGenerationTask, Task,
-    UnstructuredGenerationTask,
+    InferenceSettings, LlamaResultFuture, LlamaSession, LlamaSourceError, StructuredGenerationTask,
+    Task, UnstructuredGenerationTask,
 };
 
 impl<F: FloatDataType> ModelBuilder for LlamaBuilder<F>
@@ -94,7 +94,8 @@ where
                 }
             }
         }
-        self.task_sender
+        self.inner
+            .sender
             .unbounded_send(Task::UnstructuredGeneration(UnstructuredGenerationTask {
                 settings: InferenceSettings::new(
                     text,
@@ -110,7 +111,12 @@ where
             }))
             .map_err(|_| LlamaModelError::ModelStopped)?;
 
-        rx.await.map_err(|_| LlamaModelError::ModelStopped)??;
+        LlamaResultFuture {
+            llama: self.clone(),
+            receiver: rx,
+        }
+        .await
+        .map_err(|_| LlamaModelError::ModelStopped)??;
 
         Ok(())
     }
@@ -145,6 +151,7 @@ where
     F: CastTensor<f32> + WasmNotSend + WasmNotSync + 'static,
     f32: CastTensor<F>,
     <Constraints as Parser>::Output: WasmNotSend,
+    <Constraints as Parser>::PartialState: WasmNotSend,
     Constraints: CreateParserState + WasmNotSend + 'static,
     S: Sampler + 'static,
 {
@@ -166,27 +173,36 @@ where
             let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
             let on_token = Box::new(on_token);
             let resolved_message = text.resolve_media_sources().await?;
-            self.task_sender
+            self.inner
+                .sender
                 .unbounded_send(Task::StructuredGeneration(StructuredGenerationTask {
                     runner: Box::new(move |model| {
-                        let parser_state = parser.create_parser_state();
-                        let result = generate_structured(
-                            resolved_message,
-                            model,
-                            &mut session,
-                            parser,
-                            parser_state,
-                            sampler,
-                            on_token,
-                            Some(64),
-                            seed,
-                        );
-                        _ = tx.send(result);
+                        Box::pin(async move {
+                            let parser_state = parser.create_parser_state();
+                            let result = generate_structured(
+                                resolved_message,
+                                model,
+                                &mut session,
+                                parser,
+                                parser_state,
+                                sampler,
+                                on_token,
+                                Some(64),
+                                seed,
+                            )
+                            .await;
+                            _ = tx.send(result);
+                        })
                     }),
                 }))
                 .map_err(|_| LlamaModelError::ModelStopped)?;
 
-            let result = rx.await.map_err(|_| LlamaModelError::ModelStopped)??;
+            let result = LlamaResultFuture {
+                llama: self.clone(),
+                receiver: rx,
+            }
+            .await
+            .map_err(|_| LlamaModelError::ModelStopped)??;
 
             Ok(result)
         }

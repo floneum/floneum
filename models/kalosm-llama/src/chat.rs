@@ -113,6 +113,7 @@ where
     F: CastTensor<f32> + WasmNotSendSync + 'static,
     f32: CastTensor<F>,
     <Constraints as Parser>::Output: WasmNotSend,
+    <Constraints as Parser>::PartialState: WasmNotSend,
     Constraints: CreateParserState + WasmNotSend + 'static,
     S: Sampler + 'static,
 {
