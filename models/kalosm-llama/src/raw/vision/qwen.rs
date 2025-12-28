@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use fusor_core::{
     cache::KvCache, CastTensor, Device, FloatDataType, Result, Tensor, VarBuilder, D,
 };
@@ -40,7 +38,7 @@ where
 {
     pub(crate) fn from_gguf(
         vision_ct: GgufMetadata,
-        vision_file: &Path,
+        vision_bytes: &[u8],
         device: &Device,
     ) -> Result<Self> {
         let block_count = vision_ct
@@ -109,9 +107,8 @@ where
             .unwrap_or(vec![0.268_629_55, 0.261_302_6, 0.275_777_1]);
         let in_channels = 3;
 
-        let reader = std::fs::File::open(vision_file)?;
-        let mut buffered_reader = std::io::BufReader::new(reader);
-        let mut vb = VarBuilder::from_gguf(&mut buffered_reader)?;
+        let mut cursor = std::io::Cursor::new(vision_bytes);
+        let mut vb = VarBuilder::from_gguf(&mut cursor)?;
         Self::new(
             spacial_merge_size,
             temporal_patch_size,

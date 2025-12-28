@@ -135,8 +135,25 @@ impl QMatrix {
                     .flat_map(map)
                     .collect()
             }
-            GgmlType::F16 | GgmlType::F32 => bytes.into(),
+            GgmlType::F16 => {
+                if use_f16 {
+                    bytes.into()
+                } else {
+                    // Convert F16 to F32 when f16 is not supported
+                    bytemuck::cast_slice::<_, half::f16>(bytes)
+                        .iter()
+                        .flat_map(|f| f.to_f32().to_le_bytes())
+                        .collect()
+                }
+            }
+            GgmlType::F32 => bytes.into(),
             _ => todo!(),
+        };
+        // If we converted F16 to F32, update the stored datatype
+        let datatype = if ty == GgmlType::F16 && !use_f16 {
+            GgmlType::F32
+        } else {
+            ty
         };
         let buffer = device.create_buffer_init(
             &bytes,
@@ -149,7 +166,7 @@ impl QMatrix {
             device: device.clone(),
             shape,
             buffer,
-            datatype: ty,
+            datatype,
         })
     }
 
@@ -1646,7 +1663,7 @@ where
         };
         let mut kernel = String::new();
         let use_f16 = device.f16_supported();
-        if !use_f16 {
+        if !use_f16 && T::WGSL_TYPE == DataTypeEnum::F16 {
             // Skip test if f16 is not supported since the test uses f16 block conversion
             return;
         }
@@ -1705,7 +1722,7 @@ where
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: None,
                     bind_group_layouts: &[&bind_group_layout],
-                    push_constant_ranges: &[],
+                    immediate_size: 0,
                 });
         let module = device.create_shader_module(kernel);
         let pipeline =
@@ -1728,8 +1745,16 @@ where
             if !block.finite() {
                 continue;
             }
-            let block_wgsl = block.into_wgsl_bytes();
-            assert_eq!(block, B::from_wgsl_bytes(block_wgsl));
+            let block_wgsl: Box<[u8]> = if use_f16 {
+                block.into_wgsl_bytes().as_ref().into()
+            } else {
+                block.into_wgsl_bytes_f32().as_ref().into()
+            };
+            // The round-trip assertion only works with f16 format
+            if use_f16 {
+                let block_wgsl_f16 = block.into_wgsl_bytes();
+                assert_eq!(block, B::from_wgsl_bytes(block_wgsl_f16));
+            }
             let output = device.create_buffer_init(
                 bytemuck::cast_slice(&vec![T::zero(); B::BLOCK_SIZE]),
                 wgpu::BufferUsages::STORAGE
@@ -1790,7 +1815,13 @@ where
                     _ = sender.send(result);
                 },
             );
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
+            device
+                .wgpu_device()
+                .poll(wgpu::PollType::Wait {
+                    submission_index: None,
+                    timeout: None,
+                })
+                .unwrap();
             let output = receiver
                 .await
                 .map_err(|_| wgpu::BufferAsyncError)
@@ -1848,7 +1879,7 @@ where
 
         let mut kernel = String::new();
         let use_f16 = device.f16_supported();
-        if !use_f16 {
+        if !use_f16 && T::WGSL_TYPE == DataTypeEnum::F16 {
             // Skip test if f16 is not supported since the test uses f16 block conversion
             return;
         }
@@ -1907,7 +1938,7 @@ where
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: None,
                     bind_group_layouts: &[&bind_group_layout],
-                    push_constant_ranges: &[],
+                    immediate_size: 0,
                 });
         let module = device.create_shader_module(kernel);
         let pipeline =
@@ -1930,8 +1961,16 @@ where
             if !block.finite() {
                 continue;
             }
-            let block_wgsl = block.into_wgsl_bytes();
-            assert_eq!(block, B::from_wgsl_bytes(block_wgsl));
+            let block_wgsl: Box<[u8]> = if use_f16 {
+                block.into_wgsl_bytes().as_ref().into()
+            } else {
+                block.into_wgsl_bytes_f32().as_ref().into()
+            };
+            // The round-trip assertion only works with f16 format
+            if use_f16 {
+                let block_wgsl_f16 = block.into_wgsl_bytes();
+                assert_eq!(block, B::from_wgsl_bytes(block_wgsl_f16));
+            }
             let output = device.create_buffer_init(
                 bytemuck::cast_slice(&vec![T::zero(); B::BLOCK_SIZE]),
                 wgpu::BufferUsages::STORAGE
@@ -1992,7 +2031,13 @@ where
                     _ = sender.send(result);
                 },
             );
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
+            device
+                .wgpu_device()
+                .poll(wgpu::PollType::Wait {
+                    submission_index: None,
+                    timeout: None,
+                })
+                .unwrap();
             let output = receiver
                 .await
                 .map_err(|_| wgpu::BufferAsyncError)

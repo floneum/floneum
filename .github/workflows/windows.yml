@@ -42,7 +42,6 @@ on:
       - .github/**
       - Cargo.toml
 
-# workflow_dispatch:
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -50,42 +49,47 @@ concurrency:
 jobs:
   test:
     if: github.event.pull_request.draft == false
-    runs-on: windows-latest
+    runs-on: windows-2022
     name: (${{ matrix.target }}, ${{ matrix.cfg_release_channel }})
     env:
       CFG_RELEASE_CHANNEL: ${{ matrix.cfg_release_channel }}
     strategy:
-      # https://help.github.com/en/actions/getting-started-with-github-actions/about-github-actions#usage-limits
-      # There's a limit of 60 concurrent jobs across all repos in the rust-lang organization.
-      # In order to prevent overusing too much of that 60 limit, we throttle the
-      # number of rustfmt jobs that will run concurrently.
-      # max-parallel:
-      # fail-fast: false
       matrix:
         target: [x86_64-pc-windows-msvc]
         cfg_release_channel: [stable]
 
     steps:
-      # The Windows runners have autocrlf enabled by default
-      # which causes failures for some of rustfmt's line-ending sensitive tests
       - name: disable git eol translation
         run: git config --global core.autocrlf false
 
-        # Run build
       - name: Install Rustup using win.rustup.rs
+        shell: powershell
         run: |
-          # Disable the download progress bar which can cause perf issues
           $ProgressPreference = "SilentlyContinue"
           Invoke-WebRequest https://win.rustup.rs/ -OutFile rustup-init.exe
           .\rustup-init.exe -y --default-host=x86_64-pc-windows-msvc --default-toolchain=none
           del rustup-init.exe
           rustup target add ${{ matrix.target }}
-        shell: powershell
 
       - name: checkout
         uses: actions/checkout@v6
 
+      - name: Setup WARP
+        shell: bash
+        run: |
+          curl -L --retry 5 https://www.nuget.org/api/v2/package/Microsoft.Direct3D.WARP/1.0.8 -o warp.zip
+          7z e warp.zip -owarp build/native/amd64/d3d10warp.dll
+
+      - name: Setup DXC
+        shell: bash
+        run: |
+          curl -L --retry 5 https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.7.2308/dxc_2023_08_14.zip -o dxc.zip
+          7z e dxc.zip -odxc bin/x64/dxcompiler.dll bin/x64/dxil.dll
+
+      - uses: Swatinem/rust-cache@v2
+
       - name: test
+        shell: cmd
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -94,5 +98,8 @@ jobs:
           rustc -Vv
           cargo -V
           set RUST_BACKTRACE=1
+          mkdir target\debug\deps 2>nul
+          copy warp\d3d10warp.dll target\debug\deps\
+          copy dxc\dxcompiler.dll target\debug\deps\
+          copy dxc\dxil.dll target\debug\deps\
           cargo test --all --tests --features kalosm/language,kalosm/sound,kalosm/vision,kalosm/remote,kalosm/scrape --exclude kalosm-parse-macro --exclude fusor-core --exclude rbert --exclude rwhisper --exclude kalosm-learning
-        shell: cmd

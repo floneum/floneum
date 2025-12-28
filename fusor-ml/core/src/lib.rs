@@ -10,6 +10,9 @@ pub use rank::*;
 pub use reduce::*;
 pub use tensor::*;
 
+// Re-export wasm-compatible Send/Sync traits
+pub use wgpu::{WasmNotSend, WasmNotSendSync, WasmNotSync};
+
 pub(crate) use element_wise::*;
 pub use matmul::*;
 pub(crate) use pair_wise::*;

@@ -192,8 +192,11 @@ impl QMatrix {
         );
 
         // If the types already match, just return a view of the existing data
+        // Note: Only use f16 directly if the device supports it
         if self.datatype == GgmlType::F32 && T::WGSL_TYPE == DataTypeEnum::F32
-            || self.datatype == GgmlType::F16 && T::WGSL_TYPE == DataTypeEnum::F16
+            || self.datatype == GgmlType::F16
+                && T::WGSL_TYPE == DataTypeEnum::F16
+                && self.device.f16_supported()
         {
             let device = &self.device;
             let buffer = self.buffer.clone();

@@ -137,8 +137,7 @@ impl Cache {
 
                     Ok(bytes)
                 }
-                _ => Err(CacheError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                _ => Err(CacheError::Io(std::io::Error::other(
                     "Local file access not supported without the 'tokio' feature",
                 ))),
             }
@@ -179,32 +178,36 @@ impl Cache {
                 let path = self.location.join(model_id).join(revision);
                 let complete_download = path.join(file);
 
-                if complete_download.exists() {
-                    let metadata = tokio::fs::metadata(&complete_download).await.map_err(|e| {
-                        CacheError::UnableToGetFileMetadata(complete_download.clone(), e)
-                    })?;
-                    let file_last_modified = metadata.modified()?;
-                    // If the server says the file hasn't been modified since we downloaded it, we can use the local file
-                    if let Some(last_updated) = response
-                        .as_ref()
-                        .ok()
-                        .and_then(|response| response.headers().get(reqwest::header::LAST_MODIFIED))
-                        .and_then(|last_updated| last_updated.to_str().ok())
-                        .and_then(|s| httpdate::parse_http_date(s).ok())
-                    {
-                        if last_updated <= file_last_modified {
-                            return Ok(complete_download);
-                        }
-                    } else {
-                        // Or if we are offline, we can use the local file
-                        return Ok(complete_download);
-                    }
+                // Quick check without lock - if file exists and is up-to-date, return it
+                if is_file_current(&complete_download, &response).await {
+                    return Ok(complete_download);
                 }
+
+                // Need to download - acquire lock to prevent race conditions
+                let lock_path = path.join(format!("{file}.lock"));
+                tokio::fs::create_dir_all(&path).await?;
+
+                // Acquire exclusive lock using blocking task to avoid blocking async runtime
+                let lock_path_clone = lock_path.clone();
+                let _lock_file = tokio::task::spawn_blocking(move || {
+                    let file = std::fs::File::create(&lock_path_clone)?;
+                    file.lock()?;
+                    Ok::<_, std::io::Error>(file)
+                })
+                .await
+                .map_err(|e| CacheError::Io(std::io::Error::other(e)))??;
+
+                // Double-check if file was downloaded while we were waiting for lock
+                if is_file_current(&complete_download, &response).await {
+                    let _ = tokio::fs::remove_file(&lock_path).await;
+                    return Ok(complete_download);
+                }
+
                 let incomplete_download = path.join(format!("{file}.partial"));
 
                 tracing::trace!("Downloading into {:?}", incomplete_download);
 
-                download_into(
+                let download_result = download_into(
                     url,
                     &incomplete_download,
                     response?,
@@ -212,10 +215,21 @@ impl Cache {
                     token,
                     progress,
                 )
-                .await?;
+                .await;
+
+                if let Err(e) = download_result {
+                    let _ = tokio::fs::remove_file(&lock_path).await;
+                    return Err(e);
+                }
 
                 // Rename the file to remove the .partial extension
-                tokio::fs::rename(&incomplete_download, &complete_download).await?;
+                let rename_result =
+                    tokio::fs::rename(&incomplete_download, &complete_download).await;
+
+                // Release lock and clean up lock file
+                let _ = tokio::fs::remove_file(&lock_path).await;
+
+                rename_result?;
 
                 Ok(complete_download)
             }
@@ -224,13 +238,21 @@ impl Cache {
     }
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for Cache {
     fn default() -> Self {
         Self {
             location: {
                 #[cfg(feature = "tokio")]
                 {
-                    dirs::data_dir().unwrap().join("kalosm").join("cache")
+                    // Try various locations in order of preference
+                    dirs::data_dir()
+                        .or_else(dirs::cache_dir)
+                        .or_else(|| std::env::var("HOME").ok().map(std::path::PathBuf::from))
+                        .or_else(|| std::env::current_dir().ok())
+                        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+                        .join("kalosm")
+                        .join("cache")
                 }
                 #[cfg(not(feature = "tokio"))]
                 {
@@ -239,6 +261,40 @@ impl Default for Cache {
             },
             huggingface_token: None,
         }
+    }
+}
+
+/// Check if the local file exists and is up-to-date compared to the server's Last-Modified header.
+/// Returns true if the file can be used as-is, false if it needs to be downloaded.
+#[cfg(feature = "tokio")]
+async fn is_file_current(
+    path: &std::path::Path,
+    response: &Result<reqwest::Response, reqwest::Error>,
+) -> bool {
+    if !path.exists() {
+        return false;
+    }
+
+    let Ok(metadata) = tokio::fs::metadata(path).await else {
+        return false;
+    };
+
+    let Ok(file_last_modified) = metadata.modified() else {
+        return false;
+    };
+
+    // If the server says the file hasn't been modified since we downloaded it, we can use the local file
+    if let Some(last_updated) = response
+        .as_ref()
+        .ok()
+        .and_then(|response| response.headers().get(reqwest::header::LAST_MODIFIED))
+        .and_then(|last_updated| last_updated.to_str().ok())
+        .and_then(|s| httpdate::parse_http_date(s).ok())
+    {
+        last_updated <= file_last_modified
+    } else {
+        // If we're offline or the server doesn't provide Last-Modified, use the local file
+        true
     }
 }
 

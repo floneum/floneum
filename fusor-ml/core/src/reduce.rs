@@ -7,6 +7,7 @@ use crate::{
         operation::Operation,
         workgroup_shape::{Constraint, WorkgroupShape, WorkgroupShapeConstraints},
     },
+    visit_tiled::distribute_workgroups,
 };
 use crate::{
     Layout, Tensor,
@@ -238,8 +239,7 @@ impl ReduceOperation {
 
         // If subgroups are supported, do the shuffle down reduction
         if device.subgroups_supported() {
-            let limits = device.limits();
-            let max_subgroup_size = limits.max_subgroup_size;
+            let max_subgroup_size = device.max_subgroup_size();
             let local_data = kernel.add_global_array(
                 KernelGlobalSpace::Workgroup,
                 dtype,
@@ -355,16 +355,19 @@ impl Operation for ReduceOperation {
         device: &crate::Device,
     ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
         let mut constraints = WorkgroupShapeConstraints::new();
-        let limits = device.limits();
         constraints.add_constraint(
             0,
-            Constraint::less_than(limits.max_compute_workgroup_size_x + 1),
+            Constraint::less_than(device.limits().max_compute_workgroup_size_x + 1),
         );
         if device.subgroups_supported() {
-            constraints
-                .add_constraint(0, Constraint::more_than_or_equals(limits.min_subgroup_size));
-            constraints
-                .add_constraint(0, Constraint::less_than_or_equals(limits.max_subgroup_size));
+            constraints.add_constraint(
+                0,
+                Constraint::more_than_or_equals(device.min_subgroup_size()),
+            );
+            constraints.add_constraint(
+                0,
+                Constraint::less_than_or_equals(device.max_subgroup_size()),
+            );
         }
         constraints.add_constraint(1, Constraint::equals(1));
         constraints.add_constraint(2, Constraint::equals(1));
@@ -377,9 +380,9 @@ impl Operation for ReduceOperation {
         inputs: &[MirValue],
     ) -> [u32; 3] {
         let output_tensor: TensorData = inputs[1].as_tensor().unwrap().clone();
-        let workgroup_size = output_tensor.layout().shape().iter().product::<usize>() as u32;
+        let total_workgroups = output_tensor.layout().shape().iter().product::<usize>() as u32;
 
-        [workgroup_size, 1, 1]
+        distribute_workgroups(total_workgroups)
     }
 
     fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
@@ -703,6 +706,10 @@ async fn test_reduce_const_sum_then_cast_fused() {
 
     let device = Device::test_instance();
 
+    if !device.f16_supported() {
+        return;
+    }
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
 
@@ -719,6 +726,10 @@ async fn test_cast_then_reduce_const_sum_fused() {
     use crate::Device;
 
     let device = Device::test_instance();
+
+    if !device.f16_supported() {
+        return;
+    }
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data).cast::<half::f16>();

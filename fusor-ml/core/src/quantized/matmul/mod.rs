@@ -808,6 +808,10 @@ async fn test_fuzz_q_mat_mul_f16_sgemv() {
     let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("blk.0.attn_q.weight").await;
     println!("q_matrix: {q_matrix:?}");
 
+    if !device.f16_supported() {
+        return;
+    }
+
     // Use small M to trigger sgemv path
     let batch = 1;
     let seq_len = 12; // Small M to use sgemv

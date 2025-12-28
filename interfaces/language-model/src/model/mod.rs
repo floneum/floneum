@@ -1,3 +1,4 @@
+use kalosm_model_types::{WasmNotSend, WasmNotSendSync};
 use kalosm_sample::Parser;
 use std::{convert::Infallible, future::Future};
 
@@ -5,7 +6,9 @@ mod generation_parameters;
 pub use generation_parameters::*;
 mod ext;
 pub use ext::*;
+#[cfg(not(target_arch = "wasm32"))]
 mod boxed;
+#[cfg(not(target_arch = "wasm32"))]
 pub use boxed::*;
 
 use crate::MessageContent;
@@ -161,8 +164,8 @@ pub trait TextCompletionModel<Sampler = GenerationParameters>: CreateTextComplet
         session: &'a mut Self::Session,
         text: MessageContent,
         sampler: Sampler,
-        on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a;
+        on_token: impl FnMut(String) -> Result<(), Self::Error> + WasmNotSendSync + 'static,
+    ) -> impl Future<Output = Result<(), Self::Error>> + WasmNotSend + 'a;
 }
 
 /// A trait for text completion models that support structured generation. While this trait is implemented for
@@ -201,6 +204,6 @@ pub trait StructuredTextCompletionModel<
         text: MessageContent,
         sampler: Sampler,
         parser: Constraints,
-        on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + Send + 'a;
+        on_token: impl FnMut(String) -> Result<(), Self::Error> + WasmNotSendSync + 'static,
+    ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + WasmNotSend + 'a;
 }

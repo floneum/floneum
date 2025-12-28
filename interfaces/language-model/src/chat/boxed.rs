@@ -1,4 +1,5 @@
 use crate::{BoxedMaybeFuture, BoxedTokenClosure, ModelConstraints};
+use kalosm_model_types::{WasmNotSend, WasmNotSendSync};
 
 use super::{
     ChatMessage, ChatModel, ChatSession, CreateChatSession, CreateDefaultChatConstraintsForType,
@@ -46,8 +47,8 @@ impl ChatModel for BoxedChatModel {
         session: &'a mut Self::ChatSession,
         messages: &[ChatMessage],
         sampler: crate::GenerationParameters,
-        on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a {
+        on_token: impl FnMut(String) -> Result<(), Self::Error> + WasmNotSendSync + 'static,
+    ) -> impl Future<Output = Result<(), Self::Error>> + WasmNotSend + 'a {
         self.model
             .add_messages_with_callback_boxed(session, messages, sampler, Box::new(on_token))
     }
@@ -97,8 +98,8 @@ impl<T> ChatModel for BoxedStructuredChatModel<T> {
         session: &'a mut Self::ChatSession,
         messages: &[ChatMessage],
         sampler: crate::GenerationParameters,
-        on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a {
+        on_token: impl FnMut(String) -> Result<(), Self::Error> + WasmNotSendSync + 'static,
+    ) -> impl Future<Output = Result<(), Self::Error>> + WasmNotSend + 'a {
         self.model
             .add_messages_with_callback_boxed(session, messages, sampler, Box::new(on_token))
     }
@@ -113,8 +114,8 @@ impl<T: 'static> StructuredChatModel<BoxedChatConstraintsForType<T>>
         messages: &[ChatMessage],
         sampler: crate::GenerationParameters,
         constraints: BoxedChatConstraintsForType<T>,
-        on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl Future<Output = Result<T, Self::Error>> + Send + 'a {
+        on_token: impl FnMut(String) -> Result<(), Self::Error> + WasmNotSendSync + 'static,
+    ) -> impl Future<Output = Result<T, Self::Error>> + WasmNotSend + 'a {
         self.model.add_message_with_callback_and_constraints_boxed(
             session,
             messages,

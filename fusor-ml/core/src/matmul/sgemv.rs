@@ -175,7 +175,7 @@ pub(crate) fn sgemv(
         .unwrap();
 
         // We don't need to synchronize between the whole workgroup if there is only one subgroup
-        let subgroup_size = graph.device.limits().min_subgroup_size;
+        let subgroup_size = graph.device.min_subgroup_size();
         if blocksize > subgroup_size {
             let local_data = kernel.add_global_array(
                 KernelGlobalSpace::Workgroup,
@@ -324,19 +324,23 @@ pub(crate) fn workgroup_shape_constraints(
     params: &SgemvParams,
 ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
     let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
-    let limits = device.limits();
     constraints.add_constraint(
         0,
-        crate::mir::workgroup_shape::Constraint::less_than(limits.max_compute_workgroup_size_x + 1),
+        crate::mir::workgroup_shape::Constraint::less_than(
+            device.limits().max_compute_workgroup_size_x + 1,
+        ),
     );
     constraints.add_constraint(
         0,
-        crate::mir::workgroup_shape::Constraint::more_than_or_equals(limits.min_subgroup_size),
+        crate::mir::workgroup_shape::Constraint::more_than_or_equals(device.min_subgroup_size()),
     );
     constraints.add_constraint(
         0,
         crate::mir::workgroup_shape::Constraint::less_than_or_equals(
-            limits.max_subgroup_size * params.subgroups_per_workgroup.min(limits.max_subgroup_size),
+            device.max_subgroup_size()
+                * params
+                    .subgroups_per_workgroup
+                    .min(device.max_subgroup_size()),
         ),
     );
     constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));

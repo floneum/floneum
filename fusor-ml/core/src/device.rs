@@ -9,7 +9,9 @@ use std::{
 use lru::LruCache;
 use parking_lot::RwLock;
 use rustc_hash::FxBuildHasher;
-use wgpu::{BindGroupLayout, BufferUsages, PipelineLayout, ShaderModule};
+use wgpu::{
+    BackendOptions, BindGroupLayout, BufferUsages, Dx12BackendOptions, PipelineLayout, ShaderModule,
+};
 
 use crate::compute_graph::ComputeGraph;
 
@@ -68,7 +70,17 @@ pub struct Device {
 
 impl Device {
     pub async fn new() -> Result<Self, crate::Error> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let dx_compiler = wgpu::Dx12Compiler::from_env().unwrap_or(wgpu::Dx12Compiler::StaticDxc);
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            backend_options: BackendOptions {
+                dx12: Dx12BackendOptions {
+                    shader_compiler: dx_compiler,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        });
         let adapter = instance.request_adapter(&Default::default()).await.unwrap();
         let mut required_features = wgpu::Features::empty();
         if adapter.features().contains(wgpu::Features::SUBGROUP) {
@@ -151,7 +163,10 @@ impl Device {
         std::thread::spawn({
             let device = device.clone();
             move || loop {
-                let Ok(status) = device.wgpu_device().poll(wgpu::PollType::Wait) else {
+                let Ok(status) = device
+                    .wgpu_device()
+                    .poll(wgpu::PollType::wait_indefinitely())
+                else {
                     break;
                 };
                 if status == wgpu::PollStatus::QueueEmpty {
@@ -189,6 +204,14 @@ impl Device {
 
     pub fn subgroups_supported(&self) -> bool {
         self.features().contains(wgpu::Features::SUBGROUP)
+    }
+
+    pub fn min_subgroup_size(&self) -> u32 {
+        self.inner.adapter.get_info().subgroup_min_size
+    }
+
+    pub fn max_subgroup_size(&self) -> u32 {
+        self.inner.adapter.get_info().subgroup_max_size
     }
 
     pub fn f16_supported(&self) -> bool {

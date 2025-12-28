@@ -186,7 +186,7 @@ impl FlashAttentionOperation {
             // We use arrays to handle multiple dimensions per thread
             // Max dims per thread = ceil(head_dim / min_subgroup_size)
             // Always use f32 for accumulation to avoid overflow/underflow in f16
-            let min_subgroup_size = device.limits().min_subgroup_size as usize;
+            let min_subgroup_size = device.min_subgroup_size() as usize;
             let max_dims_per_thread = self.head_dim.div_ceil(min_subgroup_size);
             writeln!(kernel, "var m_arr: array<f32, {max_dims_per_thread}>;").unwrap();
             writeln!(kernel, "var d_arr: array<f32, {max_dims_per_thread}>;").unwrap();
@@ -446,11 +446,14 @@ impl Operation for FlashAttentionOperation {
         let mut constraints = WorkgroupShapeConstraints::new();
         if device.subgroups_supported() {
             // For subgroup-based implementation, use subgroup size as base
-            let limits = device.limits();
-            constraints
-                .add_constraint(0, Constraint::more_than_or_equals(limits.min_subgroup_size));
-            constraints
-                .add_constraint(0, Constraint::less_than_or_equals(limits.max_subgroup_size));
+            constraints.add_constraint(
+                0,
+                Constraint::more_than_or_equals(device.min_subgroup_size()),
+            );
+            constraints.add_constraint(
+                0,
+                Constraint::less_than_or_equals(device.max_subgroup_size()),
+            );
         } else {
             // Fallback: fixed workgroup size
             constraints.add_constraint(0, Constraint::equals(256));
