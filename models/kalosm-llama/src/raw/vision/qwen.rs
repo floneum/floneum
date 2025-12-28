@@ -404,8 +404,8 @@ async fn test_loading_qwen_vision() {
     }
 
     let device = Device::new().await.unwrap();
-    let path = Cache::default()
-        .get(
+    let bytes = Cache::default()
+        .get_bytes(
             &kalosm_model_types::FileSource::HuggingFace {
                 model_id: "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF".into(),
                 revision: "main".into(),
@@ -415,9 +415,8 @@ async fn test_loading_qwen_vision() {
         )
         .await
         .unwrap();
-    let reader = std::fs::File::open(&path).unwrap();
-    let mut buffered_reader = std::io::BufReader::new(reader);
-    let mut vb = VarBuilder::from_gguf(&mut buffered_reader).unwrap();
+    let mut reader = std::io::Cursor::new(bytes);
+    let mut vb = VarBuilder::from_gguf(&mut reader).unwrap();
 
     let spacial_merge_size = 2;
     let temporal_patch_size = 2;
