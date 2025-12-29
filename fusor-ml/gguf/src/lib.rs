@@ -589,14 +589,14 @@ macro_rules! try_into_gguf_value {
         }
     };
 }
-try_into_gguf_value!(to_u8, U8, u8 => from U16 U32 U64);
-try_into_gguf_value!(to_i8, I8, i8 => from I16 I32 I64);
-try_into_gguf_value!(to_u16, U16, u16 => from U8 U32 U64);
-try_into_gguf_value!(to_i16, I16, i16 => from I8 I32 I64);
-try_into_gguf_value!(to_u32, U32, u32 => from U8 U16 U64);
-try_into_gguf_value!(to_i32, I32, i32 => from I8 I16 I64);
-try_into_gguf_value!(to_u64, U64, u64 => from U8 U16 U32);
-try_into_gguf_value!(to_i64, I64, i64 => from I8 I16 I32);
+try_into_gguf_value!(to_u8, U8, u8 => from U16 U32 U64 I8 I16 I32 I64);
+try_into_gguf_value!(to_i8, I8, i8 => from I16 I32 I64 U8 U16 U32 U64);
+try_into_gguf_value!(to_u16, U16, u16 => from U8 U32 U64 I8 I16 I32 I64);
+try_into_gguf_value!(to_i16, I16, i16 => from I8 I32 I64 U8 U16 U32 U64);
+try_into_gguf_value!(to_u32, U32, u32 => from U8 U16 U64 I8 I16 I32 I64);
+try_into_gguf_value!(to_i32, I32, i32 => from I8 I16 I64 U8 U16 U32 U64);
+try_into_gguf_value!(to_u64, U64, u64 => from U8 U16 U32 I8 I16 I32 I64);
+try_into_gguf_value!(to_i64, I64, i64 => from I8 I16 I32 U8 U16 U32 U64);
 try_into_gguf_value!(to_f32, F32, f32 => from F64);
 try_into_gguf_value!(to_f64, F64, f64 => from F32);
 try_into_gguf_value!(to_bool, Bool, bool);
