@@ -26,6 +26,24 @@ kalosm-model-types = { workspace = true, features = ["loading-progress-bar"] }
 [dev-dependencies]
 tokio = { version = "1.36.0", features = ["full"] }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = [
+    "Navigator",
+    "StorageManager",
+    "FileSystemDirectoryHandle",
+    "FileSystemFileHandle",
+    "FileSystemWritableFileStream",
+    "FileSystemGetFileOptions",
+    "FileSystemGetDirectoryOptions",
+    "FileSystemCreateWritableOptions",
+    "File",
+    "Blob",
+    "Window",
+] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+
 [features]
 metal = ["dep:metal"]
 candle = ["dep:candle-core", "dep:candle-nn"]
