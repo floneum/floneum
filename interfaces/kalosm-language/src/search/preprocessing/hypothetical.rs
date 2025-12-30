@@ -35,7 +35,7 @@ fn create_constraints() -> Constraints {
                 .map(LiteralParser::new)
                 .collect::<Vec<_>>(),
         )
-        .then(StopOn::new("?").filter_characters(
+        .then(StopOn::new("?").with_length(1..=75).filter_characters(
             |c| matches!(c, ' ' | '?' | 'a'..='z' | 'A'..='Z' | '0'..='9' | ','),
         ))
         .repeat(1..=5),
