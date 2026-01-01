@@ -179,30 +179,20 @@ where
             questions.append(&mut chunk_questions);
             questions_count.push(chunk_questions.len());
         }
-        let embeddings = embedder
+        let mut embeddings = embedder
             .embed_vec(questions)
             .await
             .map_err(HypotheticalChunkerError::EmbeddingModelError)?;
 
         let mut chunks = Vec::with_capacity(embeddings.len());
-        let mut questions_count = questions_count.iter();
-        let mut byte_chunks = byte_chunks.into_iter();
 
-        let mut remaining_embeddings = *questions_count.next().unwrap();
-        let mut byte_chunk = byte_chunks.next().unwrap();
-
-        for embedding in embeddings {
-            while remaining_embeddings == 0 {
-                if let Some(&questions_count) = questions_count.next() {
-                    remaining_embeddings = questions_count;
-                    byte_chunk = byte_chunks.next().unwrap();
-                }
-            }
-            remaining_embeddings -= 1;
-            chunks.push(Chunk {
+        for (byte_chunk, questions_count) in byte_chunks.iter().zip(questions_count.iter()) {
+            let embeddings = embeddings.drain(0..*questions_count);
+            let chunk = Chunk {
                 byte_range: byte_chunk.clone(),
-                embeddings: vec![embedding],
-            });
+                embeddings: embeddings.collect(),
+            };
+            chunks.push(chunk);
         }
 
         Ok(chunks)
