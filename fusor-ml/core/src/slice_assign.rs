@@ -41,18 +41,11 @@ impl SliceAssignOperation {
 }
 
 impl Operation for SliceAssignOperation {
-    fn workgroup_shape_constraints(
-        &self,
-        device: &crate::Device,
-    ) -> WorkgroupShapeConstraints {
+    fn workgroup_shape_constraints(&self, device: &crate::Device) -> WorkgroupShapeConstraints {
         titled_map_workgroup_size_constraints(&self.input_shape, device)
     }
 
-    fn dispatch_size(
-        &self,
-        workgroup_shape: &WorkgroupShape,
-        _inputs: &[MirValue],
-    ) -> [u32; 3] {
+    fn dispatch_size(&self, workgroup_shape: &WorkgroupShape, _inputs: &[MirValue]) -> [u32; 3] {
         titled_map_dispatch_size(TILE_SIZE, workgroup_shape.clone(), &self.input_shape)
     }
 
@@ -67,11 +60,8 @@ impl Operation for SliceAssignOperation {
         let value = nodes.get_cached_result(self.value).unwrap();
 
         // Create output buffer with the same shape as input
-        let output = TensorData::new_for_shape(
-            input.device(),
-            input.layout().shape(),
-            input.datatype(),
-        );
+        let output =
+            TensorData::new_for_shape(input.device(), input.layout().shape(), input.datatype());
 
         vec![input.clone().into(), value.clone().into(), output.into()]
     }
@@ -120,9 +110,7 @@ impl Operation for SliceAssignOperation {
                 for dim in 0..rank as usize {
                     let start = slices[dim].start;
                     let end = slices[dim].end;
-                    conditions.push(format!(
-                        "(dim_{dim} >= {start}u && dim_{dim} < {end}u)"
-                    ));
+                    conditions.push(format!("(dim_{dim} >= {start}u && dim_{dim} < {end}u)"));
                 }
                 let in_slice_condition = conditions.join(" && ");
 
@@ -170,11 +158,7 @@ impl Operation for SliceAssignOperation {
         );
     }
 
-    fn output(
-        &self,
-        _nodes: &ComputeGraphInner,
-        inputs: &[MirValue],
-    ) -> MirValue {
+    fn output(&self, _nodes: &ComputeGraphInner, inputs: &[MirValue]) -> MirValue {
         // Return the output tensor (last input)
         inputs[2].clone()
     }

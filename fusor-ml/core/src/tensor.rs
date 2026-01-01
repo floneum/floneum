@@ -965,7 +965,8 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
 
     pub(crate) fn add_slice_assign(&self, other: &Self, slices: [Range<usize>; R]) -> Self {
         let input_shape: Box<[usize]> = self.shape().to_vec().into_boxed_slice();
-        let op = SliceAssignOperation::new(self.data.key, other.data.key, slices.into(), input_shape);
+        let op =
+            SliceAssignOperation::new(self.data.key, other.data.key, slices.into(), input_shape);
         Self::from_parts(self.data.slice_assign(op))
     }
 
