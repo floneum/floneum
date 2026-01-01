@@ -176,8 +176,8 @@ where
         for byte_chunk in &byte_chunks {
             let text = &body[byte_chunk.clone()];
             let mut chunk_questions = self.generate_question(text).await?;
-            questions.append(&mut chunk_questions);
             questions_count.push(chunk_questions.len());
+            questions.append(&mut chunk_questions);
         }
         let mut embeddings = embedder
             .embed_vec(questions)
