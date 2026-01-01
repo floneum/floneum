@@ -46,7 +46,7 @@ impl Operation for SliceAssignOperation {
     }
 
     fn dispatch_size(&self, workgroup_shape: &WorkgroupShape, _inputs: &[MirValue]) -> [u32; 3] {
-        titled_map_dispatch_size(TILE_SIZE, workgroup_shape.clone(), &self.input_shape)
+        titled_map_dispatch_size(TILE_SIZE, *workgroup_shape, &self.input_shape)
     }
 
     fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
