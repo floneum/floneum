@@ -468,8 +468,6 @@ impl TensorData {
                     .iter_mut()
                     .zip(data.flat_map(bytemuck::bytes_of))
                     .for_each(|(dst, src)| *dst = *src);
-            } else {
-                tracing::info!("Falling back to staging buffer for tensor upload");
             }
         }
 

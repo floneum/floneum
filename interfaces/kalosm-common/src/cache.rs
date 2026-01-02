@@ -221,13 +221,6 @@ impl Cache {
                 revision,
                 file,
             } => {
-                tracing::info!(
-                    "[OPFS] Starting cache lookup for {}/{}/{}",
-                    model_id,
-                    revision,
-                    file
-                );
-
                 let opfs = OpfsCache::new().await?;
                 let cache_dir = opfs
                     .get_directory(&["kalosm", "cache", model_id, revision])
@@ -239,7 +232,6 @@ impl Cache {
                 let client = reqwest::Client::new();
 
                 // 1. HEAD request to get expected Content-Length
-                tracing::info!("[OPFS] Sending HEAD request: {}", url);
                 let head_response = client
                     .head(&url)
                     .with_authorization_header(token.clone())
@@ -252,20 +244,16 @@ impl Cache {
                     .and_then(|h| h.to_str().ok())
                     .and_then(|s| s.parse::<u64>().ok());
 
-                tracing::info!("[OPFS] Expected size from HEAD: {:?}", expected_size);
-
                 // 2. Check local file size
                 let local_size = opfs
                     .get_file_size(&cache_dir, &safe_file)
                     .await
                     .unwrap_or(0);
-                tracing::info!("[OPFS] Local file size: {}", local_size);
 
                 // 3. Determine action based on size comparison
                 if let Some(expected) = expected_size {
                     if local_size == expected {
                         // Cache hit - file is complete
-                        tracing::info!("[OPFS] Cache HIT - file complete ({} bytes)", local_size);
                         let bytes = opfs.read_file(&cache_dir, &safe_file).await?;
                         progress(FileLoadingProgress {
                             progress: local_size,
@@ -276,11 +264,6 @@ impl Cache {
                         return Ok(bytes);
                     } else if local_size > expected {
                         // File is corrupted (larger than expected), delete and start fresh
-                        tracing::warn!(
-                            "[OPFS] File corrupted (local {} > expected {}), deleting",
-                            local_size,
-                            expected
-                        );
                         let _ = opfs.delete_file(&cache_dir, &safe_file).await;
                     }
                 }
@@ -292,11 +275,8 @@ impl Cache {
                     local_size
                 };
 
-                tracing::info!("[OPFS] Starting download from offset {}", start_offset);
-
                 // 5. Resolve redirects (HuggingFace returns 302, Range headers get stripped)
                 let final_url = head_response.url().clone();
-                tracing::info!("[OPFS] Final URL: {}", final_url);
 
                 // 6. Send GET request with Range header if resuming
                 let mut request = client.get(final_url.clone());
@@ -350,7 +330,6 @@ impl Cache {
 
                     // Already complete
                     if actual_start == size {
-                        tracing::info!("[OPFS] File already complete");
                         return opfs.read_file(&cache_dir, &safe_file).await;
                     }
                 }
@@ -359,10 +338,6 @@ impl Cache {
                 let mut all_bytes = if resuming && actual_start > 0 {
                     match opfs.read_file(&cache_dir, &safe_file).await {
                         Ok(existing) => {
-                            tracing::info!(
-                                "[OPFS] Read {} existing bytes for resume",
-                                existing.len()
-                            );
                             existing
                         }
                         Err(e) => {
@@ -384,10 +359,6 @@ impl Cache {
                 };
 
                 // 8. Create writable stream and download
-                tracing::info!(
-                    "[OPFS] Creating writable stream (keep_existing={})",
-                    resuming
-                );
                 let mut writable = opfs
                     .create_writable(&cache_dir, &safe_file, resuming)
                     .await?;
@@ -422,7 +393,6 @@ impl Cache {
 
                     // Periodic flush by closing and reopening
                     if bytes_since_flush >= FLUSH_INTERVAL {
-                        tracing::info!("[OPFS] Flushing at {} bytes", current_progress);
                         close_writable_stream(&writable).await?;
                         writable = opfs.create_writable(&cache_dir, &safe_file, true).await?;
                         seek_writable_stream(&writable, current_progress).await?;
@@ -431,7 +401,6 @@ impl Cache {
                 }
 
                 close_writable_stream(&writable).await?;
-                tracing::info!("[OPFS] Download complete ({} bytes)", current_progress);
 
                 Ok(all_bytes)
             }
