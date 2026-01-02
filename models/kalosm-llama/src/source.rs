@@ -429,7 +429,7 @@ impl LlamaSource {
         Self::new(FileSource::huggingface(
             "microsoft/phi-4-gguf".to_string(),
             "main".to_string(),
-            "phi-4-q4.gguf".to_string(),
+            "phi-4-Q4_0.gguf".to_string(),
         ))
         .with_tokenizer(FileSource::huggingface(
             "microsoft/phi-4".to_string(),
