@@ -300,20 +300,28 @@ impl Cache {
                     status = response.status();
                 }
 
+                // Note: In WASM, Content-Length from GET responses may not be accessible due to CORS
+                // (servers must include it in Access-Control-Expose-Headers). We use expected_size
+                // from the HEAD request as a fallback since it's more reliably available.
                 let (total_size, resuming) = if status == StatusCode::PARTIAL_CONTENT {
                     let remaining = response
                         .headers()
                         .get(reqwest::header::CONTENT_LENGTH)
                         .and_then(|h| h.to_str().ok())
                         .and_then(|s| s.parse::<u64>().ok());
-                    (remaining.map(|r| r + start_offset), true)
+                    (
+                        remaining
+                            .map(|r| r + start_offset)
+                            .or(expected_size),
+                        true,
+                    )
                 } else if status == StatusCode::OK {
                     let total = response
                         .headers()
                         .get(reqwest::header::CONTENT_LENGTH)
                         .and_then(|h| h.to_str().ok())
                         .and_then(|s| s.parse::<u64>().ok());
-                    (total, false)
+                    (total.or(expected_size), false)
                 } else {
                     return Err(CacheError::UnexpectedStatusCode(status));
                 };
