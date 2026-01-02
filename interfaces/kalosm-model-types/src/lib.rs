@@ -61,10 +61,7 @@ impl ModelLoadingProgress {
     pub fn progress(&self) -> f32 {
         match self {
             Self::Downloading {
-                progress:
-                    FileLoadingProgress {
-                        progress, size, ..
-                    },
+                progress: FileLoadingProgress { progress, size, .. },
                 ..
             } => *progress as f32 / *size as f32,
             Self::Loading { progress } => *progress,

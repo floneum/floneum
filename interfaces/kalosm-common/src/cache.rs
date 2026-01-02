@@ -318,12 +318,7 @@ impl Cache {
                         .get(reqwest::header::CONTENT_LENGTH)
                         .and_then(|h| h.to_str().ok())
                         .and_then(|s| s.parse::<u64>().ok());
-                    (
-                        remaining
-                            .map(|r| r + start_offset)
-                            .or(expected_size),
-                        true,
-                    )
+                    (remaining.map(|r| r + start_offset).or(expected_size), true)
                 } else if status == StatusCode::OK {
                     let total = response
                         .headers()
@@ -354,9 +349,7 @@ impl Cache {
                 // 7. If resuming, try to read existing data first
                 let mut all_bytes = if resuming && actual_start > 0 {
                     match opfs.read_file(&cache_dir, &safe_file).await {
-                        Ok(existing) => {
-                            existing
-                        }
+                        Ok(existing) => existing,
                         Err(e) => {
                             // Can't read existing file - delete it and return error
                             // The next call will start fresh
