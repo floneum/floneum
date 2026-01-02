@@ -298,7 +298,11 @@ impl Cache {
                 if status == StatusCode::RANGE_NOT_SATISFIABLE {
                     tracing::warn!("[OPFS] Got 416, deleting file and restarting");
                     let _ = opfs.delete_file(&cache_dir, &safe_file).await;
-                    response = client.get(final_url).send().await?;
+                    response = client
+                        .get(final_url)
+                        .with_authorization_header(token.clone())
+                        .send()
+                        .await?;
                     status = response.status();
                 }
 
@@ -345,11 +349,14 @@ impl Cache {
                             existing
                         }
                         Err(e) => {
-                            // Can't read existing file - need to restart completely
-                            tracing::warn!("[OPFS] Can't read existing file for resume: {}, restarting", e);
+                            // Can't read existing file - delete it and return error
+                            // The next call will start fresh
+                            tracing::warn!("[OPFS] Can't read existing file for resume: {}, deleting", e);
                             let _ = opfs.delete_file(&cache_dir, &safe_file).await;
-                            // Recursive call to restart fresh
-                            return Box::pin(self.get_bytes_opfs(source, progress)).await;
+                            return Err(CacheError::OpfsError(format!(
+                                "Failed to read partial download for resume: {}. File deleted, please retry.",
+                                e
+                            )));
                         }
                     }
                 } else {
@@ -594,17 +601,18 @@ async fn download_into<U: reqwest::IntoUrl>(
     let length = head
         .headers()
         .get(CONTENT_LENGTH)
-        .ok_or("response doesn't include the content length")
-        .unwrap();
-    let length = length.to_str().ok().and_then(|s| u64::from_str(s).ok());
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| u64::from_str(s).ok());
 
     let (start, mut output_file) = if let Ok(metadata) = tokio::fs::metadata(file).await {
         let start = metadata.len();
-        let output_file = OpenOptions::new().append(true).open(file).await.unwrap();
+        let output_file = OpenOptions::new().append(true).open(file).await?;
         (start, output_file)
     } else {
-        tokio::fs::create_dir_all(file.parent().unwrap()).await?;
-        (0, File::create(file).await.unwrap())
+        if let Some(parent) = file.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        (0, File::create(file).await?)
     };
 
     if let Some(length) = length {

@@ -100,7 +100,9 @@ impl<S: AsRef<str>, F: Fn(char) -> bool + 'static> Parser for StopOn<S, F> {
         let mut new_offset = state.offset;
         let mut text = state.text.clone();
 
-        let input_str = std::str::from_utf8(input).unwrap();
+        let Ok(input_str) = std::str::from_utf8(input) else {
+            crate::bail!(StopOnParseError);
+        };
         let literal_length = self.literal.as_ref().len();
         let mut literal_iter = self.literal.as_ref()[state.offset..].chars();
 
