@@ -288,10 +288,19 @@ impl Cache {
                 let mut response = request.send().await?;
                 let mut status = response.status();
 
-                // Handle 416 Range Not Satisfiable - delete and restart
+                // Handle 416 Range Not Satisfiable
                 if status == StatusCode::RANGE_NOT_SATISFIABLE {
-                    tracing::warn!("[OPFS] Got 416, deleting file and restarting");
-                    let _ = opfs.delete_file(&cache_dir, &safe_file).await;
+                    if local_size > 0 {
+                        let bytes = opfs.read_file(&cache_dir, &safe_file).await?;
+                        progress(FileLoadingProgress {
+                            progress: local_size,
+                            cached_size: local_size,
+                            size: local_size,
+                            start_time: None,
+                        });
+                        return Ok(bytes);
+                    }
+                    // local_size is 0 but we got 416 - something is wrong, restart fresh
                     response = client
                         .get(final_url)
                         .with_authorization_header(token.clone())

@@ -63,13 +63,10 @@ impl ModelLoadingProgress {
             Self::Downloading {
                 progress:
                     FileLoadingProgress {
-                        progress,
-                        size,
-                        cached_size,
-                        ..
+                        progress, size, ..
                     },
                 ..
-            } => (*progress - *cached_size) as f32 / *size as f32,
+            } => *progress as f32 / *size as f32,
             Self::Loading { progress } => *progress,
         }
     }
