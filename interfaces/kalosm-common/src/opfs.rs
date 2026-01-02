@@ -93,10 +93,16 @@ impl OpfsCache {
                 let options = FileSystemGetDirectoryOptions::new();
                 options.set_create(true);
 
-                current = JsFuture::from(current.get_directory_handle_with_options(&sanitized, &options))
-                    .await
-                    .map_err(|e| CacheError::OpfsError(format!("Failed to get directory '{}': {:?}", sanitized, e)))?
-                    .unchecked_into();
+                current =
+                    JsFuture::from(current.get_directory_handle_with_options(&sanitized, &options))
+                        .await
+                        .map_err(|e| {
+                            CacheError::OpfsError(format!(
+                                "Failed to get directory '{}': {:?}",
+                                sanitized, e
+                            ))
+                        })?
+                        .unchecked_into();
             }
         }
 
@@ -114,11 +120,7 @@ impl OpfsCache {
     }
 
     /// Get the size of a file if it exists
-    pub async fn get_file_size(
-        &self,
-        dir: &FileSystemDirectoryHandle,
-        name: &str,
-    ) -> Option<u64> {
+    pub async fn get_file_size(&self, dir: &FileSystemDirectoryHandle, name: &str) -> Option<u64> {
         let options = FileSystemGetFileOptions::new();
         options.set_create(false);
 
@@ -148,7 +150,9 @@ impl OpfsCache {
         let file_handle: FileSystemFileHandle =
             JsFuture::from(dir.get_file_handle_with_options(name, &options))
                 .await
-                .map_err(|e| CacheError::OpfsError(format!("Failed to get file handle '{}': {:?}", name, e)))?
+                .map_err(|e| {
+                    CacheError::OpfsError(format!("Failed to get file handle '{}': {:?}", name, e))
+                })?
                 .unchecked_into();
 
         let file: File = JsFuture::from(file_handle.get_file())
@@ -156,9 +160,9 @@ impl OpfsCache {
             .map_err(|e| CacheError::OpfsError(format!("Failed to get file '{}': {:?}", name, e)))?
             .unchecked_into();
 
-        let array_buffer = JsFuture::from(file.array_buffer())
-            .await
-            .map_err(|e| CacheError::OpfsError(format!("Failed to read file '{}': {:?}", name, e)))?;
+        let array_buffer = JsFuture::from(file.array_buffer()).await.map_err(|e| {
+            CacheError::OpfsError(format!("Failed to read file '{}': {:?}", name, e))
+        })?;
 
         let uint8_array = Uint8Array::new(&array_buffer);
         Ok(uint8_array.to_vec())
@@ -180,7 +184,9 @@ impl OpfsCache {
         let file_handle: FileSystemFileHandle =
             JsFuture::from(dir.get_file_handle_with_options(name, &options))
                 .await
-                .map_err(|e| CacheError::OpfsError(format!("Failed to create file '{}': {:?}", name, e)))?
+                .map_err(|e| {
+                    CacheError::OpfsError(format!("Failed to create file '{}': {:?}", name, e))
+                })?
                 .unchecked_into();
 
         let write_options = FileSystemCreateWritableOptions::new();
@@ -189,7 +195,12 @@ impl OpfsCache {
         let writable: FileSystemWritableFileStream =
             JsFuture::from(file_handle.create_writable_with_options(&write_options))
                 .await
-                .map_err(|e| CacheError::OpfsError(format!("Failed to create writable stream for '{}': {:?}", name, e)))?
+                .map_err(|e| {
+                    CacheError::OpfsError(format!(
+                        "Failed to create writable stream for '{}': {:?}",
+                        name, e
+                    ))
+                })?
                 .unchecked_into();
 
         Ok(writable)
@@ -201,9 +212,9 @@ impl OpfsCache {
         dir: &FileSystemDirectoryHandle,
         name: &str,
     ) -> Result<(), CacheError> {
-        JsFuture::from(dir.remove_entry(name))
-            .await
-            .map_err(|e| CacheError::OpfsError(format!("Failed to delete file '{}': {:?}", name, e)))?;
+        JsFuture::from(dir.remove_entry(name)).await.map_err(|e| {
+            CacheError::OpfsError(format!("Failed to delete file '{}': {:?}", name, e))
+        })?;
 
         Ok(())
     }
@@ -214,9 +225,11 @@ pub async fn seek_writable_stream(
     writable: &FileSystemWritableFileStream,
     position: u64,
 ) -> Result<(), CacheError> {
-    JsFuture::from(writable.seek_with_f64(position as f64).map_err(|e| {
-        CacheError::OpfsError(format!("Failed to seek: {:?}", e))
-    })?)
+    JsFuture::from(
+        writable
+            .seek_with_f64(position as f64)
+            .map_err(|e| CacheError::OpfsError(format!("Failed to seek: {:?}", e)))?,
+    )
     .await
     .map_err(|e| CacheError::OpfsError(format!("Seek failed: {:?}", e)))?;
 
@@ -228,9 +241,11 @@ pub async fn write_chunk_to_stream(
     writable: &FileSystemWritableFileStream,
     chunk: &[u8],
 ) -> Result<(), CacheError> {
-    JsFuture::from(writable.write_with_u8_array(chunk).map_err(|e| {
-        CacheError::OpfsError(format!("Failed to write chunk: {:?}", e))
-    })?)
+    JsFuture::from(
+        writable
+            .write_with_u8_array(chunk)
+            .map_err(|e| CacheError::OpfsError(format!("Failed to write chunk: {:?}", e)))?,
+    )
     .await
     .map_err(|e| CacheError::OpfsError(format!("Write failed: {:?}", e)))?;
 
@@ -238,7 +253,9 @@ pub async fn write_chunk_to_stream(
 }
 
 /// Close an OPFS writable stream
-pub async fn close_writable_stream(writable: &FileSystemWritableFileStream) -> Result<(), CacheError> {
+pub async fn close_writable_stream(
+    writable: &FileSystemWritableFileStream,
+) -> Result<(), CacheError> {
     JsFuture::from(writable.close())
         .await
         .map_err(|e| CacheError::OpfsError(format!("Failed to close stream: {:?}", e)))?;

@@ -87,10 +87,7 @@ impl Cache {
 
                 // Try OPFS-backed caching first
                 if is_opfs_available().await {
-                    match self
-                        .get_bytes_opfs(source, &mut progress)
-                        .await
-                    {
+                    match self.get_bytes_opfs(source, &mut progress).await {
                         Ok(bytes) => return Ok(bytes),
                         Err(e) => {
                             tracing::warn!("OPFS caching failed, falling back to in-memory: {}", e);
@@ -212,7 +209,9 @@ impl Cache {
         source: &FileSource,
         progress: &mut impl FnMut(FileLoadingProgress),
     ) -> Result<Vec<u8>, CacheError> {
-        use crate::opfs::{close_writable_stream, seek_writable_stream, write_chunk_to_stream, OpfsCache};
+        use crate::opfs::{
+            close_writable_stream, seek_writable_stream, write_chunk_to_stream, OpfsCache,
+        };
         use futures_util::StreamExt;
         use reqwest::StatusCode;
 
@@ -222,10 +221,17 @@ impl Cache {
                 revision,
                 file,
             } => {
-                tracing::info!("[OPFS] Starting cache lookup for {}/{}/{}", model_id, revision, file);
+                tracing::info!(
+                    "[OPFS] Starting cache lookup for {}/{}/{}",
+                    model_id,
+                    revision,
+                    file
+                );
 
                 let opfs = OpfsCache::new().await?;
-                let cache_dir = opfs.get_directory(&["kalosm", "cache", model_id, revision]).await?;
+                let cache_dir = opfs
+                    .get_directory(&["kalosm", "cache", model_id, revision])
+                    .await?;
                 let safe_file = crate::opfs::sanitize_name(file);
 
                 let token = self.huggingface_token.clone().or_else(huggingface_token);
@@ -249,7 +255,10 @@ impl Cache {
                 tracing::info!("[OPFS] Expected size from HEAD: {:?}", expected_size);
 
                 // 2. Check local file size
-                let local_size = opfs.get_file_size(&cache_dir, &safe_file).await.unwrap_or(0);
+                let local_size = opfs
+                    .get_file_size(&cache_dir, &safe_file)
+                    .await
+                    .unwrap_or(0);
                 tracing::info!("[OPFS] Local file size: {}", local_size);
 
                 // 3. Determine action based on size comparison
@@ -267,7 +276,11 @@ impl Cache {
                         return Ok(bytes);
                     } else if local_size > expected {
                         // File is corrupted (larger than expected), delete and start fresh
-                        tracing::warn!("[OPFS] File corrupted (local {} > expected {}), deleting", local_size, expected);
+                        tracing::warn!(
+                            "[OPFS] File corrupted (local {} > expected {}), deleting",
+                            local_size,
+                            expected
+                        );
                         let _ = opfs.delete_file(&cache_dir, &safe_file).await;
                     }
                 }
@@ -288,7 +301,8 @@ impl Cache {
                 // 6. Send GET request with Range header if resuming
                 let mut request = client.get(final_url.clone());
                 if start_offset > 0 {
-                    request = request.header(reqwest::header::RANGE, format!("bytes={}-", start_offset));
+                    request =
+                        request.header(reqwest::header::RANGE, format!("bytes={}-", start_offset));
                 }
 
                 let mut response = request.send().await?;
@@ -345,13 +359,19 @@ impl Cache {
                 let mut all_bytes = if resuming && actual_start > 0 {
                     match opfs.read_file(&cache_dir, &safe_file).await {
                         Ok(existing) => {
-                            tracing::info!("[OPFS] Read {} existing bytes for resume", existing.len());
+                            tracing::info!(
+                                "[OPFS] Read {} existing bytes for resume",
+                                existing.len()
+                            );
                             existing
                         }
                         Err(e) => {
                             // Can't read existing file - delete it and return error
                             // The next call will start fresh
-                            tracing::warn!("[OPFS] Can't read existing file for resume: {}, deleting", e);
+                            tracing::warn!(
+                                "[OPFS] Can't read existing file for resume: {}, deleting",
+                                e
+                            );
                             let _ = opfs.delete_file(&cache_dir, &safe_file).await;
                             return Err(CacheError::OpfsError(format!(
                                 "Failed to read partial download for resume: {}. File deleted, please retry.",
@@ -364,8 +384,13 @@ impl Cache {
                 };
 
                 // 8. Create writable stream and download
-                tracing::info!("[OPFS] Creating writable stream (keep_existing={})", resuming);
-                let mut writable = opfs.create_writable(&cache_dir, &safe_file, resuming).await?;
+                tracing::info!(
+                    "[OPFS] Creating writable stream (keep_existing={})",
+                    resuming
+                );
+                let mut writable = opfs
+                    .create_writable(&cache_dir, &safe_file, resuming)
+                    .await?;
 
                 if resuming && actual_start > 0 {
                     seek_writable_stream(&writable, actual_start).await?;
@@ -511,14 +536,19 @@ impl Cache {
                     return false;
                 };
 
-                let Ok(cache_dir) = opfs.get_directory(&["kalosm", "cache", model_id, revision]).await else {
+                let Ok(cache_dir) = opfs
+                    .get_directory(&["kalosm", "cache", model_id, revision])
+                    .await
+                else {
                     return false;
                 };
 
                 let safe_file = sanitize_name(file);
 
                 // Check if file exists and has non-zero size
-                opfs.get_file_size(&cache_dir, &safe_file).await.map_or(false, |size| size > 0)
+                opfs.get_file_size(&cache_dir, &safe_file)
+                    .await
+                    .map_or(false, |size| size > 0)
             }
             FileSource::Local(_) => false, // Local files not supported on WASM
         }
