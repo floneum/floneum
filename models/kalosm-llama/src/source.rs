@@ -36,6 +36,14 @@ fn qwen_tokenizer() -> FileSource {
     )
 }
 
+fn qwen3_tokenizer() -> FileSource {
+    FileSource::huggingface(
+        "Qwen/Qwen3-0.6B".to_string(),
+        "main".to_string(),
+        "tokenizer.json".to_string(),
+    )
+}
+
 #[derive(Debug, serde::Deserialize)]
 pub(crate) struct LlamaConfigJson {
     pub(crate) rope_scaling: Option<RopeScalingConfig>,
@@ -700,6 +708,90 @@ impl LlamaSource {
         ))
         .with_tokenizer(qwen_tokenizer())
         .with_group_query_attention(7)
+    }
+
+    /// A preset for the Qwen3-0.6B Chat model
+    ///
+    /// This model supports "thinking mode" which can be enabled via the `/think` and `/no_think`
+    /// soft switches in the user message. The model wraps reasoning in `<think>...</think>` blocks.
+    pub fn qwen_3_0_6b_instruct() -> Self {
+        Self::new(FileSource::huggingface(
+            "unsloth/Qwen3-0.6B-GGUF".to_string(),
+            "main".to_string(),
+            "Qwen3-0.6B-Q4_K_M.gguf".to_string(),
+        ))
+        .with_tokenizer(qwen3_tokenizer())
+        .with_group_query_attention(2)
+    }
+
+    /// A preset for the Qwen3-1.7B Chat model
+    ///
+    /// This model supports "thinking mode" which can be enabled via the `/think` and `/no_think`
+    /// soft switches in the user message. The model wraps reasoning in `<think>...</think>` blocks.
+    pub fn qwen_3_1_7b_instruct() -> Self {
+        Self::new(FileSource::huggingface(
+            "unsloth/Qwen3-1.7B-GGUF".to_string(),
+            "main".to_string(),
+            "Qwen3-1.7B-Q4_K_M.gguf".to_string(),
+        ))
+        .with_tokenizer(qwen3_tokenizer())
+        .with_group_query_attention(2)
+    }
+
+    /// A preset for the Qwen3-4B Chat model
+    ///
+    /// This model supports "thinking mode" which can be enabled via the `/think` and `/no_think`
+    /// soft switches in the user message. The model wraps reasoning in `<think>...</think>` blocks.
+    pub fn qwen_3_4b_instruct() -> Self {
+        Self::new(FileSource::huggingface(
+            "unsloth/Qwen3-4B-GGUF".to_string(),
+            "main".to_string(),
+            "Qwen3-4B-Q4_K_M.gguf".to_string(),
+        ))
+        .with_tokenizer(qwen3_tokenizer())
+        .with_group_query_attention(4)
+    }
+
+    /// A preset for the Qwen3-8B Chat model
+    ///
+    /// This model supports "thinking mode" which can be enabled via the `/think` and `/no_think`
+    /// soft switches in the user message. The model wraps reasoning in `<think>...</think>` blocks.
+    pub fn qwen_3_8b_instruct() -> Self {
+        Self::new(FileSource::huggingface(
+            "unsloth/Qwen3-8B-GGUF".to_string(),
+            "main".to_string(),
+            "Qwen3-8B-Q4_K_M.gguf".to_string(),
+        ))
+        .with_tokenizer(qwen3_tokenizer())
+        .with_group_query_attention(4)
+    }
+
+    /// A preset for the Qwen3-14B Chat model
+    ///
+    /// This model supports "thinking mode" which can be enabled via the `/think` and `/no_think`
+    /// soft switches in the user message. The model wraps reasoning in `<think>...</think>` blocks.
+    pub fn qwen_3_14b_instruct() -> Self {
+        Self::new(FileSource::huggingface(
+            "unsloth/Qwen3-14B-GGUF".to_string(),
+            "main".to_string(),
+            "Qwen3-14B-Q4_K_M.gguf".to_string(),
+        ))
+        .with_tokenizer(qwen3_tokenizer())
+        .with_group_query_attention(4)
+    }
+
+    /// A preset for the Qwen3-32B Chat model
+    ///
+    /// This model supports "thinking mode" which can be enabled via the `/think` and `/no_think`
+    /// soft switches in the user message. The model wraps reasoning in `<think>...</think>` blocks.
+    pub fn qwen_3_32b_instruct() -> Self {
+        Self::new(FileSource::huggingface(
+            "unsloth/Qwen3-32B-GGUF".to_string(),
+            "main".to_string(),
+            "Qwen3-32B-Q4_K_M.gguf".to_string(),
+        ))
+        .with_tokenizer(qwen3_tokenizer())
+        .with_group_query_attention(8)
     }
 
     /// A preset for the DeepSeek-R1 distill qwen 1.5b model

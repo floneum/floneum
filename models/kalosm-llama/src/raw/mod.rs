@@ -319,6 +319,7 @@ impl<F: FloatDataType> Model<F> {
                         .transpose()?,
                     attention_wv: v,
                     interleaved_rope: architecture.as_ref() != "qwen2"
+                        && architecture.as_ref() != "qwen3"
                         && architecture.as_ref() != "gemma3",
                     bias,
                 };
