@@ -1,5 +1,6 @@
 use std::{
     fmt::Display,
+    iter::Sum,
     ops::{Add, Div, Mul, Neg, Rem, Sub},
 };
 
@@ -152,6 +153,21 @@ impl<const R: usize, T: DataType> Add<T> for Tensor<R, T> {
                 .with_name("add_const"),
             self.shape().as_slice(),
         ))
+    }
+}
+
+impl<const R: usize, T: DataType> Sum for Tensor<R, T> {
+    fn sum<I: Iterator<Item = Self>>(mut iter: I) -> Self {
+        let first = iter.next().expect("Cannot sum over empty iterator");
+        iter.fold(first, |acc, x| acc + x)
+    }
+}
+
+impl<'a, const R: usize, T: DataType> Sum<&'a Tensor<R, T>> for Tensor<R, T> {
+    fn sum<I: Iterator<Item = &'a Tensor<R, T>>>(iter: I) -> Self {
+        let mut iter = iter.cloned();
+        let first = iter.next().expect("Cannot sum over empty iterator");
+        iter.fold(first, |acc, x| acc + x)
     }
 }
 
