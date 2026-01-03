@@ -21,6 +21,12 @@ pub enum CacheError {
     Http(#[from] reqwest::Error),
     #[error("Unexpected status code: {0}")]
     UnexpectedStatusCode(reqwest::StatusCode),
+    #[cfg(target_arch = "wasm32")]
+    #[error("OPFS not available: {0}")]
+    OpfsNotAvailable(String),
+    #[cfg(target_arch = "wasm32")]
+    #[error("OPFS operation failed: {0}")]
+    OpfsError(String),
 }
 
 #[derive(Debug, Clone)]
@@ -75,71 +81,27 @@ impl Cache {
         }
         #[cfg(not(feature = "tokio"))]
         {
-            use futures_util::StreamExt;
-            use reqwest::StatusCode;
-            use std::str::FromStr;
-            match source {
-                FileSource::HuggingFace {
-                    model_id,
-                    revision,
-                    file,
-                } => {
-                    let token = self.huggingface_token.clone().or_else(huggingface_token);
-                    let url =
-                        format!("https://huggingface.co/{model_id}/resolve/{revision}/{file}");
-                    let client = reqwest::Client::new();
-                    let head = client
-                        .head(&url)
-                        .with_authorization_header(token.clone())
-                        .send()
-                        .await
-                        .map_err(CacheError::from)?;
-                    let length = head
-                        .headers()
-                        .get(reqwest::header::CONTENT_LENGTH)
-                        .and_then(|length| {
-                            length.to_str().ok().and_then(|s| u64::from_str(s).ok())
-                        });
-                    if let Some(length) = length {
-                        progress(FileLoadingProgress {
-                            progress: 0,
-                            cached_size: 0,
-                            size: length,
-                            start_time: None,
-                        });
-                    }
-                    let request = client.get(url).with_authorization_header(token);
-                    let response = request.send().await?;
+            #[cfg(target_arch = "wasm32")]
+            {
+                use crate::opfs::is_opfs_available;
 
-                    let status = response.status();
-                    if !(status == StatusCode::OK || status == StatusCode::PARTIAL_CONTENT) {
-                        return Err(CacheError::UnexpectedStatusCode(status));
-                    }
-
-                    let mut current_progress = 0;
-
-                    let mut bytes = Vec::new();
-                    let mut stream = response.bytes_stream();
-                    while let Some(chunk) = stream.next().await {
-                        let chunk = chunk?;
-                        bytes.extend_from_slice(&chunk);
-                        tracing::trace!("wrote chunk of size {}", chunk.len());
-                        current_progress += chunk.len() as u64;
-                        if let Some(length) = length {
-                            progress(FileLoadingProgress {
-                                progress: current_progress,
-                                cached_size: 0,
-                                size: length,
-                                start_time: None,
-                            });
+                // Try OPFS-backed caching first
+                if is_opfs_available().await {
+                    match self.get_bytes_opfs(source, &mut progress).await {
+                        Ok(bytes) => return Ok(bytes),
+                        Err(e) => {
+                            tracing::warn!("OPFS caching failed, falling back to in-memory: {}", e);
                         }
                     }
-
-                    Ok(bytes)
                 }
-                _ => Err(CacheError::Io(std::io::Error::other(
-                    "Local file access not supported without the 'tokio' feature",
-                ))),
+
+                // Fallback to in-memory streaming (no caching)
+                self.get_bytes_memory(source, progress).await
+            }
+
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                self.get_bytes_memory(source, progress).await
             }
         }
     }
@@ -236,6 +198,340 @@ impl Cache {
             FileSource::Local(path) => Ok(path.clone()),
         }
     }
+
+    /// WASM: Get bytes using OPFS for persistent caching
+    ///
+    /// Uses file size comparison with Content-Length to determine if a file is complete.
+    /// No .partial files - writes directly to the final filename.
+    #[cfg(all(not(feature = "tokio"), target_arch = "wasm32"))]
+    async fn get_bytes_opfs(
+        &self,
+        source: &FileSource,
+        progress: &mut impl FnMut(FileLoadingProgress),
+    ) -> Result<Vec<u8>, CacheError> {
+        use crate::opfs::{
+            close_writable_stream, seek_writable_stream, write_chunk_to_stream, OpfsCache,
+        };
+        use futures_util::StreamExt;
+        use reqwest::StatusCode;
+
+        match source {
+            FileSource::HuggingFace {
+                model_id,
+                revision,
+                file,
+            } => {
+                let opfs = OpfsCache::new().await?;
+                let cache_dir = opfs
+                    .get_directory(&["kalosm", "cache", model_id, revision])
+                    .await?;
+                let safe_file = crate::opfs::sanitize_name(file);
+
+                let token = self.huggingface_token.clone().or_else(huggingface_token);
+                let url = format!("https://huggingface.co/{model_id}/resolve/{revision}/{file}");
+                let client = reqwest::Client::new();
+
+                // 1. HEAD request to get expected Content-Length
+                let head_response = client
+                    .head(&url)
+                    .with_authorization_header(token.clone())
+                    .send()
+                    .await?;
+
+                let expected_size = head_response
+                    .headers()
+                    .get(reqwest::header::CONTENT_LENGTH)
+                    .and_then(|h| h.to_str().ok())
+                    .and_then(|s| s.parse::<u64>().ok());
+
+                // 2. Check local file size
+                let local_size = opfs
+                    .get_file_size(&cache_dir, &safe_file)
+                    .await
+                    .unwrap_or(0);
+
+                // 3. Determine action based on size comparison
+                if let Some(expected) = expected_size {
+                    if local_size == expected {
+                        // Cache hit - file is complete
+                        let bytes = opfs.read_file(&cache_dir, &safe_file).await?;
+                        progress(FileLoadingProgress {
+                            progress: local_size,
+                            cached_size: local_size,
+                            size: local_size,
+                            start_time: None,
+                        });
+                        return Ok(bytes);
+                    } else if local_size > expected {
+                        // File is corrupted (larger than expected), delete and start fresh
+                        let _ = opfs.delete_file(&cache_dir, &safe_file).await;
+                    }
+                }
+
+                // 4. Calculate start offset for resume
+                let start_offset = if expected_size.map_or(false, |e| local_size > e) {
+                    0 // We deleted the file above
+                } else {
+                    local_size
+                };
+
+                // 5. Resolve redirects (HuggingFace returns 302, Range headers get stripped)
+                let final_url = head_response.url().clone();
+
+                // 6. Send GET request with Range header if resuming
+                let mut request = client.get(final_url.clone());
+                if start_offset > 0 {
+                    request =
+                        request.header(reqwest::header::RANGE, format!("bytes={}-", start_offset));
+                }
+
+                let mut response = request.send().await?;
+                let mut status = response.status();
+
+                // Handle 416 Range Not Satisfiable
+                if status == StatusCode::RANGE_NOT_SATISFIABLE {
+                    if local_size > 0 {
+                        let bytes = opfs.read_file(&cache_dir, &safe_file).await?;
+                        progress(FileLoadingProgress {
+                            progress: local_size,
+                            cached_size: local_size,
+                            size: local_size,
+                            start_time: None,
+                        });
+                        return Ok(bytes);
+                    }
+                    // local_size is 0 but we got 416 - something is wrong, restart fresh
+                    response = client
+                        .get(final_url)
+                        .with_authorization_header(token.clone())
+                        .send()
+                        .await?;
+                    status = response.status();
+                }
+
+                // Note: In WASM, Content-Length from GET responses may not be accessible due to CORS
+                // (servers must include it in Access-Control-Expose-Headers). We use expected_size
+                // from the HEAD request as a fallback since it's more reliably available.
+                let (total_size, resuming) = if status == StatusCode::PARTIAL_CONTENT {
+                    let remaining = response
+                        .headers()
+                        .get(reqwest::header::CONTENT_LENGTH)
+                        .and_then(|h| h.to_str().ok())
+                        .and_then(|s| s.parse::<u64>().ok());
+                    (remaining.map(|r| r + start_offset).or(expected_size), true)
+                } else if status == StatusCode::OK {
+                    let total = response
+                        .headers()
+                        .get(reqwest::header::CONTENT_LENGTH)
+                        .and_then(|h| h.to_str().ok())
+                        .and_then(|s| s.parse::<u64>().ok());
+                    (total.or(expected_size), false)
+                } else {
+                    return Err(CacheError::UnexpectedStatusCode(status));
+                };
+
+                let actual_start = if resuming { start_offset } else { 0 };
+
+                if let Some(size) = total_size {
+                    progress(FileLoadingProgress {
+                        progress: actual_start,
+                        cached_size: actual_start,
+                        size,
+                        start_time: None,
+                    });
+
+                    // Already complete
+                    if actual_start == size {
+                        return opfs.read_file(&cache_dir, &safe_file).await;
+                    }
+                }
+
+                // 7. If resuming, try to read existing data first
+                let mut all_bytes = if resuming && actual_start > 0 {
+                    match opfs.read_file(&cache_dir, &safe_file).await {
+                        Ok(existing) => existing,
+                        Err(e) => {
+                            // Can't read existing file - delete it and return error
+                            // The next call will start fresh
+                            tracing::warn!(
+                                "[OPFS] Can't read existing file for resume: {}, deleting",
+                                e
+                            );
+                            let _ = opfs.delete_file(&cache_dir, &safe_file).await;
+                            return Err(CacheError::OpfsError(format!(
+                                "Failed to read partial download for resume: {}. File deleted, please retry.",
+                                e
+                            )));
+                        }
+                    }
+                } else {
+                    Vec::new()
+                };
+
+                // 8. Create writable stream and download
+                let mut writable = opfs
+                    .create_writable(&cache_dir, &safe_file, resuming)
+                    .await?;
+
+                if resuming && actual_start > 0 {
+                    seek_writable_stream(&writable, actual_start).await?;
+                }
+
+                let mut current_progress = actual_start;
+                let mut stream = response.bytes_stream();
+
+                // Flush every 100MB
+                const FLUSH_INTERVAL: u64 = 100 * 1024 * 1024;
+                let mut bytes_since_flush: u64 = 0;
+
+                while let Some(chunk_result) = stream.next().await {
+                    let chunk = chunk_result?;
+                    write_chunk_to_stream(&writable, &chunk).await?;
+                    all_bytes.extend_from_slice(&chunk);
+
+                    current_progress += chunk.len() as u64;
+                    bytes_since_flush += chunk.len() as u64;
+
+                    if let Some(size) = total_size {
+                        progress(FileLoadingProgress {
+                            progress: current_progress,
+                            cached_size: actual_start,
+                            size,
+                            start_time: None,
+                        });
+                    }
+
+                    // Periodic flush by closing and reopening
+                    if bytes_since_flush >= FLUSH_INTERVAL {
+                        close_writable_stream(&writable).await?;
+                        writable = opfs.create_writable(&cache_dir, &safe_file, true).await?;
+                        seek_writable_stream(&writable, current_progress).await?;
+                        bytes_since_flush = 0;
+                    }
+                }
+
+                close_writable_stream(&writable).await?;
+
+                Ok(all_bytes)
+            }
+            FileSource::Local(_) => Err(CacheError::Io(std::io::Error::other(
+                "Local file access not supported on WASM",
+            ))),
+        }
+    }
+
+    /// Fallback: Get bytes in-memory without caching (original WASM behavior)
+    #[cfg(not(feature = "tokio"))]
+    async fn get_bytes_memory(
+        &self,
+        source: &FileSource,
+        mut progress: impl FnMut(FileLoadingProgress),
+    ) -> Result<Vec<u8>, CacheError> {
+        use futures_util::StreamExt;
+        use reqwest::StatusCode;
+        use std::str::FromStr;
+
+        match source {
+            FileSource::HuggingFace {
+                model_id,
+                revision,
+                file,
+            } => {
+                let token = self.huggingface_token.clone().or_else(huggingface_token);
+                let url = format!("https://huggingface.co/{model_id}/resolve/{revision}/{file}");
+                let client = reqwest::Client::new();
+                let head = client
+                    .head(&url)
+                    .with_authorization_header(token.clone())
+                    .send()
+                    .await
+                    .map_err(CacheError::from)?;
+                let length = head
+                    .headers()
+                    .get(reqwest::header::CONTENT_LENGTH)
+                    .and_then(|length| length.to_str().ok().and_then(|s| u64::from_str(s).ok()));
+
+                if let Some(length) = length {
+                    progress(FileLoadingProgress {
+                        progress: 0,
+                        cached_size: 0,
+                        size: length,
+                        start_time: None,
+                    });
+                }
+
+                let request = client.get(url).with_authorization_header(token);
+                let response = request.send().await?;
+
+                let status = response.status();
+                if !(status == StatusCode::OK || status == StatusCode::PARTIAL_CONTENT) {
+                    return Err(CacheError::UnexpectedStatusCode(status));
+                }
+
+                let mut current_progress = 0;
+                let mut bytes = Vec::new();
+                let mut stream = response.bytes_stream();
+
+                while let Some(chunk) = stream.next().await {
+                    let chunk = chunk?;
+                    bytes.extend_from_slice(&chunk);
+                    tracing::trace!("wrote chunk of size {}", chunk.len());
+                    current_progress += chunk.len() as u64;
+                    if let Some(length) = length {
+                        progress(FileLoadingProgress {
+                            progress: current_progress,
+                            cached_size: 0,
+                            size: length,
+                            start_time: None,
+                        });
+                    }
+                }
+
+                Ok(bytes)
+            }
+            _ => Err(CacheError::Io(std::io::Error::other(
+                "Local file access not supported without the 'tokio' feature",
+            ))),
+        }
+    }
+
+    /// Check if the file exists in the cache (async version for WASM)
+    #[cfg(all(not(feature = "tokio"), target_arch = "wasm32"))]
+    pub async fn exists_async(&self, source: &FileSource) -> bool {
+        use crate::opfs::{is_opfs_available, sanitize_name, OpfsCache};
+
+        match source {
+            FileSource::HuggingFace {
+                model_id,
+                revision,
+                file,
+                ..
+            } => {
+                if !is_opfs_available().await {
+                    return false;
+                }
+
+                let Ok(opfs) = OpfsCache::new().await else {
+                    return false;
+                };
+
+                let Ok(cache_dir) = opfs
+                    .get_directory(&["kalosm", "cache", model_id, revision])
+                    .await
+                else {
+                    return false;
+                };
+
+                let safe_file = sanitize_name(file);
+
+                // Check if file exists and has non-zero size
+                opfs.get_file_size(&cache_dir, &safe_file)
+                    .await
+                    .map_or(false, |size| size > 0)
+            }
+            FileSource::Local(_) => false, // Local files not supported on WASM
+        }
+    }
 }
 
 #[allow(clippy::derivable_impls)]
@@ -314,17 +610,18 @@ async fn download_into<U: reqwest::IntoUrl>(
     let length = head
         .headers()
         .get(CONTENT_LENGTH)
-        .ok_or("response doesn't include the content length")
-        .unwrap();
-    let length = length.to_str().ok().and_then(|s| u64::from_str(s).ok());
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| u64::from_str(s).ok());
 
     let (start, mut output_file) = if let Ok(metadata) = tokio::fs::metadata(file).await {
         let start = metadata.len();
-        let output_file = OpenOptions::new().append(true).open(file).await.unwrap();
+        let output_file = OpenOptions::new().append(true).open(file).await?;
         (start, output_file)
     } else {
-        tokio::fs::create_dir_all(file.parent().unwrap()).await?;
-        (0, File::create(file).await.unwrap())
+        if let Some(parent) = file.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        (0, File::create(file).await?)
     };
 
     if let Some(length) = length {
