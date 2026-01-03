@@ -264,7 +264,7 @@ pub(crate) fn get_pre_tokenizer(
             ty: PreTokenizerType::CommandR,
             ..Default::default()
         },
-        "qwen2" => GGUFPreTokenizerConfig {
+        "qwen2" | "qwen3" => GGUFPreTokenizerConfig {
             ty: PreTokenizerType::Qwen2,
             ..Default::default()
         },
