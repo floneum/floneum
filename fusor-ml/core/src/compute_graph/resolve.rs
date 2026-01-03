@@ -522,6 +522,10 @@ impl<'a> Resolver<'a> {
         let mut all_inputs = nary.inputs.clone();
         let mut fused_execs = Vec::new();
 
+        // Get the max storage buffers limit from GPU
+        let max_storage_bindings =
+            graph.device.limits().max_storage_buffers_per_shader_stage as usize;
+
         for (input_idx, &input_inner) in nary.inputs.iter().enumerate() {
             if self.check_cached(graph, input_inner) {
                 continue;
@@ -548,6 +552,20 @@ impl<'a> Resolver<'a> {
             // Only fuse if substitution was successful
             // If not, the expression still references the original input which must remain
             if success {
+                // Check if fusing would exceed GPU storage binding limit
+                // Count unique inputs after potential merge (duplicates share a binding)
+                let unique_inputs: FxHashSet<_> = all_inputs
+                    .iter()
+                    .chain(input_nary.inputs.iter())
+                    .copied()
+                    .collect();
+
+                // Each unique input needs a binding, plus 1 for output
+                if unique_inputs.len() + 1 > max_storage_bindings {
+                    // Skip fusion - would exceed GPU binding limit
+                    continue;
+                }
+
                 expression = new_expression;
                 all_inputs.extend(input_nary.inputs.iter().copied());
                 fused_execs.push((input_exec, input_nary.inputs.clone()));
