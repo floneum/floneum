@@ -1,6 +1,5 @@
 use fusor_gguf::GgmlType;
 use std::fmt::Display;
-use std::fmt::Write;
 
 #[derive(Clone, Debug)]
 pub(crate) struct QMatrixInput {
@@ -30,12 +29,16 @@ impl QMatrixInput {
     ) {
         let mut strides = Vec::new();
         let mut product = "1".to_string();
+        let block_size = self.datatype.block_size();
         for i in (0..self.rank).rev() {
-            let mut shape = self.shape_binding(i);
-            if i == self.rank - 1 {
-                write!(&mut shape, " / {}", self.datatype.block_size()).unwrap();
-            }
-            let new = format!("{product} * {shape}");
+            let shape = self.shape_binding(i);
+            // For the last dimension, compute ceil(shape / block_size) to get number of blocks per row
+            let shape_expr = if i == self.rank - 1 {
+                format!("(({shape} + {block_size}u - 1u) / {block_size}u)")
+            } else {
+                shape
+            };
+            let new = format!("{product} * {shape_expr}");
             strides.push(product);
             product = new;
         }

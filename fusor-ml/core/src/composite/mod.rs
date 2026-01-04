@@ -25,3 +25,4 @@ mod variance;
 pub(crate) mod where_cond;
 mod zeros;
 mod zeros_like;
+mod sigmoid;

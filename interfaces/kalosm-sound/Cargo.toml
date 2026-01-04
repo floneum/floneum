@@ -28,7 +28,7 @@ rwhisper.workspace = true
 voice_activity_detector = { version = "0.2.0", features = ["async"], optional = true }
 ort = { version = "=2.0.0-rc.10", optional = true }
 ort-sys = { version = "=2.0.0-rc.10", optional = true }
-nnnoiseless = { version = "0.5.1", optional = true }
+nnnoiseless = { path = "/Users/evanalmloff/Desktop/Github/nnnoiseless", features = ["fusor"], optional = true }
 
 [features]
 default = ["denoise"]

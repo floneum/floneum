@@ -349,15 +349,27 @@ impl GgufTensorMetadata {
     }
 
     fn byte_size(&self) -> Result<usize, GgufReadError> {
-        let tensor_elems = self.shape.iter().copied().product::<u32>() as usize;
         let block_size = self.ty.block_size();
-        if !tensor_elems.is_multiple_of(block_size) {
-            return Err(GgufReadError::InvalidTensorSize {
-                tensor_elems,
-                block_size,
-            });
-        }
-        Ok((tensor_elems / block_size) * self.ty.block_allocation_size())
+        // Compute total blocks using row-aligned packing:
+        // - For all dimensions except the last: multiply as-is
+        // - For the last dimension: use ceil(dim / block_size) blocks
+        let total_blocks = if self.shape.is_empty() {
+            0
+        } else if block_size == 1 {
+            // Non-quantized types (F32, F16)
+            self.shape.iter().copied().product::<u32>() as usize
+        } else {
+            // Quantized types with row-aligned blocks
+            let all_but_last: usize = self.shape[..self.shape.len() - 1]
+                .iter()
+                .copied()
+                .map(|d| d as usize)
+                .product();
+            let last_dim = self.shape.last().copied().unwrap_or(1) as usize;
+            let last_dim_blocks = (last_dim + block_size - 1) / block_size;
+            all_but_last * last_dim_blocks
+        };
+        Ok(total_blocks * self.ty.block_allocation_size())
     }
 }
 
@@ -695,7 +707,18 @@ impl GgufMetadata {
             write_le_u64(writer, tensor_metadata.offset)?;
         }
 
-        let tensor_data_offset = writer.stream_position()?;
+        // Align tensor data offset to match read behavior
+        let position = writer.stream_position()?;
+        let alignment = match self.metadata.get("general.alignment") {
+            Some(GgufValue::U8(v)) => *v as u64,
+            Some(GgufValue::U16(v)) => *v as u64,
+            Some(GgufValue::U32(v)) => *v as u64,
+            Some(GgufValue::I8(v)) if *v >= 0 => *v as u64,
+            Some(GgufValue::I16(v)) if *v >= 0 => *v as u64,
+            Some(GgufValue::I32(v)) if *v >= 0 => *v as u64,
+            _ => DEFAULT_ALIGNMENT,
+        };
+        let tensor_data_offset = position.div_ceil(alignment) * alignment;
 
         // Write the tensor data
         for (tensor_name, tensor_data) in tensors {
@@ -735,22 +758,22 @@ const Q4_0_BLOCK_SIZE: usize = 32;
 #[derive(AnyBitPattern, Clone, Copy)]
 #[repr(C)]
 struct BlockQ4_0Wgsl {
-    pub(crate) scale: half::f16,
-    pub(crate) data: [u32; Q4_0_BLOCK_SIZE / 8],
+    pub scale: half::f16,
+    pub data: [u32; Q4_0_BLOCK_SIZE / 8],
 }
 
 #[derive(AnyBitPattern, Clone, Copy)]
 #[repr(C)]
 struct BlockQ4_0WgslF32 {
-    pub(crate) scale: f32,
-    pub(crate) data: [u32; Q4_0_BLOCK_SIZE / 8],
+    pub scale: f32,
+    pub data: [u32; Q4_0_BLOCK_SIZE / 8],
 }
 
 #[derive(Zeroable, Pod, Clone, Copy, PartialEq, Debug)]
 #[repr(C)]
 pub struct BlockQ4_0 {
-    pub(crate) scale: half::f16,
-    pub(crate) data: [u8; Q4_0_BLOCK_SIZE / 2],
+    pub scale: half::f16,
+    pub data: [u8; Q4_0_BLOCK_SIZE / 2],
 }
 
 impl BlockQ4_0 {
@@ -827,27 +850,27 @@ const Q5_0_BLOCK_SIZE: usize = 32;
 #[derive(AnyBitPattern, Clone, Copy)]
 #[repr(C)]
 struct BlockQ5_0Wgsl {
-    pub(crate) scale: half::f16,
-    pub(crate) data_high_bits: [u32; (Q5_0_BLOCK_SIZE / 8) / 4],
-    pub(crate) data_low_bits: [u32; (Q5_0_BLOCK_SIZE / 2) / 4],
+    pub scale: half::f16,
+    pub data_high_bits: [u32; (Q5_0_BLOCK_SIZE / 8) / 4],
+    pub data_low_bits: [u32; (Q5_0_BLOCK_SIZE / 2) / 4],
 }
 
 #[derive(AnyBitPattern, Clone, Copy)]
 #[repr(C)]
 struct BlockQ5_0WgslF32 {
-    pub(crate) scale: f32,
-    pub(crate) data_high_bits: [u32; (Q5_0_BLOCK_SIZE / 8) / 4],
-    pub(crate) data_low_bits: [u32; (Q5_0_BLOCK_SIZE / 2) / 4],
+    pub scale: f32,
+    pub data_high_bits: [u32; (Q5_0_BLOCK_SIZE / 8) / 4],
+    pub data_low_bits: [u32; (Q5_0_BLOCK_SIZE / 2) / 4],
 }
 
 #[derive(Zeroable, Pod, Clone, Copy, PartialEq, Debug)]
 #[repr(C)]
 pub struct BlockQ5_0 {
-    pub(crate) scale: half::f16,
+    pub scale: half::f16,
     // The highest bit for each of the 5 bit values
-    pub(crate) data_high_bits: [u8; Q5_0_BLOCK_SIZE / 8],
+    pub data_high_bits: [u8; Q5_0_BLOCK_SIZE / 8],
     // The low four bits for each of the 5 bit values
-    pub(crate) data_low_bits: [u8; Q5_0_BLOCK_SIZE / 2],
+    pub data_low_bits: [u8; Q5_0_BLOCK_SIZE / 2],
 }
 
 impl BlockQ5_0 {
@@ -956,22 +979,22 @@ const Q8_0_BLOCK_SIZE: usize = 32;
 #[derive(AnyBitPattern, Clone, Copy)]
 #[repr(C)]
 struct BlockQ8_0Wgsl {
-    pub(crate) scale: half::f16,
-    pub(crate) data: [u32; Q8_0_BLOCK_SIZE / 4],
+    pub scale: half::f16,
+    pub data: [u32; Q8_0_BLOCK_SIZE / 4],
 }
 
 #[derive(AnyBitPattern, Clone, Copy)]
 #[repr(C)]
 struct BlockQ8_0WgslF32 {
-    pub(crate) scale: f32,
-    pub(crate) data: [u32; Q8_0_BLOCK_SIZE / 4],
+    pub scale: f32,
+    pub data: [u32; Q8_0_BLOCK_SIZE / 4],
 }
 
 #[derive(Zeroable, Pod, Clone, Copy, PartialEq, Debug)]
 #[repr(C)]
 pub struct BlockQ8_0 {
-    pub(crate) scale: half::f16,
-    pub(crate) data: [i8; Q8_0_BLOCK_SIZE],
+    pub scale: half::f16,
+    pub data: [i8; Q8_0_BLOCK_SIZE],
 }
 
 impl BlockQ8_0 {
@@ -1056,10 +1079,10 @@ pub struct BlockQ4KWgslF32 {
 #[derive(Zeroable, Pod, Clone, Copy, PartialEq, Debug)]
 #[repr(C)]
 pub struct BlockQ4K {
-    scale: half::f16,
-    min: half::f16,
-    scales: [u8; 12],
-    data: [u8; K_BLOCK_SIZE / 2],
+    pub scale: half::f16,
+    pub min: half::f16,
+    pub scales: [u8; 12],
+    pub data: [u8; K_BLOCK_SIZE / 2],
 }
 
 impl BlockQ4K {
@@ -1186,32 +1209,32 @@ impl GgufBlock for BlockQ4K {
 #[derive(AnyBitPattern, Clone, Copy)]
 #[repr(C)]
 pub struct BlockQ6KWgsl {
-    pub(crate) data_low_bits: [u32; (K_BLOCK_SIZE / 2) / 4],
-    pub(crate) data_high_bits: [u32; (K_BLOCK_SIZE / 4) / 4],
-    pub(crate) scales: [u32; (K_BLOCK_SIZE / 16) / 4],
-    pub(crate) scale: half::f16,
+    pub data_low_bits: [u32; (K_BLOCK_SIZE / 2) / 4],
+    pub data_high_bits: [u32; (K_BLOCK_SIZE / 4) / 4],
+    pub scales: [u32; (K_BLOCK_SIZE / 16) / 4],
+    pub scale: half::f16,
 }
 
 #[derive(AnyBitPattern, Clone, Copy)]
 #[repr(C)]
 pub struct BlockQ6KWgslF32 {
-    pub(crate) data_low_bits: [u32; (K_BLOCK_SIZE / 2) / 4],
-    pub(crate) data_high_bits: [u32; (K_BLOCK_SIZE / 4) / 4],
-    pub(crate) scales: [u32; (K_BLOCK_SIZE / 16) / 4],
-    pub(crate) scale: f32,
+    pub data_low_bits: [u32; (K_BLOCK_SIZE / 2) / 4],
+    pub data_high_bits: [u32; (K_BLOCK_SIZE / 4) / 4],
+    pub scales: [u32; (K_BLOCK_SIZE / 16) / 4],
+    pub scale: f32,
 }
 
 #[derive(Zeroable, Pod, Clone, Copy, PartialEq, Debug)]
 #[repr(C)]
 pub struct BlockQ6K {
     // The 4 low bits of the each value
-    pub(crate) data_low_bits: [u8; K_BLOCK_SIZE / 2],
+    pub data_low_bits: [u8; K_BLOCK_SIZE / 2],
     // The 2 high bits of the each value
-    pub(crate) data_high_bits: [u8; K_BLOCK_SIZE / 4],
+    pub data_high_bits: [u8; K_BLOCK_SIZE / 4],
     // Full byte scales for each block of 16 values
-    pub(crate) scales: [i8; K_BLOCK_SIZE / 16],
+    pub scales: [i8; K_BLOCK_SIZE / 16],
     // The scale of the super block
-    pub(crate) scale: half::f16,
+    pub scale: half::f16,
 }
 
 impl BlockQ6K {
