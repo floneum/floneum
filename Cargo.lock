@@ -2927,6 +2927,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fusor-cpu"
+version = "0.1.0"
+dependencies = [
+ "generativity",
+ "pulp 0.22.2",
+]
+
+[[package]]
 name = "fusor-gguf"
 version = "0.1.0"
 dependencies = [
@@ -3313,6 +3321,12 @@ dependencies = [
  "raw-cpuid 11.6.0",
  "seq-macro",
 ]
+
+[[package]]
+name = "generativity"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5881e4c3c2433fe4905bb19cfd2b5d49d4248274862b68c27c33d9ba4e13f9ec"
 
 [[package]]
 name = "generic-array"
@@ -6619,6 +6633,29 @@ dependencies = [
  "reborrow",
  "version_check",
 ]
+
+[[package]]
+name = "pulp"
+version = "0.22.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e205bb30d5b916c55e584c22201771bcf2bad9aabd5d4127f38387140c38632"
+dependencies = [
+ "bytemuck",
+ "cfg-if",
+ "libm",
+ "num-complex",
+ "paste",
+ "pulp-wasm-simd-flag",
+ "raw-cpuid 11.6.0",
+ "reborrow",
+ "version_check",
+]
+
+[[package]]
+name = "pulp-wasm-simd-flag"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "40e24eee682d89fb193496edf918a7f407d30175b2e785fe057e4392dfd182e0"
 
 [[package]]
 name = "pxfm"
