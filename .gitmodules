@@ -1,0 +1,3 @@
+[submodule "faer"]
+	path = faer
+	url = https://codeberg.org/sarah-quinones/faer
