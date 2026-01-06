@@ -41,10 +41,7 @@ impl BertSource {
     }
 
     /// Set the prefix to use when embedding search queries
-    pub(crate) fn with_search_embedding_prefix(
-        mut self,
-        prefix: impl Into<Option<String>>,
-    ) -> Self {
+    pub fn with_search_embedding_prefix(mut self, prefix: impl Into<Option<String>>) -> Self {
         self.search_embedding_prefix = prefix.into();
         self
     }
