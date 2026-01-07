@@ -1,3 +1,4 @@
+use aligned_vec::ABox;
 use generativity::Id;
 use pulp::{Scalar128b, Scalar256b, Scalar512b, Simd, m8, m16, m32, m64};
 use pulp::{m8x16, m8x32, m8x64, m16x8, m16x16, m16x32, m32x4, m32x8, m32x16, m64x2, m64x4, m64x8};
@@ -30,7 +31,7 @@ trait Tensor {
 trait ResolvedTensor: Tensor {
     fn shape(&self) -> &[usize];
     fn strides(&self) -> &[usize];
-    fn data(&self) -> &[Self::Elem];
+    fn data(&self) -> &ABox<[Self::Elem]>;
 }
 
 trait ResolvedTensorExt: ResolvedTensor {
@@ -67,7 +68,7 @@ struct Layout {
 #[derive(Clone)]
 struct ConcreteTensor<T: SimdElement, const RANK: usize> {
     layout: Layout,
-    backing: Vec<T>,
+    backing: ABox<[T]>,
 }
 
 impl<T, const RANK: usize> Tensor for ConcreteTensor<T, RANK>
@@ -92,7 +93,7 @@ where
     fn strides(&self) -> &[usize] {
         self.layout.strides.as_ref()
     }
-    fn data(&self) -> &[Self::Elem] {
+    fn data(&self) -> &ABox<[Self::Elem]> {
         &self.backing
     }
 }
@@ -145,7 +146,7 @@ trait SimdElement: SimdElementMarker + Sized + Copy {
     type Wide512b: Wide;
 }
 
-impl<T> SimdElement for T where T: SimdElementMarker + Sized, Scalar128b: WideForSimd<T>, Scalar256b: WideForSimd<T>, Scalar512b: WideForSimd<T> {
+impl<T> SimdElement for T where T: SimdElementMarker + Sized + Copy, Scalar128b: WideForSimd<T>, Scalar256b: WideForSimd<T>, Scalar512b: WideForSimd<T> {
     type Wide128b = <Scalar128b as WideForSimd<T>>::Wide;
     type Wide256b = <Scalar256b as WideForSimd<T>>::Wide;
     type Wide512b = <Scalar512b as WideForSimd<T>>::Wide;

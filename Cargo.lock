@@ -2930,6 +2930,7 @@ dependencies = [
 name = "fusor-cpu"
 version = "0.1.0"
 dependencies = [
+ "aligned-vec",
  "generativity",
  "pulp 0.22.2",
 ]
