@@ -2,7 +2,7 @@ use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Neg as StdNeg, Sub a
 
 use aligned_vec::{ABox, AVec};
 use generativity::Id;
-use pulp::{Arch, Simd, WithSimd, m8, m16, m32, m64};
+use pulp::{Arch, Simd, WithSimd};
 
 struct Dim<'a> {
     id: Id<'a>,
@@ -478,10 +478,13 @@ define_unary_tensor_op!(Neg, NegOp, StdNeg);
 define_unary_tensor_op!(Abs, AbsOp);
 define_unary_tensor_op!(Sqrt, SqrtOp);
 
-/// Marker trait for binary operations that have SIMD support
+/// Trait for binary operations that have SIMD support
 trait SimdBinaryOp<E: SimdElement>: Copy {
-    fn apply_simd<S: Simd>(simd: S, lhs: &[E], rhs: &[E], out: &mut [E]);
-    fn apply_scalar(lhs: E, rhs: E) -> E;
+    /// Apply operation to SIMD vectors
+    fn apply_simd_vec<S: Simd>(simd: S, a: E::Simd<S>, b: E::Simd<S>) -> E::Simd<S>;
+
+    /// Apply operation to scalars
+    fn apply_scalar(a: E, b: E) -> E;
 }
 
 // Operation marker macro and definitions
@@ -495,183 +498,128 @@ macro_rules! define_op_marker {
 }
 define_op_marker!(AddOp, SubOp, MulOp, DivOp);
 
-// Macro to implement binary operations for all numeric types
+// Macro to implement binary operations for numeric types
 macro_rules! impl_binary_op {
-    // For add/sub/mul that work on all integer types
-    ($op:ty, $scalar_op:tt, $simd_method:ident, $as_simd:ident, $as_mut_simd:ident, [$($elem:ty => $simd_ty:ident),* $(,)?]) => {
-        $(
-            impl SimdBinaryOp<$elem> for $op {
-                #[inline(always)]
-                fn apply_simd<S: Simd>(simd: S, lhs: &[$elem], rhs: &[$elem], out: &mut [$elem]) {
-                    let (lhs_simd, lhs_tail) = S::$as_simd(lhs);
-                    let (rhs_simd, rhs_tail) = S::$as_simd(rhs);
-                    let (out_simd, out_tail) = S::$as_mut_simd(out);
-
-                    for ((a, b), c) in lhs_simd.iter().zip(rhs_simd.iter()).zip(out_simd.iter_mut()) {
-                        *c = simd.$simd_method(*a, *b);
-                    }
-
-                    for ((a, b), c) in lhs_tail.iter().zip(rhs_tail.iter()).zip(out_tail.iter_mut()) {
-                        *c = Self::apply_scalar(*a, *b);
-                    }
-                }
-
-                #[inline(always)]
-                fn apply_scalar(lhs: $elem, rhs: $elem) -> $elem {
-                    lhs $scalar_op rhs
-                }
+    ($op:ty, $scalar_op:tt, $simd_method:ident, $elem:ty) => {
+        impl SimdBinaryOp<$elem> for $op {
+            #[inline(always)]
+            fn apply_simd_vec<S: Simd>(simd: S, a: <$elem as SimdElement>::Simd<S>, b: <$elem as SimdElement>::Simd<S>) -> <$elem as SimdElement>::Simd<S> {
+                simd.$simd_method(a, b)
             }
-        )*
+
+            #[inline(always)]
+            fn apply_scalar(a: $elem, b: $elem) -> $elem {
+                a $scalar_op b
+            }
+        }
     };
 }
 
 // Implement AddOp for all types
-impl_binary_op!(AddOp, +, add_f32s, as_simd_f32s, as_mut_simd_f32s, [f32 => f32s]);
-impl_binary_op!(AddOp, +, add_f64s, as_simd_f64s, as_mut_simd_f64s, [f64 => f64s]);
-impl_binary_op!(AddOp, +, add_i8s, as_simd_i8s, as_mut_simd_i8s, [i8 => i8s]);
-impl_binary_op!(AddOp, +, add_i16s, as_simd_i16s, as_mut_simd_i16s, [i16 => i16s]);
-impl_binary_op!(AddOp, +, add_i32s, as_simd_i32s, as_mut_simd_i32s, [i32 => i32s]);
-impl_binary_op!(AddOp, +, add_i64s, as_simd_i64s, as_mut_simd_i64s, [i64 => i64s]);
-impl_binary_op!(AddOp, +, add_u8s, as_simd_u8s, as_mut_simd_u8s, [u8 => u8s]);
-impl_binary_op!(AddOp, +, add_u16s, as_simd_u16s, as_mut_simd_u16s, [u16 => u16s]);
-impl_binary_op!(AddOp, +, add_u32s, as_simd_u32s, as_mut_simd_u32s, [u32 => u32s]);
-impl_binary_op!(AddOp, +, add_u64s, as_simd_u64s, as_mut_simd_u64s, [u64 => u64s]);
+impl_binary_op!(AddOp, +, add_f32s, f32);
+impl_binary_op!(AddOp, +, add_f64s, f64);
+impl_binary_op!(AddOp, +, add_i8s, i8);
+impl_binary_op!(AddOp, +, add_i16s, i16);
+impl_binary_op!(AddOp, +, add_i32s, i32);
+impl_binary_op!(AddOp, +, add_i64s, i64);
+impl_binary_op!(AddOp, +, add_u8s, u8);
+impl_binary_op!(AddOp, +, add_u16s, u16);
+impl_binary_op!(AddOp, +, add_u32s, u32);
+impl_binary_op!(AddOp, +, add_u64s, u64);
 
 // Implement SubOp for all types
-impl_binary_op!(SubOp, -, sub_f32s, as_simd_f32s, as_mut_simd_f32s, [f32 => f32s]);
-impl_binary_op!(SubOp, -, sub_f64s, as_simd_f64s, as_mut_simd_f64s, [f64 => f64s]);
-impl_binary_op!(SubOp, -, sub_i8s, as_simd_i8s, as_mut_simd_i8s, [i8 => i8s]);
-impl_binary_op!(SubOp, -, sub_i16s, as_simd_i16s, as_mut_simd_i16s, [i16 => i16s]);
-impl_binary_op!(SubOp, -, sub_i32s, as_simd_i32s, as_mut_simd_i32s, [i32 => i32s]);
-impl_binary_op!(SubOp, -, sub_i64s, as_simd_i64s, as_mut_simd_i64s, [i64 => i64s]);
-impl_binary_op!(SubOp, -, sub_u8s, as_simd_u8s, as_mut_simd_u8s, [u8 => u8s]);
-impl_binary_op!(SubOp, -, sub_u16s, as_simd_u16s, as_mut_simd_u16s, [u16 => u16s]);
-impl_binary_op!(SubOp, -, sub_u32s, as_simd_u32s, as_mut_simd_u32s, [u32 => u32s]);
-impl_binary_op!(SubOp, -, sub_u64s, as_simd_u64s, as_mut_simd_u64s, [u64 => u64s]);
+impl_binary_op!(SubOp, -, sub_f32s, f32);
+impl_binary_op!(SubOp, -, sub_f64s, f64);
+impl_binary_op!(SubOp, -, sub_i8s, i8);
+impl_binary_op!(SubOp, -, sub_i16s, i16);
+impl_binary_op!(SubOp, -, sub_i32s, i32);
+impl_binary_op!(SubOp, -, sub_i64s, i64);
+impl_binary_op!(SubOp, -, sub_u8s, u8);
+impl_binary_op!(SubOp, -, sub_u16s, u16);
+impl_binary_op!(SubOp, -, sub_u32s, u32);
+impl_binary_op!(SubOp, -, sub_u64s, u64);
 
-// Implement MulOp for all types
-impl_binary_op!(MulOp, *, mul_f32s, as_simd_f32s, as_mut_simd_f32s, [f32 => f32s]);
-impl_binary_op!(MulOp, *, mul_f64s, as_simd_f64s, as_mut_simd_f64s, [f64 => f64s]);
-impl_binary_op!(MulOp, *, mul_i16s, as_simd_i16s, as_mut_simd_i16s, [i16 => i16s]);
-impl_binary_op!(MulOp, *, mul_i32s, as_simd_i32s, as_mut_simd_i32s, [i32 => i32s]);
-impl_binary_op!(MulOp, *, mul_u16s, as_simd_u16s, as_mut_simd_u16s, [u16 => u16s]);
-impl_binary_op!(MulOp, *, mul_u32s, as_simd_u32s, as_mut_simd_u32s, [u32 => u32s]);
+// Implement MulOp for types with SIMD multiply
+impl_binary_op!(MulOp, *, mul_f32s, f32);
+impl_binary_op!(MulOp, *, mul_f64s, f64);
+impl_binary_op!(MulOp, *, mul_i16s, i16);
+impl_binary_op!(MulOp, *, mul_i32s, i32);
+impl_binary_op!(MulOp, *, mul_u16s, u16);
+impl_binary_op!(MulOp, *, mul_u32s, u32);
 
-// MulOp for types without direct SIMD multiply (fallback to scalar in SIMD loop)
-macro_rules! impl_mul_scalar_fallback {
-    ($($elem:ty),* $(,)?) => {
-        $(
-            impl SimdBinaryOp<$elem> for MulOp {
-                #[inline(always)]
-                fn apply_simd<S: Simd>(_simd: S, lhs: &[$elem], rhs: &[$elem], out: &mut [$elem]) {
-                    for i in 0..out.len() {
-                        out[i] = lhs[i] * rhs[i];
-                    }
-                }
-
-                #[inline(always)]
-                fn apply_scalar(lhs: $elem, rhs: $elem) -> $elem {
-                    lhs * rhs
-                }
-            }
-        )*
-    };
-}
-impl_mul_scalar_fallback!(i8, i64, u8, u64);
 
 // Implement DivOp for float types only
-impl_binary_op!(DivOp, /, div_f32s, as_simd_f32s, as_mut_simd_f32s, [f32 => f32s]);
-impl_binary_op!(DivOp, /, div_f64s, as_simd_f64s, as_mut_simd_f64s, [f64 => f64s]);
+impl_binary_op!(DivOp, /, div_f32s, f32);
+impl_binary_op!(DivOp, /, div_f64s, f64);
 
-/// Marker trait for unary operations that have SIMD support
+/// Trait for unary operations that have SIMD support
 trait SimdUnaryOp<E: SimdElement>: Copy {
-    fn apply_simd<S: Simd>(simd: S, input: &[E], out: &mut [E]);
+    /// Apply operation to SIMD vector
+    fn apply_simd_vec<S: Simd>(simd: S, a: E::Simd<S>) -> E::Simd<S>;
+
+    /// Apply operation to scalar
     fn apply_scalar(val: E) -> E;
 }
 
 // Unary operation markers
 define_op_marker!(NegOp, AbsOp, SqrtOp);
 
-// Macro for unary ops
+// Macro for unary ops with SIMD support
 macro_rules! impl_unary_op {
-    ($op:ty, $scalar_fn:expr, $simd_method:ident, $as_simd:ident, $as_mut_simd:ident, [$($elem:ty => $simd_ty:ident),* $(,)?]) => {
-        $(
-            impl SimdUnaryOp<$elem> for $op {
-                #[inline(always)]
-                fn apply_simd<S: Simd>(simd: S, input: &[$elem], out: &mut [$elem]) {
-                    let (in_simd, in_tail) = S::$as_simd(input);
-                    let (out_simd, out_tail) = S::$as_mut_simd(out);
-
-                    for (a, c) in in_simd.iter().zip(out_simd.iter_mut()) {
-                        *c = simd.$simd_method(*a);
-                    }
-
-                    for (a, c) in in_tail.iter().zip(out_tail.iter_mut()) {
-                        *c = Self::apply_scalar(*a);
-                    }
-                }
-
-                #[inline(always)]
-                fn apply_scalar(val: $elem) -> $elem {
-                    let f: fn($elem) -> $elem = $scalar_fn;
-                    f(val)
-                }
+    ($op:ty, $scalar_fn:expr, $simd_method:ident, $elem:ty) => {
+        impl SimdUnaryOp<$elem> for $op {
+            #[inline(always)]
+            fn apply_simd_vec<S: Simd>(simd: S, a: <$elem as SimdElement>::Simd<S>) -> <$elem as SimdElement>::Simd<S> {
+                simd.$simd_method(a)
             }
-        )*
+
+            #[inline(always)]
+            fn apply_scalar(val: $elem) -> $elem {
+                let f: fn($elem) -> $elem = $scalar_fn;
+                f(val)
+            }
+        }
     };
 }
 
 // NegOp implementations
-impl_unary_op!(NegOp, |x: f32| -x, neg_f32s, as_simd_f32s, as_mut_simd_f32s, [f32 => f32s]);
-impl_unary_op!(NegOp, |x: f64| -x, neg_f64s, as_simd_f64s, as_mut_simd_f64s, [f64 => f64s]);
+impl_unary_op!(NegOp, |x: f32| -x, neg_f32s, f32);
+impl_unary_op!(NegOp, |x: f64| -x, neg_f64s, f64);
 
-// Scalar fallback for neg on integer types
-macro_rules! impl_neg_scalar_fallback {
-    ($($elem:ty),* $(,)?) => {
-        $(
-            impl SimdUnaryOp<$elem> for NegOp {
-                #[inline(always)]
-                fn apply_simd<S: Simd>(_simd: S, input: &[$elem], out: &mut [$elem]) {
-                    for i in 0..out.len() {
-                        out[i] = input[i].wrapping_neg();
-                    }
-                }
-
-                #[inline(always)]
-                fn apply_scalar(val: $elem) -> $elem {
-                    val.wrapping_neg()
-                }
+// NegOp for integer types (SIMD not yet implemented in pulp)
+macro_rules! impl_unary_op_todo {
+    ($op:ty, $scalar_fn:expr, $elem:ty) => {
+        impl SimdUnaryOp<$elem> for $op {
+            #[inline(always)]
+            fn apply_simd_vec<S: Simd>(_simd: S, _a: <$elem as SimdElement>::Simd<S>) -> <$elem as SimdElement>::Simd<S> {
+                todo!()
             }
-        )*
+
+            #[inline(always)]
+            fn apply_scalar(val: $elem) -> $elem {
+                let f: fn($elem) -> $elem = $scalar_fn;
+                f(val)
+            }
+        }
     };
 }
-impl_neg_scalar_fallback!(i8, i16, i32, i64);
 
-// Abs operations - pulp doesn't have direct abs, use scalar
-macro_rules! impl_abs_scalar {
-    ($($elem:ty => $method:ident),* $(,)?) => {
-        $(
-            impl SimdUnaryOp<$elem> for AbsOp {
-                #[inline(always)]
-                fn apply_simd<S: Simd>(_simd: S, input: &[$elem], out: &mut [$elem]) {
-                    for i in 0..out.len() {
-                        out[i] = input[i].$method();
-                    }
-                }
+impl_unary_op_todo!(NegOp, |x: i8| x.wrapping_neg(), i8);
+impl_unary_op_todo!(NegOp, |x: i16| x.wrapping_neg(), i16);
+impl_unary_op_todo!(NegOp, |x: i32| x.wrapping_neg(), i32);
+impl_unary_op_todo!(NegOp, |x: i64| x.wrapping_neg(), i64);
 
-                #[inline(always)]
-                fn apply_scalar(val: $elem) -> $elem {
-                    val.$method()
-                }
-            }
-        )*
-    };
-}
-impl_abs_scalar!(f32 => abs, f64 => abs, i8 => abs, i16 => abs, i32 => abs, i64 => abs);
+// AbsOp (SIMD not yet implemented in pulp)
+impl_unary_op_todo!(AbsOp, |x: f32| x.abs(), f32);
+impl_unary_op_todo!(AbsOp, |x: f64| x.abs(), f64);
+impl_unary_op_todo!(AbsOp, |x: i8| x.abs(), i8);
+impl_unary_op_todo!(AbsOp, |x: i16| x.abs(), i16);
+impl_unary_op_todo!(AbsOp, |x: i32| x.abs(), i32);
+impl_unary_op_todo!(AbsOp, |x: i64| x.abs(), i64);
 
 // Sqrt for floats
-impl_unary_op!(SqrtOp, |x: f32| x.sqrt(), sqrt_f32s, as_simd_f32s, as_mut_simd_f32s, [f32 => f32s]);
-impl_unary_op!(SqrtOp, |x: f64| x.sqrt(), sqrt_f64s, as_simd_f64s, as_mut_simd_f64s, [f64 => f64s]);
+impl_unary_op!(SqrtOp, |x: f32| x.sqrt(), sqrt_f32s, f32);
+impl_unary_op!(SqrtOp, |x: f64| x.sqrt(), sqrt_f64s, f64);
 
 /// Helper struct for dispatching binary operations via Arch::dispatch
 struct BinaryOpDispatch<'a, E: SimdElement, Op: SimdBinaryOp<E>> {
@@ -686,7 +634,17 @@ impl<E: SimdElement, Op: SimdBinaryOp<E>> WithSimd for BinaryOpDispatch<'_, E, O
 
     #[inline(always)]
     fn with_simd<S: Simd>(self, simd: S) -> Self::Output {
-        Op::apply_simd(simd, self.lhs, self.rhs, self.out);
+        let (lhs_simd, lhs_tail) = E::as_simd::<S>(self.lhs);
+        let (rhs_simd, rhs_tail) = E::as_simd::<S>(self.rhs);
+        let (out_simd, out_tail) = E::as_mut_simd::<S>(self.out);
+
+        for ((a, b), c) in lhs_simd.iter().zip(rhs_simd.iter()).zip(out_simd.iter_mut()) {
+            *c = Op::apply_simd_vec(simd, *a, *b);
+        }
+
+        for ((a, b), c) in lhs_tail.iter().zip(rhs_tail.iter()).zip(out_tail.iter_mut()) {
+            *c = Op::apply_scalar(*a, *b);
+        }
     }
 }
 
@@ -713,7 +671,16 @@ impl<E: SimdElement, Op: SimdUnaryOp<E>> WithSimd for UnaryOpDispatch<'_, E, Op>
 
     #[inline(always)]
     fn with_simd<S: Simd>(self, simd: S) -> Self::Output {
-        Op::apply_simd(simd, self.input, self.out);
+        let (in_simd, in_tail) = E::as_simd::<S>(self.input);
+        let (out_simd, out_tail) = E::as_mut_simd::<S>(self.out);
+
+        for (a, c) in in_simd.iter().zip(out_simd.iter_mut()) {
+            *c = Op::apply_simd_vec(simd, *a);
+        }
+
+        for (a, c) in in_tail.iter().zip(out_tail.iter_mut()) {
+            *c = Op::apply_scalar(*a);
+        }
     }
 }
 
@@ -727,23 +694,45 @@ fn unary_op_contiguous<E: SimdElement, Op: SimdUnaryOp<E>>(input: &[E], out: &mu
     });
 }
 
-/// Marker trait for SIMD element types
-trait SimdElement: Sized + Copy + Default {}
+/// Trait for SIMD element types with associated SIMD vector type
+trait SimdElement: Sized + Copy + Default {
+    /// The SIMD vector type for this element (GAT)
+    type Simd<S: Simd>: Copy;
 
-impl SimdElement for f32 {}
-impl SimdElement for f64 {}
-impl SimdElement for i8 {}
-impl SimdElement for i16 {}
-impl SimdElement for i32 {}
-impl SimdElement for i64 {}
-impl SimdElement for u8 {}
-impl SimdElement for u16 {}
-impl SimdElement for u32 {}
-impl SimdElement for u64 {}
-impl SimdElement for m8 {}
-impl SimdElement for m16 {}
-impl SimdElement for m32 {}
-impl SimdElement for m64 {}
+    /// Convert slice to SIMD vectors + remainder
+    fn as_simd<S: Simd>(slice: &[Self]) -> (&[Self::Simd<S>], &[Self]);
+    fn as_mut_simd<S: Simd>(slice: &mut [Self]) -> (&mut [Self::Simd<S>], &mut [Self]);
+}
+
+macro_rules! impl_simd_element {
+    ($elem:ty, $simd_ty:ident, $as_simd:ident, $as_mut_simd:ident) => {
+        impl SimdElement for $elem {
+            type Simd<S: Simd> = S::$simd_ty;
+
+            #[inline(always)]
+            fn as_simd<S: Simd>(slice: &[Self]) -> (&[S::$simd_ty], &[Self]) {
+                S::$as_simd(slice)
+            }
+
+            #[inline(always)]
+            fn as_mut_simd<S: Simd>(slice: &mut [Self]) -> (&mut [S::$simd_ty], &mut [Self]) {
+                S::$as_mut_simd(slice)
+            }
+        }
+    };
+}
+
+impl_simd_element!(f32, f32s, as_simd_f32s, as_mut_simd_f32s);
+impl_simd_element!(f64, f64s, as_simd_f64s, as_mut_simd_f64s);
+impl_simd_element!(i8, i8s, as_simd_i8s, as_mut_simd_i8s);
+impl_simd_element!(i16, i16s, as_simd_i16s, as_mut_simd_i16s);
+impl_simd_element!(i32, i32s, as_simd_i32s, as_mut_simd_i32s);
+impl_simd_element!(i64, i64s, as_simd_i64s, as_mut_simd_i64s);
+impl_simd_element!(u8, u8s, as_simd_u8s, as_mut_simd_u8s);
+impl_simd_element!(u16, u16s, as_simd_u16s, as_mut_simd_u16s);
+impl_simd_element!(u32, u32s, as_simd_u32s, as_mut_simd_u32s);
+impl_simd_element!(u64, u64s, as_simd_u64s, as_mut_simd_u64s);
+// Mask types don't have SIMD slice conversion methods, so omitted
 
 #[cfg(test)]
 mod tests {
