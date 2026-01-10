@@ -16,7 +16,7 @@ where
     f(Dim { id: id.into() })
 }
 
-trait Tensor {
+pub trait Tensor {
     type Elem: SimdElement;
     const RANK: usize;
     type Concrete: ResolvedTensor<Elem = Self::Elem>;
@@ -28,11 +28,11 @@ trait Tensor {
     };
 }
 
-trait ResolveTensor<M = ()>: Tensor {
+pub trait ResolveTensor<M = ()>: Tensor {
     fn to_concrete(&self) -> Self::Concrete;
 }
 
-trait ResolvedTensor: Tensor {
+pub trait ResolvedTensor: Tensor {
     fn shape(&self) -> &[usize];
     fn strides(&self) -> &[usize];
     fn offset(&self) -> usize;
@@ -140,7 +140,7 @@ impl Layout {
 }
 
 #[derive(Clone)]
-struct ConcreteTensor<T: SimdElement, const RANK: usize> {
+pub struct ConcreteTensor<T: SimdElement, const RANK: usize> {
     layout: Layout,
     backing: ABox<[T]>,
 }
@@ -186,7 +186,7 @@ where
 
 impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
     /// Create a new tensor with contiguous layout from shape, filled with zeros
-    fn zeros(shape: [usize; RANK]) -> Self
+    pub fn zeros(shape: [usize; RANK]) -> Self
     where
         T: Default,
     {
@@ -201,7 +201,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
     }
 
     /// Create a new tensor from existing data with contiguous layout
-    fn from_slice(shape: [usize; RANK], data: &[T]) -> Self {
+    pub fn from_slice(shape: [usize; RANK], data: &[T]) -> Self {
         let layout = Layout::contiguous(&shape);
         assert_eq!(layout.num_elements(), data.len());
         let mut vec: AVec<T> = AVec::with_capacity(64, data.len());
@@ -322,7 +322,7 @@ where
 /// Macro to define binary tensor operations (Add, Sub, Mul, Div)
 macro_rules! define_binary_tensor_op {
     ($name:ident, $std_trait:ident, $simd_op:ty, $error_msg:literal) => {
-        struct $name<E: SimdElement, const RANK: usize, T1: Tensor<Elem = E>, T2: Tensor<Elem = E>> {
+        pub struct $name<E: SimdElement, const RANK: usize, T1: Tensor<Elem = E>, T2: Tensor<Elem = E>> {
             lhs: T1,
             rhs: T2,
             _marker: std::marker::PhantomData<E>,
@@ -334,7 +334,7 @@ macro_rules! define_binary_tensor_op {
             T1: Tensor<Elem = E>,
             T2: Tensor<Elem = E>,
         {
-            fn new(lhs: T1, rhs: T2) -> Self {
+            pub fn new(lhs: T1, rhs: T2) -> Self {
                 Self {
                     lhs,
                     rhs,
@@ -375,7 +375,7 @@ macro_rules! define_binary_tensor_op {
 /// Macro to define unary tensor operations (Neg, Abs, Sqrt)
 macro_rules! define_unary_tensor_op {
     ($name:ident, $simd_op:ty) => {
-        struct $name<E: SimdElement, const RANK: usize, T: Tensor<Elem = E>> {
+        pub struct $name<E: SimdElement, const RANK: usize, T: Tensor<Elem = E>> {
             input: T,
             _marker: std::marker::PhantomData<E>,
         }
@@ -385,7 +385,7 @@ macro_rules! define_unary_tensor_op {
             E: SimdElement,
             T: Tensor<Elem = E>,
         {
-            fn new(input: T) -> Self {
+            pub fn new(input: T) -> Self {
                 Self {
                     input,
                     _marker: std::marker::PhantomData,
@@ -416,7 +416,7 @@ macro_rules! define_unary_tensor_op {
         }
     };
     ($name:ident, $simd_op:ty, $std_trait:ident) => {
-        struct $name<E: SimdElement, const RANK: usize, T: Tensor<Elem = E>> {
+        pub struct $name<E: SimdElement, const RANK: usize, T: Tensor<Elem = E>> {
             input: T,
             _marker: std::marker::PhantomData<E>,
         }
@@ -426,7 +426,7 @@ macro_rules! define_unary_tensor_op {
             E: SimdElement,
             T: Tensor<Elem = E>,
         {
-            fn new(input: T) -> Self {
+            pub fn new(input: T) -> Self {
                 Self {
                     input,
                     _marker: std::marker::PhantomData,
@@ -705,7 +705,7 @@ fn unary_op_contiguous<E: SimdElement, Op: SimdUnaryOp<E>>(input: &[E], out: &mu
 }
 
 /// Trait for SIMD element types with associated SIMD vector type
-trait SimdElement: Sized + Copy + Default {
+pub trait SimdElement: Sized + Copy + Default {
     /// The SIMD vector type for this element (GAT)
     type Simd<S: Simd>: Copy;
 
@@ -742,7 +742,6 @@ impl_simd_element!(u8, u8s, as_simd_u8s, as_mut_simd_u8s);
 impl_simd_element!(u16, u16s, as_simd_u16s, as_mut_simd_u16s);
 impl_simd_element!(u32, u32s, as_simd_u32s, as_mut_simd_u32s);
 impl_simd_element!(u64, u64s, as_simd_u64s, as_mut_simd_u64s);
-// Mask types don't have SIMD slice conversion methods, so omitted
 
 #[cfg(test)]
 mod tests {

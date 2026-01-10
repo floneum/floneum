@@ -7,3 +7,15 @@ edition = "2024"
 aligned-vec = "0.6.4"
 generativity = "1.1.0"
 pulp = "0.22.2"
+
+[dev-dependencies]
+criterion = "0.5"
+candle-core = "0.8"
+
+# [[bench]]
+# name = "tensor_ops"
+# harness = false
+
+[[bench]]
+name = "comparison"
+harness = false
