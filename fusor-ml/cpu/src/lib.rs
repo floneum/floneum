@@ -26,6 +26,9 @@ trait Tensor {
             "Tensor rank mismatch in ConcreteTensor"
         );
     };
+}
+
+trait ResolveTensor<M = ()>: Tensor {
     fn to_concrete(&self) -> Self::Concrete;
 }
 
@@ -152,6 +155,12 @@ where
     type Elem = T;
     const RANK: usize = RANK;
     type Concrete = Self;
+}
+
+impl<T, const RANK: usize> ResolveTensor for ConcreteTensor<T, RANK>
+where
+    T: SimdElement,
+{
     fn to_concrete(&self) -> Self::Concrete {
         self.clone()
     }
@@ -269,7 +278,15 @@ where
         T1::RANK
     };
     type Concrete = ConcreteTensor<Self::Elem, RANK>;
+}
 
+impl<E, const RANK: usize, T1, T2> ResolveTensor for Add<E, RANK, T1, T2>
+where
+    E: SimdElement + StdAdd<Output = E> + Default,
+    AddOp: SimdBinaryOp<E>,
+    T1: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+    T2: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+{
     fn to_concrete(&self) -> Self::Concrete {
         binary_tensor_op::<E, RANK, T1, T2, AddOp>(&self.lhs, &self.rhs)
     }
@@ -280,8 +297,8 @@ fn binary_tensor_op<E, const RANK: usize, T1, T2, Op>(lhs: &T1, rhs: &T2) -> Con
 where
     E: SimdElement + Default,
     Op: SimdBinaryOp<E>,
-    T1: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-    T2: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+    T1: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+    T2: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
 {
     let lhs_concrete = lhs.to_concrete();
     let rhs_concrete = rhs.to_concrete();
@@ -327,7 +344,7 @@ fn unary_tensor_op<E, const RANK: usize, T, Op>(input: &T) -> ConcreteTensor<E, 
 where
     E: SimdElement + Default,
     Op: SimdUnaryOp<E>,
-    T: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+    T: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
 {
     let input_concrete = input.to_concrete();
 
@@ -397,7 +414,15 @@ where
         T1::RANK
     };
     type Concrete = ConcreteTensor<Self::Elem, RANK>;
+}
 
+impl<E, const RANK: usize, T1, T2> ResolveTensor for Sub<E, RANK, T1, T2>
+where
+    E: SimdElement + StdSub<Output = E> + Default,
+    SubOp: SimdBinaryOp<E>,
+    T1: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+    T2: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+{
     fn to_concrete(&self) -> Self::Concrete {
         binary_tensor_op::<E, RANK, T1, T2, SubOp>(&self.lhs, &self.rhs)
     }
@@ -441,7 +466,15 @@ where
         T1::RANK
     };
     type Concrete = ConcreteTensor<Self::Elem, RANK>;
+}
 
+impl<E, const RANK: usize, T1, T2> ResolveTensor for Mul<E, RANK, T1, T2>
+where
+    E: SimdElement + StdMul<Output = E> + Default,
+    MulOp: SimdBinaryOp<E>,
+    T1: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+    T2: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+{
     fn to_concrete(&self) -> Self::Concrete {
         binary_tensor_op::<E, RANK, T1, T2, MulOp>(&self.lhs, &self.rhs)
     }
@@ -485,7 +518,15 @@ where
         T1::RANK
     };
     type Concrete = ConcreteTensor<Self::Elem, RANK>;
+}
 
+impl<E, const RANK: usize, T1, T2> ResolveTensor for Div<E, RANK, T1, T2>
+where
+    E: SimdElement + StdDiv<Output = E> + Default,
+    DivOp: SimdBinaryOp<E>,
+    T1: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+    T2: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+{
     fn to_concrete(&self) -> Self::Concrete {
         binary_tensor_op::<E, RANK, T1, T2, DivOp>(&self.lhs, &self.rhs)
     }
@@ -522,7 +563,14 @@ where
     type Elem = E;
     const RANK: usize = T::RANK;
     type Concrete = ConcreteTensor<Self::Elem, RANK>;
+}
 
+impl<E, const RANK: usize, T> ResolveTensor for Neg<E, RANK, T>
+where
+    E: SimdElement + StdNeg<Output = E> + Default,
+    NegOp: SimdUnaryOp<E>,
+    T: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+{
     fn to_concrete(&self) -> Self::Concrete {
         unary_tensor_op::<E, RANK, T, NegOp>(&self.input)
     }
@@ -559,7 +607,14 @@ where
     type Elem = E;
     const RANK: usize = T::RANK;
     type Concrete = ConcreteTensor<Self::Elem, RANK>;
+}
 
+impl<E, const RANK: usize, T> ResolveTensor for Abs<E, RANK, T>
+where
+    E: SimdElement + Default,
+    AbsOp: SimdUnaryOp<E>,
+    T: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+{
     fn to_concrete(&self) -> Self::Concrete {
         unary_tensor_op::<E, RANK, T, AbsOp>(&self.input)
     }
@@ -596,7 +651,14 @@ where
     type Elem = E;
     const RANK: usize = T::RANK;
     type Concrete = ConcreteTensor<Self::Elem, RANK>;
+}
 
+impl<E, const RANK: usize, T> ResolveTensor for Sqrt<E, RANK, T>
+where
+    E: SimdElement + Default,
+    SqrtOp: SimdUnaryOp<E>,
+    T: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+{
     fn to_concrete(&self) -> Self::Concrete {
         unary_tensor_op::<E, RANK, T, SqrtOp>(&self.input)
     }
@@ -842,11 +904,7 @@ impl<E: SimdElement, Op: SimdBinaryOp<E>> WithSimd for BinaryOpDispatch<'_, E, O
 
 /// Perform a binary operation on contiguous slices using SIMD dispatch
 #[inline]
-fn binary_op_contiguous<E: SimdElement, Op: SimdBinaryOp<E>>(
-    lhs: &[E],
-    rhs: &[E],
-    out: &mut [E],
-) {
+fn binary_op_contiguous<E: SimdElement, Op: SimdBinaryOp<E>>(lhs: &[E], rhs: &[E], out: &mut [E]) {
     Arch::new().dispatch(BinaryOpDispatch::<E, Op> {
         lhs,
         rhs,
@@ -925,8 +983,11 @@ mod tests {
 
     #[test]
     fn test_layout_with_offset() {
-        let layout =
-            Layout::from_parts(10, vec![2, 3].into_boxed_slice(), vec![3, 1].into_boxed_slice());
+        let layout = Layout::from_parts(
+            10,
+            vec![2, 3].into_boxed_slice(),
+            vec![3, 1].into_boxed_slice(),
+        );
         assert_eq!(layout.offset, 10);
         assert_eq!(layout.linear_index(&[0, 0]), 10);
         assert_eq!(layout.linear_index(&[1, 2]), 10 + 3 + 2);
