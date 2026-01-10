@@ -586,36 +586,55 @@ macro_rules! impl_unary_op {
 impl_unary_op!(NegOp, |x: f32| -x, neg_f32s, f32);
 impl_unary_op!(NegOp, |x: f64| -x, neg_f64s, f64);
 
-// NegOp for integer types (SIMD not yet implemented in pulp)
-macro_rules! impl_unary_op_todo {
-    ($op:ty, $scalar_fn:expr, $elem:ty) => {
-        impl SimdUnaryOp<$elem> for $op {
+// NegOp for integer types using subtraction from zero
+macro_rules! impl_neg_int_op {
+    ($elem:ty, $splat:ident, $sub:ident) => {
+        impl SimdUnaryOp<$elem> for NegOp {
             #[inline(always)]
-            fn apply_simd_vec<S: Simd>(_simd: S, _a: <$elem as SimdElement>::Simd<S>) -> <$elem as SimdElement>::Simd<S> {
-                todo!()
+            fn apply_simd_vec<S: Simd>(simd: S, a: <$elem as SimdElement>::Simd<S>) -> <$elem as SimdElement>::Simd<S> {
+                simd.$sub(simd.$splat(0), a)
             }
 
             #[inline(always)]
             fn apply_scalar(val: $elem) -> $elem {
-                let f: fn($elem) -> $elem = $scalar_fn;
-                f(val)
+                val.wrapping_neg()
             }
         }
     };
 }
 
-impl_unary_op_todo!(NegOp, |x: i8| x.wrapping_neg(), i8);
-impl_unary_op_todo!(NegOp, |x: i16| x.wrapping_neg(), i16);
-impl_unary_op_todo!(NegOp, |x: i32| x.wrapping_neg(), i32);
-impl_unary_op_todo!(NegOp, |x: i64| x.wrapping_neg(), i64);
+impl_neg_int_op!(i8, splat_i8s, sub_i8s);
+impl_neg_int_op!(i16, splat_i16s, sub_i16s);
+impl_neg_int_op!(i32, splat_i32s, sub_i32s);
+impl_neg_int_op!(i64, splat_i64s, sub_i64s);
 
-// AbsOp (SIMD not yet implemented in pulp)
-impl_unary_op_todo!(AbsOp, |x: f32| x.abs(), f32);
-impl_unary_op_todo!(AbsOp, |x: f64| x.abs(), f64);
-impl_unary_op_todo!(AbsOp, |x: i8| x.abs(), i8);
-impl_unary_op_todo!(AbsOp, |x: i16| x.abs(), i16);
-impl_unary_op_todo!(AbsOp, |x: i32| x.abs(), i32);
-impl_unary_op_todo!(AbsOp, |x: i64| x.abs(), i64);
+// AbsOp for floats (native SIMD support)
+impl_unary_op!(AbsOp, |x: f32| x.abs(), abs_f32s, f32);
+impl_unary_op!(AbsOp, |x: f64| x.abs(), abs_f64s, f64);
+
+// AbsOp for integers using max(x, -x)
+macro_rules! impl_abs_int_op {
+    ($elem:ty, $splat:ident, $sub:ident, $max:ident) => {
+        impl SimdUnaryOp<$elem> for AbsOp {
+            #[inline(always)]
+            fn apply_simd_vec<S: Simd>(simd: S, a: <$elem as SimdElement>::Simd<S>) -> <$elem as SimdElement>::Simd<S> {
+                let zero = simd.$splat(0);
+                let neg_a = simd.$sub(zero, a);
+                simd.$max(a, neg_a)
+            }
+
+            #[inline(always)]
+            fn apply_scalar(val: $elem) -> $elem {
+                val.wrapping_abs()
+            }
+        }
+    };
+}
+
+impl_abs_int_op!(i8, splat_i8s, sub_i8s, max_i8s);
+impl_abs_int_op!(i16, splat_i16s, sub_i16s, max_i16s);
+impl_abs_int_op!(i32, splat_i32s, sub_i32s, max_i32s);
+impl_abs_int_op!(i64, splat_i64s, sub_i64s, max_i64s);
 
 // Sqrt for floats
 impl_unary_op!(SqrtOp, |x: f32| x.sqrt(), sqrt_f32s, f32);
