@@ -273,10 +273,7 @@ where
 }
 
 fn cmp_logits(a: &Logit, b: &Logit) -> std::cmp::Ordering {
-    // SAFETY: Logits should never be NaN or Inf
-    let compare = b.logit.partial_cmp(&a.logit);
-    debug_assert!(compare.is_some());
-    unsafe { compare.unwrap_unchecked() }
+    f32::total_cmp(&b.logit, &a.logit)
 }
 
 #[allow(unused, clippy::all)]
