@@ -244,54 +244,6 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
     }
 }
 
-struct Add<E: SimdElement, const RANK: usize, T1: Tensor<Elem = E>, T2: Tensor<Elem = E>> {
-    lhs: T1,
-    rhs: T2,
-    _marker: std::marker::PhantomData<E>,
-}
-
-impl<E, const RANK: usize, T1, T2> Add<E, RANK, T1, T2>
-where
-    E: SimdElement,
-    T1: Tensor<Elem = E>,
-    T2: Tensor<Elem = E>,
-{
-    fn new(lhs: T1, rhs: T2) -> Self {
-        Self {
-            lhs,
-            rhs,
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<E, const RANK: usize, T1, T2> Tensor for Add<E, RANK, T1, T2>
-where
-    E: SimdElement + StdAdd<Output = E> + Default,
-    AddOp: SimdBinaryOp<E>,
-    T1: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-    T2: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-{
-    type Elem = E;
-    const RANK: usize = {
-        assert!(T2::RANK == T1::RANK, "Tensor rank mismatch in Add");
-        T1::RANK
-    };
-    type Concrete = ConcreteTensor<Self::Elem, RANK>;
-}
-
-impl<E, const RANK: usize, T1, T2> ResolveTensor for Add<E, RANK, T1, T2>
-where
-    E: SimdElement + StdAdd<Output = E> + Default,
-    AddOp: SimdBinaryOp<E>,
-    T1: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-    T2: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-{
-    fn to_concrete(&self) -> Self::Concrete {
-        binary_tensor_op::<E, RANK, T1, T2, AddOp>(&self.lhs, &self.rhs)
-    }
-}
-
 /// Generic helper for binary tensor operations
 fn binary_tensor_op<E, const RANK: usize, T1, T2, Op>(lhs: &T1, rhs: &T2) -> ConcreteTensor<E, RANK>
 where
@@ -376,297 +328,155 @@ where
     output
 }
 
-// =============================================================================
-// Sub Tensor Operation
-// =============================================================================
-
-struct Sub<E: SimdElement, const RANK: usize, T1: Tensor<Elem = E>, T2: Tensor<Elem = E>> {
-    lhs: T1,
-    rhs: T2,
-    _marker: std::marker::PhantomData<E>,
-}
-
-impl<E, const RANK: usize, T1, T2> Sub<E, RANK, T1, T2>
-where
-    E: SimdElement,
-    T1: Tensor<Elem = E>,
-    T2: Tensor<Elem = E>,
-{
-    fn new(lhs: T1, rhs: T2) -> Self {
-        Self {
-            lhs,
-            rhs,
-            _marker: std::marker::PhantomData,
+/// Macro to define binary tensor operations (Add, Sub, Mul, Div)
+macro_rules! define_binary_tensor_op {
+    ($name:ident, $std_trait:ident, $simd_op:ty, $error_msg:literal) => {
+        struct $name<E: SimdElement, const RANK: usize, T1: Tensor<Elem = E>, T2: Tensor<Elem = E>> {
+            lhs: T1,
+            rhs: T2,
+            _marker: std::marker::PhantomData<E>,
         }
-    }
-}
 
-impl<E, const RANK: usize, T1, T2> Tensor for Sub<E, RANK, T1, T2>
-where
-    E: SimdElement + StdSub<Output = E> + Default,
-    SubOp: SimdBinaryOp<E>,
-    T1: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-    T2: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-{
-    type Elem = E;
-    const RANK: usize = {
-        assert!(T2::RANK == T1::RANK, "Tensor rank mismatch in Sub");
-        T1::RANK
+        impl<E, const RANK: usize, T1, T2> $name<E, RANK, T1, T2>
+        where
+            E: SimdElement,
+            T1: Tensor<Elem = E>,
+            T2: Tensor<Elem = E>,
+        {
+            fn new(lhs: T1, rhs: T2) -> Self {
+                Self {
+                    lhs,
+                    rhs,
+                    _marker: std::marker::PhantomData,
+                }
+            }
+        }
+
+        impl<E, const RANK: usize, T1, T2> Tensor for $name<E, RANK, T1, T2>
+        where
+            E: SimdElement + $std_trait<Output = E> + Default,
+            $simd_op: SimdBinaryOp<E>,
+            T1: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+            T2: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+        {
+            type Elem = E;
+            const RANK: usize = {
+                assert!(T2::RANK == T1::RANK, $error_msg);
+                T1::RANK
+            };
+            type Concrete = ConcreteTensor<Self::Elem, RANK>;
+        }
+
+        impl<E, const RANK: usize, T1, T2> ResolveTensor for $name<E, RANK, T1, T2>
+        where
+            E: SimdElement + $std_trait<Output = E> + Default,
+            $simd_op: SimdBinaryOp<E>,
+            T1: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+            T2: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+        {
+            fn to_concrete(&self) -> Self::Concrete {
+                binary_tensor_op::<E, RANK, T1, T2, $simd_op>(&self.lhs, &self.rhs)
+            }
+        }
     };
-    type Concrete = ConcreteTensor<Self::Elem, RANK>;
 }
 
-impl<E, const RANK: usize, T1, T2> ResolveTensor for Sub<E, RANK, T1, T2>
-where
-    E: SimdElement + StdSub<Output = E> + Default,
-    SubOp: SimdBinaryOp<E>,
-    T1: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-    T2: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-{
-    fn to_concrete(&self) -> Self::Concrete {
-        binary_tensor_op::<E, RANK, T1, T2, SubOp>(&self.lhs, &self.rhs)
-    }
-}
-
-// =============================================================================
-// Mul Tensor Operation
-// =============================================================================
-
-struct Mul<E: SimdElement, const RANK: usize, T1: Tensor<Elem = E>, T2: Tensor<Elem = E>> {
-    lhs: T1,
-    rhs: T2,
-    _marker: std::marker::PhantomData<E>,
-}
-
-impl<E, const RANK: usize, T1, T2> Mul<E, RANK, T1, T2>
-where
-    E: SimdElement,
-    T1: Tensor<Elem = E>,
-    T2: Tensor<Elem = E>,
-{
-    fn new(lhs: T1, rhs: T2) -> Self {
-        Self {
-            lhs,
-            rhs,
-            _marker: std::marker::PhantomData,
+/// Macro to define unary tensor operations (Neg, Abs, Sqrt)
+macro_rules! define_unary_tensor_op {
+    ($name:ident, $simd_op:ty) => {
+        struct $name<E: SimdElement, const RANK: usize, T: Tensor<Elem = E>> {
+            input: T,
+            _marker: std::marker::PhantomData<E>,
         }
-    }
-}
 
-impl<E, const RANK: usize, T1, T2> Tensor for Mul<E, RANK, T1, T2>
-where
-    E: SimdElement + StdMul<Output = E> + Default,
-    MulOp: SimdBinaryOp<E>,
-    T1: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-    T2: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-{
-    type Elem = E;
-    const RANK: usize = {
-        assert!(T2::RANK == T1::RANK, "Tensor rank mismatch in Mul");
-        T1::RANK
+        impl<E, const RANK: usize, T> $name<E, RANK, T>
+        where
+            E: SimdElement,
+            T: Tensor<Elem = E>,
+        {
+            fn new(input: T) -> Self {
+                Self {
+                    input,
+                    _marker: std::marker::PhantomData,
+                }
+            }
+        }
+
+        impl<E, const RANK: usize, T> Tensor for $name<E, RANK, T>
+        where
+            E: SimdElement + Default,
+            $simd_op: SimdUnaryOp<E>,
+            T: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+        {
+            type Elem = E;
+            const RANK: usize = T::RANK;
+            type Concrete = ConcreteTensor<Self::Elem, RANK>;
+        }
+
+        impl<E, const RANK: usize, T> ResolveTensor for $name<E, RANK, T>
+        where
+            E: SimdElement + Default,
+            $simd_op: SimdUnaryOp<E>,
+            T: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+        {
+            fn to_concrete(&self) -> Self::Concrete {
+                unary_tensor_op::<E, RANK, T, $simd_op>(&self.input)
+            }
+        }
     };
-    type Concrete = ConcreteTensor<Self::Elem, RANK>;
-}
-
-impl<E, const RANK: usize, T1, T2> ResolveTensor for Mul<E, RANK, T1, T2>
-where
-    E: SimdElement + StdMul<Output = E> + Default,
-    MulOp: SimdBinaryOp<E>,
-    T1: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-    T2: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-{
-    fn to_concrete(&self) -> Self::Concrete {
-        binary_tensor_op::<E, RANK, T1, T2, MulOp>(&self.lhs, &self.rhs)
-    }
-}
-
-// =============================================================================
-// Div Tensor Operation (floats only)
-// =============================================================================
-
-struct Div<E: SimdElement, const RANK: usize, T1: Tensor<Elem = E>, T2: Tensor<Elem = E>> {
-    lhs: T1,
-    rhs: T2,
-    _marker: std::marker::PhantomData<E>,
-}
-
-impl<E, const RANK: usize, T1, T2> Div<E, RANK, T1, T2>
-where
-    E: SimdElement,
-    T1: Tensor<Elem = E>,
-    T2: Tensor<Elem = E>,
-{
-    fn new(lhs: T1, rhs: T2) -> Self {
-        Self {
-            lhs,
-            rhs,
-            _marker: std::marker::PhantomData,
+    ($name:ident, $simd_op:ty, $std_trait:ident) => {
+        struct $name<E: SimdElement, const RANK: usize, T: Tensor<Elem = E>> {
+            input: T,
+            _marker: std::marker::PhantomData<E>,
         }
-    }
-}
 
-impl<E, const RANK: usize, T1, T2> Tensor for Div<E, RANK, T1, T2>
-where
-    E: SimdElement + StdDiv<Output = E> + Default,
-    DivOp: SimdBinaryOp<E>,
-    T1: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-    T2: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-{
-    type Elem = E;
-    const RANK: usize = {
-        assert!(T2::RANK == T1::RANK, "Tensor rank mismatch in Div");
-        T1::RANK
+        impl<E, const RANK: usize, T> $name<E, RANK, T>
+        where
+            E: SimdElement,
+            T: Tensor<Elem = E>,
+        {
+            fn new(input: T) -> Self {
+                Self {
+                    input,
+                    _marker: std::marker::PhantomData,
+                }
+            }
+        }
+
+        impl<E, const RANK: usize, T> Tensor for $name<E, RANK, T>
+        where
+            E: SimdElement + $std_trait<Output = E> + Default,
+            $simd_op: SimdUnaryOp<E>,
+            T: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+        {
+            type Elem = E;
+            const RANK: usize = T::RANK;
+            type Concrete = ConcreteTensor<Self::Elem, RANK>;
+        }
+
+        impl<E, const RANK: usize, T> ResolveTensor for $name<E, RANK, T>
+        where
+            E: SimdElement + $std_trait<Output = E> + Default,
+            $simd_op: SimdUnaryOp<E>,
+            T: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+        {
+            fn to_concrete(&self) -> Self::Concrete {
+                unary_tensor_op::<E, RANK, T, $simd_op>(&self.input)
+            }
+        }
     };
-    type Concrete = ConcreteTensor<Self::Elem, RANK>;
 }
 
-impl<E, const RANK: usize, T1, T2> ResolveTensor for Div<E, RANK, T1, T2>
-where
-    E: SimdElement + StdDiv<Output = E> + Default,
-    DivOp: SimdBinaryOp<E>,
-    T1: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-    T2: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-{
-    fn to_concrete(&self) -> Self::Concrete {
-        binary_tensor_op::<E, RANK, T1, T2, DivOp>(&self.lhs, &self.rhs)
-    }
-}
+// Binary tensor operations
+define_binary_tensor_op!(Add, StdAdd, AddOp, "Tensor rank mismatch in Add");
+define_binary_tensor_op!(Sub, StdSub, SubOp, "Tensor rank mismatch in Sub");
+define_binary_tensor_op!(Mul, StdMul, MulOp, "Tensor rank mismatch in Mul");
+define_binary_tensor_op!(Div, StdDiv, DivOp, "Tensor rank mismatch in Div");
 
-// =============================================================================
-// Neg Tensor Operation (unary)
-// =============================================================================
-
-struct Neg<E: SimdElement, const RANK: usize, T: Tensor<Elem = E>> {
-    input: T,
-    _marker: std::marker::PhantomData<E>,
-}
-
-impl<E, const RANK: usize, T> Neg<E, RANK, T>
-where
-    E: SimdElement,
-    T: Tensor<Elem = E>,
-{
-    fn new(input: T) -> Self {
-        Self {
-            input,
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<E, const RANK: usize, T> Tensor for Neg<E, RANK, T>
-where
-    E: SimdElement + StdNeg<Output = E> + Default,
-    NegOp: SimdUnaryOp<E>,
-    T: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-{
-    type Elem = E;
-    const RANK: usize = T::RANK;
-    type Concrete = ConcreteTensor<Self::Elem, RANK>;
-}
-
-impl<E, const RANK: usize, T> ResolveTensor for Neg<E, RANK, T>
-where
-    E: SimdElement + StdNeg<Output = E> + Default,
-    NegOp: SimdUnaryOp<E>,
-    T: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-{
-    fn to_concrete(&self) -> Self::Concrete {
-        unary_tensor_op::<E, RANK, T, NegOp>(&self.input)
-    }
-}
-
-// =============================================================================
-// Abs Tensor Operation (unary)
-// =============================================================================
-
-struct Abs<E: SimdElement, const RANK: usize, T: Tensor<Elem = E>> {
-    input: T,
-    _marker: std::marker::PhantomData<E>,
-}
-
-impl<E, const RANK: usize, T> Abs<E, RANK, T>
-where
-    E: SimdElement,
-    T: Tensor<Elem = E>,
-{
-    fn new(input: T) -> Self {
-        Self {
-            input,
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<E, const RANK: usize, T> Tensor for Abs<E, RANK, T>
-where
-    E: SimdElement + Default,
-    AbsOp: SimdUnaryOp<E>,
-    T: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-{
-    type Elem = E;
-    const RANK: usize = T::RANK;
-    type Concrete = ConcreteTensor<Self::Elem, RANK>;
-}
-
-impl<E, const RANK: usize, T> ResolveTensor for Abs<E, RANK, T>
-where
-    E: SimdElement + Default,
-    AbsOp: SimdUnaryOp<E>,
-    T: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-{
-    fn to_concrete(&self) -> Self::Concrete {
-        unary_tensor_op::<E, RANK, T, AbsOp>(&self.input)
-    }
-}
-
-// =============================================================================
-// Sqrt Tensor Operation (unary, floats only)
-// =============================================================================
-
-struct Sqrt<E: SimdElement, const RANK: usize, T: Tensor<Elem = E>> {
-    input: T,
-    _marker: std::marker::PhantomData<E>,
-}
-
-impl<E, const RANK: usize, T> Sqrt<E, RANK, T>
-where
-    E: SimdElement,
-    T: Tensor<Elem = E>,
-{
-    fn new(input: T) -> Self {
-        Self {
-            input,
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<E, const RANK: usize, T> Tensor for Sqrt<E, RANK, T>
-where
-    E: SimdElement + Default,
-    SqrtOp: SimdUnaryOp<E>,
-    T: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-{
-    type Elem = E;
-    const RANK: usize = T::RANK;
-    type Concrete = ConcreteTensor<Self::Elem, RANK>;
-}
-
-impl<E, const RANK: usize, T> ResolveTensor for Sqrt<E, RANK, T>
-where
-    E: SimdElement + Default,
-    SqrtOp: SimdUnaryOp<E>,
-    T: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-{
-    fn to_concrete(&self) -> Self::Concrete {
-        unary_tensor_op::<E, RANK, T, SqrtOp>(&self.input)
-    }
-}
-
-// =============================================================================
-// SIMD Binary Operations
-// =============================================================================
+// Unary tensor operations
+define_unary_tensor_op!(Neg, NegOp, StdNeg);
+define_unary_tensor_op!(Abs, AbsOp);
+define_unary_tensor_op!(Sqrt, SqrtOp);
 
 /// Marker trait for binary operations that have SIMD support
 trait SimdBinaryOp<E: SimdElement>: Copy {
@@ -674,21 +484,16 @@ trait SimdBinaryOp<E: SimdElement>: Copy {
     fn apply_scalar(lhs: E, rhs: E) -> E;
 }
 
-/// Add operation marker
-#[derive(Copy, Clone)]
-struct AddOp;
-
-/// Sub operation marker
-#[derive(Copy, Clone)]
-struct SubOp;
-
-/// Mul operation marker
-#[derive(Copy, Clone)]
-struct MulOp;
-
-/// Div operation marker (floats only)
-#[derive(Copy, Clone)]
-struct DivOp;
+// Operation marker macro and definitions
+macro_rules! define_op_marker {
+    ($($name:ident),* $(,)?) => {
+        $(
+            #[derive(Copy, Clone)]
+            struct $name;
+        )*
+    };
+}
+define_op_marker!(AddOp, SubOp, MulOp, DivOp);
 
 // Macro to implement binary operations for all numeric types
 macro_rules! impl_binary_op {
@@ -778,27 +583,14 @@ impl_mul_scalar_fallback!(i8, i64, u8, u64);
 impl_binary_op!(DivOp, /, div_f32s, as_simd_f32s, as_mut_simd_f32s, [f32 => f32s]);
 impl_binary_op!(DivOp, /, div_f64s, as_simd_f64s, as_mut_simd_f64s, [f64 => f64s]);
 
-// =============================================================================
-// SIMD Unary Operations
-// =============================================================================
-
 /// Marker trait for unary operations that have SIMD support
 trait SimdUnaryOp<E: SimdElement>: Copy {
     fn apply_simd<S: Simd>(simd: S, input: &[E], out: &mut [E]);
     fn apply_scalar(val: E) -> E;
 }
 
-/// Negation operation marker
-#[derive(Copy, Clone)]
-struct NegOp;
-
-/// Absolute value operation marker
-#[derive(Copy, Clone)]
-struct AbsOp;
-
-/// Square root operation marker (floats only)
-#[derive(Copy, Clone)]
-struct SqrtOp;
+// Unary operation markers
+define_op_marker!(NegOp, AbsOp, SqrtOp);
 
 // Macro for unary ops
 macro_rules! impl_unary_op {
@@ -880,10 +672,6 @@ impl_abs_scalar!(f32 => abs, f64 => abs, i8 => abs, i16 => abs, i32 => abs, i64 
 // Sqrt for floats
 impl_unary_op!(SqrtOp, |x: f32| x.sqrt(), sqrt_f32s, as_simd_f32s, as_mut_simd_f32s, [f32 => f32s]);
 impl_unary_op!(SqrtOp, |x: f64| x.sqrt(), sqrt_f64s, as_simd_f64s, as_mut_simd_f64s, [f64 => f64s]);
-
-// =============================================================================
-// Generic Binary/Unary Operation Dispatch Helpers
-// =============================================================================
 
 /// Helper struct for dispatching binary operations via Arch::dispatch
 struct BinaryOpDispatch<'a, E: SimdElement, Op: SimdBinaryOp<E>> {
