@@ -37,9 +37,6 @@ trait ResolvedTensor: Tensor {
     fn strides(&self) -> &[usize];
     fn offset(&self) -> usize;
     fn data(&self) -> &ABox<[Self::Elem]>;
-}
-
-trait ResolvedTensorMut: ResolvedTensor {
     fn data_mut(&mut self) -> &mut ABox<[Self::Elem]>;
 }
 
@@ -182,12 +179,6 @@ where
     fn data(&self) -> &ABox<[Self::Elem]> {
         &self.backing
     }
-}
-
-impl<T, const RANK: usize> ResolvedTensorMut for ConcreteTensor<T, RANK>
-where
-    T: SimdElement,
-{
     fn data_mut(&mut self) -> &mut ABox<[Self::Elem]> {
         &mut self.backing
     }
