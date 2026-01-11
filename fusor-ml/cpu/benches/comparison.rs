@@ -164,5 +164,65 @@ fn bench_matmul(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_add, bench_creation, bench_add_2d, bench_matmul);
+fn bench_reduce_sum(c: &mut Criterion) {
+    let mut group = c.benchmark_group("sum_f32");
+
+    let sizes: &[usize] = &[1024, 4096];
+
+    for &size in sizes {
+        group.throughput(Throughput::Elements(size as u64));
+
+        // Fusor sum
+        group.bench_with_input(BenchmarkId::new("fusor", size), &size, |b, &size| {
+            let data: Vec<f32> = (0..size).map(|i| (i as f32) * 0.1).collect();
+            let tensor: ConcreteTensor<f32, 1> = ConcreteTensor::from_slice([size], &data);
+            b.iter(|| black_box(black_box(&tensor).sum()));
+        });
+
+        // Candle sum
+        group.bench_with_input(BenchmarkId::new("candle", size), &size, |b, &size| {
+            let data: Vec<f32> = (0..size).map(|i| (i as f32) * 0.1).collect();
+            let tensor = CandleTensor::from_vec(data, size, &Device::Cpu).unwrap();
+            b.iter(|| black_box(black_box(&tensor).sum_all().unwrap()));
+        });
+    }
+
+    group.finish();
+}
+
+fn bench_reduce_max(c: &mut Criterion) {
+    let mut group = c.benchmark_group("max_f32");
+
+    let sizes: &[usize] = &[1024, 4096];
+
+    for &size in sizes {
+        group.throughput(Throughput::Elements(size as u64));
+
+        // Fusor max
+        group.bench_with_input(BenchmarkId::new("fusor", size), &size, |b, &size| {
+            let data: Vec<f32> = (0..size).map(|i| (i as f32) * 0.1).collect();
+            let tensor: ConcreteTensor<f32, 1> = ConcreteTensor::from_slice([size], &data);
+            b.iter(|| black_box(black_box(&tensor).max()));
+        });
+
+        // Candle max
+        group.bench_with_input(BenchmarkId::new("candle", size), &size, |b, &size| {
+            let data: Vec<f32> = (0..size).map(|i| (i as f32) * 0.1).collect();
+            let tensor = CandleTensor::from_vec(data, size, &Device::Cpu).unwrap();
+            b.iter(|| black_box(black_box(&tensor).max_all().unwrap()));
+        });
+    }
+
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_add,
+    bench_creation,
+    bench_add_2d,
+    bench_matmul,
+    bench_reduce_sum,
+    bench_reduce_max,
+);
 criterion_main!(benches);
