@@ -202,8 +202,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
 
     /// Create a new tensor with uninitialized memory (for internal use only)
     #[inline]
-    fn uninit_unchecked(shape: [usize; RANK]) -> Self
-    {
+    fn uninit_unchecked(shape: [usize; RANK]) -> Self {
         let layout = Layout::contiguous(&shape);
         let num_elements = layout.num_elements();
         // Transmute the MaybeUninit vec to T vec - this is safe because we will
@@ -318,6 +317,179 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         SqrtOp: SimdUnaryOp<T>,
     {
         unary_tensor_op_ref::<T, RANK, SqrtOp>(self)
+    }
+}
+
+/// Matrix multiplication specific implementation for 2D tensors
+impl<T: SimdElement + MatmulImpl> ConcreteTensor<T, 2> {
+    /// Matrix multiplication: self (M x K) @ rhs (K x N) -> (M x N)
+    /// Uses optimized gemm for f32/f64, naive fallback for other types
+    #[inline]
+    pub fn matmul_ref(&self, rhs: &Self) -> Self {
+        let m = self.shape()[0];
+        let k = self.shape()[1];
+        let k2 = rhs.shape()[0];
+        let n = rhs.shape()[1];
+
+        assert_eq!(
+            k, k2,
+            "Matrix dimension mismatch: lhs columns ({}) != rhs rows ({})",
+            k, k2
+        );
+
+        let mut output = ConcreteTensor::<T, 2>::uninit_unchecked([m, n]);
+
+        // Both inputs should be contiguous for best performance
+        let lhs_contiguous = self.layout.is_contiguous();
+        let rhs_contiguous = rhs.layout.is_contiguous();
+
+        if lhs_contiguous && rhs_contiguous {
+            T::matmul_contiguous(&self.backing, &rhs.backing, &mut output.backing, m, k, n);
+        } else {
+            // Slow path for non-contiguous tensors
+            matmul_strided(self, rhs, &mut output);
+        }
+
+        output
+    }
+}
+
+/// Optimized matmul for contiguous tensors using gemm crate
+#[inline(always)]
+fn matmul_contiguous<T: 'static>(
+    lhs: &[T],
+    rhs: &[T],
+    out: &mut [T],
+    m: usize,
+    k: usize,
+    n: usize,
+    zero: T,
+    one: T,
+) {
+    // gemm computes: dst := alpha×dst + beta×lhs×rhs
+    // We want: out = lhs × rhs
+    // So: read_dst = false (ignore existing dst), beta = 1.0
+    // Note: gemm expects (column_stride, row_stride) order
+    // For row-major: col_stride = 1, row_stride = num_cols
+    unsafe {
+        gemm::gemm(
+            m,
+            n,
+            k,
+            out.as_mut_ptr(),
+            1,          // dst_cs: col stride (row-major = 1)
+            n as isize, // dst_rs: row stride (row-major = num_cols)
+            false,      // read_dst: false = overwrite, don't accumulate
+            lhs.as_ptr(),
+            1,          // lhs_cs: col stride
+            k as isize, // lhs_rs: row stride (num cols of lhs = k)
+            rhs.as_ptr(),
+            1,                           // rhs_cs: col stride
+            n as isize,                  // rhs_rs: row stride (num cols of rhs = n)
+            zero,                        // alpha (ignored when read_dst = false)
+            one,                         // beta
+            false,                       // conj_dst
+            false,                       // conj_lhs
+            false,                       // conj_rhs
+            gemm::Parallelism::Rayon(0), // Use all available threads
+        );
+    }
+}
+
+/// Naive matmul implementation for types without gemm support
+#[inline]
+fn matmul_naive<T>(lhs: &[T], rhs: &[T], out: &mut [T], m: usize, k: usize, n: usize)
+where
+    T: Copy + Default + StdAdd<Output = T> + StdMul<Output = T>,
+{
+    for i in 0..m {
+        for j in 0..n {
+            let mut sum = T::default();
+            for l in 0..k {
+                sum = sum + lhs[i * k + l] * rhs[l * n + j];
+            }
+            out[i * n + j] = sum;
+        }
+    }
+}
+
+/// Trait for dispatching matmul to the appropriate implementation
+trait MatmulImpl: SimdElement + Default + StdAdd<Output = Self> + StdMul<Output = Self> {
+    fn matmul_contiguous(
+        lhs: &[Self],
+        rhs: &[Self],
+        out: &mut [Self],
+        m: usize,
+        k: usize,
+        n: usize,
+    );
+}
+
+impl MatmulImpl for f32 {
+    #[inline(always)]
+    fn matmul_contiguous(
+        lhs: &[Self],
+        rhs: &[Self],
+        out: &mut [Self],
+        m: usize,
+        k: usize,
+        n: usize,
+    ) {
+        matmul_contiguous(lhs, rhs, out, m, k, n, 0.0, 1.0);
+    }
+}
+
+impl MatmulImpl for f64 {
+    #[inline(always)]
+    fn matmul_contiguous(
+        lhs: &[Self],
+        rhs: &[Self],
+        out: &mut [Self],
+        m: usize,
+        k: usize,
+        n: usize,
+    ) {
+        matmul_contiguous(lhs, rhs, out, m, k, n, 0.0, 1.0);
+    }
+}
+
+// Fallback implementation for other types
+macro_rules! impl_matmul_naive {
+    ($($t:ty),*) => {
+        $(
+            impl MatmulImpl for $t {
+                #[inline]
+                fn matmul_contiguous(lhs: &[Self], rhs: &[Self], out: &mut [Self], m: usize, k: usize, n: usize) {
+                    matmul_naive(lhs, rhs, out, m, k, n);
+                }
+            }
+        )*
+    };
+}
+
+impl_matmul_naive!(i8, i16, i32, i64, u8, u16, u32, u64);
+
+/// Strided matmul for non-contiguous tensors (slower path)
+fn matmul_strided<T: SimdElement + Default + StdAdd<Output = T> + StdMul<Output = T>>(
+    lhs: &ConcreteTensor<T, 2>,
+    rhs: &ConcreteTensor<T, 2>,
+    out: &mut ConcreteTensor<T, 2>,
+) {
+    let m = lhs.shape()[0];
+    let k = lhs.shape()[1];
+    let n = rhs.shape()[1];
+
+    for i in 0..m {
+        for j in 0..n {
+            let mut sum = T::default();
+            for l in 0..k {
+                let lhs_idx = lhs.layout.linear_index(&[i, l]);
+                let rhs_idx = rhs.layout.linear_index(&[l, j]);
+                sum = sum + lhs.backing[lhs_idx] * rhs.backing[rhs_idx];
+            }
+            let out_idx = out.layout.linear_index(&[i, j]);
+            out.backing[out_idx] = sum;
+        }
     }
 }
 
@@ -1074,10 +1246,6 @@ mod tests {
         assert!(indices.is_empty());
     }
 
-    // =============================================================================
-    // Tests for Sub
-    // =============================================================================
-
     #[test]
     fn test_sub_tensor_contiguous() {
         let lhs_data: Vec<f32> = vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0];
@@ -1114,10 +1282,6 @@ mod tests {
             assert_eq!(result.get([i]), (i * 2) as f32);
         }
     }
-
-    // =============================================================================
-    // Tests for Mul
-    // =============================================================================
 
     #[test]
     fn test_mul_tensor_contiguous() {
@@ -1170,10 +1334,6 @@ mod tests {
         assert_eq!(result.get([3]), 160);
     }
 
-    // =============================================================================
-    // Tests for Div
-    // =============================================================================
-
     #[test]
     fn test_div_tensor_contiguous() {
         let lhs_data: Vec<f32> = vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0];
@@ -1211,10 +1371,6 @@ mod tests {
         }
     }
 
-    // =============================================================================
-    // Tests for Neg
-    // =============================================================================
-
     #[test]
     fn test_neg_tensor_f32() {
         let data: Vec<f32> = vec![1.0, -2.0, 3.0, -4.0, 5.0, -6.0];
@@ -1245,10 +1401,6 @@ mod tests {
         }
     }
 
-    // =============================================================================
-    // Tests for Abs
-    // =============================================================================
-
     #[test]
     fn test_abs_tensor_f32() {
         let data: Vec<f32> = vec![1.0, -2.0, 3.0, -4.0, 5.0, -6.0];
@@ -1278,10 +1430,6 @@ mod tests {
         assert_eq!(result.get([2]), 3);
         assert_eq!(result.get([3]), 4);
     }
-
-    // =============================================================================
-    // Tests for Sqrt
-    // =============================================================================
 
     #[test]
     fn test_sqrt_tensor_f32() {
@@ -1325,5 +1473,93 @@ mod tests {
         assert_eq!(result.get([1]), 2.0);
         assert_eq!(result.get([2]), 3.0);
         assert_eq!(result.get([3]), 4.0);
+    }
+
+    #[test]
+    fn test_matmul_2x3_3x2() {
+        // [1 2 3]   [1 2]   [22 28]
+        // [4 5 6] @ [3 4] = [49 64]
+        //           [5 6]
+        let lhs: ConcreteTensor<f32, 2> =
+            ConcreteTensor::from_slice([2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        let rhs: ConcreteTensor<f32, 2> =
+            ConcreteTensor::from_slice([3, 2], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+
+        let result = lhs.matmul_ref(&rhs);
+
+        assert_eq!(result.shape(), &[2, 2]);
+        assert_eq!(result.get([0, 0]), 22.0);
+        assert_eq!(result.get([0, 1]), 28.0);
+        assert_eq!(result.get([1, 0]), 49.0);
+        assert_eq!(result.get([1, 1]), 64.0);
+    }
+
+    #[test]
+    fn test_matmul_identity() {
+        // Matrix times identity should return the original matrix
+        let mat: ConcreteTensor<f32, 2> =
+            ConcreteTensor::from_slice([2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        let identity: ConcreteTensor<f32, 2> =
+            ConcreteTensor::from_slice([3, 3], &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]);
+
+        let result = mat.matmul_ref(&identity);
+
+        assert_eq!(result.shape(), &[2, 3]);
+        assert_eq!(result.get([0, 0]), 1.0);
+        assert_eq!(result.get([0, 1]), 2.0);
+        assert_eq!(result.get([0, 2]), 3.0);
+        assert_eq!(result.get([1, 0]), 4.0);
+        assert_eq!(result.get([1, 1]), 5.0);
+        assert_eq!(result.get([1, 2]), 6.0);
+    }
+
+    #[test]
+    fn test_matmul_large() {
+        // Test with larger matrices to exercise the gemm path
+        let size = 64;
+        let lhs_data: Vec<f32> = (0..size * size).map(|i| (i % 10) as f32).collect();
+        let rhs_data: Vec<f32> = (0..size * size).map(|i| ((i + 1) % 10) as f32).collect();
+
+        let lhs: ConcreteTensor<f32, 2> = ConcreteTensor::from_slice([size, size], &lhs_data);
+        let rhs: ConcreteTensor<f32, 2> = ConcreteTensor::from_slice([size, size], &rhs_data);
+
+        let result = lhs.matmul_ref(&rhs);
+
+        assert_eq!(result.shape(), &[size, size]);
+
+        // Verify a few elements by computing them manually
+        // result[0,0] = sum(lhs[0,:] * rhs[:,0])
+        let mut expected_00: f32 = 0.0;
+        for k in 0..size {
+            expected_00 += lhs_data[k] * rhs_data[k * size];
+        }
+        assert!((result.get([0, 0]) - expected_00).abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_matmul_f64() {
+        // Test f64 path
+        let lhs: ConcreteTensor<f64, 2> = ConcreteTensor::from_slice([2, 2], &[1.0, 2.0, 3.0, 4.0]);
+        let rhs: ConcreteTensor<f64, 2> = ConcreteTensor::from_slice([2, 2], &[5.0, 6.0, 7.0, 8.0]);
+
+        let result = lhs.matmul_ref(&rhs);
+
+        assert_eq!(result.shape(), &[2, 2]);
+        // [1 2] @ [5 6] = [1*5+2*7  1*6+2*8] = [19 22]
+        // [3 4]   [7 8]   [3*5+4*7  3*6+4*8]   [43 50]
+        assert_eq!(result.get([0, 0]), 19.0);
+        assert_eq!(result.get([0, 1]), 22.0);
+        assert_eq!(result.get([1, 0]), 43.0);
+        assert_eq!(result.get([1, 1]), 50.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Matrix dimension mismatch")]
+    fn test_matmul_shape_mismatch() {
+        let lhs: ConcreteTensor<f32, 2> = ConcreteTensor::from_slice([2, 3], &[1.0; 6]);
+        let rhs: ConcreteTensor<f32, 2> = ConcreteTensor::from_slice([2, 2], &[1.0; 4]);
+
+        // This should panic because lhs columns (3) != rhs rows (2)
+        let _ = lhs.matmul_ref(&rhs);
     }
 }

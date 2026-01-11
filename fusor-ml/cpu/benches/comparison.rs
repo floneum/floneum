@@ -119,5 +119,50 @@ fn bench_add_2d(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_add, bench_creation, bench_add_2d,);
+fn bench_matmul(c: &mut Criterion) {
+    let mut group = c.benchmark_group("matmul_f32");
+
+    let sizes: &[(usize, usize, usize)] = &[
+        (32, 32, 32),
+        (64, 64, 64),
+        (128, 128, 128),
+        (256, 256, 256),
+        (512, 512, 512),
+    ];
+
+    for &(m, k, n) in sizes {
+        let ops = (2 * m * n * k) as u64; // Each output element is dot product of k elements
+        group.throughput(Throughput::Elements(ops));
+
+        // Fusor matmul
+        group.bench_with_input(
+            BenchmarkId::new("fusor", format!("{}x{}x{}", m, k, n)),
+            &(m, k, n),
+            |b, &(m, k, n)| {
+                let lhs_data: Vec<f32> = (0..m * k).map(|i| (i as f32) * 0.01).collect();
+                let rhs_data: Vec<f32> = (0..k * n).map(|i| (i as f32) * 0.01).collect();
+                let lhs: ConcreteTensor<f32, 2> = ConcreteTensor::from_slice([m, k], &lhs_data);
+                let rhs: ConcreteTensor<f32, 2> = ConcreteTensor::from_slice([k, n], &rhs_data);
+                b.iter(|| black_box(black_box(&lhs).matmul_ref(black_box(&rhs))));
+            },
+        );
+
+        // Candle matmul
+        group.bench_with_input(
+            BenchmarkId::new("candle", format!("{}x{}x{}", m, k, n)),
+            &(m, k, n),
+            |b, &(m, k, n)| {
+                let lhs_data: Vec<f32> = (0..m * k).map(|i| (i as f32) * 0.01).collect();
+                let rhs_data: Vec<f32> = (0..k * n).map(|i| (i as f32) * 0.01).collect();
+                let lhs = CandleTensor::from_vec(lhs_data, (m, k), &Device::Cpu).unwrap();
+                let rhs = CandleTensor::from_vec(rhs_data, (k, n), &Device::Cpu).unwrap();
+                b.iter(|| black_box(black_box(&lhs).matmul(black_box(&rhs)).unwrap()));
+            },
+        );
+    }
+
+    group.finish();
+}
+
+criterion_group!(benches, bench_add, bench_creation, bench_add_2d, bench_matmul);
 criterion_main!(benches);

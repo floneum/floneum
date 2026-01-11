@@ -2955,8 +2955,10 @@ dependencies = [
  "aligned-vec",
  "candle-core 0.8.4",
  "criterion 0.5.1",
+ "gemm 0.18.2",
  "generativity",
  "pulp 0.22.2",
+ "rayon",
 ]
 
 [[package]]
