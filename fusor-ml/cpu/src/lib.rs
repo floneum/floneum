@@ -1,7 +1,9 @@
+use std::mem::MaybeUninit;
 use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Neg as StdNeg, Sub as StdSub};
 
 use aligned_vec::{ABox, AVec};
 use generativity::Id;
+use pulp::bytemuck::Pod;
 use pulp::{Arch, Simd, WithSimd};
 
 struct Dim<'a> {
@@ -193,10 +195,26 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         let layout = Layout::contiguous(&shape);
         let num_elements = layout.num_elements();
         let mut vec: AVec<T> = AVec::with_capacity(64, num_elements);
-        for _ in 0..num_elements {
-            vec.push(T::default());
-        }
+        vec.resize(num_elements, T::default());
         let backing = vec.into_boxed_slice();
+        Self { layout, backing }
+    }
+
+    /// Create a new tensor with uninitialized memory (for internal use only)
+    #[inline]
+    fn uninit_unchecked(shape: [usize; RANK]) -> Self
+    {
+        let layout = Layout::contiguous(&shape);
+        let num_elements = layout.num_elements();
+        // Transmute the MaybeUninit vec to T vec - this is safe because we will
+        // write to all elements before reading, and MaybeUninit<T> has same layout as T
+        // SAFETY: MaybeUninit<T> has same layout as T, and T is Pod so any memory layout is valid
+        let backing: ABox<[T]> = unsafe {
+            // Allocate the aligned pointer
+            let mut vec: AVec<MaybeUninit<T>> = AVec::with_capacity(64, num_elements);
+            vec.set_len(num_elements);
+            std::mem::transmute::<ABox<[MaybeUninit<T>]>, ABox<[T]>>(vec.into_boxed_slice())
+        };
         Self { layout, backing }
     }
 
@@ -205,9 +223,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         let layout = Layout::contiguous(&shape);
         assert_eq!(layout.num_elements(), data.len());
         let mut vec: AVec<T> = AVec::with_capacity(64, data.len());
-        for &item in data {
-            vec.push(item);
-        }
+        vec.extend_from_slice(data);
         let backing = vec.into_boxed_slice();
         Self { layout, backing }
     }
@@ -232,6 +248,76 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
     fn set(&mut self, indices: [usize; RANK], value: T) {
         let idx = self.linear_index(&indices);
         self.backing[idx] = value;
+    }
+
+    /// Add two tensors element-wise (reference-based, no cloning)
+    #[inline]
+    pub fn add_ref(&self, rhs: &Self) -> Self
+    where
+        T: Default + StdAdd<Output = T>,
+        AddOp: SimdBinaryOp<T>,
+    {
+        binary_tensor_op_ref::<T, RANK, AddOp>(self, rhs)
+    }
+
+    /// Subtract two tensors element-wise (reference-based, no cloning)
+    #[inline]
+    pub fn sub_ref(&self, rhs: &Self) -> Self
+    where
+        T: Default + StdSub<Output = T>,
+        SubOp: SimdBinaryOp<T>,
+    {
+        binary_tensor_op_ref::<T, RANK, SubOp>(self, rhs)
+    }
+
+    /// Multiply two tensors element-wise (reference-based, no cloning)
+    #[inline]
+    pub fn mul_ref(&self, rhs: &Self) -> Self
+    where
+        T: Default + StdMul<Output = T>,
+        MulOp: SimdBinaryOp<T>,
+    {
+        binary_tensor_op_ref::<T, RANK, MulOp>(self, rhs)
+    }
+
+    /// Divide two tensors element-wise (reference-based, no cloning)
+    #[inline]
+    pub fn div_ref(&self, rhs: &Self) -> Self
+    where
+        T: Default + StdDiv<Output = T>,
+        DivOp: SimdBinaryOp<T>,
+    {
+        binary_tensor_op_ref::<T, RANK, DivOp>(self, rhs)
+    }
+
+    /// Negate tensor element-wise (reference-based, no cloning)
+    #[inline]
+    pub fn neg_ref(&self) -> Self
+    where
+        T: Default + StdNeg<Output = T>,
+        NegOp: SimdUnaryOp<T>,
+    {
+        unary_tensor_op_ref::<T, RANK, NegOp>(self)
+    }
+
+    /// Absolute value element-wise (reference-based, no cloning)
+    #[inline]
+    pub fn abs_ref(&self) -> Self
+    where
+        T: Default,
+        AbsOp: SimdUnaryOp<T>,
+    {
+        unary_tensor_op_ref::<T, RANK, AbsOp>(self)
+    }
+
+    /// Square root element-wise (reference-based, no cloning)
+    #[inline]
+    pub fn sqrt_ref(&self) -> Self
+    where
+        T: Default,
+        SqrtOp: SimdUnaryOp<T>,
+    {
+        unary_tensor_op_ref::<T, RANK, SqrtOp>(self)
     }
 }
 
@@ -319,10 +405,79 @@ where
     output
 }
 
+/// Optimized binary tensor operation that works directly with ConcreteTensor references
+/// Avoids cloning by working with references directly
+#[inline(always)]
+fn binary_tensor_op_ref<E, const RANK: usize, Op>(
+    lhs: &ConcreteTensor<E, RANK>,
+    rhs: &ConcreteTensor<E, RANK>,
+) -> ConcreteTensor<E, RANK>
+where
+    E: SimdElement,
+    Op: SimdBinaryOp<E>,
+{
+    let shape: [usize; RANK] = lhs.shape().try_into().expect("Shape length mismatch");
+    // SAFETY: We write to all elements before returning
+    let mut output = ConcreteTensor::<E, RANK>::uninit_unchecked(shape);
+
+    // Fast path: all contiguous (common case)
+    // Output is always contiguous since we just created it
+    let all_contiguous = lhs.layout.is_contiguous() && rhs.layout.is_contiguous();
+
+    if all_contiguous {
+        binary_op_contiguous::<E, Op>(&lhs.backing, &rhs.backing, &mut output.backing);
+    } else {
+        let tensor_shape = &lhs.layout.shape;
+        for indices in IndexIterator::new(tensor_shape) {
+            let lhs_idx = lhs.layout.linear_index(&indices);
+            let rhs_idx = rhs.layout.linear_index(&indices);
+            let out_idx = output.layout.linear_index(&indices);
+            output.backing[out_idx] = Op::apply_scalar(lhs.backing[lhs_idx], rhs.backing[rhs_idx]);
+        }
+    }
+
+    output
+}
+
+/// Optimized unary tensor operation that works directly with ConcreteTensor references
+#[inline(always)]
+fn unary_tensor_op_ref<E, const RANK: usize, Op>(
+    input: &ConcreteTensor<E, RANK>,
+) -> ConcreteTensor<E, RANK>
+where
+    E: SimdElement,
+    Op: SimdUnaryOp<E>,
+{
+    let shape: [usize; RANK] = input.shape().try_into().expect("Shape length mismatch");
+    // SAFETY: We write to all elements before returning
+    let mut output = ConcreteTensor::<E, RANK>::uninit_unchecked(shape);
+
+    // Output is always contiguous since we just created it
+    let all_contiguous = input.layout.is_contiguous();
+
+    if all_contiguous {
+        unary_op_contiguous::<E, Op>(&input.backing, &mut output.backing);
+    } else {
+        let tensor_shape = &input.layout.shape;
+        for indices in IndexIterator::new(tensor_shape) {
+            let in_idx = input.layout.linear_index(&indices);
+            let out_idx = output.layout.linear_index(&indices);
+            output.backing[out_idx] = Op::apply_scalar(input.backing[in_idx]);
+        }
+    }
+
+    output
+}
+
 /// Macro to define binary tensor operations (Add, Sub, Mul, Div)
 macro_rules! define_binary_tensor_op {
     ($name:ident, $std_trait:ident, $simd_op:ty, $error_msg:literal) => {
-        pub struct $name<E: SimdElement, const RANK: usize, T1: Tensor<Elem = E>, T2: Tensor<Elem = E>> {
+        pub struct $name<
+            E: SimdElement,
+            const RANK: usize,
+            T1: Tensor<Elem = E>,
+            T2: Tensor<Elem = E>,
+        > {
             lhs: T1,
             rhs: T2,
             _marker: std::marker::PhantomData<E>,
@@ -538,7 +693,6 @@ impl_binary_op!(MulOp, *, mul_i32s, i32);
 impl_binary_op!(MulOp, *, mul_u16s, u16);
 impl_binary_op!(MulOp, *, mul_u32s, u32);
 
-
 // Implement DivOp for float types only
 impl_binary_op!(DivOp, /, div_f32s, f32);
 impl_binary_op!(DivOp, /, div_f64s, f64);
@@ -560,7 +714,10 @@ macro_rules! impl_unary_op {
     ($op:ty, $scalar_fn:expr, $simd_method:ident, $elem:ty) => {
         impl SimdUnaryOp<$elem> for $op {
             #[inline(always)]
-            fn apply_simd_vec<S: Simd>(simd: S, a: <$elem as SimdElement>::Simd<S>) -> <$elem as SimdElement>::Simd<S> {
+            fn apply_simd_vec<S: Simd>(
+                simd: S,
+                a: <$elem as SimdElement>::Simd<S>,
+            ) -> <$elem as SimdElement>::Simd<S> {
                 simd.$simd_method(a)
             }
 
@@ -582,7 +739,10 @@ macro_rules! impl_neg_int_op {
     ($elem:ty, $splat:ident, $sub:ident) => {
         impl SimdUnaryOp<$elem> for NegOp {
             #[inline(always)]
-            fn apply_simd_vec<S: Simd>(simd: S, a: <$elem as SimdElement>::Simd<S>) -> <$elem as SimdElement>::Simd<S> {
+            fn apply_simd_vec<S: Simd>(
+                simd: S,
+                a: <$elem as SimdElement>::Simd<S>,
+            ) -> <$elem as SimdElement>::Simd<S> {
                 simd.$sub(simd.$splat(0), a)
             }
 
@@ -608,7 +768,10 @@ macro_rules! impl_abs_int_op {
     ($elem:ty, $splat:ident, $sub:ident, $max:ident) => {
         impl SimdUnaryOp<$elem> for AbsOp {
             #[inline(always)]
-            fn apply_simd_vec<S: Simd>(simd: S, a: <$elem as SimdElement>::Simd<S>) -> <$elem as SimdElement>::Simd<S> {
+            fn apply_simd_vec<S: Simd>(
+                simd: S,
+                a: <$elem as SimdElement>::Simd<S>,
+            ) -> <$elem as SimdElement>::Simd<S> {
                 let zero = simd.$splat(0);
                 let neg_a = simd.$sub(zero, a);
                 simd.$max(a, neg_a)
@@ -648,18 +811,26 @@ impl<E: SimdElement, Op: SimdBinaryOp<E>> WithSimd for BinaryOpDispatch<'_, E, O
         let (rhs_simd, rhs_tail) = E::as_simd::<S>(self.rhs);
         let (out_simd, out_tail) = E::as_mut_simd::<S>(self.out);
 
-        for ((a, b), c) in lhs_simd.iter().zip(rhs_simd.iter()).zip(out_simd.iter_mut()) {
+        for ((a, b), c) in lhs_simd
+            .iter()
+            .zip(rhs_simd.iter())
+            .zip(out_simd.iter_mut())
+        {
             *c = Op::apply_simd_vec(simd, *a, *b);
         }
 
-        for ((a, b), c) in lhs_tail.iter().zip(rhs_tail.iter()).zip(out_tail.iter_mut()) {
+        for ((a, b), c) in lhs_tail
+            .iter()
+            .zip(rhs_tail.iter())
+            .zip(out_tail.iter_mut())
+        {
             *c = Op::apply_scalar(*a, *b);
         }
     }
 }
 
 /// Perform a binary operation on contiguous slices using SIMD dispatch
-#[inline]
+#[inline(always)]
 fn binary_op_contiguous<E: SimdElement, Op: SimdBinaryOp<E>>(lhs: &[E], rhs: &[E], out: &mut [E]) {
     Arch::new().dispatch(BinaryOpDispatch::<E, Op> {
         lhs,
@@ -695,7 +866,7 @@ impl<E: SimdElement, Op: SimdUnaryOp<E>> WithSimd for UnaryOpDispatch<'_, E, Op>
 }
 
 /// Perform a unary operation on contiguous slices using SIMD dispatch
-#[inline]
+#[inline(always)]
 fn unary_op_contiguous<E: SimdElement, Op: SimdUnaryOp<E>>(input: &[E], out: &mut [E]) {
     Arch::new().dispatch(UnaryOpDispatch::<E, Op> {
         input,
@@ -705,7 +876,7 @@ fn unary_op_contiguous<E: SimdElement, Op: SimdUnaryOp<E>>(input: &[E], out: &mu
 }
 
 /// Trait for SIMD element types with associated SIMD vector type
-pub trait SimdElement: Sized + Copy + Default {
+pub trait SimdElement: Sized + Copy + Default + Pod {
     /// The SIMD vector type for this element (GAT)
     type Simd<S: Simd>: Copy;
 

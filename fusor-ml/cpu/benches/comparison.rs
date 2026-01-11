@@ -1,6 +1,6 @@
 use candle_core::{Device, Tensor as CandleTensor};
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
-use fusor_cpu::{Add, ConcreteTensor, ResolveTensor};
+use fusor_cpu::ConcreteTensor;
 
 const SIZES: &[usize] = &[64, 256];
 
@@ -20,14 +20,11 @@ fn bench_add(c: &mut Criterion) {
     for &size in SIZES {
         group.throughput(Throughput::Elements(size as u64));
 
-        // Fusor
+        // Fusor (reference-based API, no cloning)
         group.bench_with_input(BenchmarkId::new("fusor", size), &size, |b, &size| {
             let lhs = fusor_tensor_f32(size);
             let rhs = fusor_tensor_f32(size);
-            b.iter(|| {
-                let op = Add::new(black_box(lhs.clone()), black_box(rhs.clone()));
-                black_box(op.to_concrete())
-            });
+            b.iter(|| black_box(black_box(&lhs).add_ref(black_box(&rhs))));
         });
 
         // Candle
@@ -94,7 +91,7 @@ fn bench_add_2d(c: &mut Criterion) {
         let size = rows * cols;
         group.throughput(Throughput::Elements(size as u64));
 
-        // Fusor
+        // Fusor (reference-based API, no cloning)
         group.bench_with_input(
             BenchmarkId::new("fusor", format!("{}x{}", rows, cols)),
             &(rows, cols),
@@ -102,10 +99,7 @@ fn bench_add_2d(c: &mut Criterion) {
                 let data: Vec<f32> = (0..rows * cols).map(|i| (i as f32) * 0.1).collect();
                 let lhs: ConcreteTensor<f32, 2> = ConcreteTensor::from_slice([rows, cols], &data);
                 let rhs: ConcreteTensor<f32, 2> = ConcreteTensor::from_slice([rows, cols], &data);
-                b.iter(|| {
-                    let op = Add::new(black_box(lhs.clone()), black_box(rhs.clone()));
-                    black_box(op.to_concrete())
-                });
+                b.iter(|| black_box(black_box(&lhs).add_ref(black_box(&rhs))));
             },
         );
 
