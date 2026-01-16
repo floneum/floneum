@@ -4,7 +4,10 @@ use std::ops::Neg as StdNeg;
 
 use pulp::{Arch, Simd, WithSimd};
 
-use crate::{ConcreteTensor, IndexIterator, ResolveTensor, ResolvedTensor, SimdElement, Tensor};
+use crate::{
+    materialize_expr, ConcreteTensor, Expr, IndexIterator, ResolveTensor, ResolvedTensor,
+    SimdElement, Tensor,
+};
 
 /// Trait for unary operations that have SIMD support
 pub trait SimdUnaryOp<E: SimdElement>: Copy {
@@ -149,43 +152,6 @@ pub(crate) fn unary_op_contiguous<E: SimdElement, Op: SimdUnaryOp<E>>(
     });
 }
 
-/// Generic helper for unary tensor operations
-pub(crate) fn unary_tensor_op<E, const RANK: usize, T, Op>(input: &T) -> ConcreteTensor<E, RANK>
-where
-    E: SimdElement + Default,
-    Op: SimdUnaryOp<E>,
-    T: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-{
-    let input_concrete = input.to_concrete();
-
-    let shape: [usize; RANK] = input_concrete
-        .shape()
-        .try_into()
-        .expect("Shape length mismatch");
-    let mut output = ConcreteTensor::<E, RANK>::zeros(shape);
-
-    let in_layout = input_concrete.layout().clone();
-    let out_layout = output.layout().clone();
-    let tensor_shape: Box<[usize]> = input_concrete.shape().into();
-
-    let all_contiguous = in_layout.is_contiguous() && out_layout.is_contiguous();
-
-    if all_contiguous {
-        unary_op_contiguous::<E, Op>(input_concrete.data(), output.data_mut());
-    } else {
-        let in_data = input_concrete.data();
-        let out_data = output.data_mut();
-
-        for indices in IndexIterator::new(&tensor_shape) {
-            let in_idx = in_layout.linear_index(&indices);
-            let out_idx = out_layout.linear_index(&indices);
-            out_data[out_idx] = Op::apply_scalar(in_data[in_idx]);
-        }
-    }
-
-    output
-}
-
 /// Optimized unary tensor operation that works directly with ConcreteTensor references
 #[inline(always)]
 pub(crate) fn unary_tensor_op_ref<E, const RANK: usize, Op>(
@@ -195,7 +161,9 @@ where
     E: SimdElement,
     Op: SimdUnaryOp<E>,
 {
-    let shape: [usize; RANK] = input.shape().try_into().expect("Shape length mismatch");
+    let shape: [usize; RANK] = ResolvedTensor::shape(input)
+        .try_into()
+        .expect("Shape length mismatch");
     // SAFETY: We write to all elements before returning
     let mut output = ConcreteTensor::<E, RANK>::uninit_unchecked(shape);
 
@@ -205,7 +173,7 @@ where
     if all_contiguous {
         unary_op_contiguous::<E, Op>(input.data(), output.data_mut());
     } else {
-        let tensor_shape = input.shape();
+        let tensor_shape = ResolvedTensor::shape(input);
         for indices in IndexIterator::new(tensor_shape) {
             let in_idx = input.layout().linear_index(&indices);
             let out_idx = output.layout().linear_index(&indices);
@@ -248,14 +216,48 @@ macro_rules! define_unary_tensor_op {
             type Concrete = ConcreteTensor<Self::Elem, RANK>;
         }
 
+        impl<E, const RANK: usize, T> Expr for $name<E, RANK, T>
+        where
+            E: SimdElement,
+            $simd_op: SimdUnaryOp<E>,
+            T: Expr<Elem = E> + Tensor<Elem = E>,
+        {
+            type Elem = E;
+
+            #[inline(always)]
+            fn eval_scalar(&self, idx: usize) -> E {
+                <$simd_op>::apply_scalar(self.input.eval_scalar(idx))
+            }
+
+            #[inline(always)]
+            fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> E::Simd<S> {
+                <$simd_op>::apply_simd_vec(simd, self.input.eval_simd(simd, base_idx))
+            }
+
+            fn len(&self) -> usize {
+                self.input.len()
+            }
+
+            fn shape(&self) -> &[usize] {
+                self.input.shape()
+            }
+
+            fn is_contiguous(&self) -> bool {
+                self.input.is_contiguous()
+            }
+        }
+
         impl<E, const RANK: usize, T> ResolveTensor for $name<E, RANK, T>
         where
             E: SimdElement + Default,
             $simd_op: SimdUnaryOp<E>,
-            T: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+            T: Expr<Elem = E> + ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
         {
             fn to_concrete(&self) -> Self::Concrete {
-                unary_tensor_op::<E, RANK, T, $simd_op>(&self.input)
+                let shape: [usize; RANK] = Expr::shape(&self.input)
+                    .try_into()
+                    .expect("Shape length mismatch");
+                materialize_expr(self, shape)
             }
         }
     };
@@ -289,14 +291,48 @@ macro_rules! define_unary_tensor_op {
             type Concrete = ConcreteTensor<Self::Elem, RANK>;
         }
 
+        impl<E, const RANK: usize, T> Expr for $name<E, RANK, T>
+        where
+            E: SimdElement + $std_trait<Output = E>,
+            $simd_op: SimdUnaryOp<E>,
+            T: Expr<Elem = E> + Tensor<Elem = E>,
+        {
+            type Elem = E;
+
+            #[inline(always)]
+            fn eval_scalar(&self, idx: usize) -> E {
+                <$simd_op>::apply_scalar(self.input.eval_scalar(idx))
+            }
+
+            #[inline(always)]
+            fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> E::Simd<S> {
+                <$simd_op>::apply_simd_vec(simd, self.input.eval_simd(simd, base_idx))
+            }
+
+            fn len(&self) -> usize {
+                self.input.len()
+            }
+
+            fn shape(&self) -> &[usize] {
+                self.input.shape()
+            }
+
+            fn is_contiguous(&self) -> bool {
+                self.input.is_contiguous()
+            }
+        }
+
         impl<E, const RANK: usize, T> ResolveTensor for $name<E, RANK, T>
         where
             E: SimdElement + $std_trait<Output = E> + Default,
             $simd_op: SimdUnaryOp<E>,
-            T: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+            T: Expr<Elem = E> + ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
         {
             fn to_concrete(&self) -> Self::Concrete {
-                unary_tensor_op::<E, RANK, T, $simd_op>(&self.input)
+                let shape: [usize; RANK] = Expr::shape(&self.input)
+                    .try_into()
+                    .expect("Shape length mismatch");
+                materialize_expr(self, shape)
             }
         }
     };
@@ -306,3 +342,82 @@ macro_rules! define_unary_tensor_op {
 define_unary_tensor_op!(Neg, NegOp, StdNeg);
 define_unary_tensor_op!(Abs, AbsOp);
 define_unary_tensor_op!(Sqrt, SqrtOp);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ResolveTensor;
+
+    #[test]
+    fn test_neg_expr() {
+        let a = ConcreteTensor::<f32, 1>::from_slice([4], &[1.0, -2.0, 3.0, -4.0]);
+
+        let neg_expr: Neg<f32, 1, _> = Neg::new(&a);
+
+        // Test Expr trait methods
+        assert_eq!(neg_expr.len(), 4);
+        assert_eq!(neg_expr.shape(), &[4]);
+        assert!(neg_expr.is_contiguous());
+
+        // Test scalar evaluation
+        assert_eq!(neg_expr.eval_scalar(0), -1.0);
+        assert_eq!(neg_expr.eval_scalar(1), 2.0);
+        assert_eq!(neg_expr.eval_scalar(2), -3.0);
+        assert_eq!(neg_expr.eval_scalar(3), 4.0);
+
+        // Test materialization
+        let result = neg_expr.to_concrete();
+        assert_eq!(result.get([0]), -1.0);
+        assert_eq!(result.get([3]), 4.0);
+    }
+
+    #[test]
+    fn test_abs_expr() {
+        let a = ConcreteTensor::<f32, 1>::from_slice([4], &[-1.0, 2.0, -3.0, 4.0]);
+
+        let abs_expr: Abs<f32, 1, _> = Abs::new(&a);
+
+        assert_eq!(abs_expr.eval_scalar(0), 1.0);
+        assert_eq!(abs_expr.eval_scalar(1), 2.0);
+        assert_eq!(abs_expr.eval_scalar(2), 3.0);
+        assert_eq!(abs_expr.eval_scalar(3), 4.0);
+    }
+
+    #[test]
+    fn test_sqrt_expr() {
+        let a = ConcreteTensor::<f32, 1>::from_slice([4], &[1.0, 4.0, 9.0, 16.0]);
+
+        let sqrt_expr: Sqrt<f32, 1, _> = Sqrt::new(&a);
+
+        assert_eq!(sqrt_expr.eval_scalar(0), 1.0);
+        assert_eq!(sqrt_expr.eval_scalar(1), 2.0);
+        assert_eq!(sqrt_expr.eval_scalar(2), 3.0);
+        assert_eq!(sqrt_expr.eval_scalar(3), 4.0);
+    }
+
+    #[test]
+    fn test_fused_unary_chain() {
+        // Test sqrt(abs(neg(x))) as a fused expression
+        let x = ConcreteTensor::<f32, 1>::from_slice([4], &[-1.0, -4.0, -9.0, -16.0]);
+
+        let neg_expr: Neg<f32, 1, _> = Neg::new(&x);
+        let abs_expr: Abs<f32, 1, _> = Abs::new(neg_expr);
+        let sqrt_expr: Sqrt<f32, 1, _> = Sqrt::new(abs_expr);
+
+        // neg(-1) = 1, abs(1) = 1, sqrt(1) = 1
+        assert_eq!(sqrt_expr.eval_scalar(0), 1.0);
+        // neg(-4) = 4, abs(4) = 4, sqrt(4) = 2
+        assert_eq!(sqrt_expr.eval_scalar(1), 2.0);
+        // neg(-9) = 9, abs(9) = 9, sqrt(9) = 3
+        assert_eq!(sqrt_expr.eval_scalar(2), 3.0);
+        // neg(-16) = 16, abs(16) = 16, sqrt(16) = 4
+        assert_eq!(sqrt_expr.eval_scalar(3), 4.0);
+
+        // Materialize and verify
+        let result = sqrt_expr.to_concrete();
+        assert_eq!(result.get([0]), 1.0);
+        assert_eq!(result.get([1]), 2.0);
+        assert_eq!(result.get([2]), 3.0);
+        assert_eq!(result.get([3]), 4.0);
+    }
+}

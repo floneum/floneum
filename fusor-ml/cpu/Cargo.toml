@@ -21,3 +21,7 @@ candle-core = "0.8"
 [[bench]]
 name = "comparison"
 harness = false
+
+[[bench]]
+name = "fusion"
+harness = false

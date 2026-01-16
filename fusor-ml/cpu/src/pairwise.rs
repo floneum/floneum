@@ -4,7 +4,10 @@ use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Sub as StdSub};
 
 use pulp::{Arch, Simd, WithSimd};
 
-use crate::{ConcreteTensor, IndexIterator, ResolveTensor, ResolvedTensor, SimdElement, Tensor};
+use crate::{
+    materialize_expr, ConcreteTensor, Expr, IndexIterator, ResolveTensor, ResolvedTensor,
+    SimdElement, Tensor,
+};
 
 /// Trait for binary operations that have SIMD support
 pub trait SimdBinaryOp<E: SimdElement>: Copy {
@@ -129,56 +132,6 @@ pub(crate) fn binary_op_contiguous<E: SimdElement, Op: SimdBinaryOp<E>>(
     });
 }
 
-/// Generic helper for binary tensor operations
-pub(crate) fn binary_tensor_op<E, const RANK: usize, T1, T2, Op>(
-    lhs: &T1,
-    rhs: &T2,
-) -> ConcreteTensor<E, RANK>
-where
-    E: SimdElement + Default,
-    Op: SimdBinaryOp<E>,
-    T1: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-    T2: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-{
-    let lhs_concrete = lhs.to_concrete();
-    let rhs_concrete = rhs.to_concrete();
-
-    let shape: [usize; RANK] = lhs_concrete
-        .shape()
-        .try_into()
-        .expect("Shape length mismatch");
-    let mut output = ConcreteTensor::<E, RANK>::zeros(shape);
-
-    let lhs_layout = lhs_concrete.layout().clone();
-    let rhs_layout = rhs_concrete.layout().clone();
-    let out_layout = output.layout().clone();
-    let tensor_shape: Box<[usize]> = lhs_concrete.shape().into();
-
-    let all_contiguous =
-        lhs_layout.is_contiguous() && rhs_layout.is_contiguous() && out_layout.is_contiguous();
-
-    if all_contiguous {
-        binary_op_contiguous::<E, Op>(
-            lhs_concrete.data(),
-            rhs_concrete.data(),
-            output.data_mut(),
-        );
-    } else {
-        let lhs_data = lhs_concrete.data();
-        let rhs_data = rhs_concrete.data();
-        let out_data = output.data_mut();
-
-        for indices in IndexIterator::new(&tensor_shape) {
-            let lhs_idx = lhs_layout.linear_index(&indices);
-            let rhs_idx = rhs_layout.linear_index(&indices);
-            let out_idx = out_layout.linear_index(&indices);
-            out_data[out_idx] = Op::apply_scalar(lhs_data[lhs_idx], rhs_data[rhs_idx]);
-        }
-    }
-
-    output
-}
-
 /// Optimized binary tensor operation that works directly with ConcreteTensor references
 /// Avoids cloning by working with references directly
 #[inline(always)]
@@ -190,7 +143,9 @@ where
     E: SimdElement,
     Op: SimdBinaryOp<E>,
 {
-    let shape: [usize; RANK] = lhs.shape().try_into().expect("Shape length mismatch");
+    let shape: [usize; RANK] = ResolvedTensor::shape(lhs)
+        .try_into()
+        .expect("Shape length mismatch");
     // SAFETY: We write to all elements before returning
     let mut output = ConcreteTensor::<E, RANK>::uninit_unchecked(shape);
 
@@ -201,7 +156,7 @@ where
     if all_contiguous {
         binary_op_contiguous::<E, Op>(lhs.data(), rhs.data(), output.data_mut());
     } else {
-        let tensor_shape = lhs.shape();
+        let tensor_shape = ResolvedTensor::shape(lhs);
         for indices in IndexIterator::new(tensor_shape) {
             let lhs_idx = lhs.layout().linear_index(&indices);
             let rhs_idx = rhs.layout().linear_index(&indices);
@@ -257,15 +212,57 @@ macro_rules! define_binary_tensor_op {
             type Concrete = ConcreteTensor<Self::Elem, RANK>;
         }
 
+        impl<E, const RANK: usize, T1, T2> Expr for $name<E, RANK, T1, T2>
+        where
+            E: SimdElement + $std_trait<Output = E>,
+            $simd_op: SimdBinaryOp<E>,
+            T1: Expr<Elem = E> + Tensor<Elem = E>,
+            T2: Expr<Elem = E> + Tensor<Elem = E>,
+        {
+            type Elem = E;
+
+            #[inline(always)]
+            fn eval_scalar(&self, idx: usize) -> E {
+                <$simd_op>::apply_scalar(
+                    self.lhs.eval_scalar(idx),
+                    self.rhs.eval_scalar(idx),
+                )
+            }
+
+            #[inline(always)]
+            fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> E::Simd<S> {
+                <$simd_op>::apply_simd_vec(
+                    simd,
+                    self.lhs.eval_simd(simd, base_idx),
+                    self.rhs.eval_simd(simd, base_idx),
+                )
+            }
+
+            fn len(&self) -> usize {
+                self.lhs.len()
+            }
+
+            fn shape(&self) -> &[usize] {
+                self.lhs.shape()
+            }
+
+            fn is_contiguous(&self) -> bool {
+                self.lhs.is_contiguous() && self.rhs.is_contiguous()
+            }
+        }
+
         impl<E, const RANK: usize, T1, T2> ResolveTensor for $name<E, RANK, T1, T2>
         where
             E: SimdElement + $std_trait<Output = E> + Default,
             $simd_op: SimdBinaryOp<E>,
-            T1: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-            T2: ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+            T1: Expr<Elem = E> + ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+            T2: Expr<Elem = E> + ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
         {
             fn to_concrete(&self) -> Self::Concrete {
-                binary_tensor_op::<E, RANK, T1, T2, $simd_op>(&self.lhs, &self.rhs)
+                let shape: [usize; RANK] = Expr::shape(&self.lhs)
+                    .try_into()
+                    .expect("Shape length mismatch");
+                materialize_expr(self, shape)
             }
         }
     };
@@ -276,3 +273,83 @@ define_binary_tensor_op!(Add, StdAdd, AddOp, "Tensor rank mismatch in Add");
 define_binary_tensor_op!(Sub, StdSub, SubOp, "Tensor rank mismatch in Sub");
 define_binary_tensor_op!(Mul, StdMul, MulOp, "Tensor rank mismatch in Mul");
 define_binary_tensor_op!(Div, StdDiv, DivOp, "Tensor rank mismatch in Div");
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ResolveTensor;
+
+    #[test]
+    fn test_add_expr() {
+        let a = ConcreteTensor::<f32, 1>::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
+        let b = ConcreteTensor::<f32, 1>::from_slice([4], &[10.0, 20.0, 30.0, 40.0]);
+
+        let add_expr: Add<f32, 1, _, _> = Add::new(&a, &b);
+
+        // Test Expr trait methods
+        assert_eq!(add_expr.len(), 4);
+        assert_eq!(add_expr.shape(), &[4]);
+        assert!(add_expr.is_contiguous());
+
+        // Test scalar evaluation
+        assert_eq!(add_expr.eval_scalar(0), 11.0);
+        assert_eq!(add_expr.eval_scalar(1), 22.0);
+        assert_eq!(add_expr.eval_scalar(3), 44.0);
+
+        // Test materialization
+        let result = add_expr.to_concrete();
+        assert_eq!(result.get([0]), 11.0);
+        assert_eq!(result.get([3]), 44.0);
+    }
+
+    #[test]
+    fn test_mul_expr() {
+        let a = ConcreteTensor::<f32, 1>::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
+        let b = ConcreteTensor::<f32, 1>::from_slice([4], &[2.0, 3.0, 4.0, 5.0]);
+
+        let mul_expr: Mul<f32, 1, _, _> = Mul::new(&a, &b);
+
+        assert_eq!(mul_expr.eval_scalar(0), 2.0);
+        assert_eq!(mul_expr.eval_scalar(1), 6.0);
+        assert_eq!(mul_expr.eval_scalar(2), 12.0);
+        assert_eq!(mul_expr.eval_scalar(3), 20.0);
+    }
+
+    #[test]
+    fn test_fused_expr_mul_add() {
+        let x = ConcreteTensor::<f32, 1>::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
+        let y = ConcreteTensor::<f32, 1>::from_slice([4], &[2.0, 2.0, 2.0, 2.0]);
+        let z = ConcreteTensor::<f32, 1>::from_slice([4], &[10.0, 10.0, 10.0, 10.0]);
+
+        // Create fused expression: x * y + z
+        let mul_expr: Mul<f32, 1, _, _> = Mul::new(&x, &y);
+        let add_expr: Add<f32, 1, _, _> = Add::new(mul_expr, &z);
+
+        // Verify the fused expression evaluates correctly
+        assert_eq!(add_expr.eval_scalar(0), 12.0); // 1*2 + 10
+        assert_eq!(add_expr.eval_scalar(1), 14.0); // 2*2 + 10
+        assert_eq!(add_expr.eval_scalar(2), 16.0); // 3*2 + 10
+        assert_eq!(add_expr.eval_scalar(3), 18.0); // 4*2 + 10
+
+        // Materialize and verify
+        let result = add_expr.to_concrete();
+        assert_eq!(result.get([0]), 12.0);
+        assert_eq!(result.get([3]), 18.0);
+    }
+
+    #[test]
+    fn test_sub_div_expr() {
+        let a = ConcreteTensor::<f32, 1>::from_slice([3], &[10.0, 20.0, 30.0]);
+        let b = ConcreteTensor::<f32, 1>::from_slice([3], &[2.0, 4.0, 5.0]);
+
+        let sub_expr: Sub<f32, 1, _, _> = Sub::new(&a, &b);
+        assert_eq!(sub_expr.eval_scalar(0), 8.0);
+        assert_eq!(sub_expr.eval_scalar(1), 16.0);
+        assert_eq!(sub_expr.eval_scalar(2), 25.0);
+
+        let div_expr: Div<f32, 1, _, _> = Div::new(&a, &b);
+        assert_eq!(div_expr.eval_scalar(0), 5.0);
+        assert_eq!(div_expr.eval_scalar(1), 5.0);
+        assert_eq!(div_expr.eval_scalar(2), 6.0);
+    }
+}

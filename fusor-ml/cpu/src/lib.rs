@@ -9,13 +9,20 @@ use pulp::Simd;
 
 // Module declarations
 mod elementwise;
+mod expr;
 mod matmul;
 mod pairwise;
 mod reduce;
 
+/// Maximum number of SIMD lanes supported for strided tensor gather operations.
+/// This covers AVX-512 with 64 x i8 lanes. Current architectures don't exceed this,
+/// but this constant provides a clear point for future updates if needed.
+pub(crate) const MAX_SIMD_LANES: usize = 64;
+
 
 // Re-export public types
 pub use elementwise::{Abs, Neg, Sqrt};
+pub use expr::{materialize_expr, Expr};
 pub use pairwise::{Add, Div, Mul, Sub};
 
 // Re-export operation traits and markers for public bounds
@@ -130,18 +137,34 @@ pub(crate) struct Layout {
     pub(crate) offset: usize,
     pub(crate) shape: Box<[usize]>,
     pub(crate) strides: Box<[usize]>,
+    /// Cached contiguity flag - computed once at construction
+    is_contiguous: bool,
 }
 
 impl Layout {
+    /// Create a new layout with explicit offset, shape, and strides.
+    /// Contiguity is computed automatically based on offset and strides.
+    #[allow(dead_code)] // Available for view/slice operations
+    pub(crate) fn new(offset: usize, shape: Box<[usize]>, strides: Box<[usize]>) -> Self {
+        let is_contiguous = offset == 0 && strides == Self::contiguous_strides(&shape);
+        Self {
+            offset,
+            shape,
+            strides,
+            is_contiguous,
+        }
+    }
+
+    /// Create a contiguous layout for the given shape.
     pub(crate) fn contiguous(shape: &[usize]) -> Self {
         let strides = Self::contiguous_strides(shape);
         Self {
             offset: 0,
             shape: shape.into(),
             strides,
+            is_contiguous: true, // Contiguous layout is always contiguous
         }
     }
-
 
     fn contiguous_strides(shape: &[usize]) -> Box<[usize]> {
         let mut acc = 1;
@@ -153,8 +176,10 @@ impl Layout {
         strides
     }
 
+    /// Check if the tensor has contiguous memory layout (cached, O(1))
+    #[inline(always)]
     pub(crate) fn is_contiguous(&self) -> bool {
-        self.offset == 0 && self.strides == Self::contiguous_strides(&self.shape)
+        self.is_contiguous
     }
 
     pub(crate) fn num_elements(&self) -> usize {
@@ -215,6 +240,74 @@ where
     }
     fn data_mut(&mut self) -> &mut ABox<[Self::Elem]> {
         &mut self.backing
+    }
+}
+
+impl<T: SimdElement, const RANK: usize> Expr for ConcreteTensor<T, RANK> {
+    type Elem = T;
+
+    #[inline(always)]
+    fn eval_scalar(&self, idx: usize) -> T {
+        if self.layout.is_contiguous() {
+            self.backing[idx]
+        } else {
+            // Convert linear index to logical indices for strided access
+            let indices = expr::linear_to_indices::<RANK>(idx, &self.layout.shape);
+            let phys_idx = self.layout.linear_index(&indices);
+            self.backing[phys_idx]
+        }
+    }
+
+    #[inline(always)]
+    fn eval_simd<S: Simd>(&self, _simd: S, base_idx: usize) -> T::Simd<S> {
+        if self.layout.is_contiguous() {
+            // Fast path: direct SIMD load from contiguous, aligned data
+            // SAFETY:
+            // - base_idx is always aligned to SIMD width (caller guarantees this)
+            // - backing is allocated with 64-byte alignment via aligned-vec
+            // - base_idx + lane_count <= len (caller guarantees this)
+            unsafe {
+                let ptr = self.backing.as_ptr().add(base_idx) as *const T::Simd<S>;
+                ptr.read_unaligned()
+            }
+        } else {
+            // Slow path: gather elements one by one
+            // For strided tensors, we fall back to scalar evaluation
+            // and construct a SIMD vector manually
+            let lane_count = std::mem::size_of::<T::Simd<S>>() / std::mem::size_of::<T>();
+            let mut temp = [T::default(); MAX_SIMD_LANES];
+            for i in 0..lane_count {
+                temp[i] = self.eval_scalar(base_idx + i);
+            }
+            let (simd_vec, _) = T::as_simd::<S>(&temp[..lane_count]);
+            simd_vec[0]
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.layout.num_elements()
+    }
+
+    fn shape(&self) -> &[usize] {
+        &self.layout.shape
+    }
+
+    fn is_contiguous(&self) -> bool {
+        self.layout.is_contiguous()
+    }
+}
+
+// Implement Tensor for references so they can be used in expression trees
+impl<T: SimdElement, const RANK: usize> Tensor for &ConcreteTensor<T, RANK> {
+    type Elem = T;
+    const RANK: usize = RANK;
+    type Concrete = ConcreteTensor<T, RANK>;
+}
+
+// Implement ResolveTensor for references
+impl<T: SimdElement, const RANK: usize> ResolveTensor for &ConcreteTensor<T, RANK> {
+    fn to_concrete(&self) -> Self::Concrete {
+        (*self).clone()
     }
 }
 
@@ -448,10 +541,13 @@ pub trait SimdElement: Sized + Copy + Default + Pod {
     /// Convert slice to SIMD vectors + remainder
     fn as_simd<S: Simd>(slice: &[Self]) -> (&[Self::Simd<S>], &[Self]);
     fn as_mut_simd<S: Simd>(slice: &mut [Self]) -> (&mut [Self::Simd<S>], &mut [Self]);
+
+    /// Broadcast a scalar value to all lanes of a SIMD vector
+    fn splat<S: Simd>(simd: S, value: Self) -> Self::Simd<S>;
 }
 
 macro_rules! impl_simd_element {
-    ($elem:ty, $simd_ty:ident, $as_simd:ident, $as_mut_simd:ident) => {
+    ($elem:ty, $simd_ty:ident, $as_simd:ident, $as_mut_simd:ident, $splat:ident) => {
         impl SimdElement for $elem {
             type Simd<S: Simd> = S::$simd_ty;
 
@@ -464,17 +560,22 @@ macro_rules! impl_simd_element {
             fn as_mut_simd<S: Simd>(slice: &mut [Self]) -> (&mut [S::$simd_ty], &mut [Self]) {
                 S::$as_mut_simd(slice)
             }
+
+            #[inline(always)]
+            fn splat<S: Simd>(simd: S, value: Self) -> S::$simd_ty {
+                simd.$splat(value)
+            }
         }
     };
 }
 
-impl_simd_element!(f32, f32s, as_simd_f32s, as_mut_simd_f32s);
-impl_simd_element!(f64, f64s, as_simd_f64s, as_mut_simd_f64s);
-impl_simd_element!(i8, i8s, as_simd_i8s, as_mut_simd_i8s);
-impl_simd_element!(i16, i16s, as_simd_i16s, as_mut_simd_i16s);
-impl_simd_element!(i32, i32s, as_simd_i32s, as_mut_simd_i32s);
-impl_simd_element!(i64, i64s, as_simd_i64s, as_mut_simd_i64s);
-impl_simd_element!(u8, u8s, as_simd_u8s, as_mut_simd_u8s);
-impl_simd_element!(u16, u16s, as_simd_u16s, as_mut_simd_u16s);
-impl_simd_element!(u32, u32s, as_simd_u32s, as_mut_simd_u32s);
-impl_simd_element!(u64, u64s, as_simd_u64s, as_mut_simd_u64s);
+impl_simd_element!(f32, f32s, as_simd_f32s, as_mut_simd_f32s, splat_f32s);
+impl_simd_element!(f64, f64s, as_simd_f64s, as_mut_simd_f64s, splat_f64s);
+impl_simd_element!(i8, i8s, as_simd_i8s, as_mut_simd_i8s, splat_i8s);
+impl_simd_element!(i16, i16s, as_simd_i16s, as_mut_simd_i16s, splat_i16s);
+impl_simd_element!(i32, i32s, as_simd_i32s, as_mut_simd_i32s, splat_i32s);
+impl_simd_element!(i64, i64s, as_simd_i64s, as_mut_simd_i64s, splat_i64s);
+impl_simd_element!(u8, u8s, as_simd_u8s, as_mut_simd_u8s, splat_u8s);
+impl_simd_element!(u16, u16s, as_simd_u16s, as_mut_simd_u16s, splat_u16s);
+impl_simd_element!(u32, u32s, as_simd_u32s, as_mut_simd_u32s, splat_u32s);
+impl_simd_element!(u64, u64s, as_simd_u64s, as_mut_simd_u64s, splat_u64s);
