@@ -197,8 +197,9 @@ impl ConcreteTensor<f32, 2> {
     /// Matrix multiplication: self (M x K) @ rhs (K x N) -> (M x N)
     ///
     /// This is optimized for the case where the RHS (weights) are quantized.
-    /// Instead of dequantizing the entire RHS matrix, it processes block-by-block.
-    pub fn matmul_quantized<B: GgufBlock>(&self, rhs: &QuantizedTensor<B, 2>) -> ConcreteTensor<f32, 2>
+    /// Instead of dequantizing the entire RHS matrix, it processes block-by-block
+    /// with SIMD acceleration.
+    pub fn matmul_quantized<B: GgufBlock + Sync>(&self, rhs: &QuantizedTensor<B, 2>) -> ConcreteTensor<f32, 2>
     where
         B::Dequantized: AsRef<[f32]>,
     {
@@ -222,32 +223,114 @@ impl ConcreteTensor<f32, 2> {
         // Number of blocks per row in the RHS
         let blocks_per_row = n / B::BLOCK_SIZE;
 
-        // For each row of the output
-        for i in 0..m {
-            let lhs_row = &lhs_data[i * k..(i + 1) * k];
-
-            // For each row in RHS (which contributes to all output columns)
-            for rhs_row in 0..k {
-                let lhs_val = lhs_row[rhs_row];
-
-                // Process each block in this RHS row
-                for block_col in 0..blocks_per_row {
-                    let block_idx = rhs_row * blocks_per_row + block_col;
-                    let dequantized = rhs.blocks[block_idx].dequantize();
-                    let dequantized_slice = dequantized.as_ref();
-
-                    // Output column start for this block
-                    let out_col_start = block_col * B::BLOCK_SIZE;
-
-                    // Accumulate into output
-                    for elem in 0..B::BLOCK_SIZE {
-                        out_data[i * n + out_col_start + elem] += lhs_val * dequantized_slice[elem];
-                    }
-                }
-            }
-        }
+        // Use SIMD-optimized inner loop
+        pulp::Arch::new().dispatch(QMatmulSimd {
+            lhs_data,
+            rhs_blocks: rhs.blocks(),
+            out_data,
+            m,
+            k,
+            n,
+            blocks_per_row,
+            _phantom: std::marker::PhantomData::<B>,
+        });
 
         output
+    }
+}
+
+/// SIMD-accelerated quantized matmul kernel
+struct QMatmulSimd<'a, B: GgufBlock> {
+    lhs_data: &'a [f32],
+    rhs_blocks: &'a [B],
+    out_data: &'a mut [f32],
+    m: usize,
+    k: usize,
+    n: usize,
+    blocks_per_row: usize,
+    _phantom: std::marker::PhantomData<B>,
+}
+
+impl<B: GgufBlock + Sync> pulp::WithSimd for QMatmulSimd<'_, B>
+where
+    B::Dequantized: AsRef<[f32]>,
+{
+    type Output = ();
+
+    #[inline(always)]
+    fn with_simd<S: Simd>(self, simd: S) -> Self::Output {
+        let Self {
+            lhs_data,
+            rhs_blocks,
+            out_data,
+            m,
+            k,
+            n,
+            blocks_per_row,
+            ..
+        } = self;
+
+        // Use parallel processing for larger matrices (threshold chosen to balance parallelism overhead)
+        if m >= 8 {
+            use rayon::prelude::*;
+
+            // Process rows in parallel
+            let out_chunks: Vec<&mut [f32]> = out_data.chunks_mut(n).collect();
+            out_chunks.into_par_iter().enumerate().for_each(|(i, out_row)| {
+                let lhs_row = &lhs_data[i * k..(i + 1) * k];
+                process_row_simd::<B, S>(simd, lhs_row, rhs_blocks, out_row, k, blocks_per_row);
+            });
+        } else {
+            // Sequential processing for small matrices
+            for i in 0..m {
+                let lhs_row = &lhs_data[i * k..(i + 1) * k];
+                let out_row = &mut out_data[i * n..(i + 1) * n];
+                process_row_simd::<B, S>(simd, lhs_row, rhs_blocks, out_row, k, blocks_per_row);
+            }
+        }
+    }
+}
+
+/// Process a single output row with SIMD
+#[inline(always)]
+fn process_row_simd<B: GgufBlock, S: Simd>(
+    simd: S,
+    lhs_row: &[f32],
+    rhs_blocks: &[B],
+    out_row: &mut [f32],
+    k: usize,
+    blocks_per_row: usize,
+) where
+    B::Dequantized: AsRef<[f32]>,
+{
+    // For each block column in the output
+    for block_col in 0..blocks_per_row {
+        let out_col_start = block_col * B::BLOCK_SIZE;
+        let out_block = &mut out_row[out_col_start..out_col_start + B::BLOCK_SIZE];
+
+        // Split output block into SIMD-aligned parts
+        let (out_simd, out_tail) = S::as_mut_simd_f32s(out_block);
+
+        // Accumulate contributions from all k rows
+        for rhs_row in 0..k {
+            let lhs_val = lhs_row[rhs_row];
+            let lhs_splat = simd.splat_f32s(lhs_val);
+
+            let block_idx = rhs_row * blocks_per_row + block_col;
+            let dequantized = rhs_blocks[block_idx].dequantize();
+            let dequantized_slice = dequantized.as_ref();
+
+            // SIMD part
+            let (deq_simd, deq_tail) = S::as_simd_f32s(dequantized_slice);
+            for (out_vec, &deq_vec) in out_simd.iter_mut().zip(deq_simd.iter()) {
+                *out_vec = simd.mul_add_f32s(lhs_splat, deq_vec, *out_vec);
+            }
+
+            // Scalar tail
+            for (out_val, &deq_val) in out_tail.iter_mut().zip(deq_tail.iter()) {
+                *out_val += lhs_val * deq_val;
+            }
+        }
     }
 }
 

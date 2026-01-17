@@ -27,3 +27,7 @@ harness = false
 [[bench]]
 name = "fusion"
 harness = false
+
+[[bench]]
+name = "qmatmul"
+harness = false
