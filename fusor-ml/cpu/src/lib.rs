@@ -387,8 +387,6 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         self.backing[idx] = value;
     }
 
-    // ========== Binary Operations (Pairwise) ==========
-
     /// Add two tensors element-wise (reference-based, no cloning)
     #[inline]
     pub fn add_ref(&self, rhs: &Self) -> Self
@@ -429,8 +427,6 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         binary_tensor_op_ref::<T, RANK, DivOp>(self, rhs)
     }
 
-    // ========== Unary Operations (Elementwise) ==========
-
     /// Negate tensor element-wise (reference-based, no cloning)
     #[inline]
     pub fn neg_ref(&self) -> Self
@@ -460,8 +456,6 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
     {
         unary_tensor_op_ref::<T, RANK, SqrtOp>(self)
     }
-
-    // ========== Transcendental Operations ==========
 
     /// Exponential (e^x) element-wise (reference-based, no cloning)
     #[inline]
@@ -542,8 +536,6 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
     {
         unary_tensor_op_ref::<T, RANK, TanhOp>(self)
     }
-
-    // ========== Comparison Operations ==========
 
     /// Element-wise equality comparison (tensor vs tensor)
     /// Returns 1.0/1 where equal, 0.0/0 where not equal
@@ -666,8 +658,6 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         comparison_scalar_op_ref::<T, RANK, GteOp>(self, scalar)
     }
 
-    // ========== Conditional Operations ==========
-
     /// Conditional selection: where self != 0, select on_true, else on_false
     #[inline]
     pub fn where_cond(&self, on_true: &Self, on_false: &Self) -> Self
@@ -676,8 +666,6 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
     {
         where_cond_ref(self, on_true, on_false)
     }
-
-    // ========== Type Casting Operations ==========
 
     /// Cast tensor to another element type
     #[inline]
@@ -689,8 +677,6 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         cast_tensor(self)
     }
 
-    // ========== Index Operations ==========
-
     /// Select elements along a dimension using indices
     ///
     /// For a 2D tensor with shape [M, N] and indices [I]:
@@ -700,8 +686,6 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
     pub fn index_select(&self, dimension: usize, indices: &ConcreteTensor<u32, 1>) -> Self {
         index_select_ref(self, dimension, indices)
     }
-
-    // ========== Reduce Operations ==========
 
     /// Sum all elements in the tensor
     #[inline]
@@ -738,8 +722,6 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
     {
         reduce_tensor_op::<T, RANK, ProdOp>(self)
     }
-
-    // ========== Axis Reduce Operations ==========
 
     /// Sum along a specific axis, reducing the tensor rank by 1
     #[inline]
