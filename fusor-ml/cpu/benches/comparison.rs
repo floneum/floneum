@@ -1,18 +1,8 @@
 use candle_core::{Device, Tensor as CandleTensor};
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
-use fusor_cpu::ConcreteTensor;
+use fusor_cpu::Tensor;
 
 const SIZES: &[usize] = &[64, 256];
-
-fn fusor_tensor_f32(size: usize) -> ConcreteTensor<f32, 1> {
-    let data: Vec<f32> = (0..size).map(|i| (i as f32) * 0.1).collect();
-    ConcreteTensor::from_slice([size], &data)
-}
-
-fn candle_tensor_f32(size: usize) -> CandleTensor {
-    let data: Vec<f32> = (0..size).map(|i| (i as f32) * 0.1).collect();
-    CandleTensor::from_vec(data, size, &Device::Cpu).unwrap()
-}
 
 fn bench_add(c: &mut Criterion) {
     let mut group = c.benchmark_group("add_f32");
@@ -22,15 +12,17 @@ fn bench_add(c: &mut Criterion) {
 
         // Fusor (reference-based API, no cloning)
         group.bench_with_input(BenchmarkId::new("fusor", size), &size, |b, &size| {
-            let lhs = fusor_tensor_f32(size);
-            let rhs = fusor_tensor_f32(size);
-            b.iter(|| black_box(black_box(&lhs).add_ref(black_box(&rhs))));
+            let data: Vec<f32> = (0..size).map(|i| (i as f32) * 0.1).collect();
+            let lhs = Tensor::from_slice([size], &data);
+            let rhs = Tensor::from_slice([size], &data);
+            b.iter(|| black_box((black_box(&lhs) + black_box(&rhs)).eval()));
         });
 
         // Candle
         group.bench_with_input(BenchmarkId::new("candle", size), &size, |b, &size| {
-            let lhs = candle_tensor_f32(size);
-            let rhs = candle_tensor_f32(size);
+            let data: Vec<f32> = (0..size).map(|i| (i as f32) * 0.1).collect();
+            let lhs = CandleTensor::from_vec(data.clone(), size, &Device::Cpu).unwrap();
+            let rhs = CandleTensor::from_vec(data, size, &Device::Cpu).unwrap();
             b.iter(|| black_box(black_box(&lhs).add(black_box(&rhs)).unwrap()));
         });
     }
@@ -46,7 +38,7 @@ fn bench_creation(c: &mut Criterion) {
 
         // Fusor zeros
         group.bench_with_input(BenchmarkId::new("fusor_zeros", size), &size, |b, &size| {
-            b.iter(|| black_box(ConcreteTensor::<f32, 1>::zeros([size])));
+            b.iter(|| black_box(Tensor::<1, fusor_cpu::ConcreteTensor<f32, 1>>::zeros([size])));
         });
 
         // Candle zeros
@@ -62,7 +54,7 @@ fn bench_creation(c: &mut Criterion) {
             &size,
             |b, &size| {
                 let data: Vec<f32> = (0..size).map(|i| i as f32).collect();
-                b.iter(|| black_box(ConcreteTensor::from_slice([size], &data)));
+                b.iter(|| black_box(Tensor::from_slice([size], &data)));
             },
         );
 
@@ -97,9 +89,9 @@ fn bench_add_2d(c: &mut Criterion) {
             &(rows, cols),
             |b, &(rows, cols)| {
                 let data: Vec<f32> = (0..rows * cols).map(|i| (i as f32) * 0.1).collect();
-                let lhs: ConcreteTensor<f32, 2> = ConcreteTensor::from_slice([rows, cols], &data);
-                let rhs: ConcreteTensor<f32, 2> = ConcreteTensor::from_slice([rows, cols], &data);
-                b.iter(|| black_box(black_box(&lhs).add_ref(black_box(&rhs))));
+                let lhs = Tensor::from_slice([rows, cols], &data);
+                let rhs = Tensor::from_slice([rows, cols], &data);
+                b.iter(|| black_box((black_box(&lhs) + black_box(&rhs)).eval()));
             },
         );
 
@@ -141,9 +133,9 @@ fn bench_matmul(c: &mut Criterion) {
             |b, &(m, k, n)| {
                 let lhs_data: Vec<f32> = (0..m * k).map(|i| (i as f32) * 0.01).collect();
                 let rhs_data: Vec<f32> = (0..k * n).map(|i| (i as f32) * 0.01).collect();
-                let lhs: ConcreteTensor<f32, 2> = ConcreteTensor::from_slice([m, k], &lhs_data);
-                let rhs: ConcreteTensor<f32, 2> = ConcreteTensor::from_slice([k, n], &rhs_data);
-                b.iter(|| black_box(black_box(&lhs).matmul_ref(black_box(&rhs))));
+                let lhs = Tensor::from_slice([m, k], &lhs_data);
+                let rhs = Tensor::from_slice([k, n], &rhs_data);
+                b.iter(|| black_box(black_box(&lhs).matmul(black_box(&rhs))));
             },
         );
 
@@ -175,7 +167,7 @@ fn bench_reduce_sum(c: &mut Criterion) {
         // Fusor sum
         group.bench_with_input(BenchmarkId::new("fusor", size), &size, |b, &size| {
             let data: Vec<f32> = (0..size).map(|i| (i as f32) * 0.1).collect();
-            let tensor: ConcreteTensor<f32, 1> = ConcreteTensor::from_slice([size], &data);
+            let tensor = Tensor::from_slice([size], &data);
             b.iter(|| black_box(black_box(&tensor).sum()));
         });
 
@@ -201,7 +193,7 @@ fn bench_reduce_max(c: &mut Criterion) {
         // Fusor max
         group.bench_with_input(BenchmarkId::new("fusor", size), &size, |b, &size| {
             let data: Vec<f32> = (0..size).map(|i| (i as f32) * 0.1).collect();
-            let tensor: ConcreteTensor<f32, 1> = ConcreteTensor::from_slice([size], &data);
+            let tensor = Tensor::from_slice([size], &data);
             b.iter(|| black_box(black_box(&tensor).max()));
         });
 

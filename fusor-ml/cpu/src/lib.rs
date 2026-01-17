@@ -75,6 +75,11 @@ pub trait TensorBacking<const R: usize> {
     type Elem: SimdElement;
 }
 
+// Blanket implementation for references
+impl<const R: usize, T: TensorBacking<R>> TensorBacking<R> for &T {
+    type Elem = T::Elem;
+}
+
 pub trait ResolveTensor<const R: usize, M = ()>: TensorBacking<R> {
     fn to_concrete(&self) -> ConcreteTensor<Self::Elem, R>;
 }
@@ -239,8 +244,8 @@ mod tests {
         let a: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
         let b: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([4], &[10.0, 20.0, 30.0, 40.0]);
 
-        // Test add_ref method
-        let result = a.add_ref(&b);
+        // Test &Tensor + &Tensor operator
+        let result = (&a + &b).eval();
         assert_eq!(result.get([0]), 11.0);
 
         // Test sum reduction

@@ -212,12 +212,7 @@ impl<T: SimdElement, const R: usize> Expr for ConcreteTensor<T, R> {
     }
 }
 
-// Implement TensorBacking for references so they can be used in expression trees
-impl<T: SimdElement, const R: usize> TensorBacking<R> for &ConcreteTensor<T, R> {
-    type Elem = T;
-}
-
-// Implement ResolveTensor for references
+// Implement ResolveTensor for references (TensorBacking is covered by blanket impl in lib.rs)
 impl<T: SimdElement, const R: usize> ResolveTensor<R> for &ConcreteTensor<T, R> {
     fn to_concrete(&self) -> ConcreteTensor<T, R> {
         (*self).clone()

@@ -11,7 +11,8 @@ use crate::conditional::{where_cond_ref, IsNonZero};
 use crate::elementwise::{unary_tensor_op_ref, AbsOp, CosOp, ExpOp, LogOp, NegOp, SimdUnaryOp, SinOp, SqrtOp, TanhOp};
 use crate::expr::Expr;
 use crate::index::index_select_ref;
-use crate::pairwise::{binary_tensor_op_ref, AddOp, DivOp, MulOp, SimdBinaryOp, SubOp};
+use crate::matmul::MatmulImpl;
+use crate::pairwise::{AddOp, DivOp, MulOp, SimdBinaryOp, SubOp};
 use crate::reduce::{reduce_tensor_axis, reduce_tensor_op, MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp};
 use crate::{elementwise, pairwise, ConcreteTensor, LastRank, ResolveTensor, ResolvedTensor, SimdElement, TensorBacking};
 
@@ -80,59 +81,9 @@ where
         Tensor::new(self.inner.to_concrete())
     }
 
-    /// Add two tensors element-wise
-    #[inline]
-    pub fn add_ref(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default + StdAdd<Output = E>,
-        AddOp: SimdBinaryOp<E>,
-    {
-        Tensor::new(binary_tensor_op_ref::<E, R, AddOp>(&self.inner.to_concrete(), &rhs.inner.to_concrete()))
-    }
-
-    /// Subtract two tensors element-wise
-    #[inline]
-    pub fn sub_ref(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default + StdSub<Output = E>,
-        SubOp: SimdBinaryOp<E>,
-    {
-        Tensor::new(binary_tensor_op_ref::<E, R, SubOp>(&self.inner.to_concrete(), &rhs.inner.to_concrete()))
-    }
-
-    /// Multiply two tensors element-wise
-    #[inline]
-    pub fn mul_ref(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default + StdMul<Output = E>,
-        MulOp: SimdBinaryOp<E>,
-    {
-        Tensor::new(binary_tensor_op_ref::<E, R, MulOp>(&self.inner.to_concrete(), &rhs.inner.to_concrete()))
-    }
-
-    /// Divide two tensors element-wise
-    #[inline]
-    pub fn div_ref(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default + StdDiv<Output = E>,
-        DivOp: SimdBinaryOp<E>,
-    {
-        Tensor::new(binary_tensor_op_ref::<E, R, DivOp>(&self.inner.to_concrete(), &rhs.inner.to_concrete()))
-    }
-
-    /// Negate tensor element-wise
-    #[inline]
-    pub fn neg_ref(&self) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default + StdNeg<Output = E>,
-        NegOp: SimdUnaryOp<E>,
-    {
-        Tensor::new(unary_tensor_op_ref::<E, R, NegOp>(&self.inner.to_concrete()))
-    }
-
     /// Absolute value element-wise
     #[inline]
-    pub fn abs_ref(&self) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn abs(&self) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
         AbsOp: SimdUnaryOp<E>,
@@ -142,7 +93,7 @@ where
 
     /// Square root element-wise
     #[inline]
-    pub fn sqrt_ref(&self) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn sqrt(&self) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
         SqrtOp: SimdUnaryOp<E>,
@@ -152,7 +103,7 @@ where
 
     /// Exponential (e^x) element-wise
     #[inline]
-    pub fn exp_ref(&self) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn exp(&self) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
         ExpOp: SimdUnaryOp<E>,
@@ -162,7 +113,7 @@ where
 
     /// Natural logarithm element-wise
     #[inline]
-    pub fn log_ref(&self) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn log(&self) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
         LogOp: SimdUnaryOp<E>,
@@ -172,7 +123,7 @@ where
 
     /// Sine element-wise
     #[inline]
-    pub fn sin_ref(&self) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn sin(&self) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
         SinOp: SimdUnaryOp<E>,
@@ -182,7 +133,7 @@ where
 
     /// Cosine element-wise
     #[inline]
-    pub fn cos_ref(&self) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn cos(&self) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
         CosOp: SimdUnaryOp<E>,
@@ -192,7 +143,7 @@ where
 
     /// Hyperbolic tangent element-wise
     #[inline]
-    pub fn tanh_ref(&self) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn tanh(&self) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
         TanhOp: SimdUnaryOp<E>,
@@ -238,7 +189,7 @@ where
 
     /// Element-wise equality comparison
     #[inline]
-    pub fn eq_ref(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn eq(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
         EqOp: SimdComparisonOp<E>,
@@ -248,7 +199,7 @@ where
 
     /// Element-wise less than comparison
     #[inline]
-    pub fn lt_ref(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn lt(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
         LtOp: SimdComparisonOp<E>,
@@ -258,7 +209,7 @@ where
 
     /// Element-wise greater than comparison
     #[inline]
-    pub fn gt_ref(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn gt(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
         GtOp: SimdComparisonOp<E>,
@@ -268,7 +219,7 @@ where
 
     /// Element-wise not equal comparison
     #[inline]
-    pub fn ne_ref(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn ne(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
         NeOp: SimdComparisonOp<E>,
@@ -278,7 +229,7 @@ where
 
     /// Element-wise less than or equal comparison
     #[inline]
-    pub fn lte_ref(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn lte(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
         LteOp: SimdComparisonOp<E>,
@@ -288,7 +239,7 @@ where
 
     /// Element-wise greater than or equal comparison
     #[inline]
-    pub fn gte_ref(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn gte(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
         GteOp: SimdComparisonOp<E>,
@@ -512,6 +463,19 @@ where
     }
 }
 
+// Specialized methods for 2D tensors (matrix operations)
+impl<E, T> Tensor<2, T>
+where
+    E: SimdElement + MatmulImpl,
+    T: TensorBacking<2, Elem = E> + ResolveTensor<2, Elem = E>,
+{
+    /// Matrix multiplication: self (M x K) @ rhs (K x N) -> (M x N)
+    #[inline]
+    pub fn matmul(&self, rhs: &Tensor<2, impl TensorBacking<2, Elem = E> + ResolveTensor<2, Elem = E>>) -> Tensor<2, ConcreteTensor<E, 2>> {
+        Tensor::new(self.inner.to_concrete().matmul_ref(&rhs.inner.to_concrete()))
+    }
+}
+
 impl<const R: usize, T: TensorBacking<R>> TensorBacking<R> for Tensor<R, T> {
     type Elem = T::Elem;
 }
@@ -584,6 +548,77 @@ where
 
     fn neg(self) -> Self::Output {
         Tensor::new(elementwise::Neg::new(self.inner))
+    }
+}
+
+// Implement std::ops traits for &Tensor references (returns lazy expressions with references)
+
+impl<'a, const R: usize, T1, T2> StdAdd<&'a Tensor<R, T2>> for &'a Tensor<R, T1>
+where
+    T1: TensorBacking<R>,
+    T2: TensorBacking<R, Elem = T1::Elem>,
+    T1::Elem: SimdElement + StdAdd<Output = T1::Elem> + Default,
+    AddOp: SimdBinaryOp<T1::Elem>,
+{
+    type Output = Tensor<R, pairwise::Add<T1::Elem, R, &'a T1, &'a T2>>;
+
+    fn add(self, rhs: &'a Tensor<R, T2>) -> Self::Output {
+        Tensor::new(pairwise::Add::new(&self.inner, &rhs.inner))
+    }
+}
+
+impl<'a, const R: usize, T1, T2> StdSub<&'a Tensor<R, T2>> for &'a Tensor<R, T1>
+where
+    T1: TensorBacking<R>,
+    T2: TensorBacking<R, Elem = T1::Elem>,
+    T1::Elem: SimdElement + StdSub<Output = T1::Elem> + Default,
+    SubOp: SimdBinaryOp<T1::Elem>,
+{
+    type Output = Tensor<R, pairwise::Sub<T1::Elem, R, &'a T1, &'a T2>>;
+
+    fn sub(self, rhs: &'a Tensor<R, T2>) -> Self::Output {
+        Tensor::new(pairwise::Sub::new(&self.inner, &rhs.inner))
+    }
+}
+
+impl<'a, const R: usize, T1, T2> StdMul<&'a Tensor<R, T2>> for &'a Tensor<R, T1>
+where
+    T1: TensorBacking<R>,
+    T2: TensorBacking<R, Elem = T1::Elem>,
+    T1::Elem: SimdElement + StdMul<Output = T1::Elem> + Default,
+    MulOp: SimdBinaryOp<T1::Elem>,
+{
+    type Output = Tensor<R, pairwise::Mul<T1::Elem, R, &'a T1, &'a T2>>;
+
+    fn mul(self, rhs: &'a Tensor<R, T2>) -> Self::Output {
+        Tensor::new(pairwise::Mul::new(&self.inner, &rhs.inner))
+    }
+}
+
+impl<'a, const R: usize, T1, T2> StdDiv<&'a Tensor<R, T2>> for &'a Tensor<R, T1>
+where
+    T1: TensorBacking<R>,
+    T2: TensorBacking<R, Elem = T1::Elem>,
+    T1::Elem: SimdElement + StdDiv<Output = T1::Elem> + Default,
+    DivOp: SimdBinaryOp<T1::Elem>,
+{
+    type Output = Tensor<R, pairwise::Div<T1::Elem, R, &'a T1, &'a T2>>;
+
+    fn div(self, rhs: &'a Tensor<R, T2>) -> Self::Output {
+        Tensor::new(pairwise::Div::new(&self.inner, &rhs.inner))
+    }
+}
+
+impl<'a, const R: usize, T> StdNeg for &'a Tensor<R, T>
+where
+    T: TensorBacking<R>,
+    T::Elem: SimdElement + StdNeg<Output = T::Elem> + Default,
+    NegOp: SimdUnaryOp<T::Elem>,
+{
+    type Output = Tensor<R, elementwise::Neg<T::Elem, R, &'a T>>;
+
+    fn neg(self) -> Self::Output {
+        Tensor::new(elementwise::Neg::new(&self.inner))
     }
 }
 

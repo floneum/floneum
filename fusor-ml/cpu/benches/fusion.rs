@@ -6,7 +6,7 @@
 
 use candle_core::{Device, Tensor as CandleTensor};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use fusor_cpu::ConcreteTensor;
+use fusor_cpu::{ConcreteTensor, Tensor};
 
 /// Benchmark fused operations (single memory pass) vs separate operations (multiple passes)
 fn bench_fusion(c: &mut Criterion) {
@@ -43,17 +43,20 @@ fn bench_fusion(c: &mut Criterion) {
 
         // Non-fused: compute each step separately with intermediate allocations
         // This is what would happen without fusion - 3 memory traversals
+        let x_tensor = Tensor::new(x.clone());
+        let y_tensor = Tensor::new(y.clone());
+        let z_tensor = Tensor::new(z.clone());
         group.bench_with_input(BenchmarkId::new("separate_ops", size), &size, |b, _| {
             b.iter(|| {
-                let x_ref = black_box(&x);
-                let y_ref = black_box(&y);
-                let z_ref = black_box(&z);
+                let x_ref = black_box(&x_tensor);
+                let y_ref = black_box(&y_tensor);
+                let z_ref = black_box(&z_tensor);
 
-                // Each _ref method creates and materializes a new tensor
+                // Each eval() materializes a new tensor
                 // This causes 3 separate memory traversals
-                let mul_result = x_ref.mul_ref(y_ref); // Pass 1: read x,y, write temp1
-                let add_result = mul_result.add_ref(z_ref); // Pass 2: read temp1,z, write temp2
-                let sqrt_result = add_result.sqrt_ref(); // Pass 3: read temp2, write result
+                let mul_result = (x_ref * y_ref).eval(); // Pass 1: read x,y, write temp1
+                let add_result = (&mul_result + z_ref).eval(); // Pass 2: read temp1,z, write temp2
+                let sqrt_result = add_result.sqrt(); // Pass 3: read temp2, write result
                 black_box(sqrt_result)
             })
         });
@@ -107,15 +110,17 @@ fn bench_long_chain(c: &mut Criterion) {
         });
 
         // Non-fused: 5 separate operations
+        let x_tensor = Tensor::new(x.clone());
+        let y_tensor = Tensor::new(y.clone());
         group.bench_with_input(BenchmarkId::new("separate_5ops", size), &size, |b, _| {
             b.iter(|| {
-                let x_ref = black_box(&x);
-                let y_ref = black_box(&y);
+                let x_ref = black_box(&x_tensor);
+                let y_ref = black_box(&y_tensor);
 
-                let mul1 = x_ref.mul_ref(y_ref); // Pass 1
-                let mul2 = x_ref.mul_ref(y_ref); // Pass 2
-                let add1 = mul1.add_ref(&mul2); // Pass 3
-                let add2 = add1.add_ref(x_ref); // Pass 4
+                let mul1 = (x_ref * y_ref).eval(); // Pass 1
+                let mul2 = (x_ref * y_ref).eval(); // Pass 2
+                let add1 = (&mul1 + &mul2).eval(); // Pass 3
+                let add2 = (&add1 + x_ref).eval(); // Pass 4
                 black_box(add2)
             })
         });
@@ -167,13 +172,14 @@ fn bench_unary_chain(c: &mut Criterion) {
         });
 
         // Non-fused: 3 separate operations
+        let x_tensor = Tensor::new(x.clone());
         group.bench_with_input(BenchmarkId::new("separate", size), &size, |b, _| {
             b.iter(|| {
-                let x_ref = black_box(&x);
+                let x_ref = black_box(&x_tensor);
 
-                let neg_result = x_ref.neg_ref(); // Pass 1
-                let abs_result = neg_result.abs_ref(); // Pass 2
-                let sqrt_result = abs_result.sqrt_ref(); // Pass 3
+                let neg_result = (-x_ref).eval(); // Pass 1
+                let abs_result = neg_result.abs(); // Pass 2
+                let sqrt_result = abs_result.sqrt(); // Pass 3
                 black_box(sqrt_result)
             })
         });

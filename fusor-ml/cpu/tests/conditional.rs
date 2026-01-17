@@ -66,7 +66,7 @@ fn test_where_cond_with_comparison() {
     let b = Tensor::from_slice([4], &[2.5f32, 2.5, 2.5, 2.5]);
 
     // Compute (a > b) as mask
-    let mask = a.gt_ref(&b);
+    let mask = a.gt(&b);
     // mask = [0, 0, 1, 1]
 
     // Use mask to select: where a > b, return a, else return b
