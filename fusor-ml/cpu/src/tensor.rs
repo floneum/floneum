@@ -15,7 +15,7 @@ use crate::slice_assign::slice_assign_ref;
 use crate::matmul::MatmulImpl;
 use crate::pairwise::{AddOp, DivOp, MulOp, SimdBinaryOp, SubOp};
 use crate::reduce::{reduce_tensor_axis, reduce_tensor_op, MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp};
-use crate::{elementwise, pairwise, ConcreteTensor, LastRank, ResolveTensor, ResolvedTensor, SimdElement, TensorBacking};
+use crate::{elementwise, pairwise, ConcreteTensor, CpuMappedBuffer, LastRank, ResolveTensor, ResolvedTensor, SimdElement, TensorBacking, TensorSlice};
 
 /// A tensor wrapper that provides a unified interface over different tensor backends.
 #[derive(Clone)]
@@ -323,6 +323,18 @@ where
         E2: SimdElement,
     {
         Tensor::new(cast_tensor(&self.inner.to_concrete()))
+    }
+
+    /// Get the tensor data as a TensorSlice for reading.
+    ///
+    /// This is the CPU equivalent of fusor-core's `as_slice()` method for GPU tensors.
+    /// It materializes the tensor (if lazy) and returns a slice view of the data.
+    pub fn as_slice(&self) -> TensorSlice<R, E, CpuMappedBuffer> {
+        let concrete = self.inner.to_concrete();
+        let layout = concrete.layout().clone();
+        // Convert the tensor data to raw bytes
+        let bytes: Box<[u8]> = bytemuck::cast_slice(concrete.data().as_ref()).into();
+        TensorSlice::new(CpuMappedBuffer::new(bytes), layout)
     }
 
     /// Select elements along a dimension using indices

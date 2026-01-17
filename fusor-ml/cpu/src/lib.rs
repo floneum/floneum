@@ -1,5 +1,7 @@
 //! CPU tensor operations with SIMD acceleration
 
+use std::ops::Deref;
+
 use aligned_vec::ABox;
 use pulp::bytemuck::Pod;
 use pulp::Simd;
@@ -34,6 +36,33 @@ pub use tensor::{FloatOps, Tensor};
 
 // Re-export GGUF types for convenience
 pub use fusor_gguf::{BlockQ4K, BlockQ4_0, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, GgufBlock};
+
+// Re-export TensorSlice from fusor-types
+pub use fusor_types::TensorSlice;
+
+/// A buffer holding CPU tensor data as bytes.
+///
+/// This type is the CPU equivalent of fusor-core's `MappedBuffer` for GPU tensors.
+/// It holds the raw bytes of tensor data and implements `Deref<Target = [u8]>`
+/// to work with `TensorSlice`.
+pub struct CpuMappedBuffer {
+    bytes: Box<[u8]>,
+}
+
+impl CpuMappedBuffer {
+    /// Create a new CpuMappedBuffer from a boxed byte slice.
+    pub fn new(bytes: Box<[u8]>) -> Self {
+        Self { bytes }
+    }
+}
+
+impl Deref for CpuMappedBuffer {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.bytes
+    }
+}
 
 // Re-export operation traits and markers for public bounds
 pub use elementwise::{

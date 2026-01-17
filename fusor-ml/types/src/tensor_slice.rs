@@ -155,6 +155,14 @@ where
         }
     }
 
+    pub fn map_bytes<Bytes2>(self, mut mapper: impl FnMut(Bytes) -> Bytes2) -> TensorSlice<R, D, Bytes2> {
+        TensorSlice {
+            buffer: mapper(self.buffer),
+            layout: self.layout.clone(),
+            datatype: PhantomData,
+        }
+    }
+
     /// Get the scalar value from a rank-0 tensor.
     pub fn as_scalar(&self) -> D
     where

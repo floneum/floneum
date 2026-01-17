@@ -11,6 +11,8 @@
 mod device;
 mod error;
 
+use std::ops::Deref;
+
 pub use device::Device;
 pub use error::Error;
 use fusor_core::{MappedBuffer, TensorSlice};
@@ -34,12 +36,15 @@ pub use fusor_core::{DataType, FloatDataType};
 /// - CPU: Expression types stay lazy and fuse at resolve time
 /// - GPU: Operations build a compute graph that batches at resolve time
 #[derive(Clone)]
-pub enum GpuOr<const R: usize, D, B: TensorBacking<R, Elem=D> = fusor_cpu::ConcreteTensor<D, R>> {
+pub enum GpuOr<const R: usize, D, B: TensorBacking<R, Elem = D> = fusor_cpu::ConcreteTensor<D, R>> {
     Cpu(CpuTensor<R, B>),
     Gpu(GpuTensor<R, D>),
 }
 
-impl<const R: usize, D, B> GpuOr<R , D, B> where B: TensorBacking<R, Elem=D> {
+impl<const R: usize, D, B> GpuOr<R, D, B>
+where
+    B: TensorBacking<R, Elem = D>,
+{
     /// Returns true if this is the CPU variant.
     #[inline]
     pub fn is_cpu(&self) -> bool {
@@ -107,24 +112,58 @@ impl<const R: usize, D, B> GpuOr<R , D, B> where B: TensorBacking<R, Elem=D> {
     }
 
     #[inline]
-    pub fn dispatch<const R2: usize, D2, B2>(self, cpu_fn: impl FnOnce(CpuTensor<R, B>) -> CpuTensor<R2, B2>, gpu_fn: impl FnOnce(GpuTensor<R, D>) -> GpuTensor<R2, D2>) -> GpuOr<R2, D2, B2> where B2: TensorBacking<R2, Elem=D2> {
+    pub fn dispatch<const R2: usize, D2, B2>(
+        self,
+        cpu_fn: impl FnOnce(CpuTensor<R, B>) -> CpuTensor<R2, B2>,
+        gpu_fn: impl FnOnce(GpuTensor<R, D>) -> GpuTensor<R2, D2>,
+    ) -> GpuOr<R2, D2, B2>
+    where
+        B2: TensorBacking<R2, Elem = D2>,
+    {
         match self {
             GpuOr::Cpu(t) => GpuOr::Cpu(cpu_fn(t)),
             GpuOr::Gpu(t) => GpuOr::Gpu(gpu_fn(t)),
         }
     }
 
-    pub async fn resolve(self) -> Result<TensorSlice<R, D, MappedBuffer>, Error> {
+    pub async fn as_slice(self) -> Result<TensorSlice<R, D, EitherMappedBuffer>, Error>
+    where
+        B: ResolveTensor<R>,
+        D: fusor_cpu::SimdElement + DataType,
+    {
         match self {
-            GpuOr::Cpu(t) => Ok(todo!()),
+            GpuOr::Cpu(t) => Ok(t.as_slice().map_bytes(EitherMappedBuffer::Cpu)),
             GpuOr::Gpu(t) => {
-                todo!()
+                let mapped = t.as_slice().await.map_err(|err| Error::Gpu(err.into()))?;
+                Ok(mapped.map_bytes(EitherMappedBuffer::Gpu))
             }
         }
     }
 }
 
-impl<const R: usize, D, B, B2> std::ops::Add for GpuOr<R, D, B> where CpuTensor<R, B>: std::ops::Add<Output=CpuTensor<R, B2>>, GpuTensor<R, D>: std::ops::Add<Output=GpuTensor<R, D>>, B: TensorBacking<R, Elem=D>, B2: TensorBacking<R, Elem=D> {
+pub enum EitherMappedBuffer {
+    Cpu(fusor_cpu::CpuMappedBuffer),
+    Gpu(fusor_core::MappedBuffer),
+}
+
+impl Deref for EitherMappedBuffer {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            EitherMappedBuffer::Cpu(buf) => buf.deref(),
+            EitherMappedBuffer::Gpu(buf) => buf.deref(),
+        }
+    }
+}
+
+impl<const R: usize, D, B, B2> std::ops::Add for GpuOr<R, D, B>
+where
+    CpuTensor<R, B>: std::ops::Add<Output = CpuTensor<R, B2>>,
+    GpuTensor<R, D>: std::ops::Add<Output = GpuTensor<R, D>>,
+    B: TensorBacking<R, Elem = D>,
+    B2: TensorBacking<R, Elem = D>,
+{
     type Output = GpuOr<R, D, B2>;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -139,8 +178,10 @@ impl<const R: usize, D, B, B2> std::ops::Add for GpuOr<R, D, B> where CpuTensor<
 #[cfg(test)]
 #[tokio::test]
 async fn test_gpu_or_add() {
-    let a_cpu: CpuTensor<1, fusor_cpu::ConcreteTensor<f32, 1>> = fusor_cpu::Tensor::from_slice([3], &[1.0, 2.0, 3.0]);
-    let b_cpu: CpuTensor<1, fusor_cpu::ConcreteTensor<f32, 1>> = fusor_cpu::Tensor::from_slice([3], &[4.0, 5.0, 6.0]);
+    let a_cpu: CpuTensor<1, fusor_cpu::ConcreteTensor<f32, 1>> =
+        fusor_cpu::Tensor::from_slice([3], &[1.0, 2.0, 3.0]);
+    let b_cpu: CpuTensor<1, fusor_cpu::ConcreteTensor<f32, 1>> =
+        fusor_cpu::Tensor::from_slice([3], &[4.0, 5.0, 6.0]);
     let device = fusor_core::Device::new().await.unwrap();
     let a_gpu: GpuTensor<1, f32> = GpuTensor::new(&device, &[1.0, 2.0, 3.0]);
     let b_gpu: GpuTensor<1, f32> = GpuTensor::new(&device, &[4.0, 5.0, 6.0]);
@@ -151,7 +192,7 @@ async fn test_gpu_or_add() {
     let b_gpu_or: GpuOr<1, f32> = GpuOr::Gpu(b_gpu);
 
     let c_cpu_or = a_cpu_or + b_cpu_or;
-    println!("c_cpu_or: {:?}", c_cpu_or.as_cpu().unwrap().to_vec());
+    println!("c_cpu_or: {:?}", c_cpu_or.as_slice().await.unwrap());
     let c_gpu_or = a_gpu_or + b_gpu_or;
-    let c_gpu_resolved = c_gpu_or.as_gpu().unwrap().resolve().await.unwrap();
+    println!("c_gpu_or: {:?}", c_gpu_or.as_slice().await.unwrap());
 }

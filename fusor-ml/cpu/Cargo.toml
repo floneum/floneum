@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 aligned-vec = "0.6.4"
+bytemuck = "1.14"
 generativity = "1.1.0"
 pulp = "0.22.2"
 gemm = "0.18"
