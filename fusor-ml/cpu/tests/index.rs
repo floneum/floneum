@@ -1,12 +1,12 @@
 //! Tests for index operations: index_select
 
-use fusor_cpu::ConcreteTensor;
+use fusor_cpu::Tensor;
 
 #[test]
 fn test_index_select_dim0_2d() {
     // [[1, 2, 3], [4, 5, 6]] with indices [1, 0] -> [[4, 5, 6], [1, 2, 3]]
-    let input = ConcreteTensor::<f32, 2>::from_slice([2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
-    let indices = ConcreteTensor::<u32, 1>::from_slice([2], &[1, 0]);
+    let input = Tensor::from_slice([2, 3], &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    let indices = Tensor::from_slice([2], &[1u32, 0]);
 
     let result = input.index_select(0, &indices);
 
@@ -21,8 +21,8 @@ fn test_index_select_dim0_2d() {
 #[test]
 fn test_index_select_dim1_2d() {
     // [[1, 2, 3], [4, 5, 6]] with indices [1, 2, 0] -> [[2, 3, 1], [5, 6, 4]]
-    let input = ConcreteTensor::<f32, 2>::from_slice([2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
-    let indices = ConcreteTensor::<u32, 1>::from_slice([3], &[1, 2, 0]);
+    let input = Tensor::from_slice([2, 3], &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    let indices = Tensor::from_slice([3], &[1u32, 2, 0]);
 
     let result = input.index_select(1, &indices);
 
@@ -36,8 +36,8 @@ fn test_index_select_dim1_2d() {
 
 #[test]
 fn test_index_select_1d() {
-    let input = ConcreteTensor::<f32, 1>::from_slice([5], &[10.0, 20.0, 30.0, 40.0, 50.0]);
-    let indices = ConcreteTensor::<u32, 1>::from_slice([3], &[4, 2, 0]);
+    let input = Tensor::from_slice([5], &[10.0f32, 20.0, 30.0, 40.0, 50.0]);
+    let indices = Tensor::from_slice([3], &[4u32, 2, 0]);
 
     let result = input.index_select(0, &indices);
 
@@ -49,8 +49,8 @@ fn test_index_select_1d() {
 #[test]
 fn test_index_select_duplicate_indices() {
     // Select same row multiple times
-    let input = ConcreteTensor::<f32, 2>::from_slice([2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
-    let indices = ConcreteTensor::<u32, 1>::from_slice([4], &[0, 0, 1, 1]);
+    let input = Tensor::from_slice([2, 3], &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    let indices = Tensor::from_slice([4], &[0u32, 0, 1, 1]);
 
     let result = input.index_select(0, &indices);
 
@@ -63,8 +63,8 @@ fn test_index_select_duplicate_indices() {
 
 #[test]
 fn test_index_select_single_index() {
-    let input = ConcreteTensor::<f32, 2>::from_slice([3, 2], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
-    let indices = ConcreteTensor::<u32, 1>::from_slice([1], &[1]);
+    let input = Tensor::from_slice([3, 2], &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    let indices = Tensor::from_slice([1], &[1u32]);
 
     let result = input.index_select(0, &indices);
 
@@ -75,8 +75,8 @@ fn test_index_select_single_index() {
 
 #[test]
 fn test_index_select_i32() {
-    let input = ConcreteTensor::<i32, 1>::from_slice([4], &[100, 200, 300, 400]);
-    let indices = ConcreteTensor::<u32, 1>::from_slice([2], &[3, 1]);
+    let input = Tensor::from_slice([4], &[100i32, 200, 300, 400]);
+    let indices = Tensor::from_slice([2], &[3u32, 1]);
 
     let result = input.index_select(0, &indices);
 
@@ -87,11 +87,8 @@ fn test_index_select_i32() {
 #[test]
 fn test_index_select_3d() {
     // Shape [2, 2, 2] tensor
-    let input = ConcreteTensor::<f32, 3>::from_slice(
-        [2, 2, 2],
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
-    );
-    let indices = ConcreteTensor::<u32, 1>::from_slice([2], &[1, 0]);
+    let input = Tensor::from_slice([2, 2, 2], &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
+    let indices = Tensor::from_slice([2], &[1u32, 0]);
 
     // Select along dim 0 (swap the two 2x2 matrices)
     let result = input.index_select(0, &indices);
@@ -110,11 +107,11 @@ fn test_index_select_3d() {
 fn test_index_select_large() {
     let size = 100;
     let data: Vec<f32> = (0..size * size).map(|i| i as f32).collect();
-    let input = ConcreteTensor::<f32, 2>::from_slice([size, size], &data);
+    let input = Tensor::from_slice([size, size], &data);
 
     // Reverse the rows
     let indices_data: Vec<u32> = (0..size).rev().map(|i| i as u32).collect();
-    let indices = ConcreteTensor::<u32, 1>::from_slice([size], &indices_data);
+    let indices = Tensor::from_slice([size], &indices_data);
 
     let result = input.index_select(0, &indices);
 

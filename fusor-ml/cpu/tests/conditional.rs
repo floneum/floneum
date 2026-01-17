@@ -1,12 +1,12 @@
 //! Tests for conditional tensor operations: where_cond
 
-use fusor_cpu::ConcreteTensor;
+use fusor_cpu::Tensor;
 
 #[test]
 fn test_where_cond_basic_f32() {
-    let cond = ConcreteTensor::<f32, 1>::from_slice([4], &[1.0, 0.0, 1.0, 0.0]);
-    let on_true = ConcreteTensor::<f32, 1>::from_slice([4], &[10.0, 20.0, 30.0, 40.0]);
-    let on_false = ConcreteTensor::<f32, 1>::from_slice([4], &[100.0, 200.0, 300.0, 400.0]);
+    let cond = Tensor::from_slice([4], &[1.0f32, 0.0, 1.0, 0.0]);
+    let on_true = Tensor::from_slice([4], &[10.0f32, 20.0, 30.0, 40.0]);
+    let on_false = Tensor::from_slice([4], &[100.0f32, 200.0, 300.0, 400.0]);
 
     let result = cond.where_cond(&on_true, &on_false);
 
@@ -19,9 +19,9 @@ fn test_where_cond_basic_f32() {
 #[test]
 fn test_where_cond_nonzero_values_f32() {
     // Test that any nonzero value is truthy
-    let cond = ConcreteTensor::<f32, 1>::from_slice([4], &[0.5, -1.0, 0.0, 100.0]);
-    let on_true = ConcreteTensor::<f32, 1>::from_slice([4], &[1.0, 1.0, 1.0, 1.0]);
-    let on_false = ConcreteTensor::<f32, 1>::from_slice([4], &[0.0, 0.0, 0.0, 0.0]);
+    let cond = Tensor::from_slice([4], &[0.5f32, -1.0, 0.0, 100.0]);
+    let on_true = Tensor::from_slice([4], &[1.0f32, 1.0, 1.0, 1.0]);
+    let on_false = Tensor::from_slice([4], &[0.0f32, 0.0, 0.0, 0.0]);
 
     let result = cond.where_cond(&on_true, &on_false);
 
@@ -33,9 +33,9 @@ fn test_where_cond_nonzero_values_f32() {
 
 #[test]
 fn test_where_cond_i32() {
-    let cond = ConcreteTensor::<i32, 1>::from_slice([4], &[1, 0, -1, 0]);
-    let on_true = ConcreteTensor::<i32, 1>::from_slice([4], &[10, 20, 30, 40]);
-    let on_false = ConcreteTensor::<i32, 1>::from_slice([4], &[100, 200, 300, 400]);
+    let cond = Tensor::from_slice([4], &[1i32, 0, -1, 0]);
+    let on_true = Tensor::from_slice([4], &[10i32, 20, 30, 40]);
+    let on_false = Tensor::from_slice([4], &[100i32, 200, 300, 400]);
 
     let result = cond.where_cond(&on_true, &on_false);
 
@@ -47,9 +47,9 @@ fn test_where_cond_i32() {
 
 #[test]
 fn test_where_cond_2d() {
-    let cond = ConcreteTensor::<f32, 2>::from_slice([2, 2], &[1.0, 0.0, 0.0, 1.0]);
-    let on_true = ConcreteTensor::<f32, 2>::from_slice([2, 2], &[1.0, 2.0, 3.0, 4.0]);
-    let on_false = ConcreteTensor::<f32, 2>::from_slice([2, 2], &[10.0, 20.0, 30.0, 40.0]);
+    let cond = Tensor::from_slice([2, 2], &[1.0f32, 0.0, 0.0, 1.0]);
+    let on_true = Tensor::from_slice([2, 2], &[1.0f32, 2.0, 3.0, 4.0]);
+    let on_false = Tensor::from_slice([2, 2], &[10.0f32, 20.0, 30.0, 40.0]);
 
     let result = cond.where_cond(&on_true, &on_false);
 
@@ -62,8 +62,8 @@ fn test_where_cond_2d() {
 #[test]
 fn test_where_cond_with_comparison() {
     // Common pattern: where_cond with comparison result
-    let a = ConcreteTensor::<f32, 1>::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
-    let b = ConcreteTensor::<f32, 1>::from_slice([4], &[2.5, 2.5, 2.5, 2.5]);
+    let a = Tensor::from_slice([4], &[1.0f32, 2.0, 3.0, 4.0]);
+    let b = Tensor::from_slice([4], &[2.5f32, 2.5, 2.5, 2.5]);
 
     // Compute (a > b) as mask
     let mask = a.gt_ref(&b);
@@ -85,9 +85,9 @@ fn test_where_cond_large() {
     let true_data: Vec<f32> = (0..size).map(|i| i as f32).collect();
     let false_data: Vec<f32> = (0..size).map(|i| -(i as f32)).collect();
 
-    let cond = ConcreteTensor::<f32, 1>::from_slice([size], &cond_data);
-    let on_true = ConcreteTensor::<f32, 1>::from_slice([size], &true_data);
-    let on_false = ConcreteTensor::<f32, 1>::from_slice([size], &false_data);
+    let cond = Tensor::from_slice([size], &cond_data);
+    let on_true = Tensor::from_slice([size], &true_data);
+    let on_false = Tensor::from_slice([size], &false_data);
 
     let result = cond.where_cond(&on_true, &on_false);
 

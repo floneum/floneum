@@ -1,13 +1,13 @@
 //! Tests for comparison tensor operations: eq, ne, lt, lte, gt, gte
 
-use fusor_cpu::ConcreteTensor;
+use fusor_cpu::Tensor;
 
 // ========== Tensor vs Tensor Tests ==========
 
 #[test]
 fn test_eq_tensor_f32() {
-    let a = ConcreteTensor::<f32, 1>::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
-    let b = ConcreteTensor::<f32, 1>::from_slice([4], &[1.0, 3.0, 3.0, 5.0]);
+    let a = Tensor::from_slice([4], &[1.0f32, 2.0, 3.0, 4.0]);
+    let b = Tensor::from_slice([4], &[1.0f32, 3.0, 3.0, 5.0]);
 
     let result = a.eq_ref(&b);
 
@@ -19,8 +19,8 @@ fn test_eq_tensor_f32() {
 
 #[test]
 fn test_ne_tensor_f32() {
-    let a = ConcreteTensor::<f32, 1>::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
-    let b = ConcreteTensor::<f32, 1>::from_slice([4], &[1.0, 3.0, 3.0, 5.0]);
+    let a = Tensor::from_slice([4], &[1.0f32, 2.0, 3.0, 4.0]);
+    let b = Tensor::from_slice([4], &[1.0f32, 3.0, 3.0, 5.0]);
 
     let result = a.ne_ref(&b);
 
@@ -32,8 +32,8 @@ fn test_ne_tensor_f32() {
 
 #[test]
 fn test_lt_tensor_f32() {
-    let a = ConcreteTensor::<f32, 1>::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
-    let b = ConcreteTensor::<f32, 1>::from_slice([4], &[2.0, 2.0, 2.0, 2.0]);
+    let a = Tensor::from_slice([4], &[1.0f32, 2.0, 3.0, 4.0]);
+    let b = Tensor::from_slice([4], &[2.0f32, 2.0, 2.0, 2.0]);
 
     let result = a.lt_ref(&b);
 
@@ -45,8 +45,8 @@ fn test_lt_tensor_f32() {
 
 #[test]
 fn test_lte_tensor_f32() {
-    let a = ConcreteTensor::<f32, 1>::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
-    let b = ConcreteTensor::<f32, 1>::from_slice([4], &[2.0, 2.0, 2.0, 2.0]);
+    let a = Tensor::from_slice([4], &[1.0f32, 2.0, 3.0, 4.0]);
+    let b = Tensor::from_slice([4], &[2.0f32, 2.0, 2.0, 2.0]);
 
     let result = a.lte_ref(&b);
 
@@ -58,8 +58,8 @@ fn test_lte_tensor_f32() {
 
 #[test]
 fn test_gt_tensor_f32() {
-    let a = ConcreteTensor::<f32, 1>::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
-    let b = ConcreteTensor::<f32, 1>::from_slice([4], &[2.0, 2.0, 2.0, 2.0]);
+    let a = Tensor::from_slice([4], &[1.0f32, 2.0, 3.0, 4.0]);
+    let b = Tensor::from_slice([4], &[2.0f32, 2.0, 2.0, 2.0]);
 
     let result = a.gt_ref(&b);
 
@@ -71,8 +71,8 @@ fn test_gt_tensor_f32() {
 
 #[test]
 fn test_gte_tensor_f32() {
-    let a = ConcreteTensor::<f32, 1>::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
-    let b = ConcreteTensor::<f32, 1>::from_slice([4], &[2.0, 2.0, 2.0, 2.0]);
+    let a = Tensor::from_slice([4], &[1.0f32, 2.0, 3.0, 4.0]);
+    let b = Tensor::from_slice([4], &[2.0f32, 2.0, 2.0, 2.0]);
 
     let result = a.gte_ref(&b);
 
@@ -86,7 +86,7 @@ fn test_gte_tensor_f32() {
 
 #[test]
 fn test_eq_scalar_f32() {
-    let a = ConcreteTensor::<f32, 1>::from_slice([4], &[1.0, 2.0, 2.0, 4.0]);
+    let a = Tensor::from_slice([4], &[1.0f32, 2.0, 2.0, 4.0]);
     let result = a.eq_scalar(2.0);
 
     assert_eq!(result.get([0]), 0.0);
@@ -97,7 +97,7 @@ fn test_eq_scalar_f32() {
 
 #[test]
 fn test_lt_scalar_f32() {
-    let a = ConcreteTensor::<f32, 1>::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
+    let a = Tensor::from_slice([4], &[1.0f32, 2.0, 3.0, 4.0]);
     let result = a.lt_scalar(2.5);
 
     assert_eq!(result.get([0]), 1.0);  // 1 < 2.5
@@ -108,7 +108,7 @@ fn test_lt_scalar_f32() {
 
 #[test]
 fn test_gt_scalar_f32() {
-    let a = ConcreteTensor::<f32, 1>::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
+    let a = Tensor::from_slice([4], &[1.0f32, 2.0, 3.0, 4.0]);
     let result = a.gt_scalar(2.5);
 
     assert_eq!(result.get([0]), 0.0);  // 1 > 2.5
@@ -121,8 +121,8 @@ fn test_gt_scalar_f32() {
 
 #[test]
 fn test_comparison_i32() {
-    let a = ConcreteTensor::<i32, 1>::from_slice([4], &[1, 2, 3, 4]);
-    let b = ConcreteTensor::<i32, 1>::from_slice([4], &[2, 2, 2, 2]);
+    let a = Tensor::from_slice([4], &[1i32, 2, 3, 4]);
+    let b = Tensor::from_slice([4], &[2i32, 2, 2, 2]);
 
     let lt_result = a.lt_ref(&b);
     assert_eq!(lt_result.get([0]), 1);  // 1 < 2
@@ -145,8 +145,8 @@ fn test_comparison_large_tensor() {
     let a_data: Vec<f32> = (0..size).map(|i| i as f32).collect();
     let b_data: Vec<f32> = (0..size).map(|_| (size / 2) as f32).collect();
 
-    let a = ConcreteTensor::<f32, 1>::from_slice([size], &a_data);
-    let b = ConcreteTensor::<f32, 1>::from_slice([size], &b_data);
+    let a = Tensor::from_slice([size], &a_data);
+    let b = Tensor::from_slice([size], &b_data);
 
     let result = a.lt_ref(&b);
 
