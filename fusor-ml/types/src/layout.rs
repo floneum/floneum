@@ -82,6 +82,21 @@ impl Layout {
         self.offset
     }
 
+    /// Calculate the linear index for a given set of logical indices
+    pub fn linear_index(&self, indices: &[usize]) -> usize {
+        self.offset
+            + indices
+                .iter()
+                .zip(self.strides.iter())
+                .map(|(idx, stride)| idx * stride)
+                .sum::<usize>()
+    }
+
+    /// Get the total number of elements in the tensor
+    pub fn num_elements(&self) -> usize {
+        self.shape.iter().product()
+    }
+
     pub fn continuous_strides(shape: &[usize]) -> Box<[usize]> {
         let mut acc = 1;
         let mut strides = vec![0; shape.len()].into_boxed_slice();

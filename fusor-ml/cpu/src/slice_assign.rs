@@ -157,7 +157,7 @@ where
         .expect("Shape length mismatch");
     let mut output = ConcreteTensor::<E, R>::uninit_unchecked(input_shape);
 
-    let output_strides = output.layout().strides.clone();
+    let output_strides: Box<[usize]> = output.layout().strides().into();
     let input_strides = ResolvedTensor::strides(input);
     let value_strides = ResolvedTensor::strides(value);
     let input_offset = ResolvedTensor::offset(input);

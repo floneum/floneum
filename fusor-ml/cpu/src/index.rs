@@ -38,7 +38,7 @@ where
 
     // Compute strides for iteration
     let input_strides = ResolvedTensor::strides(input);
-    let output_strides = output.layout().strides.clone();
+    let output_strides: Box<[usize]> = output.layout().strides().into();
 
     // For each position in output, compute corresponding input position
     let total_elements: usize = output_shape.iter().product();

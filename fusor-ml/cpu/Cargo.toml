@@ -10,6 +10,7 @@ pulp = "0.22.2"
 gemm = "0.18"
 rayon = "1.10"
 fusor-gguf = { path = "../gguf" }
+fusor-types = { path = "../types" }
 half = "2.6"
 
 [dev-dependencies]

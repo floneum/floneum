@@ -3,6 +3,7 @@
 use std::mem::MaybeUninit;
 
 use aligned_vec::{ABox, AVec};
+use fusor_types::Layout;
 use pulp::Simd;
 
 use crate::expr::{linear_to_indices, Expr};
@@ -52,72 +53,6 @@ impl Iterator for IndexIterator {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Layout {
-    pub(crate) offset: usize,
-    pub(crate) shape: Box<[usize]>,
-    pub(crate) strides: Box<[usize]>,
-    /// Cached contiguity flag - computed once at construction
-    is_contiguous: bool,
-}
-
-impl Layout {
-    /// Create a new layout with explicit offset, shape, and strides.
-    /// Contiguity is computed automatically based on offset and strides.
-    #[allow(dead_code)] // Available for view/slice operations
-    pub(crate) fn new(offset: usize, shape: Box<[usize]>, strides: Box<[usize]>) -> Self {
-        let is_contiguous = offset == 0 && strides == Self::contiguous_strides(&shape);
-        Self {
-            offset,
-            shape,
-            strides,
-            is_contiguous,
-        }
-    }
-
-    /// Create a contiguous layout for the given shape.
-    pub(crate) fn contiguous(shape: &[usize]) -> Self {
-        let strides = Self::contiguous_strides(shape);
-        Self {
-            offset: 0,
-            shape: shape.into(),
-            strides,
-            is_contiguous: true, // Contiguous layout is always contiguous
-        }
-    }
-
-    fn contiguous_strides(shape: &[usize]) -> Box<[usize]> {
-        let mut acc = 1;
-        let mut strides = vec![0; shape.len()].into_boxed_slice();
-        for i in (0..shape.len()).rev() {
-            strides[i] = acc;
-            acc *= shape[i];
-        }
-        strides
-    }
-
-    /// Check if the tensor has contiguous memory layout (cached, O(1))
-    #[inline(always)]
-    pub(crate) fn is_contiguous(&self) -> bool {
-        self.is_contiguous
-    }
-
-    pub(crate) fn num_elements(&self) -> usize {
-        self.shape.iter().product()
-    }
-
-    /// Calculate the linear index for a given set of logical indices
-    pub(crate) fn linear_index(&self, indices: &[usize]) -> usize {
-        debug_assert_eq!(indices.len(), self.shape.len());
-        self.offset
-            + indices
-                .iter()
-                .zip(self.strides.iter())
-                .map(|(idx, stride)| idx * stride)
-                .sum::<usize>()
-    }
-}
-
 #[derive(Clone)]
 pub struct ConcreteTensor<T: SimdElement, const R: usize> {
     layout: Layout,
@@ -145,13 +80,13 @@ where
     T: SimdElement,
 {
     fn shape(&self) -> &[usize] {
-        self.layout.shape.as_ref()
+        self.layout.shape()
     }
     fn strides(&self) -> &[usize] {
-        self.layout.strides.as_ref()
+        self.layout.strides()
     }
     fn offset(&self) -> usize {
-        self.layout.offset
+        self.layout.offset()
     }
     fn data(&self) -> &ABox<[Self::Elem]> {
         &self.backing
@@ -170,7 +105,7 @@ impl<T: SimdElement, const R: usize> Expr for ConcreteTensor<T, R> {
             self.backing[idx]
         } else {
             // Convert linear index to logical indices for strided access
-            let indices = linear_to_indices::<R>(idx, &self.layout.shape);
+            let indices = linear_to_indices::<R>(idx, self.layout.shape());
             let phys_idx = self.layout.linear_index(&indices);
             self.backing[phys_idx]
         }
@@ -204,7 +139,7 @@ impl<T: SimdElement, const R: usize> Expr for ConcreteTensor<T, R> {
     }
 
     fn shape(&self) -> &[usize] {
-        &self.layout.shape
+        self.layout.shape()
     }
 
     fn is_contiguous(&self) -> bool {
