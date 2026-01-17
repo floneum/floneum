@@ -1,6 +1,6 @@
 //! Tensor - the unified interface over different tensor backends
 
-use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Neg as StdNeg, Sub as StdSub};
+use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Neg as StdNeg, Range, Sub as StdSub};
 
 use pulp::Simd;
 
@@ -11,6 +11,7 @@ use crate::conditional::{where_cond_ref, IsNonZero};
 use crate::elementwise::{unary_tensor_op_ref, AbsOp, CosOp, ExpOp, LogOp, NegOp, SimdUnaryOp, SinOp, SqrtOp, TanhOp};
 use crate::expr::Expr;
 use crate::index::index_select_ref;
+use crate::slice_assign::slice_assign_ref;
 use crate::matmul::MatmulImpl;
 use crate::pairwise::{AddOp, DivOp, MulOp, SimdBinaryOp, SubOp};
 use crate::reduce::{reduce_tensor_axis, reduce_tensor_op, MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp};
@@ -328,6 +329,36 @@ where
     #[inline]
     pub fn index_select(&self, dimension: usize, indices: &Tensor<1, ConcreteTensor<u32, 1>>) -> Tensor<R, ConcreteTensor<E, R>> {
         Tensor::new(index_select_ref(&self.inner.to_concrete(), dimension, &indices.inner))
+    }
+
+    /// Returns a new tensor with the slice region replaced by values from the value tensor
+    ///
+    /// # Arguments
+    /// * `slices` - Array of ranges specifying the slice region in each dimension
+    /// * `value` - Tensor containing values to assign into the slice region
+    ///
+    /// # Panics
+    /// * If slice bounds exceed input tensor dimensions
+    /// * If value tensor shape doesn't match slice dimensions
+    ///
+    /// # Example
+    /// ```ignore
+    /// let tensor = Tensor::from_slice([3, 3], &[1.0; 9]);
+    /// let value = Tensor::from_slice([2, 2], &[10.0; 4]);
+    /// let result = tensor.slice_assign([0..2, 0..2], &value);
+    /// // result[0..2, 0..2] = value, rest copied from tensor
+    /// ```
+    #[inline]
+    pub fn slice_assign(
+        &self,
+        slices: [Range<usize>; R],
+        value: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>,
+    ) -> Tensor<R, ConcreteTensor<E, R>> {
+        Tensor::new(slice_assign_ref(
+            &self.inner.to_concrete(),
+            slices,
+            &value.inner.to_concrete(),
+        ))
     }
 
     /// Sum along a specific axis, reducing the tensor rank by 1

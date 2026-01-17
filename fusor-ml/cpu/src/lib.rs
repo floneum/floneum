@@ -15,6 +15,7 @@ mod index;
 mod matmul;
 mod pairwise;
 mod reduce;
+mod slice_assign;
 mod tensor;
 
 /// Maximum number of SIMD lanes supported for strided tensor gather operations.
