@@ -128,28 +128,19 @@ macro_rules! impl_scalar_unary_op {
                 let lane_count =
                     std::mem::size_of::<<$elem as SimdElement>::Simd<S>>() / std::mem::size_of::<$elem>();
                 let mut temp = [<$elem>::default(); crate::MAX_SIMD_LANES];
-                // SAFETY: We only access lane_count elements, which is <= MAX_SIMD_LANES
-                unsafe {
-                    std::ptr::copy_nonoverlapping(
-                        &a as *const _ as *const $elem,
-                        temp.as_mut_ptr(),
-                        lane_count,
-                    );
-                }
+
+                // Safe: cast SIMD ref to scalar slice via bytemuck
+                let input_slice: &[$elem] = pulp::bytemuck::cast_slice(std::slice::from_ref(&a));
+                temp[..lane_count].copy_from_slice(input_slice);
+
                 let f: fn($elem) -> $elem = $scalar_fn;
                 for i in 0..lane_count {
                     temp[i] = f(temp[i]);
                 }
-                // SAFETY: We write back lane_count elements
-                unsafe {
-                    let mut result: <$elem as SimdElement>::Simd<S> = std::mem::zeroed();
-                    std::ptr::copy_nonoverlapping(
-                        temp.as_ptr(),
-                        &mut result as *mut _ as *mut $elem,
-                        lane_count,
-                    );
-                    result
-                }
+
+                // Safe: reconstruct SIMD from scalar slice via as_simd
+                let (simd_slice, _) = <$elem as SimdElement>::as_simd::<S>(&temp[..lane_count]);
+                simd_slice[0]
             }
 
             #[inline(always)]

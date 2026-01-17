@@ -96,33 +96,20 @@ macro_rules! impl_scalar_comparison_op {
                 // Process each lane with scalar comparison
                 let lane_count =
                     std::mem::size_of::<<$elem as SimdElement>::Simd<S>>() / std::mem::size_of::<$elem>();
-                let mut temp_a = [<$elem>::default(); crate::MAX_SIMD_LANES];
-                let mut temp_b = [<$elem>::default(); crate::MAX_SIMD_LANES];
-                unsafe {
-                    std::ptr::copy_nonoverlapping(
-                        &a as *const _ as *const $elem,
-                        temp_a.as_mut_ptr(),
-                        lane_count,
-                    );
-                    std::ptr::copy_nonoverlapping(
-                        &b as *const _ as *const $elem,
-                        temp_b.as_mut_ptr(),
-                        lane_count,
-                    );
-                }
+                let mut temp_out = [<$elem>::default(); crate::MAX_SIMD_LANES];
+
+                // Safe: cast SIMD refs to scalar slices via bytemuck
+                let slice_a: &[$elem] = pulp::bytemuck::cast_slice(std::slice::from_ref(&a));
+                let slice_b: &[$elem] = pulp::bytemuck::cast_slice(std::slice::from_ref(&b));
+
                 let cmp: fn($elem, $elem) -> bool = $cmp_fn;
                 for i in 0..lane_count {
-                    temp_a[i] = if cmp(temp_a[i], temp_b[i]) { <$elem as NumericBool>::one() } else { <$elem as NumericBool>::zero() };
+                    temp_out[i] = if cmp(slice_a[i], slice_b[i]) { <$elem as NumericBool>::one() } else { <$elem as NumericBool>::zero() };
                 }
-                unsafe {
-                    let mut result: <$elem as SimdElement>::Simd<S> = std::mem::zeroed();
-                    std::ptr::copy_nonoverlapping(
-                        temp_a.as_ptr(),
-                        &mut result as *mut _ as *mut $elem,
-                        lane_count,
-                    );
-                    result
-                }
+
+                // Safe: reconstruct SIMD from scalar slice via as_simd
+                let (simd_slice, _) = <$elem as SimdElement>::as_simd::<S>(&temp_out[..lane_count]);
+                simd_slice[0]
             }
 
             #[inline(always)]

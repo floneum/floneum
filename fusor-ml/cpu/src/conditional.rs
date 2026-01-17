@@ -65,66 +65,11 @@ impl<E: SimdElement + IsNonZero> WithSimd for WhereCondDispatch<'_, E> {
 
     #[inline(always)]
     fn with_simd<S: Simd>(self, _simd: S) -> Self::Output {
-        // Process SIMD vectors by extracting lanes (no native SIMD select for arbitrary masks)
-        let lane_count = std::mem::size_of::<E::Simd<S>>() / std::mem::size_of::<E>();
-
-        let (cond_simd, cond_tail) = E::as_simd::<S>(self.cond);
-        let (on_true_simd, on_true_tail) = E::as_simd::<S>(self.on_true);
-        let (on_false_simd, on_false_tail) = E::as_simd::<S>(self.on_false);
-        let (out_simd, out_tail) = E::as_mut_simd::<S>(self.out);
-
-        // Process SIMD chunks
-        for (((cond, on_true), on_false), out) in cond_simd
-            .iter()
-            .zip(on_true_simd.iter())
-            .zip(on_false_simd.iter())
-            .zip(out_simd.iter_mut())
-        {
-            let mut temp_cond = [E::default(); crate::MAX_SIMD_LANES];
-            let mut temp_true = [E::default(); crate::MAX_SIMD_LANES];
-            let mut temp_false = [E::default(); crate::MAX_SIMD_LANES];
-
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    cond as *const _ as *const E,
-                    temp_cond.as_mut_ptr(),
-                    lane_count,
-                );
-                std::ptr::copy_nonoverlapping(
-                    on_true as *const _ as *const E,
-                    temp_true.as_mut_ptr(),
-                    lane_count,
-                );
-                std::ptr::copy_nonoverlapping(
-                    on_false as *const _ as *const E,
-                    temp_false.as_mut_ptr(),
-                    lane_count,
-                );
-            }
-
-            for i in 0..lane_count {
-                temp_cond[i] = if temp_cond[i].is_nonzero() {
-                    temp_true[i]
-                } else {
-                    temp_false[i]
-                };
-            }
-
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    temp_cond.as_ptr(),
-                    out as *mut _ as *mut E,
-                    lane_count,
-                );
-            }
-        }
-
-        // Process tail elements
-        for (((c, t), f), o) in cond_tail
-            .iter()
-            .zip(on_true_tail.iter())
-            .zip(on_false_tail.iter())
-            .zip(out_tail.iter_mut())
+        // No native SIMD select for arbitrary masks - process all elements via scalar path
+        for (((c, t), f), o) in self.cond.iter()
+            .zip(self.on_true.iter())
+            .zip(self.on_false.iter())
+            .zip(self.out.iter_mut())
         {
             *o = if c.is_nonzero() { *t } else { *f };
         }
