@@ -3,7 +3,9 @@
 //! This crate provides shared types used by both `fusor-core` (GPU) and `fusor-cpu` (CPU) crates.
 
 mod layout;
+mod rank;
 mod tensor_slice;
 
 pub use layout::*;
+pub use rank::*;
 pub use tensor_slice::*;
