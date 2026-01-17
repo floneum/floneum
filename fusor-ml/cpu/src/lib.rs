@@ -14,6 +14,7 @@ mod expr;
 mod index;
 mod matmul;
 mod pairwise;
+mod quantized;
 mod reduce;
 mod slice_assign;
 mod tensor;
@@ -28,7 +29,11 @@ pub use concrete_tensor::ConcreteTensor;
 pub use elementwise::{Abs, Cos, Exp, Exp2, Log, Log2, Neg, Sin, Sqrt, Tan, Tanh};
 pub use expr::{materialize_expr, Expr};
 pub use pairwise::{Add, Div, Mul, Sub};
+pub use quantized::{Dequantize, QuantizedTensor};
 pub use tensor::{FloatOps, Tensor};
+
+// Re-export GGUF types for convenience
+pub use fusor_gguf::{BlockQ4K, BlockQ4_0, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, GgufBlock};
 
 // Re-export operation traits and markers for public bounds
 pub use elementwise::{
