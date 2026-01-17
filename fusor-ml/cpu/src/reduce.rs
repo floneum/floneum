@@ -289,8 +289,8 @@ fn reduce_op_contiguous<E: SimdElement, Op: SimdReduceOp<E>>(input: &[E]) -> E {
 }
 
 /// Full reduction on tensor (handles strided case)
-pub(crate) fn reduce_tensor_op<E: SimdElement, const RANK: usize, Op: SimdReduceOp<E>>(
-    tensor: &ConcreteTensor<E, RANK>,
+pub(crate) fn reduce_tensor_op<E: SimdElement, const R: usize, Op: SimdReduceOp<E>>(
+    tensor: &ConcreteTensor<E, R>,
 ) -> E {
     if tensor.layout().is_contiguous() {
         reduce_op_contiguous::<E, Op>(tensor.data())
@@ -308,21 +308,21 @@ pub(crate) fn reduce_tensor_op<E: SimdElement, const RANK: usize, Op: SimdReduce
 /// Reduce along a specific axis, returning tensor with OUT_RANK dimensions
 pub(crate) fn reduce_tensor_axis<
     E: SimdElement + Default,
-    const RANK: usize,
+    const R: usize,
     const OUT_RANK: usize,
     const AXIS: usize,
     Op: SimdReduceOp<E>,
 >(
-    tensor: &ConcreteTensor<E, RANK>,
+    tensor: &ConcreteTensor<E, R>,
 ) -> ConcreteTensor<E, OUT_RANK>
 where
-    ConcreteTensor<E, RANK>: LastRank<OUT_RANK, E>,
+    ConcreteTensor<E, R>: LastRank<OUT_RANK, E>,
 {
     // Compute output shape (remove AXIS dimension)
     let in_shape = tensor.shape();
     let mut out_shape = [0usize; OUT_RANK];
     let mut j = 0;
-    for i in 0..RANK {
+    for i in 0..R {
         if i != AXIS {
             out_shape[j] = in_shape[i];
             j += 1;
@@ -337,11 +337,11 @@ where
 
     // Iterate over output indices and reduce along AXIS
     // Use fixed-size array to avoid allocation
-    let mut in_indices = [0usize; RANK];
+    let mut in_indices = [0usize; R];
     for out_indices in IndexIterator::new(&out_shape) {
         // Build base input indices (with AXIS = 0)
         let mut j = 0;
-        for i in 0..RANK {
+        for i in 0..R {
             if i == AXIS {
                 in_indices[i] = 0;
             } else {

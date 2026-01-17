@@ -77,23 +77,15 @@ macro_rules! impl_last_rank {
 // Generate for ranks 1-10
 impl_last_rank!(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
 
-pub trait Tensor {
+pub trait Tensor<const R: usize> {
     type Elem: SimdElement;
-    const RANK: usize;
-    type Concrete: ResolvedTensor<Elem = Self::Elem>;
-    const ASSERT: () = {
-        assert!(
-            Self::Concrete::RANK == Self::RANK,
-            "Tensor rank mismatch in ConcreteTensor"
-        );
-    };
 }
 
-pub trait ResolveTensor<M = ()>: Tensor {
-    fn to_concrete(&self) -> Self::Concrete;
+pub trait ResolveTensor<const R: usize, M = ()>: Tensor<R> {
+    fn to_concrete(&self) -> ConcreteTensor<Self::Elem, R>;
 }
 
-pub trait ResolvedTensor: Tensor {
+pub trait ResolvedTensor<const R: usize>: Tensor<R> {
     fn shape(&self) -> &[usize];
     fn strides(&self) -> &[usize];
     fn offset(&self) -> usize;
@@ -212,30 +204,28 @@ impl Layout {
 }
 
 #[derive(Clone)]
-pub struct ConcreteTensor<T: SimdElement, const RANK: usize> {
+pub struct ConcreteTensor<T: SimdElement, const R: usize> {
     layout: Layout,
     backing: ABox<[T]>,
 }
 
-impl<T, const RANK: usize> Tensor for ConcreteTensor<T, RANK>
+impl<T, const R: usize> Tensor<R> for ConcreteTensor<T, R>
 where
     T: SimdElement,
 {
     type Elem = T;
-    const RANK: usize = RANK;
-    type Concrete = Self;
 }
 
-impl<T, const RANK: usize> ResolveTensor for ConcreteTensor<T, RANK>
+impl<T, const R: usize> ResolveTensor<R> for ConcreteTensor<T, R>
 where
     T: SimdElement,
 {
-    fn to_concrete(&self) -> Self::Concrete {
+    fn to_concrete(&self) -> ConcreteTensor<T, R> {
         self.clone()
     }
 }
 
-impl<T, const RANK: usize> ResolvedTensor for ConcreteTensor<T, RANK>
+impl<T, const R: usize> ResolvedTensor<R> for ConcreteTensor<T, R>
 where
     T: SimdElement,
 {
@@ -256,7 +246,7 @@ where
     }
 }
 
-impl<T: SimdElement, const RANK: usize> Expr for ConcreteTensor<T, RANK> {
+impl<T: SimdElement, const R: usize> Expr for ConcreteTensor<T, R> {
     type Elem = T;
 
     #[inline(always)]
@@ -265,7 +255,7 @@ impl<T: SimdElement, const RANK: usize> Expr for ConcreteTensor<T, RANK> {
             self.backing[idx]
         } else {
             // Convert linear index to logical indices for strided access
-            let indices = expr::linear_to_indices::<RANK>(idx, &self.layout.shape);
+            let indices = expr::linear_to_indices::<R>(idx, &self.layout.shape);
             let phys_idx = self.layout.linear_index(&indices);
             self.backing[phys_idx]
         }
@@ -308,22 +298,20 @@ impl<T: SimdElement, const RANK: usize> Expr for ConcreteTensor<T, RANK> {
 }
 
 // Implement Tensor for references so they can be used in expression trees
-impl<T: SimdElement, const RANK: usize> Tensor for &ConcreteTensor<T, RANK> {
+impl<T: SimdElement, const R: usize> Tensor<R> for &ConcreteTensor<T, R> {
     type Elem = T;
-    const RANK: usize = RANK;
-    type Concrete = ConcreteTensor<T, RANK>;
 }
 
 // Implement ResolveTensor for references
-impl<T: SimdElement, const RANK: usize> ResolveTensor for &ConcreteTensor<T, RANK> {
-    fn to_concrete(&self) -> Self::Concrete {
+impl<T: SimdElement, const R: usize> ResolveTensor<R> for &ConcreteTensor<T, R> {
+    fn to_concrete(&self) -> ConcreteTensor<T, R> {
         (*self).clone()
     }
 }
 
-impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
+impl<T: SimdElement, const R: usize> ConcreteTensor<T, R> {
     /// Create a new tensor with contiguous layout from shape, filled with zeros
-    pub fn zeros(shape: [usize; RANK]) -> Self
+    pub fn zeros(shape: [usize; R]) -> Self
     where
         T: Default,
     {
@@ -337,7 +325,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
 
     /// Create a new tensor with uninitialized memory (for internal use only)
     #[inline]
-    pub(crate) fn uninit_unchecked(shape: [usize; RANK]) -> Self {
+    pub(crate) fn uninit_unchecked(shape: [usize; R]) -> Self {
         let layout = Layout::contiguous(&shape);
         let num_elements = layout.num_elements();
         // Transmute the MaybeUninit vec to T vec - this is safe because we will
@@ -353,7 +341,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
     }
 
     /// Create a new tensor from existing data with contiguous layout
-    pub fn from_slice(shape: [usize; RANK], data: &[T]) -> Self {
+    pub fn from_slice(shape: [usize; R], data: &[T]) -> Self {
         let layout = Layout::contiguous(&shape);
         assert_eq!(layout.num_elements(), data.len());
         let mut vec: AVec<T> = AVec::with_capacity(64, data.len());
@@ -368,18 +356,18 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
     }
 
     /// Calculate the linear index for given logical indices
-    fn linear_index(&self, indices: &[usize; RANK]) -> usize {
+    fn linear_index(&self, indices: &[usize; R]) -> usize {
         self.layout.linear_index(indices)
     }
 
     /// Get element at logical indices
-    pub fn get(&self, indices: [usize; RANK]) -> T {
+    pub fn get(&self, indices: [usize; R]) -> T {
         let idx = self.linear_index(&indices);
         self.backing[idx]
     }
 
     /// Set element at logical indices
-    pub fn set(&mut self, indices: [usize; RANK], value: T) {
+    pub fn set(&mut self, indices: [usize; R], value: T) {
         let idx = self.linear_index(&indices);
         self.backing[idx] = value;
     }
@@ -391,7 +379,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default + StdAdd<Output = T>,
         AddOp: SimdBinaryOp<T>,
     {
-        binary_tensor_op_ref::<T, RANK, AddOp>(self, rhs)
+        binary_tensor_op_ref::<T, R, AddOp>(self, rhs)
     }
 
     /// Subtract two tensors element-wise (reference-based, no cloning)
@@ -401,7 +389,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default + StdSub<Output = T>,
         SubOp: SimdBinaryOp<T>,
     {
-        binary_tensor_op_ref::<T, RANK, SubOp>(self, rhs)
+        binary_tensor_op_ref::<T, R, SubOp>(self, rhs)
     }
 
     /// Multiply two tensors element-wise (reference-based, no cloning)
@@ -411,7 +399,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default + StdMul<Output = T>,
         MulOp: SimdBinaryOp<T>,
     {
-        binary_tensor_op_ref::<T, RANK, MulOp>(self, rhs)
+        binary_tensor_op_ref::<T, R, MulOp>(self, rhs)
     }
 
     /// Divide two tensors element-wise (reference-based, no cloning)
@@ -421,7 +409,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default + StdDiv<Output = T>,
         DivOp: SimdBinaryOp<T>,
     {
-        binary_tensor_op_ref::<T, RANK, DivOp>(self, rhs)
+        binary_tensor_op_ref::<T, R, DivOp>(self, rhs)
     }
 
     /// Negate tensor element-wise (reference-based, no cloning)
@@ -431,7 +419,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default + StdNeg<Output = T>,
         NegOp: SimdUnaryOp<T>,
     {
-        unary_tensor_op_ref::<T, RANK, NegOp>(self)
+        unary_tensor_op_ref::<T, R, NegOp>(self)
     }
 
     /// Absolute value element-wise (reference-based, no cloning)
@@ -441,7 +429,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         AbsOp: SimdUnaryOp<T>,
     {
-        unary_tensor_op_ref::<T, RANK, AbsOp>(self)
+        unary_tensor_op_ref::<T, R, AbsOp>(self)
     }
 
     /// Square root element-wise (reference-based, no cloning)
@@ -451,7 +439,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         SqrtOp: SimdUnaryOp<T>,
     {
-        unary_tensor_op_ref::<T, RANK, SqrtOp>(self)
+        unary_tensor_op_ref::<T, R, SqrtOp>(self)
     }
 
     /// Exponential (e^x) element-wise (reference-based, no cloning)
@@ -461,7 +449,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         ExpOp: SimdUnaryOp<T>,
     {
-        unary_tensor_op_ref::<T, RANK, ExpOp>(self)
+        unary_tensor_op_ref::<T, R, ExpOp>(self)
     }
 
     /// Base-2 exponential (2^x) element-wise (reference-based, no cloning)
@@ -471,7 +459,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         Exp2Op: SimdUnaryOp<T>,
     {
-        unary_tensor_op_ref::<T, RANK, Exp2Op>(self)
+        unary_tensor_op_ref::<T, R, Exp2Op>(self)
     }
 
     /// Natural logarithm (ln) element-wise (reference-based, no cloning)
@@ -481,7 +469,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         LogOp: SimdUnaryOp<T>,
     {
-        unary_tensor_op_ref::<T, RANK, LogOp>(self)
+        unary_tensor_op_ref::<T, R, LogOp>(self)
     }
 
     /// Base-2 logarithm element-wise (reference-based, no cloning)
@@ -491,7 +479,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         Log2Op: SimdUnaryOp<T>,
     {
-        unary_tensor_op_ref::<T, RANK, Log2Op>(self)
+        unary_tensor_op_ref::<T, R, Log2Op>(self)
     }
 
     /// Sine element-wise (reference-based, no cloning)
@@ -501,7 +489,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         SinOp: SimdUnaryOp<T>,
     {
-        unary_tensor_op_ref::<T, RANK, SinOp>(self)
+        unary_tensor_op_ref::<T, R, SinOp>(self)
     }
 
     /// Cosine element-wise (reference-based, no cloning)
@@ -511,7 +499,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         CosOp: SimdUnaryOp<T>,
     {
-        unary_tensor_op_ref::<T, RANK, CosOp>(self)
+        unary_tensor_op_ref::<T, R, CosOp>(self)
     }
 
     /// Tangent element-wise (reference-based, no cloning)
@@ -521,7 +509,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         TanOp: SimdUnaryOp<T>,
     {
-        unary_tensor_op_ref::<T, RANK, TanOp>(self)
+        unary_tensor_op_ref::<T, R, TanOp>(self)
     }
 
     /// Hyperbolic tangent element-wise (reference-based, no cloning)
@@ -531,7 +519,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         TanhOp: SimdUnaryOp<T>,
     {
-        unary_tensor_op_ref::<T, RANK, TanhOp>(self)
+        unary_tensor_op_ref::<T, R, TanhOp>(self)
     }
 
     /// Element-wise equality comparison (tensor vs tensor)
@@ -542,7 +530,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         EqOp: SimdComparisonOp<T>,
     {
-        comparison_tensor_op_ref::<T, RANK, EqOp>(self, rhs)
+        comparison_tensor_op_ref::<T, R, EqOp>(self, rhs)
     }
 
     /// Element-wise inequality comparison (tensor vs tensor)
@@ -552,7 +540,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         NeOp: SimdComparisonOp<T>,
     {
-        comparison_tensor_op_ref::<T, RANK, NeOp>(self, rhs)
+        comparison_tensor_op_ref::<T, R, NeOp>(self, rhs)
     }
 
     /// Element-wise less than comparison (tensor vs tensor)
@@ -562,7 +550,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         LtOp: SimdComparisonOp<T>,
     {
-        comparison_tensor_op_ref::<T, RANK, LtOp>(self, rhs)
+        comparison_tensor_op_ref::<T, R, LtOp>(self, rhs)
     }
 
     /// Element-wise less than or equal comparison (tensor vs tensor)
@@ -572,7 +560,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         LteOp: SimdComparisonOp<T>,
     {
-        comparison_tensor_op_ref::<T, RANK, LteOp>(self, rhs)
+        comparison_tensor_op_ref::<T, R, LteOp>(self, rhs)
     }
 
     /// Element-wise greater than comparison (tensor vs tensor)
@@ -582,7 +570,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         GtOp: SimdComparisonOp<T>,
     {
-        comparison_tensor_op_ref::<T, RANK, GtOp>(self, rhs)
+        comparison_tensor_op_ref::<T, R, GtOp>(self, rhs)
     }
 
     /// Element-wise greater than or equal comparison (tensor vs tensor)
@@ -592,7 +580,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         GteOp: SimdComparisonOp<T>,
     {
-        comparison_tensor_op_ref::<T, RANK, GteOp>(self, rhs)
+        comparison_tensor_op_ref::<T, R, GteOp>(self, rhs)
     }
 
     /// Element-wise equality comparison (tensor vs scalar)
@@ -602,7 +590,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         EqOp: SimdComparisonOp<T>,
     {
-        comparison_scalar_op_ref::<T, RANK, EqOp>(self, scalar)
+        comparison_scalar_op_ref::<T, R, EqOp>(self, scalar)
     }
 
     /// Element-wise inequality comparison (tensor vs scalar)
@@ -612,7 +600,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         NeOp: SimdComparisonOp<T>,
     {
-        comparison_scalar_op_ref::<T, RANK, NeOp>(self, scalar)
+        comparison_scalar_op_ref::<T, R, NeOp>(self, scalar)
     }
 
     /// Element-wise less than comparison (tensor vs scalar)
@@ -622,7 +610,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         LtOp: SimdComparisonOp<T>,
     {
-        comparison_scalar_op_ref::<T, RANK, LtOp>(self, scalar)
+        comparison_scalar_op_ref::<T, R, LtOp>(self, scalar)
     }
 
     /// Element-wise less than or equal comparison (tensor vs scalar)
@@ -632,7 +620,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         LteOp: SimdComparisonOp<T>,
     {
-        comparison_scalar_op_ref::<T, RANK, LteOp>(self, scalar)
+        comparison_scalar_op_ref::<T, R, LteOp>(self, scalar)
     }
 
     /// Element-wise greater than comparison (tensor vs scalar)
@@ -642,7 +630,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         GtOp: SimdComparisonOp<T>,
     {
-        comparison_scalar_op_ref::<T, RANK, GtOp>(self, scalar)
+        comparison_scalar_op_ref::<T, R, GtOp>(self, scalar)
     }
 
     /// Element-wise greater than or equal comparison (tensor vs scalar)
@@ -652,7 +640,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         T: Default,
         GteOp: SimdComparisonOp<T>,
     {
-        comparison_scalar_op_ref::<T, RANK, GteOp>(self, scalar)
+        comparison_scalar_op_ref::<T, R, GteOp>(self, scalar)
     }
 
     /// Conditional selection: where self != 0, select on_true, else on_false
@@ -666,7 +654,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
 
     /// Cast tensor to another element type
     #[inline]
-    pub fn cast<T2>(&self) -> ConcreteTensor<T2, RANK>
+    pub fn cast<T2>(&self) -> ConcreteTensor<T2, R>
     where
         T: CastTo<T2>,
         T2: SimdElement,
@@ -690,7 +678,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
     where
         SumOp: SimdReduceOp<T>,
     {
-        reduce_tensor_op::<T, RANK, SumOp>(self)
+        reduce_tensor_op::<T, R, SumOp>(self)
     }
 
     /// Find the maximum element in the tensor
@@ -699,7 +687,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
     where
         MaxOp: SimdReduceOp<T>,
     {
-        reduce_tensor_op::<T, RANK, MaxOp>(self)
+        reduce_tensor_op::<T, R, MaxOp>(self)
     }
 
     /// Find the minimum element in the tensor
@@ -708,7 +696,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
     where
         MinOp: SimdReduceOp<T>,
     {
-        reduce_tensor_op::<T, RANK, MinOp>(self)
+        reduce_tensor_op::<T, R, MinOp>(self)
     }
 
     /// Multiply all elements in the tensor
@@ -717,7 +705,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
     where
         ProdOp: SimdReduceOp<T>,
     {
-        reduce_tensor_op::<T, RANK, ProdOp>(self)
+        reduce_tensor_op::<T, R, ProdOp>(self)
     }
 
     /// Sum along a specific axis, reducing the tensor rank by 1
@@ -728,7 +716,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         Self: LastRank<OUT_RANK, T>,
         SumOp: SimdReduceOp<T>,
     {
-        reduce_tensor_axis::<T, RANK, OUT_RANK, AXIS, SumOp>(self)
+        reduce_tensor_axis::<T, R, OUT_RANK, AXIS, SumOp>(self)
     }
 
     /// Maximum along a specific axis, reducing the tensor rank by 1
@@ -739,7 +727,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         Self: LastRank<OUT_RANK, T>,
         MaxOp: SimdReduceOp<T>,
     {
-        reduce_tensor_axis::<T, RANK, OUT_RANK, AXIS, MaxOp>(self)
+        reduce_tensor_axis::<T, R, OUT_RANK, AXIS, MaxOp>(self)
     }
 
     /// Minimum along a specific axis, reducing the tensor rank by 1
@@ -750,7 +738,7 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         Self: LastRank<OUT_RANK, T>,
         MinOp: SimdReduceOp<T>,
     {
-        reduce_tensor_axis::<T, RANK, OUT_RANK, AXIS, MinOp>(self)
+        reduce_tensor_axis::<T, R, OUT_RANK, AXIS, MinOp>(self)
     }
 
     /// Product along a specific axis, reducing the tensor rank by 1
@@ -761,19 +749,19 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         Self: LastRank<OUT_RANK, T>,
         ProdOp: SimdReduceOp<T>,
     {
-        reduce_tensor_axis::<T, RANK, OUT_RANK, AXIS, ProdOp>(self)
+        reduce_tensor_axis::<T, R, OUT_RANK, AXIS, ProdOp>(self)
     }
 }
 
 // Specialized impl for f32 (pow_scalar, min_scalar, max_scalar)
-impl<const RANK: usize> ConcreteTensor<f32, RANK> {
+impl<const R: usize> ConcreteTensor<f32, R> {
     /// Raise each element to a scalar power (x^exp)
     #[inline]
     pub fn pow_scalar(&self, exp: f32) -> Self {
-        let shape: [usize; RANK] = ResolvedTensor::shape(self)
+        let shape: [usize; R] = ResolvedTensor::shape(self)
             .try_into()
             .expect("Shape length mismatch");
-        let mut output = ConcreteTensor::<f32, RANK>::uninit_unchecked(shape);
+        let mut output = ConcreteTensor::<f32, R>::uninit_unchecked(shape);
 
         for (i, &val) in self.data().iter().enumerate() {
             output.data_mut()[i] = val.powf(exp);
@@ -784,10 +772,10 @@ impl<const RANK: usize> ConcreteTensor<f32, RANK> {
     /// Element-wise maximum with a scalar: max(x, scalar)
     #[inline]
     pub fn max_scalar(&self, scalar: f32) -> Self {
-        let shape: [usize; RANK] = ResolvedTensor::shape(self)
+        let shape: [usize; R] = ResolvedTensor::shape(self)
             .try_into()
             .expect("Shape length mismatch");
-        let mut output = ConcreteTensor::<f32, RANK>::uninit_unchecked(shape);
+        let mut output = ConcreteTensor::<f32, R>::uninit_unchecked(shape);
 
         for (i, &val) in self.data().iter().enumerate() {
             output.data_mut()[i] = val.max(scalar);
@@ -798,10 +786,10 @@ impl<const RANK: usize> ConcreteTensor<f32, RANK> {
     /// Element-wise minimum with a scalar: min(x, scalar)
     #[inline]
     pub fn min_scalar(&self, scalar: f32) -> Self {
-        let shape: [usize; RANK] = ResolvedTensor::shape(self)
+        let shape: [usize; R] = ResolvedTensor::shape(self)
             .try_into()
             .expect("Shape length mismatch");
-        let mut output = ConcreteTensor::<f32, RANK>::uninit_unchecked(shape);
+        let mut output = ConcreteTensor::<f32, R>::uninit_unchecked(shape);
 
         for (i, &val) in self.data().iter().enumerate() {
             output.data_mut()[i] = val.min(scalar);
@@ -812,10 +800,10 @@ impl<const RANK: usize> ConcreteTensor<f32, RANK> {
     /// Clamp all elements to be within [min, max]
     #[inline]
     pub fn clamp(&self, min: f32, max: f32) -> Self {
-        let shape: [usize; RANK] = ResolvedTensor::shape(self)
+        let shape: [usize; R] = ResolvedTensor::shape(self)
             .try_into()
             .expect("Shape length mismatch");
-        let mut output = ConcreteTensor::<f32, RANK>::uninit_unchecked(shape);
+        let mut output = ConcreteTensor::<f32, R>::uninit_unchecked(shape);
 
         for (i, &val) in self.data().iter().enumerate() {
             output.data_mut()[i] = val.clamp(min, max);
@@ -825,14 +813,14 @@ impl<const RANK: usize> ConcreteTensor<f32, RANK> {
 }
 
 // Specialized impl for f64 (pow_scalar, min_scalar, max_scalar)
-impl<const RANK: usize> ConcreteTensor<f64, RANK> {
+impl<const R: usize> ConcreteTensor<f64, R> {
     /// Raise each element to a scalar power (x^exp)
     #[inline]
     pub fn pow_scalar(&self, exp: f64) -> Self {
-        let shape: [usize; RANK] = ResolvedTensor::shape(self)
+        let shape: [usize; R] = ResolvedTensor::shape(self)
             .try_into()
             .expect("Shape length mismatch");
-        let mut output = ConcreteTensor::<f64, RANK>::uninit_unchecked(shape);
+        let mut output = ConcreteTensor::<f64, R>::uninit_unchecked(shape);
 
         for (i, &val) in self.data().iter().enumerate() {
             output.data_mut()[i] = val.powf(exp);
@@ -843,10 +831,10 @@ impl<const RANK: usize> ConcreteTensor<f64, RANK> {
     /// Element-wise maximum with a scalar: max(x, scalar)
     #[inline]
     pub fn max_scalar(&self, scalar: f64) -> Self {
-        let shape: [usize; RANK] = ResolvedTensor::shape(self)
+        let shape: [usize; R] = ResolvedTensor::shape(self)
             .try_into()
             .expect("Shape length mismatch");
-        let mut output = ConcreteTensor::<f64, RANK>::uninit_unchecked(shape);
+        let mut output = ConcreteTensor::<f64, R>::uninit_unchecked(shape);
 
         for (i, &val) in self.data().iter().enumerate() {
             output.data_mut()[i] = val.max(scalar);
@@ -857,10 +845,10 @@ impl<const RANK: usize> ConcreteTensor<f64, RANK> {
     /// Element-wise minimum with a scalar: min(x, scalar)
     #[inline]
     pub fn min_scalar(&self, scalar: f64) -> Self {
-        let shape: [usize; RANK] = ResolvedTensor::shape(self)
+        let shape: [usize; R] = ResolvedTensor::shape(self)
             .try_into()
             .expect("Shape length mismatch");
-        let mut output = ConcreteTensor::<f64, RANK>::uninit_unchecked(shape);
+        let mut output = ConcreteTensor::<f64, R>::uninit_unchecked(shape);
 
         for (i, &val) in self.data().iter().enumerate() {
             output.data_mut()[i] = val.min(scalar);
@@ -871,10 +859,10 @@ impl<const RANK: usize> ConcreteTensor<f64, RANK> {
     /// Clamp all elements to be within [min, max]
     #[inline]
     pub fn clamp(&self, min: f64, max: f64) -> Self {
-        let shape: [usize; RANK] = ResolvedTensor::shape(self)
+        let shape: [usize; R] = ResolvedTensor::shape(self)
             .try_into()
             .expect("Shape length mismatch");
-        let mut output = ConcreteTensor::<f64, RANK>::uninit_unchecked(shape);
+        let mut output = ConcreteTensor::<f64, R>::uninit_unchecked(shape);
 
         for (i, &val) in self.data().iter().enumerate() {
             output.data_mut()[i] = val.clamp(min, max);

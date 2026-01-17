@@ -253,3 +253,167 @@ async fn test_gpu_exp_sqrt() {
     let sqrt_result = a.sqrt().to_vec().await;
     assert_eq!(sqrt_result, vec![1.0, 2.0, 3.0, 4.0]);
 }
+
+// ============================================================================
+// Tests for new composite operations
+// ============================================================================
+
+#[test]
+fn test_cpu_relu() {
+    let a = GpuOr::cpu_from_slice([4], &[1.0, -2.0, 3.0, -4.0]);
+    let result = a.relu().to_vec_blocking();
+    assert_eq!(result, vec![1.0, 0.0, 3.0, 0.0]);
+}
+
+#[test]
+fn test_cpu_gelu() {
+    let a = GpuOr::cpu_from_slice([4], &[0.0, 1.0, -1.0, 2.0]);
+    let result = a.gelu().to_vec_blocking();
+
+    // GELU(x) ≈ 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
+    let gelu = |x: f32| {
+        0.5 * x * (1.0 + ((2.0 / std::f32::consts::PI).sqrt() * (x + 0.044715 * x.powi(3))).tanh())
+    };
+
+    assert!((result[0] - gelu(0.0)).abs() < 0.01);
+    assert!((result[1] - gelu(1.0)).abs() < 0.01);
+    assert!((result[2] - gelu(-1.0)).abs() < 0.01);
+    assert!((result[3] - gelu(2.0)).abs() < 0.01);
+}
+
+#[test]
+fn test_cpu_silu() {
+    let a = GpuOr::cpu_from_slice([4], &[0.0, 1.0, -1.0, 2.0]);
+    let result = a.silu().to_vec_blocking();
+
+    // SiLU(x) = x / (1 + exp(-x))
+    let silu = |x: f32| x / (1.0 + (-x).exp());
+
+    assert!((result[0] - silu(0.0)).abs() < 1e-6);
+    assert!((result[1] - silu(1.0)).abs() < 1e-6);
+    assert!((result[2] - silu(-1.0)).abs() < 1e-6);
+    assert!((result[3] - silu(2.0)).abs() < 1e-6);
+}
+
+#[test]
+fn test_cpu_sqr() {
+    let a = GpuOr::cpu_from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
+    let result = a.sqr().to_vec_blocking();
+    assert_eq!(result, vec![1.0, 4.0, 9.0, 16.0]);
+}
+
+#[test]
+fn test_cpu_scalar_ops() {
+    let a = GpuOr::cpu_from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
+
+    // max_scalar
+    let max_result = a.max_scalar(2.5).to_vec_blocking();
+    assert_eq!(max_result, vec![2.5, 2.5, 3.0, 4.0]);
+
+    // min_scalar
+    let min_result = a.min_scalar(2.5).to_vec_blocking();
+    assert_eq!(min_result, vec![1.0, 2.0, 2.5, 2.5]);
+
+    // clamp
+    let clamp_result = a.clamp(1.5, 3.5).to_vec_blocking();
+    assert_eq!(clamp_result, vec![1.5, 2.0, 3.0, 3.5]);
+
+    // mul_scalar
+    let mul_result = a.mul_scalar(2.0).to_vec_blocking();
+    assert_eq!(mul_result, vec![2.0, 4.0, 6.0, 8.0]);
+
+    // add_scalar
+    let add_result = a.add_scalar(10.0).to_vec_blocking();
+    assert_eq!(add_result, vec![11.0, 12.0, 13.0, 14.0]);
+
+    // div_scalar
+    let div_result = a.div_scalar(2.0).to_vec_blocking();
+    assert_eq!(div_result, vec![0.5, 1.0, 1.5, 2.0]);
+}
+
+#[test]
+fn test_cpu_reductions() {
+    let a = GpuOr::cpu_from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
+
+    assert_eq!(a.sum_all(), 10.0);
+    assert_eq!(a.max_all(), 4.0);
+    assert_eq!(a.min_all(), 1.0);
+}
+
+#[test]
+fn test_cpu_axis_reductions() {
+    // 2x3 matrix: [[1, 2, 3], [4, 5, 6]]
+    let a = GpuOr::cpu_from_slice([2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+
+    // Sum along axis 0: [5, 7, 9]
+    let sum0 = a.sum_axis_0().to_vec_blocking();
+    assert_eq!(sum0, vec![5.0, 7.0, 9.0]);
+
+    // Sum along axis 1: [6, 15]
+    let sum1 = a.sum_axis_1().to_vec_blocking();
+    assert_eq!(sum1, vec![6.0, 15.0]);
+
+    // Mean along axis 0: [2.5, 3.5, 4.5]
+    let mean0 = a.mean_axis_0().to_vec_blocking();
+    assert_eq!(mean0, vec![2.5, 3.5, 4.5]);
+
+    // Mean along axis 1: [2, 5]
+    let mean1 = a.mean_axis_1().to_vec_blocking();
+    assert_eq!(mean1, vec![2.0, 5.0]);
+}
+
+#[test]
+fn test_cpu_softmax() {
+    // Simple 1D-like test in 2D form
+    let a = GpuOr::cpu_from_slice([2, 3], &[1.0, 2.0, 3.0, 1.0, 2.0, 3.0]);
+
+    // Softmax along axis 1
+    let result = a.softmax_axis_1().to_vec_blocking();
+
+    // Check that each row sums to 1
+    let row1_sum: f32 = result[0..3].iter().sum();
+    let row2_sum: f32 = result[3..6].iter().sum();
+
+    assert!((row1_sum - 1.0).abs() < 1e-5);
+    assert!((row2_sum - 1.0).abs() < 1e-5);
+
+    // Check relative ordering (exp(3) > exp(2) > exp(1))
+    assert!(result[2] > result[1]);
+    assert!(result[1] > result[0]);
+}
+
+#[test]
+fn test_cpu_unsqueeze_squeeze() {
+    // Test unsqueeze: [4] -> [1, 4]
+    let a = GpuOr::cpu_from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
+    let unsqueezed = a.unsqueeze_0();
+    assert_eq!(unsqueezed.shape(), &[1, 4]);
+
+    // Test squeeze: [1, 4] -> [4]
+    let squeezed = unsqueezed.squeeze_0();
+    assert_eq!(squeezed.shape(), &[4]);
+    let result = squeezed.to_vec_blocking();
+    assert_eq!(result, vec![1.0, 2.0, 3.0, 4.0]);
+}
+
+#[test]
+fn test_cpu_reshape() {
+    let a = GpuOr::cpu_from_slice([6], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+
+    // Reshape [6] -> [2, 3]
+    let reshaped = a.reshape_2([2, 3]);
+    assert_eq!(reshaped.shape(), &[2, 3]);
+
+    let result = reshaped.to_vec_blocking();
+    assert_eq!(result, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+}
+
+#[test]
+fn test_cpu_zeros_like() {
+    let a = GpuOr::cpu_from_slice([2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    let zeros = a.zeros_like();
+
+    assert_eq!(zeros.shape(), &[2, 3]);
+    let result = zeros.to_vec_blocking();
+    assert_eq!(result, vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+}

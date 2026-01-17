@@ -52,17 +52,17 @@ impl_cast!(u32 => f32, f64, i8, i16, i32, i64, u8, u16, u32, u64);
 impl_cast!(u64 => f32, f64, i8, i16, i32, i64, u8, u16, u32, u64);
 
 /// Cast a tensor from one element type to another
-pub(crate) fn cast_tensor<T, T2, const RANK: usize>(
-    input: &ConcreteTensor<T, RANK>,
-) -> ConcreteTensor<T2, RANK>
+pub(crate) fn cast_tensor<T, T2, const R: usize>(
+    input: &ConcreteTensor<T, R>,
+) -> ConcreteTensor<T2, R>
 where
     T: SimdElement + CastTo<T2>,
     T2: SimdElement,
 {
-    let shape: [usize; RANK] = ResolvedTensor::shape(input)
+    let shape: [usize; R] = ResolvedTensor::shape(input)
         .try_into()
         .expect("Shape length mismatch");
-    let mut output = ConcreteTensor::<T2, RANK>::uninit_unchecked(shape);
+    let mut output = ConcreteTensor::<T2, R>::uninit_unchecked(shape);
 
     for (i, &val) in input.data().iter().enumerate() {
         output.data_mut()[i] = val.cast();

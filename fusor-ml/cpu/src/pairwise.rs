@@ -135,19 +135,19 @@ pub(crate) fn binary_op_contiguous<E: SimdElement, Op: SimdBinaryOp<E>>(
 /// Optimized binary tensor operation that works directly with ConcreteTensor references
 /// Avoids cloning by working with references directly
 #[inline(always)]
-pub(crate) fn binary_tensor_op_ref<E, const RANK: usize, Op>(
-    lhs: &ConcreteTensor<E, RANK>,
-    rhs: &ConcreteTensor<E, RANK>,
-) -> ConcreteTensor<E, RANK>
+pub(crate) fn binary_tensor_op_ref<E, const R: usize, Op>(
+    lhs: &ConcreteTensor<E, R>,
+    rhs: &ConcreteTensor<E, R>,
+) -> ConcreteTensor<E, R>
 where
     E: SimdElement,
     Op: SimdBinaryOp<E>,
 {
-    let shape: [usize; RANK] = ResolvedTensor::shape(lhs)
+    let shape: [usize; R] = ResolvedTensor::shape(lhs)
         .try_into()
         .expect("Shape length mismatch");
     // SAFETY: We write to all elements before returning
-    let mut output = ConcreteTensor::<E, RANK>::uninit_unchecked(shape);
+    let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
 
     // Fast path: all contiguous (common case)
     // Output is always contiguous since we just created it
@@ -173,20 +173,20 @@ macro_rules! define_binary_tensor_op {
     ($name:ident, $std_trait:ident, $simd_op:ty, $error_msg:literal) => {
         pub struct $name<
             E: SimdElement,
-            const RANK: usize,
-            T1: Tensor<Elem = E>,
-            T2: Tensor<Elem = E>,
+            const R: usize,
+            T1: Tensor<R, Elem = E>,
+            T2: Tensor<R, Elem = E>,
         > {
             lhs: T1,
             rhs: T2,
             _marker: std::marker::PhantomData<E>,
         }
 
-        impl<E, const RANK: usize, T1, T2> $name<E, RANK, T1, T2>
+        impl<E, const R: usize, T1, T2> $name<E, R, T1, T2>
         where
             E: SimdElement,
-            T1: Tensor<Elem = E>,
-            T2: Tensor<Elem = E>,
+            T1: Tensor<R, Elem = E>,
+            T2: Tensor<R, Elem = E>,
         {
             pub fn new(lhs: T1, rhs: T2) -> Self {
                 Self {
@@ -197,27 +197,22 @@ macro_rules! define_binary_tensor_op {
             }
         }
 
-        impl<E, const RANK: usize, T1, T2> Tensor for $name<E, RANK, T1, T2>
+        impl<E, const R: usize, T1, T2> Tensor<R> for $name<E, R, T1, T2>
         where
             E: SimdElement + $std_trait<Output = E> + Default,
             $simd_op: SimdBinaryOp<E>,
-            T1: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-            T2: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+            T1: Tensor<R, Elem = E>,
+            T2: Tensor<R, Elem = E>,
         {
             type Elem = E;
-            const RANK: usize = {
-                assert!(T2::RANK == T1::RANK, $error_msg);
-                T1::RANK
-            };
-            type Concrete = ConcreteTensor<Self::Elem, RANK>;
         }
 
-        impl<E, const RANK: usize, T1, T2> Expr for $name<E, RANK, T1, T2>
+        impl<E, const R: usize, T1, T2> Expr for $name<E, R, T1, T2>
         where
             E: SimdElement + $std_trait<Output = E>,
             $simd_op: SimdBinaryOp<E>,
-            T1: Expr<Elem = E> + Tensor<Elem = E>,
-            T2: Expr<Elem = E> + Tensor<Elem = E>,
+            T1: Expr<Elem = E> + Tensor<R, Elem = E>,
+            T2: Expr<Elem = E> + Tensor<R, Elem = E>,
         {
             type Elem = E;
 
@@ -251,15 +246,15 @@ macro_rules! define_binary_tensor_op {
             }
         }
 
-        impl<E, const RANK: usize, T1, T2> ResolveTensor for $name<E, RANK, T1, T2>
+        impl<E, const R: usize, T1, T2> ResolveTensor<R> for $name<E, R, T1, T2>
         where
             E: SimdElement + $std_trait<Output = E> + Default,
             $simd_op: SimdBinaryOp<E>,
-            T1: Expr<Elem = E> + ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
-            T2: Expr<Elem = E> + ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+            T1: Expr<Elem = E> + ResolveTensor<R, Elem = E>,
+            T2: Expr<Elem = E> + ResolveTensor<R, Elem = E>,
         {
-            fn to_concrete(&self) -> Self::Concrete {
-                let shape: [usize; RANK] = Expr::shape(&self.lhs)
+            fn to_concrete(&self) -> ConcreteTensor<E, R> {
+                let shape: [usize; R] = Expr::shape(&self.lhs)
                     .try_into()
                     .expect("Shape length mismatch");
                 materialize_expr(self, shape)

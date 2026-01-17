@@ -94,18 +94,18 @@ fn where_cond_contiguous<E: SimdElement + IsNonZero>(
 
 /// Conditional selection: where condition != 0, select on_true, else on_false
 #[inline(always)]
-pub(crate) fn where_cond_ref<E, const RANK: usize>(
-    cond: &ConcreteTensor<E, RANK>,
-    on_true: &ConcreteTensor<E, RANK>,
-    on_false: &ConcreteTensor<E, RANK>,
-) -> ConcreteTensor<E, RANK>
+pub(crate) fn where_cond_ref<E, const R: usize>(
+    cond: &ConcreteTensor<E, R>,
+    on_true: &ConcreteTensor<E, R>,
+    on_false: &ConcreteTensor<E, R>,
+) -> ConcreteTensor<E, R>
 where
     E: SimdElement + IsNonZero,
 {
-    let shape: [usize; RANK] = ResolvedTensor::shape(cond)
+    let shape: [usize; R] = ResolvedTensor::shape(cond)
         .try_into()
         .expect("Shape length mismatch");
-    let mut output = ConcreteTensor::<E, RANK>::uninit_unchecked(shape);
+    let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
 
     let all_contiguous = cond.layout().is_contiguous()
         && on_true.layout().is_contiguous()

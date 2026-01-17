@@ -189,18 +189,18 @@ fn comparison_op_contiguous<E: SimdElement, Op: SimdComparisonOp<E>>(
 
 /// Comparison tensor operation (tensor vs tensor)
 #[inline(always)]
-pub(crate) fn comparison_tensor_op_ref<E, const RANK: usize, Op>(
-    lhs: &ConcreteTensor<E, RANK>,
-    rhs: &ConcreteTensor<E, RANK>,
-) -> ConcreteTensor<E, RANK>
+pub(crate) fn comparison_tensor_op_ref<E, const R: usize, Op>(
+    lhs: &ConcreteTensor<E, R>,
+    rhs: &ConcreteTensor<E, R>,
+) -> ConcreteTensor<E, R>
 where
     E: SimdElement,
     Op: SimdComparisonOp<E>,
 {
-    let shape: [usize; RANK] = ResolvedTensor::shape(lhs)
+    let shape: [usize; R] = ResolvedTensor::shape(lhs)
         .try_into()
         .expect("Shape length mismatch");
-    let mut output = ConcreteTensor::<E, RANK>::uninit_unchecked(shape);
+    let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
 
     let all_contiguous = lhs.layout().is_contiguous() && rhs.layout().is_contiguous();
 
@@ -221,18 +221,18 @@ where
 
 /// Comparison tensor operation (tensor vs scalar)
 #[inline(always)]
-pub(crate) fn comparison_scalar_op_ref<E, const RANK: usize, Op>(
-    lhs: &ConcreteTensor<E, RANK>,
+pub(crate) fn comparison_scalar_op_ref<E, const R: usize, Op>(
+    lhs: &ConcreteTensor<E, R>,
     scalar: E,
-) -> ConcreteTensor<E, RANK>
+) -> ConcreteTensor<E, R>
 where
     E: SimdElement,
     Op: SimdComparisonOp<E>,
 {
-    let shape: [usize; RANK] = ResolvedTensor::shape(lhs)
+    let shape: [usize; R] = ResolvedTensor::shape(lhs)
         .try_into()
         .expect("Shape length mismatch");
-    let mut output = ConcreteTensor::<E, RANK>::uninit_unchecked(shape);
+    let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
 
     // For scalar comparison, we process element by element
     for (i, &val) in lhs.data().iter().enumerate() {

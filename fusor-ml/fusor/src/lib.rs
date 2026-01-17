@@ -8,6 +8,7 @@
 //! - CPU kernel fusion is preserved (expression types stay lazy)
 //! - GPU laziness is preserved (compute graph batching)
 
+pub mod composite;
 mod device;
 mod error;
 mod gpu;
@@ -15,8 +16,8 @@ mod ops;
 
 pub use device::Device;
 pub use error::Error;
-pub use gpu::{GpuAdd, GpuDiv, GpuMul, GpuNeg, GpuSub, GpuTensor, GpuTensorLike, HasDevice};
 pub use gpu::{GpuAbs, GpuCos, GpuExp, GpuExp2, GpuLog, GpuLog2, GpuSin, GpuSqrt, GpuTan, GpuTanh};
+pub use gpu::{GpuAdd, GpuDiv, GpuMul, GpuNeg, GpuSub, GpuTensor, GpuTensorLike, HasDevice};
 
 // Re-export from fusor-cpu
 pub use fusor_cpu::{
@@ -34,12 +35,12 @@ pub use fusor_core::{DataType, FloatDataType};
 /// - CPU: Expression types stay lazy and fuse at resolve time
 /// - GPU: Operations build a compute graph that batches at resolve time
 #[derive(Clone)]
-pub enum GpuOr<CpuT, GpuT> {
+pub enum GpuOr<const R: usize, D, CpuT = fusor_cpu::ConcreteTensor<D, R>> {
     Cpu(CpuT),
-    Gpu(GpuT),
+    Gpu(GpuTensor<R, D>),
 }
 
-impl<CpuT, GpuT> GpuOr<CpuT, GpuT> {
+impl<const R: usize, D, CpuT: CpuTensor<RANK = { R }, Elem = D>> GpuOr<{ R }, D, CpuT> {
     /// Returns true if this is the CPU variant.
     #[inline]
     pub fn is_cpu(&self) -> bool {
@@ -157,7 +158,6 @@ impl<CpuT: std::fmt::Debug, GpuT: std::fmt::Debug> std::fmt::Debug for GpuOr<Cpu
         }
     }
 }
-
 
 impl<const R: usize, T> GpuOr<fusor_cpu::ConcreteTensor<T, R>, gpu::GpuTensor<R, T>>
 where

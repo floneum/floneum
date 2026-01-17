@@ -212,18 +212,18 @@ pub(crate) fn unary_op_contiguous<E: SimdElement, Op: SimdUnaryOp<E>>(
 
 /// Optimized unary tensor operation that works directly with ConcreteTensor references
 #[inline(always)]
-pub(crate) fn unary_tensor_op_ref<E, const RANK: usize, Op>(
-    input: &ConcreteTensor<E, RANK>,
-) -> ConcreteTensor<E, RANK>
+pub(crate) fn unary_tensor_op_ref<E, const R: usize, Op>(
+    input: &ConcreteTensor<E, R>,
+) -> ConcreteTensor<E, R>
 where
     E: SimdElement,
     Op: SimdUnaryOp<E>,
 {
-    let shape: [usize; RANK] = ResolvedTensor::shape(input)
+    let shape: [usize; R] = ResolvedTensor::shape(input)
         .try_into()
         .expect("Shape length mismatch");
     // SAFETY: We write to all elements before returning
-    let mut output = ConcreteTensor::<E, RANK>::uninit_unchecked(shape);
+    let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
 
     // Output is always contiguous since we just created it
     let all_contiguous = input.layout().is_contiguous();
@@ -245,15 +245,15 @@ where
 /// Macro to define unary tensor operations (Neg, Abs, Sqrt)
 macro_rules! define_unary_tensor_op {
     ($name:ident, $simd_op:ty) => {
-        pub struct $name<E: SimdElement, const RANK: usize, T: Tensor<Elem = E>> {
+        pub struct $name<E: SimdElement, const R: usize, T: Tensor<R, Elem = E>> {
             input: T,
             _marker: std::marker::PhantomData<E>,
         }
 
-        impl<E, const RANK: usize, T> $name<E, RANK, T>
+        impl<E, const R: usize, T> $name<E, R, T>
         where
             E: SimdElement,
-            T: Tensor<Elem = E>,
+            T: Tensor<R, Elem = E>,
         {
             pub fn new(input: T) -> Self {
                 Self {
@@ -263,22 +263,20 @@ macro_rules! define_unary_tensor_op {
             }
         }
 
-        impl<E, const RANK: usize, T> Tensor for $name<E, RANK, T>
+        impl<E, const R: usize, T> Tensor<R> for $name<E, R, T>
         where
             E: SimdElement + Default,
             $simd_op: SimdUnaryOp<E>,
-            T: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+            T: Tensor<R, Elem = E>,
         {
             type Elem = E;
-            const RANK: usize = T::RANK;
-            type Concrete = ConcreteTensor<Self::Elem, RANK>;
         }
 
-        impl<E, const RANK: usize, T> Expr for $name<E, RANK, T>
+        impl<E, const R: usize, T> Expr for $name<E, R, T>
         where
             E: SimdElement,
             $simd_op: SimdUnaryOp<E>,
-            T: Expr<Elem = E> + Tensor<Elem = E>,
+            T: Expr<Elem = E> + Tensor<R, Elem = E>,
         {
             type Elem = E;
 
@@ -305,14 +303,14 @@ macro_rules! define_unary_tensor_op {
             }
         }
 
-        impl<E, const RANK: usize, T> ResolveTensor for $name<E, RANK, T>
+        impl<E, const R: usize, T> ResolveTensor<R> for $name<E, R, T>
         where
             E: SimdElement + Default,
             $simd_op: SimdUnaryOp<E>,
-            T: Expr<Elem = E> + ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+            T: Expr<Elem = E> + ResolveTensor<R, Elem = E>,
         {
-            fn to_concrete(&self) -> Self::Concrete {
-                let shape: [usize; RANK] = Expr::shape(&self.input)
+            fn to_concrete(&self) -> ConcreteTensor<E, R> {
+                let shape: [usize; R] = Expr::shape(&self.input)
                     .try_into()
                     .expect("Shape length mismatch");
                 materialize_expr(self, shape)
@@ -320,15 +318,15 @@ macro_rules! define_unary_tensor_op {
         }
     };
     ($name:ident, $simd_op:ty, $std_trait:ident) => {
-        pub struct $name<E: SimdElement, const RANK: usize, T: Tensor<Elem = E>> {
+        pub struct $name<E: SimdElement, const R: usize, T: Tensor<R, Elem = E>> {
             input: T,
             _marker: std::marker::PhantomData<E>,
         }
 
-        impl<E, const RANK: usize, T> $name<E, RANK, T>
+        impl<E, const R: usize, T> $name<E, R, T>
         where
             E: SimdElement,
-            T: Tensor<Elem = E>,
+            T: Tensor<R, Elem = E>,
         {
             pub fn new(input: T) -> Self {
                 Self {
@@ -338,22 +336,20 @@ macro_rules! define_unary_tensor_op {
             }
         }
 
-        impl<E, const RANK: usize, T> Tensor for $name<E, RANK, T>
+        impl<E, const R: usize, T> Tensor<R> for $name<E, R, T>
         where
             E: SimdElement + $std_trait<Output = E> + Default,
             $simd_op: SimdUnaryOp<E>,
-            T: Tensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+            T: Tensor<R, Elem = E>,
         {
             type Elem = E;
-            const RANK: usize = T::RANK;
-            type Concrete = ConcreteTensor<Self::Elem, RANK>;
         }
 
-        impl<E, const RANK: usize, T> Expr for $name<E, RANK, T>
+        impl<E, const R: usize, T> Expr for $name<E, R, T>
         where
             E: SimdElement + $std_trait<Output = E>,
             $simd_op: SimdUnaryOp<E>,
-            T: Expr<Elem = E> + Tensor<Elem = E>,
+            T: Expr<Elem = E> + Tensor<R, Elem = E>,
         {
             type Elem = E;
 
@@ -380,14 +376,14 @@ macro_rules! define_unary_tensor_op {
             }
         }
 
-        impl<E, const RANK: usize, T> ResolveTensor for $name<E, RANK, T>
+        impl<E, const R: usize, T> ResolveTensor<R> for $name<E, R, T>
         where
             E: SimdElement + $std_trait<Output = E> + Default,
             $simd_op: SimdUnaryOp<E>,
-            T: Expr<Elem = E> + ResolveTensor<Elem = E, Concrete = ConcreteTensor<E, RANK>>,
+            T: Expr<Elem = E> + ResolveTensor<R, Elem = E>,
         {
-            fn to_concrete(&self) -> Self::Concrete {
-                let shape: [usize; RANK] = Expr::shape(&self.input)
+            fn to_concrete(&self) -> ConcreteTensor<E, R> {
+                let shape: [usize; R] = Expr::shape(&self.input)
                     .try_into()
                     .expect("Shape length mismatch");
                 materialize_expr(self, shape)

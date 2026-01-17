@@ -120,10 +120,10 @@ impl<E: Expr> WithSimd for ExprEvaluator<'_, E> {
 /// writing the results into a newly allocated tensor.
 #[inline]
 #[must_use = "this allocates a new tensor; discarding it wastes computation"]
-pub fn materialize_expr<E: Expr, const RANK: usize>(
+pub fn materialize_expr<E: Expr, const R: usize>(
     expr: &E,
-    shape: [usize; RANK],
-) -> ConcreteTensor<E::Elem, RANK> {
+    shape: [usize; R],
+) -> ConcreteTensor<E::Elem, R> {
     let mut output = ConcreteTensor::uninit_unchecked(shape);
 
     Arch::new().dispatch(ExprEvaluator {
@@ -139,12 +139,12 @@ pub fn materialize_expr<E: Expr, const RANK: usize>(
 /// This is used for strided tensor access where we need to map
 /// a flat iteration index to multi-dimensional tensor coordinates.
 #[inline]
-pub(crate) fn linear_to_indices<const RANK: usize>(mut linear: usize, shape: &[usize]) -> [usize; RANK] {
-    debug_assert_eq!(shape.len(), RANK);
-    let mut indices = [0usize; RANK];
+pub(crate) fn linear_to_indices<const R: usize>(mut linear: usize, shape: &[usize]) -> [usize; R] {
+    debug_assert_eq!(shape.len(), R);
+    let mut indices = [0usize; R];
 
     // Work backwards through dimensions (row-major order)
-    for i in (0..RANK).rev() {
+    for i in (0..R).rev() {
         indices[i] = linear % shape[i];
         linear /= shape[i];
     }

@@ -3,12 +3,12 @@
 use crate::{ConcreteTensor, ResolvedTensor, SimdElement};
 
 /// Compute the output shape for index_select
-fn index_select_output_shape<const RANK: usize>(
+fn index_select_output_shape<const R: usize>(
     input_shape: &[usize],
     dimension: usize,
     num_indices: usize,
-) -> [usize; RANK] {
-    let mut output_shape = [0usize; RANK];
+) -> [usize; R] {
+    let mut output_shape = [0usize; R];
     for (i, &dim) in input_shape.iter().enumerate() {
         output_shape[i] = if i == dimension { num_indices } else { dim };
     }
@@ -20,21 +20,21 @@ fn index_select_output_shape<const RANK: usize>(
 /// For a 2D tensor with shape [M, N] and indices [I]:
 /// - index_select(dim=0, indices) -> shape [I, N], selecting rows
 /// - index_select(dim=1, indices) -> shape [M, I], selecting columns
-pub(crate) fn index_select_ref<E, const RANK: usize>(
-    input: &ConcreteTensor<E, RANK>,
+pub(crate) fn index_select_ref<E, const R: usize>(
+    input: &ConcreteTensor<E, R>,
     dimension: usize,
     indices: &ConcreteTensor<u32, 1>,
-) -> ConcreteTensor<E, RANK>
+) -> ConcreteTensor<E, R>
 where
     E: SimdElement,
 {
-    assert!(dimension < RANK, "dimension out of bounds");
+    assert!(dimension < R, "dimension out of bounds");
 
     let input_shape = ResolvedTensor::shape(input);
     let num_indices = indices.data().len();
-    let output_shape = index_select_output_shape::<RANK>(input_shape, dimension, num_indices);
+    let output_shape = index_select_output_shape::<R>(input_shape, dimension, num_indices);
 
-    let mut output = ConcreteTensor::<E, RANK>::uninit_unchecked(output_shape);
+    let mut output = ConcreteTensor::<E, R>::uninit_unchecked(output_shape);
 
     // Compute strides for iteration
     let input_strides = ResolvedTensor::strides(input);
@@ -45,9 +45,9 @@ where
 
     for out_linear in 0..total_elements {
         // Convert linear index to multi-dimensional indices for output
-        let mut out_indices = [0usize; RANK];
+        let mut out_indices = [0usize; R];
         let mut remaining = out_linear;
-        for i in 0..RANK {
+        for i in 0..R {
             out_indices[i] = remaining / output_strides[i];
             remaining %= output_strides[i];
         }
