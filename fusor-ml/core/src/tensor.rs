@@ -1067,19 +1067,19 @@ impl std::ops::Deref for MappedBuffer {
     }
 }
 
-pub struct TensorSlice<const R: usize, D> {
-    buffer: MappedBuffer,
+pub struct TensorSlice<const R: usize, D, Bytes = MappedBuffer> {
+    buffer: Bytes,
     layout: Layout,
     datatype: PhantomData<D>,
 }
 
-impl<D: DataType + Debug> Debug for TensorSlice<0, D> {
+impl<D: DataType + Debug, Bytes> Debug for TensorSlice<0, D, Bytes> where Bytes: Deref<Target = [u8]> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.get([]).fmt(f)
     }
 }
 
-impl<D: DataType + Debug> Debug for TensorSlice<1, D> {
+impl<D: DataType + Debug, Bytes> Debug for TensorSlice<1, D, Bytes> where Bytes: Deref<Target = [u8]> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let shape = self.layout.shape();
         let vec = (0..shape[0])
@@ -1089,7 +1089,7 @@ impl<D: DataType + Debug> Debug for TensorSlice<1, D> {
     }
 }
 
-impl<D: DataType + Debug> Debug for TensorSlice<2, D> {
+impl<D: DataType + Debug, Bytes> Debug for TensorSlice<2, D, Bytes> where Bytes: Deref<Target = [u8]> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let shape = self.layout.shape();
         let vec = (0..shape[0])
@@ -1103,7 +1103,7 @@ impl<D: DataType + Debug> Debug for TensorSlice<2, D> {
     }
 }
 
-impl<D: DataType + Debug> Debug for TensorSlice<3, D> {
+impl<D: DataType + Debug, Bytes> Debug for TensorSlice<3, D, Bytes> where Bytes: Deref<Target = [u8]> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let shape = self.layout.shape();
         let vec = (0..shape[0])
@@ -1121,7 +1121,7 @@ impl<D: DataType + Debug> Debug for TensorSlice<3, D> {
     }
 }
 
-impl<D: DataType + Debug> Debug for TensorSlice<4, D> {
+impl<D: DataType + Debug, Bytes> Debug for TensorSlice<4, D, Bytes> where Bytes: Deref<Target = [u8]> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let shape = self.layout.shape();
         let vec = (0..shape[0])
@@ -1143,7 +1143,7 @@ impl<D: DataType + Debug> Debug for TensorSlice<4, D> {
     }
 }
 
-impl<const R: usize, D: DataType + PartialEq> PartialEq for TensorSlice<R, D> {
+impl<const R: usize, D: DataType + PartialEq, Bytes> PartialEq for TensorSlice<R, D, Bytes> where Bytes: Deref<Target = [u8]> {
     fn eq(&self, other: &Self) -> bool {
         let self_shape = self.layout.shape();
         let other_shape = other.layout.shape();
@@ -1161,7 +1161,7 @@ impl<const R: usize, D: DataType + PartialEq> PartialEq for TensorSlice<R, D> {
     }
 }
 
-impl<const R: usize, D: DataType> TensorSlice<R, D> {
+impl<const R: usize, D: DataType, Bytes> TensorSlice<R, D, Bytes> where Bytes: Deref<Target = [u8]> {
     fn visit_indexes(&self, mut visitor: impl FnMut([usize; R])) {
         let self_shape = self.layout.shape();
         let mut index = [0; R];
@@ -1197,26 +1197,26 @@ impl<const R: usize, D: DataType> TensorSlice<R, D> {
     }
 }
 
-impl<'a, D: DataType> PartialEq<&'a [D]> for TensorSlice<1, D> {
+impl<'a, D: DataType, Bytes> PartialEq<&'a [D]> for TensorSlice<1, D, Bytes> where Bytes: Deref<Target = [u8]> {
     fn eq(&self, other: &&'a [D]) -> bool {
         self.as_slice() == *other
     }
 }
 
-impl<const N: usize, D: DataType> PartialEq<[D; N]> for TensorSlice<1, D> {
+impl<const N: usize, D: DataType, Bytes> PartialEq<[D; N]> for TensorSlice<1, D, Bytes> where Bytes: Deref<Target = [u8]> {
     fn eq(&self, other: &[D; N]) -> bool {
         self.as_slice() == *other
     }
 }
 
-impl<D: DataType> PartialEq<TensorSlice<1, D>> for &[D] {
-    fn eq(&self, other: &TensorSlice<1, D>) -> bool {
+impl<D: DataType, Bytes> PartialEq<TensorSlice<1, D, Bytes>> for &[D] where Bytes: Deref<Target = [u8]> {
+    fn eq(&self, other: &TensorSlice<1, D, Bytes>) -> bool {
         *self == other.as_slice()
     }
 }
 
-impl<const N: usize, D: DataType> PartialEq<TensorSlice<1, D>> for &[D; N] {
-    fn eq(&self, other: &TensorSlice<1, D>) -> bool {
+impl<const N: usize, D: DataType, Bytes> PartialEq<TensorSlice<1, D, Bytes>> for &[D; N] where Bytes: Deref<Target = [u8]> {
+    fn eq(&self, other: &TensorSlice<1, D, Bytes>) -> bool {
         *self == other.as_slice()
     }
 }
@@ -1259,8 +1259,8 @@ async fn test_tensor_compare() {
     assert!(as_slice != other_as_slice);
 }
 
-impl<D: DataType, const R: usize> TensorSlice<R, D> {
-    fn new(buffer: MappedBuffer, layout: Layout) -> Self {
+impl<D: DataType, const R: usize, Bytes> TensorSlice<R, D, Bytes> where Bytes: Deref<Target = [u8]> {
+    pub fn new(buffer: Bytes, layout: Layout) -> Self {
         Self {
             buffer,
             layout,
@@ -1273,7 +1273,7 @@ impl<D: DataType, const R: usize> TensorSlice<R, D> {
     }
 }
 
-impl<D: DataType, const R: usize> TensorSlice<R, D> {
+impl<D: DataType, const R: usize, Bytes> TensorSlice<R, D, Bytes> where Bytes: Deref<Target = [u8]> {
     pub fn shape(&self) -> &[usize] {
         self.layout.shape()
     }
@@ -1294,7 +1294,7 @@ impl<D: DataType, const R: usize> TensorSlice<R, D> {
     }
 }
 
-impl<D: DataType, const R: usize> Index<[usize; R]> for TensorSlice<R, D> {
+impl<D: DataType, const R: usize, Bytes> Index<[usize; R]> for TensorSlice<R, D, Bytes> where Bytes: Deref<Target = [u8]> {
     type Output = D;
 
     fn index(&self, index: [usize; R]) -> &Self::Output {

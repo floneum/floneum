@@ -13,6 +13,7 @@ mod error;
 
 pub use device::Device;
 pub use error::Error;
+use fusor_core::TensorSlice;
 use fusor_cpu::TensorBacking;
 
 // Re-export from fusor-cpu
@@ -112,6 +113,15 @@ impl<const R: usize, D, B> GpuOr<R , D, B> where B: TensorBacking<R, Elem=D> {
             GpuOr::Gpu(t) => GpuOr::Gpu(gpu_fn(t)),
         }
     }
+
+    pub async fn resolve(self) -> Result<TensorSlice<R, D>, Error> {
+        match self {
+            GpuOr::Cpu(t) => Ok(todo!()),
+            GpuOr::Gpu(t) => {
+                todo!()
+            }
+        }
+    }
 }
 
 impl<const R: usize, D, B, B2> std::ops::Add for GpuOr<R, D, B> where CpuTensor<R, B>: std::ops::Add<Output=CpuTensor<R, B2>>, GpuTensor<R, D>: std::ops::Add<Output=GpuTensor<R, D>>, B: TensorBacking<R, Elem=D>, B2: TensorBacking<R, Elem=D> {
@@ -137,9 +147,11 @@ async fn test_gpu_or_add() {
 
     let a_cpu_or = GpuOr::Cpu(a_cpu);
     let b_cpu_or = GpuOr::Cpu(b_cpu);
-    let a_gpu_or = GpuOr::Gpu(a_gpu);
-    let b_gpu_or = GpuOr::Gpu(b_gpu);
+    let a_gpu_or: GpuOr<1, f32> = GpuOr::Gpu(a_gpu);
+    let b_gpu_or: GpuOr<1, f32> = GpuOr::Gpu(b_gpu);
 
     let c_cpu_or = a_cpu_or + b_cpu_or;
+    println!("c_cpu_or: {:?}", c_cpu_or.as_cpu().unwrap().to_vec());
     let c_gpu_or = a_gpu_or + b_gpu_or;
+    let c_gpu_resolved = c_gpu_or.as_gpu().unwrap().resolve().await.unwrap();
 }
