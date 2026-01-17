@@ -1,0 +1,15 @@
+[package]
+name = "fusor"
+version = "0.1.0"
+edition = "2024"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+license = "MIT/Apache-2.0"
+description = "Unified CPU/GPU tensor abstraction over fusor-cpu and fusor-core"
+
+[dependencies]
+fusor-cpu = { path = "../cpu" }
+fusor-core = { path = "../core" }
+pollster = "0.4.0"
+
+[dev-dependencies]
+tokio = { version = "1.43.0", features = ["full"] }
