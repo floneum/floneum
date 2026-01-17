@@ -8,8 +8,12 @@ use pulp::bytemuck::Pod;
 use pulp::Simd;
 
 // Module declarations
+mod cast;
+mod comparison;
+mod conditional;
 mod elementwise;
 mod expr;
+mod index;
 mod matmul;
 mod pairwise;
 mod reduce;
@@ -21,17 +25,26 @@ pub(crate) const MAX_SIMD_LANES: usize = 64;
 
 
 // Re-export public types
-pub use elementwise::{Abs, Neg, Sqrt};
+pub use elementwise::{Abs, Cos, Exp, Exp2, Log, Log2, Neg, Sin, Sqrt, Tan, Tanh};
 pub use expr::{materialize_expr, Expr};
 pub use pairwise::{Add, Div, Mul, Sub};
 
 // Re-export operation traits and markers for public bounds
-pub use elementwise::{AbsOp, NegOp, SimdUnaryOp, SqrtOp};
+pub use elementwise::{
+    AbsOp, CosOp, Exp2Op, ExpOp, Log2Op, LogOp, NegOp, SimdUnaryOp, SinOp, SqrtOp, TanOp, TanhOp,
+};
 pub use pairwise::{AddOp, DivOp, MulOp, SimdBinaryOp, SubOp};
 pub use reduce::{MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp};
+pub use comparison::{EqOp, NeOp, LtOp, LteOp, GtOp, GteOp, SimdComparisonOp};
+pub use conditional::IsNonZero;
+pub use cast::CastTo;
 
 // Internal imports from modules
+use cast::cast_tensor;
+use comparison::{comparison_tensor_op_ref, comparison_scalar_op_ref};
+use conditional::where_cond_ref;
 use elementwise::unary_tensor_op_ref;
+use index::index_select_ref;
 use pairwise::binary_tensor_op_ref;
 use reduce::{reduce_tensor_axis, reduce_tensor_op};
 
@@ -448,6 +461,246 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         unary_tensor_op_ref::<T, RANK, SqrtOp>(self)
     }
 
+    // ========== Transcendental Operations ==========
+
+    /// Exponential (e^x) element-wise (reference-based, no cloning)
+    #[inline]
+    pub fn exp_ref(&self) -> Self
+    where
+        T: Default,
+        ExpOp: SimdUnaryOp<T>,
+    {
+        unary_tensor_op_ref::<T, RANK, ExpOp>(self)
+    }
+
+    /// Base-2 exponential (2^x) element-wise (reference-based, no cloning)
+    #[inline]
+    pub fn exp2_ref(&self) -> Self
+    where
+        T: Default,
+        Exp2Op: SimdUnaryOp<T>,
+    {
+        unary_tensor_op_ref::<T, RANK, Exp2Op>(self)
+    }
+
+    /// Natural logarithm (ln) element-wise (reference-based, no cloning)
+    #[inline]
+    pub fn log_ref(&self) -> Self
+    where
+        T: Default,
+        LogOp: SimdUnaryOp<T>,
+    {
+        unary_tensor_op_ref::<T, RANK, LogOp>(self)
+    }
+
+    /// Base-2 logarithm element-wise (reference-based, no cloning)
+    #[inline]
+    pub fn log2_ref(&self) -> Self
+    where
+        T: Default,
+        Log2Op: SimdUnaryOp<T>,
+    {
+        unary_tensor_op_ref::<T, RANK, Log2Op>(self)
+    }
+
+    /// Sine element-wise (reference-based, no cloning)
+    #[inline]
+    pub fn sin_ref(&self) -> Self
+    where
+        T: Default,
+        SinOp: SimdUnaryOp<T>,
+    {
+        unary_tensor_op_ref::<T, RANK, SinOp>(self)
+    }
+
+    /// Cosine element-wise (reference-based, no cloning)
+    #[inline]
+    pub fn cos_ref(&self) -> Self
+    where
+        T: Default,
+        CosOp: SimdUnaryOp<T>,
+    {
+        unary_tensor_op_ref::<T, RANK, CosOp>(self)
+    }
+
+    /// Tangent element-wise (reference-based, no cloning)
+    #[inline]
+    pub fn tan_ref(&self) -> Self
+    where
+        T: Default,
+        TanOp: SimdUnaryOp<T>,
+    {
+        unary_tensor_op_ref::<T, RANK, TanOp>(self)
+    }
+
+    /// Hyperbolic tangent element-wise (reference-based, no cloning)
+    #[inline]
+    pub fn tanh_ref(&self) -> Self
+    where
+        T: Default,
+        TanhOp: SimdUnaryOp<T>,
+    {
+        unary_tensor_op_ref::<T, RANK, TanhOp>(self)
+    }
+
+    // ========== Comparison Operations ==========
+
+    /// Element-wise equality comparison (tensor vs tensor)
+    /// Returns 1.0/1 where equal, 0.0/0 where not equal
+    #[inline]
+    pub fn eq_ref(&self, rhs: &Self) -> Self
+    where
+        T: Default,
+        EqOp: SimdComparisonOp<T>,
+    {
+        comparison_tensor_op_ref::<T, RANK, EqOp>(self, rhs)
+    }
+
+    /// Element-wise inequality comparison (tensor vs tensor)
+    #[inline]
+    pub fn ne_ref(&self, rhs: &Self) -> Self
+    where
+        T: Default,
+        NeOp: SimdComparisonOp<T>,
+    {
+        comparison_tensor_op_ref::<T, RANK, NeOp>(self, rhs)
+    }
+
+    /// Element-wise less than comparison (tensor vs tensor)
+    #[inline]
+    pub fn lt_ref(&self, rhs: &Self) -> Self
+    where
+        T: Default,
+        LtOp: SimdComparisonOp<T>,
+    {
+        comparison_tensor_op_ref::<T, RANK, LtOp>(self, rhs)
+    }
+
+    /// Element-wise less than or equal comparison (tensor vs tensor)
+    #[inline]
+    pub fn lte_ref(&self, rhs: &Self) -> Self
+    where
+        T: Default,
+        LteOp: SimdComparisonOp<T>,
+    {
+        comparison_tensor_op_ref::<T, RANK, LteOp>(self, rhs)
+    }
+
+    /// Element-wise greater than comparison (tensor vs tensor)
+    #[inline]
+    pub fn gt_ref(&self, rhs: &Self) -> Self
+    where
+        T: Default,
+        GtOp: SimdComparisonOp<T>,
+    {
+        comparison_tensor_op_ref::<T, RANK, GtOp>(self, rhs)
+    }
+
+    /// Element-wise greater than or equal comparison (tensor vs tensor)
+    #[inline]
+    pub fn gte_ref(&self, rhs: &Self) -> Self
+    where
+        T: Default,
+        GteOp: SimdComparisonOp<T>,
+    {
+        comparison_tensor_op_ref::<T, RANK, GteOp>(self, rhs)
+    }
+
+    /// Element-wise equality comparison (tensor vs scalar)
+    #[inline]
+    pub fn eq_scalar(&self, scalar: T) -> Self
+    where
+        T: Default,
+        EqOp: SimdComparisonOp<T>,
+    {
+        comparison_scalar_op_ref::<T, RANK, EqOp>(self, scalar)
+    }
+
+    /// Element-wise inequality comparison (tensor vs scalar)
+    #[inline]
+    pub fn ne_scalar(&self, scalar: T) -> Self
+    where
+        T: Default,
+        NeOp: SimdComparisonOp<T>,
+    {
+        comparison_scalar_op_ref::<T, RANK, NeOp>(self, scalar)
+    }
+
+    /// Element-wise less than comparison (tensor vs scalar)
+    #[inline]
+    pub fn lt_scalar(&self, scalar: T) -> Self
+    where
+        T: Default,
+        LtOp: SimdComparisonOp<T>,
+    {
+        comparison_scalar_op_ref::<T, RANK, LtOp>(self, scalar)
+    }
+
+    /// Element-wise less than or equal comparison (tensor vs scalar)
+    #[inline]
+    pub fn lte_scalar(&self, scalar: T) -> Self
+    where
+        T: Default,
+        LteOp: SimdComparisonOp<T>,
+    {
+        comparison_scalar_op_ref::<T, RANK, LteOp>(self, scalar)
+    }
+
+    /// Element-wise greater than comparison (tensor vs scalar)
+    #[inline]
+    pub fn gt_scalar(&self, scalar: T) -> Self
+    where
+        T: Default,
+        GtOp: SimdComparisonOp<T>,
+    {
+        comparison_scalar_op_ref::<T, RANK, GtOp>(self, scalar)
+    }
+
+    /// Element-wise greater than or equal comparison (tensor vs scalar)
+    #[inline]
+    pub fn gte_scalar(&self, scalar: T) -> Self
+    where
+        T: Default,
+        GteOp: SimdComparisonOp<T>,
+    {
+        comparison_scalar_op_ref::<T, RANK, GteOp>(self, scalar)
+    }
+
+    // ========== Conditional Operations ==========
+
+    /// Conditional selection: where self != 0, select on_true, else on_false
+    #[inline]
+    pub fn where_cond(&self, on_true: &Self, on_false: &Self) -> Self
+    where
+        T: Default + IsNonZero,
+    {
+        where_cond_ref(self, on_true, on_false)
+    }
+
+    // ========== Type Casting Operations ==========
+
+    /// Cast tensor to another element type
+    #[inline]
+    pub fn cast<T2>(&self) -> ConcreteTensor<T2, RANK>
+    where
+        T: CastTo<T2>,
+        T2: SimdElement,
+    {
+        cast_tensor(self)
+    }
+
+    // ========== Index Operations ==========
+
+    /// Select elements along a dimension using indices
+    ///
+    /// For a 2D tensor with shape [M, N] and indices [I]:
+    /// - index_select(0, indices) -> shape [I, N], selecting rows
+    /// - index_select(1, indices) -> shape [M, I], selecting columns
+    #[inline]
+    pub fn index_select(&self, dimension: usize, indices: &ConcreteTensor<u32, 1>) -> Self {
+        index_select_ref(self, dimension, indices)
+    }
+
     // ========== Reduce Operations ==========
 
     /// Sum all elements in the tensor
@@ -530,6 +783,124 @@ impl<T: SimdElement, const RANK: usize> ConcreteTensor<T, RANK> {
         ProdOp: SimdReduceOp<T>,
     {
         reduce_tensor_axis::<T, RANK, OUT_RANK, AXIS, ProdOp>(self)
+    }
+}
+
+// Specialized impl for f32 (pow_scalar, min_scalar, max_scalar)
+impl<const RANK: usize> ConcreteTensor<f32, RANK> {
+    /// Raise each element to a scalar power (x^exp)
+    #[inline]
+    pub fn pow_scalar(&self, exp: f32) -> Self {
+        let shape: [usize; RANK] = ResolvedTensor::shape(self)
+            .try_into()
+            .expect("Shape length mismatch");
+        let mut output = ConcreteTensor::<f32, RANK>::uninit_unchecked(shape);
+
+        for (i, &val) in self.data().iter().enumerate() {
+            output.data_mut()[i] = val.powf(exp);
+        }
+        output
+    }
+
+    /// Element-wise maximum with a scalar: max(x, scalar)
+    #[inline]
+    pub fn max_scalar(&self, scalar: f32) -> Self {
+        let shape: [usize; RANK] = ResolvedTensor::shape(self)
+            .try_into()
+            .expect("Shape length mismatch");
+        let mut output = ConcreteTensor::<f32, RANK>::uninit_unchecked(shape);
+
+        for (i, &val) in self.data().iter().enumerate() {
+            output.data_mut()[i] = val.max(scalar);
+        }
+        output
+    }
+
+    /// Element-wise minimum with a scalar: min(x, scalar)
+    #[inline]
+    pub fn min_scalar(&self, scalar: f32) -> Self {
+        let shape: [usize; RANK] = ResolvedTensor::shape(self)
+            .try_into()
+            .expect("Shape length mismatch");
+        let mut output = ConcreteTensor::<f32, RANK>::uninit_unchecked(shape);
+
+        for (i, &val) in self.data().iter().enumerate() {
+            output.data_mut()[i] = val.min(scalar);
+        }
+        output
+    }
+
+    /// Clamp all elements to be within [min, max]
+    #[inline]
+    pub fn clamp(&self, min: f32, max: f32) -> Self {
+        let shape: [usize; RANK] = ResolvedTensor::shape(self)
+            .try_into()
+            .expect("Shape length mismatch");
+        let mut output = ConcreteTensor::<f32, RANK>::uninit_unchecked(shape);
+
+        for (i, &val) in self.data().iter().enumerate() {
+            output.data_mut()[i] = val.clamp(min, max);
+        }
+        output
+    }
+}
+
+// Specialized impl for f64 (pow_scalar, min_scalar, max_scalar)
+impl<const RANK: usize> ConcreteTensor<f64, RANK> {
+    /// Raise each element to a scalar power (x^exp)
+    #[inline]
+    pub fn pow_scalar(&self, exp: f64) -> Self {
+        let shape: [usize; RANK] = ResolvedTensor::shape(self)
+            .try_into()
+            .expect("Shape length mismatch");
+        let mut output = ConcreteTensor::<f64, RANK>::uninit_unchecked(shape);
+
+        for (i, &val) in self.data().iter().enumerate() {
+            output.data_mut()[i] = val.powf(exp);
+        }
+        output
+    }
+
+    /// Element-wise maximum with a scalar: max(x, scalar)
+    #[inline]
+    pub fn max_scalar(&self, scalar: f64) -> Self {
+        let shape: [usize; RANK] = ResolvedTensor::shape(self)
+            .try_into()
+            .expect("Shape length mismatch");
+        let mut output = ConcreteTensor::<f64, RANK>::uninit_unchecked(shape);
+
+        for (i, &val) in self.data().iter().enumerate() {
+            output.data_mut()[i] = val.max(scalar);
+        }
+        output
+    }
+
+    /// Element-wise minimum with a scalar: min(x, scalar)
+    #[inline]
+    pub fn min_scalar(&self, scalar: f64) -> Self {
+        let shape: [usize; RANK] = ResolvedTensor::shape(self)
+            .try_into()
+            .expect("Shape length mismatch");
+        let mut output = ConcreteTensor::<f64, RANK>::uninit_unchecked(shape);
+
+        for (i, &val) in self.data().iter().enumerate() {
+            output.data_mut()[i] = val.min(scalar);
+        }
+        output
+    }
+
+    /// Clamp all elements to be within [min, max]
+    #[inline]
+    pub fn clamp(&self, min: f64, max: f64) -> Self {
+        let shape: [usize; RANK] = ResolvedTensor::shape(self)
+            .try_into()
+            .expect("Shape length mismatch");
+        let mut output = ConcreteTensor::<f64, RANK>::uninit_unchecked(shape);
+
+        for (i, &val) in self.data().iter().enumerate() {
+            output.data_mut()[i] = val.clamp(min, max);
+        }
+        output
     }
 }
 
