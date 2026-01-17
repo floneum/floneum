@@ -106,6 +106,22 @@ impl<const R: usize, T: DataType> Add<&Tensor<R, T>> for &Tensor<R, T> {
     }
 }
 
+impl<const R: usize, T: DataType> Add<&Tensor<R, T>> for Tensor<R, T> {
+    type Output = Tensor<R, T>;
+
+    fn add(self, rhs: &Tensor<R, T>) -> Self::Output {
+        &self + rhs
+    }
+}
+
+impl<const R: usize, T: DataType> Add<Tensor<R, T>> for &Tensor<R, T> {
+    type Output = Tensor<R, T>;
+
+    fn add(self, rhs: Tensor<R, T>) -> Self::Output {
+        self + &rhs
+    }
+}
+
 impl<const R: usize, T: DataType> Tensor<R, T> {
     pub fn add_<const R2: usize, const R3: usize>(&self, second: &Tensor<R2, T>) -> Tensor<R3, T>
     where
@@ -288,6 +304,22 @@ impl<const R: usize, T: DataType> Sub<&Tensor<R, T>> for &Tensor<R, T> {
     }
 }
 
+impl<const R: usize, T: DataType> Sub<&Tensor<R, T>> for Tensor<R, T> {
+    type Output = Tensor<R, T>;
+
+    fn sub(self, rhs: &Tensor<R, T>) -> Self::Output {
+        &self - rhs
+    }
+}
+
+impl<const R: usize, T: DataType> Sub<Tensor<R, T>> for &Tensor<R, T> {
+    type Output = Tensor<R, T>;
+
+    fn sub(self, rhs: Tensor<R, T>) -> Self::Output {
+        self - &rhs
+    }
+}
+
 impl<const R: usize, T: DataType> Tensor<R, T> {
     pub fn sub_<const R2: usize, const R3: usize>(&self, second: &Tensor<R2, T>) -> Tensor<R3, T>
     where
@@ -340,6 +372,22 @@ impl<const R: usize, T: DataType> Mul<&Tensor<R, T>> for &Tensor<R, T> {
     }
 }
 
+impl<const R: usize, T: DataType> Mul<&Tensor<R, T>> for Tensor<R, T> {
+    type Output = Tensor<R, T>;
+
+    fn mul(self, rhs: &Tensor<R, T>) -> Self::Output {
+        &self * rhs
+    }
+}
+
+impl<const R: usize, T: DataType> Mul<Tensor<R, T>> for &Tensor<R, T> {
+    type Output = Tensor<R, T>;
+
+    fn mul(self, rhs: Tensor<R, T>) -> Self::Output {
+        self * &rhs
+    }
+}
+
 impl<const R: usize, T: DataType> Tensor<R, T> {
     pub fn mul_<const R2: usize, const R3: usize>(&self, second: &Tensor<R2, T>) -> Tensor<R3, T>
     where
@@ -389,6 +437,22 @@ impl<const R: usize, T: DataType> Div<&Tensor<R, T>> for &Tensor<R, T> {
             rhs,
             PairWiseFunction::new("let output = a / b;".to_string(), T::WGSL_TYPE).with_name("div"),
         )
+    }
+}
+
+impl<const R: usize, T: DataType> Div<&Tensor<R, T>> for Tensor<R, T> {
+    type Output = Tensor<R, T>;
+
+    fn div(self, rhs: &Tensor<R, T>) -> Self::Output {
+        &self / rhs
+    }
+}
+
+impl<const R: usize, T: DataType> Div<Tensor<R, T>> for &Tensor<R, T> {
+    type Output = Tensor<R, T>;
+
+    fn div(self, rhs: Tensor<R, T>) -> Self::Output {
+        self / &rhs
     }
 }
 

@@ -665,6 +665,122 @@ where
     }
 }
 
+// Mixed owned/reference operator implementations: Tensor + &Tensor
+
+impl<'a, const R: usize, T1, T2> StdAdd<&'a Tensor<R, T2>> for Tensor<R, T1>
+where
+    T1: TensorBacking<R>,
+    T2: TensorBacking<R, Elem = T1::Elem>,
+    T1::Elem: SimdElement + StdAdd<Output = T1::Elem> + Default,
+    AddOp: SimdBinaryOp<T1::Elem>,
+{
+    type Output = Tensor<R, pairwise::Add<T1::Elem, R, T1, &'a T2>>;
+
+    fn add(self, rhs: &'a Tensor<R, T2>) -> Self::Output {
+        Tensor::new(pairwise::Add::new(self.inner, &rhs.inner))
+    }
+}
+
+impl<'a, const R: usize, T1, T2> StdSub<&'a Tensor<R, T2>> for Tensor<R, T1>
+where
+    T1: TensorBacking<R>,
+    T2: TensorBacking<R, Elem = T1::Elem>,
+    T1::Elem: SimdElement + StdSub<Output = T1::Elem> + Default,
+    SubOp: SimdBinaryOp<T1::Elem>,
+{
+    type Output = Tensor<R, pairwise::Sub<T1::Elem, R, T1, &'a T2>>;
+
+    fn sub(self, rhs: &'a Tensor<R, T2>) -> Self::Output {
+        Tensor::new(pairwise::Sub::new(self.inner, &rhs.inner))
+    }
+}
+
+impl<'a, const R: usize, T1, T2> StdMul<&'a Tensor<R, T2>> for Tensor<R, T1>
+where
+    T1: TensorBacking<R>,
+    T2: TensorBacking<R, Elem = T1::Elem>,
+    T1::Elem: SimdElement + StdMul<Output = T1::Elem> + Default,
+    MulOp: SimdBinaryOp<T1::Elem>,
+{
+    type Output = Tensor<R, pairwise::Mul<T1::Elem, R, T1, &'a T2>>;
+
+    fn mul(self, rhs: &'a Tensor<R, T2>) -> Self::Output {
+        Tensor::new(pairwise::Mul::new(self.inner, &rhs.inner))
+    }
+}
+
+impl<'a, const R: usize, T1, T2> StdDiv<&'a Tensor<R, T2>> for Tensor<R, T1>
+where
+    T1: TensorBacking<R>,
+    T2: TensorBacking<R, Elem = T1::Elem>,
+    T1::Elem: SimdElement + StdDiv<Output = T1::Elem> + Default,
+    DivOp: SimdBinaryOp<T1::Elem>,
+{
+    type Output = Tensor<R, pairwise::Div<T1::Elem, R, T1, &'a T2>>;
+
+    fn div(self, rhs: &'a Tensor<R, T2>) -> Self::Output {
+        Tensor::new(pairwise::Div::new(self.inner, &rhs.inner))
+    }
+}
+
+// Mixed owned/reference operator implementations: &Tensor + Tensor
+
+impl<'a, const R: usize, T1, T2> StdAdd<Tensor<R, T2>> for &'a Tensor<R, T1>
+where
+    T1: TensorBacking<R>,
+    T2: TensorBacking<R, Elem = T1::Elem>,
+    T1::Elem: SimdElement + StdAdd<Output = T1::Elem> + Default,
+    AddOp: SimdBinaryOp<T1::Elem>,
+{
+    type Output = Tensor<R, pairwise::Add<T1::Elem, R, &'a T1, T2>>;
+
+    fn add(self, rhs: Tensor<R, T2>) -> Self::Output {
+        Tensor::new(pairwise::Add::new(&self.inner, rhs.inner))
+    }
+}
+
+impl<'a, const R: usize, T1, T2> StdSub<Tensor<R, T2>> for &'a Tensor<R, T1>
+where
+    T1: TensorBacking<R>,
+    T2: TensorBacking<R, Elem = T1::Elem>,
+    T1::Elem: SimdElement + StdSub<Output = T1::Elem> + Default,
+    SubOp: SimdBinaryOp<T1::Elem>,
+{
+    type Output = Tensor<R, pairwise::Sub<T1::Elem, R, &'a T1, T2>>;
+
+    fn sub(self, rhs: Tensor<R, T2>) -> Self::Output {
+        Tensor::new(pairwise::Sub::new(&self.inner, rhs.inner))
+    }
+}
+
+impl<'a, const R: usize, T1, T2> StdMul<Tensor<R, T2>> for &'a Tensor<R, T1>
+where
+    T1: TensorBacking<R>,
+    T2: TensorBacking<R, Elem = T1::Elem>,
+    T1::Elem: SimdElement + StdMul<Output = T1::Elem> + Default,
+    MulOp: SimdBinaryOp<T1::Elem>,
+{
+    type Output = Tensor<R, pairwise::Mul<T1::Elem, R, &'a T1, T2>>;
+
+    fn mul(self, rhs: Tensor<R, T2>) -> Self::Output {
+        Tensor::new(pairwise::Mul::new(&self.inner, rhs.inner))
+    }
+}
+
+impl<'a, const R: usize, T1, T2> StdDiv<Tensor<R, T2>> for &'a Tensor<R, T1>
+where
+    T1: TensorBacking<R>,
+    T2: TensorBacking<R, Elem = T1::Elem>,
+    T1::Elem: SimdElement + StdDiv<Output = T1::Elem> + Default,
+    DivOp: SimdBinaryOp<T1::Elem>,
+{
+    type Output = Tensor<R, pairwise::Div<T1::Elem, R, &'a T1, T2>>;
+
+    fn div(self, rhs: Tensor<R, T2>) -> Self::Output {
+        Tensor::new(pairwise::Div::new(&self.inner, rhs.inner))
+    }
+}
+
 // Implement Expr for Tensor to enable evaluation
 impl<const R: usize, E, T> Expr for Tensor<R, T>
 where
