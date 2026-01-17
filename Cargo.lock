@@ -2935,6 +2935,7 @@ dependencies = [
  "enumset",
  "env_logger",
  "fusor-gguf",
+ "fusor-types",
  "futures",
  "futures-channel",
  "futures-util",
@@ -2987,6 +2988,13 @@ dependencies = [
  "rustc-hash 2.1.1",
  "thiserror 2.0.17",
  "tokio",
+]
+
+[[package]]
+name = "fusor-types"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
 ]
 
 [[package]]

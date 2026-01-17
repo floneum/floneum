@@ -4,7 +4,8 @@
 
 pub use device::*;
 pub use element_wise::CastTensor;
-pub use layout::*;
+pub use fusor_types::{Layout, TensorSlice, slice_shape, slice_strides, TILE_SIZE};
+pub use tensor::MappedBuffer;
 pub use quantized::*;
 pub use rank::*;
 pub use reduce::*;
@@ -21,6 +22,7 @@ pub use varbuilder::{ShardedVarBuilder, VarBuilder};
 
 pub mod cache;
 mod composite;
+pub use composite::{ToVec1, ToVec2, ToVec3};
 mod compute_graph;
 mod device;
 mod element_wise;

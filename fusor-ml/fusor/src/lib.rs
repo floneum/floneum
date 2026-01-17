@@ -13,7 +13,7 @@ mod error;
 
 pub use device::Device;
 pub use error::Error;
-use fusor_core::TensorSlice;
+use fusor_core::{MappedBuffer, TensorSlice};
 use fusor_cpu::TensorBacking;
 
 // Re-export from fusor-cpu
@@ -114,7 +114,7 @@ impl<const R: usize, D, B> GpuOr<R , D, B> where B: TensorBacking<R, Elem=D> {
         }
     }
 
-    pub async fn resolve(self) -> Result<TensorSlice<R, D>, Error> {
+    pub async fn resolve(self) -> Result<TensorSlice<R, D, MappedBuffer>, Error> {
         match self {
             GpuOr::Cpu(t) => Ok(todo!()),
             GpuOr::Gpu(t) => {
