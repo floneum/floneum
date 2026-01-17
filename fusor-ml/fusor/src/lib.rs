@@ -157,20 +157,78 @@ impl Deref for EitherMappedBuffer {
     }
 }
 
-impl<const R: usize, D, B, B2> std::ops::Add for GpuOr<R, D, B>
+impl<const R: usize, D, B, B2, O> std::ops::Add<GpuOr<R, D, O>> for GpuOr<R, D, B>
 where
-    CpuTensor<R, B>: std::ops::Add<Output = CpuTensor<R, B2>>,
+    CpuTensor<R, B>: std::ops::Add<CpuTensor<R, O>, Output = CpuTensor<R, B2>>,
     GpuTensor<R, D>: std::ops::Add<Output = GpuTensor<R, D>>,
     B: TensorBacking<R, Elem = D>,
+    O: TensorBacking<R, Elem = D>,
     B2: TensorBacking<R, Elem = D>,
 {
     type Output = GpuOr<R, D, B2>;
 
-    fn add(self, rhs: Self) -> Self::Output {
+    fn add(self, rhs: GpuOr<R, D, O>) -> Self::Output {
         match (self, rhs) {
             (GpuOr::Cpu(lhs), GpuOr::Cpu(rhs)) => GpuOr::Cpu(lhs + rhs),
             (GpuOr::Gpu(lhs), GpuOr::Gpu(rhs)) => GpuOr::Gpu(lhs + rhs),
             _ => panic!("Cannot add CPU tensor to GPU tensor"),
+        }
+    }
+}
+
+impl<'a, const R: usize, D, B, B2, O> std::ops::Add<&'a GpuOr<R, D, O>> for &'a GpuOr<R, D, B>
+where
+    &'a CpuTensor<R, B>: std::ops::Add<&'a CpuTensor<R, O>, Output = CpuTensor<R, B2>>,
+    &'a GpuTensor<R, D>: std::ops::Add<Output = GpuTensor<R, D>>,
+    B: TensorBacking<R, Elem = D>,
+    O: TensorBacking<R, Elem = D>,
+    B2: TensorBacking<R, Elem = D>,
+{
+    type Output = GpuOr<R, D, B2>;
+
+    fn add(self, rhs: &'a GpuOr<R, D, O>) -> Self::Output {
+        match (self, rhs) {
+            (GpuOr::Cpu(lhs), GpuOr::Cpu(rhs)) => GpuOr::Cpu(lhs + rhs),
+            (GpuOr::Gpu(lhs), GpuOr::Gpu(rhs)) => GpuOr::Gpu(lhs + rhs),
+            _ => panic!("Cannot add CPU tensor to GPU tensor"),
+        }
+    }
+}
+
+impl<'a, const R: usize, D, B, B2, O> std::ops::Mul<GpuOr<R, D, O>> for GpuOr<R, D, B>
+where
+    CpuTensor<R, B>: std::ops::Mul<CpuTensor<R, O>, Output = CpuTensor<R, B2>>,
+    GpuTensor<R, D>: std::ops::Mul<Output = GpuTensor<R, D>>,
+    B: TensorBacking<R, Elem = D>,
+    O: TensorBacking<R, Elem = D>,
+    B2: TensorBacking<R, Elem = D>,
+{
+    type Output = GpuOr<R, D, B2>;
+
+    fn mul(self, rhs: GpuOr<R, D, O>) -> Self::Output {
+        match (self, rhs) {
+            (GpuOr::Cpu(lhs), GpuOr::Cpu(rhs)) => GpuOr::Cpu(lhs * rhs),
+            (GpuOr::Gpu(lhs), GpuOr::Gpu(rhs)) => GpuOr::Gpu(lhs * rhs),
+            _ => panic!("Cannot multiply CPU tensor with GPU tensor"),
+        }
+    }
+}
+
+impl<'a, const R: usize, D, B, B2, O> std::ops::Mul<&'a GpuOr<R, D, O>> for &'a GpuOr<R, D, B>
+where
+    &'a CpuTensor<R, B>: std::ops::Mul<&'a CpuTensor<R, O>, Output = CpuTensor<R, B2>>,
+    &'a GpuTensor<R, D>: std::ops::Mul<Output = GpuTensor<R, D>>,
+    B: TensorBacking<R, Elem = D>,
+    O: TensorBacking<R, Elem = D>,
+    B2: TensorBacking<R, Elem = D>,
+{
+    type Output = GpuOr<R, D, B2>;
+
+    fn mul(self, rhs: &'a GpuOr<R, D, O>) -> Self::Output {
+        match (self, rhs) {
+            (GpuOr::Cpu(lhs), GpuOr::Cpu(rhs)) => GpuOr::Cpu(lhs * rhs),
+            (GpuOr::Gpu(lhs), GpuOr::Gpu(rhs)) => GpuOr::Gpu(lhs * rhs),
+            _ => panic!("Cannot multiply CPU tensor with GPU tensor"),
         }
     }
 }
@@ -186,13 +244,13 @@ async fn test_gpu_or_add() {
     let a_gpu: GpuTensor<1, f32> = GpuTensor::new(&device, &[1.0, 2.0, 3.0]);
     let b_gpu: GpuTensor<1, f32> = GpuTensor::new(&device, &[4.0, 5.0, 6.0]);
 
-    let a_cpu_or = GpuOr::Cpu(a_cpu);
-    let b_cpu_or = GpuOr::Cpu(b_cpu);
+    let a_cpu_or: GpuOr<1, f32> = GpuOr::Cpu(a_cpu);
+    let b_cpu_or: GpuOr<1, f32> = GpuOr::Cpu(b_cpu);
     let a_gpu_or: GpuOr<1, f32> = GpuOr::Gpu(a_gpu);
     let b_gpu_or: GpuOr<1, f32> = GpuOr::Gpu(b_gpu);
 
-    let c_cpu_or = a_cpu_or + b_cpu_or;
+    let c_cpu_or = (&a_cpu_or + &b_cpu_or) + &b_cpu_or;
     println!("c_cpu_or: {:?}", c_cpu_or.as_slice().await.unwrap());
-    let c_gpu_or = a_gpu_or + b_gpu_or;
+    let c_gpu_or = (&a_gpu_or + &b_gpu_or) * &b_gpu_or;
     println!("c_gpu_or: {:?}", c_gpu_or.as_slice().await.unwrap());
 }
