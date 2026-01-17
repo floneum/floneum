@@ -6,7 +6,7 @@ use pulp::{Arch, Simd, WithSimd};
 
 use crate::{
     materialize_expr, ConcreteTensor, Expr, IndexIterator, ResolveTensor, ResolvedTensor,
-    SimdElement, Tensor,
+    SimdElement, TensorBacking,
 };
 
 /// Trait for binary operations that have SIMD support
@@ -174,8 +174,8 @@ macro_rules! define_binary_tensor_op {
         pub struct $name<
             E: SimdElement,
             const R: usize,
-            T1: Tensor<R, Elem = E>,
-            T2: Tensor<R, Elem = E>,
+            T1: TensorBacking<R, Elem = E>,
+            T2: TensorBacking<R, Elem = E>,
         > {
             lhs: T1,
             rhs: T2,
@@ -185,8 +185,8 @@ macro_rules! define_binary_tensor_op {
         impl<E, const R: usize, T1, T2> $name<E, R, T1, T2>
         where
             E: SimdElement,
-            T1: Tensor<R, Elem = E>,
-            T2: Tensor<R, Elem = E>,
+            T1: TensorBacking<R, Elem = E>,
+            T2: TensorBacking<R, Elem = E>,
         {
             pub fn new(lhs: T1, rhs: T2) -> Self {
                 Self {
@@ -197,12 +197,12 @@ macro_rules! define_binary_tensor_op {
             }
         }
 
-        impl<E, const R: usize, T1, T2> Tensor<R> for $name<E, R, T1, T2>
+        impl<E, const R: usize, T1, T2> TensorBacking<R> for $name<E, R, T1, T2>
         where
             E: SimdElement + $std_trait<Output = E> + Default,
             $simd_op: SimdBinaryOp<E>,
-            T1: Tensor<R, Elem = E>,
-            T2: Tensor<R, Elem = E>,
+            T1: TensorBacking<R, Elem = E>,
+            T2: TensorBacking<R, Elem = E>,
         {
             type Elem = E;
         }
@@ -211,8 +211,8 @@ macro_rules! define_binary_tensor_op {
         where
             E: SimdElement + $std_trait<Output = E>,
             $simd_op: SimdBinaryOp<E>,
-            T1: Expr<Elem = E> + Tensor<R, Elem = E>,
-            T2: Expr<Elem = E> + Tensor<R, Elem = E>,
+            T1: Expr<Elem = E> + TensorBacking<R, Elem = E>,
+            T2: Expr<Elem = E> + TensorBacking<R, Elem = E>,
         {
             type Elem = E;
 

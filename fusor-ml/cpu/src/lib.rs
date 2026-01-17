@@ -77,20 +77,451 @@ macro_rules! impl_last_rank {
 // Generate for ranks 1-10
 impl_last_rank!(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
 
-pub trait Tensor<const R: usize> {
+pub trait TensorBacking<const R: usize> {
     type Elem: SimdElement;
 }
 
-pub trait ResolveTensor<const R: usize, M = ()>: Tensor<R> {
+pub trait ResolveTensor<const R: usize, M = ()>: TensorBacking<R> {
     fn to_concrete(&self) -> ConcreteTensor<Self::Elem, R>;
 }
 
-pub trait ResolvedTensor<const R: usize>: Tensor<R> {
+pub trait ResolvedTensor<const R: usize>: TensorBacking<R> {
     fn shape(&self) -> &[usize];
     fn strides(&self) -> &[usize];
     fn offset(&self) -> usize;
     fn data(&self) -> &ABox<[Self::Elem]>;
     fn data_mut(&mut self) -> &mut ABox<[Self::Elem]>;
+}
+
+/// A tensor wrapper that provides a unified interface over different tensor backends.
+#[derive(Clone)]
+pub struct Tensor<T: TensorBacking<R>, const R: usize> {
+    inner: T,
+}
+
+impl<T: TensorBacking<R>, const R: usize> Tensor<T, R> {
+    /// Create a new tensor from an inner backing type.
+    pub fn new(inner: T) -> Self {
+        Self { inner }
+    }
+
+    /// Get a reference to the inner backing type.
+    pub fn inner(&self) -> &T {
+        &self.inner
+    }
+
+    /// Get a mutable reference to the inner backing type.
+    pub fn inner_mut(&mut self) -> &mut T {
+        &mut self.inner
+    }
+
+    /// Consume the tensor and return the inner backing type.
+    pub fn into_inner(self) -> T {
+        self.inner
+    }
+}
+
+// Constructors for Tensor that create ConcreteTensor backing
+impl<E: SimdElement, const R: usize> Tensor<ConcreteTensor<E, R>, R> {
+    /// Create a new tensor filled with zeros
+    pub fn zeros(shape: [usize; R]) -> Self
+    where
+        E: Default,
+    {
+        Self::new(ConcreteTensor::zeros(shape))
+    }
+
+    /// Create a new tensor from existing data
+    pub fn from_slice(shape: [usize; R], data: &[E]) -> Self {
+        Self::new(ConcreteTensor::from_slice(shape, data))
+    }
+
+    /// Get element at logical indices
+    pub fn get(&self, indices: [usize; R]) -> E {
+        self.inner.get(indices)
+    }
+
+    /// Set element at logical indices
+    pub fn set(&mut self, indices: [usize; R], value: E) {
+        self.inner.set(indices, value)
+    }
+}
+
+// Methods available on any Tensor with ResolveTensor inner
+impl<E, T, const R: usize> Tensor<T, R>
+where
+    E: SimdElement,
+    T: TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>,
+{
+    /// Materialize the tensor to a ConcreteTensor
+    pub fn eval(&self) -> Tensor<ConcreteTensor<E, R>, R> {
+        Tensor::new(self.inner.to_concrete())
+    }
+
+    /// Add two tensors element-wise
+    #[inline]
+    pub fn add_ref(&self, rhs: &Tensor<impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>, R>) -> Tensor<ConcreteTensor<E, R>, R>
+    where
+        E: Default + StdAdd<Output = E>,
+        AddOp: SimdBinaryOp<E>,
+    {
+        Tensor::new(binary_tensor_op_ref::<E, R, AddOp>(&self.inner.to_concrete(), &rhs.inner.to_concrete()))
+    }
+
+    /// Subtract two tensors element-wise
+    #[inline]
+    pub fn sub_ref(&self, rhs: &Tensor<impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>, R>) -> Tensor<ConcreteTensor<E, R>, R>
+    where
+        E: Default + StdSub<Output = E>,
+        SubOp: SimdBinaryOp<E>,
+    {
+        Tensor::new(binary_tensor_op_ref::<E, R, SubOp>(&self.inner.to_concrete(), &rhs.inner.to_concrete()))
+    }
+
+    /// Multiply two tensors element-wise
+    #[inline]
+    pub fn mul_ref(&self, rhs: &Tensor<impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>, R>) -> Tensor<ConcreteTensor<E, R>, R>
+    where
+        E: Default + StdMul<Output = E>,
+        MulOp: SimdBinaryOp<E>,
+    {
+        Tensor::new(binary_tensor_op_ref::<E, R, MulOp>(&self.inner.to_concrete(), &rhs.inner.to_concrete()))
+    }
+
+    /// Divide two tensors element-wise
+    #[inline]
+    pub fn div_ref(&self, rhs: &Tensor<impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>, R>) -> Tensor<ConcreteTensor<E, R>, R>
+    where
+        E: Default + StdDiv<Output = E>,
+        DivOp: SimdBinaryOp<E>,
+    {
+        Tensor::new(binary_tensor_op_ref::<E, R, DivOp>(&self.inner.to_concrete(), &rhs.inner.to_concrete()))
+    }
+
+    /// Negate tensor element-wise
+    #[inline]
+    pub fn neg_ref(&self) -> Tensor<ConcreteTensor<E, R>, R>
+    where
+        E: Default + StdNeg<Output = E>,
+        NegOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(unary_tensor_op_ref::<E, R, NegOp>(&self.inner.to_concrete()))
+    }
+
+    /// Absolute value element-wise
+    #[inline]
+    pub fn abs_ref(&self) -> Tensor<ConcreteTensor<E, R>, R>
+    where
+        E: Default,
+        AbsOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(unary_tensor_op_ref::<E, R, AbsOp>(&self.inner.to_concrete()))
+    }
+
+    /// Square root element-wise
+    #[inline]
+    pub fn sqrt_ref(&self) -> Tensor<ConcreteTensor<E, R>, R>
+    where
+        E: Default,
+        SqrtOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(unary_tensor_op_ref::<E, R, SqrtOp>(&self.inner.to_concrete()))
+    }
+
+    /// Exponential (e^x) element-wise
+    #[inline]
+    pub fn exp_ref(&self) -> Tensor<ConcreteTensor<E, R>, R>
+    where
+        E: Default,
+        ExpOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(unary_tensor_op_ref::<E, R, ExpOp>(&self.inner.to_concrete()))
+    }
+
+    /// Natural logarithm element-wise
+    #[inline]
+    pub fn log_ref(&self) -> Tensor<ConcreteTensor<E, R>, R>
+    where
+        E: Default,
+        LogOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(unary_tensor_op_ref::<E, R, LogOp>(&self.inner.to_concrete()))
+    }
+
+    /// Sine element-wise
+    #[inline]
+    pub fn sin_ref(&self) -> Tensor<ConcreteTensor<E, R>, R>
+    where
+        E: Default,
+        SinOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(unary_tensor_op_ref::<E, R, SinOp>(&self.inner.to_concrete()))
+    }
+
+    /// Cosine element-wise
+    #[inline]
+    pub fn cos_ref(&self) -> Tensor<ConcreteTensor<E, R>, R>
+    where
+        E: Default,
+        CosOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(unary_tensor_op_ref::<E, R, CosOp>(&self.inner.to_concrete()))
+    }
+
+    /// Hyperbolic tangent element-wise
+    #[inline]
+    pub fn tanh_ref(&self) -> Tensor<ConcreteTensor<E, R>, R>
+    where
+        E: Default,
+        TanhOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(unary_tensor_op_ref::<E, R, TanhOp>(&self.inner.to_concrete()))
+    }
+
+    /// Sum all elements in the tensor
+    #[inline]
+    pub fn sum(&self) -> E
+    where
+        SumOp: SimdReduceOp<E>,
+    {
+        reduce_tensor_op::<E, R, SumOp>(&self.inner.to_concrete())
+    }
+
+    /// Find the maximum element in the tensor
+    #[inline]
+    pub fn max(&self) -> E
+    where
+        MaxOp: SimdReduceOp<E>,
+    {
+        reduce_tensor_op::<E, R, MaxOp>(&self.inner.to_concrete())
+    }
+
+    /// Find the minimum element in the tensor
+    #[inline]
+    pub fn min(&self) -> E
+    where
+        MinOp: SimdReduceOp<E>,
+    {
+        reduce_tensor_op::<E, R, MinOp>(&self.inner.to_concrete())
+    }
+
+    /// Multiply all elements in the tensor
+    #[inline]
+    pub fn prod(&self) -> E
+    where
+        ProdOp: SimdReduceOp<E>,
+    {
+        reduce_tensor_op::<E, R, ProdOp>(&self.inner.to_concrete())
+    }
+
+    /// Element-wise equality comparison
+    #[inline]
+    pub fn eq_ref(&self, rhs: &Tensor<impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>, R>) -> Tensor<ConcreteTensor<E, R>, R>
+    where
+        E: Default,
+        EqOp: SimdComparisonOp<E>,
+    {
+        Tensor::new(comparison_tensor_op_ref::<E, R, EqOp>(&self.inner.to_concrete(), &rhs.inner.to_concrete()))
+    }
+
+    /// Element-wise less than comparison
+    #[inline]
+    pub fn lt_ref(&self, rhs: &Tensor<impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>, R>) -> Tensor<ConcreteTensor<E, R>, R>
+    where
+        E: Default,
+        LtOp: SimdComparisonOp<E>,
+    {
+        Tensor::new(comparison_tensor_op_ref::<E, R, LtOp>(&self.inner.to_concrete(), &rhs.inner.to_concrete()))
+    }
+
+    /// Element-wise greater than comparison
+    #[inline]
+    pub fn gt_ref(&self, rhs: &Tensor<impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>, R>) -> Tensor<ConcreteTensor<E, R>, R>
+    where
+        E: Default,
+        GtOp: SimdComparisonOp<E>,
+    {
+        Tensor::new(comparison_tensor_op_ref::<E, R, GtOp>(&self.inner.to_concrete(), &rhs.inner.to_concrete()))
+    }
+
+    /// Conditional selection: where self != 0, select on_true, else on_false
+    #[inline]
+    pub fn where_cond(
+        &self,
+        on_true: &Tensor<impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>, R>,
+        on_false: &Tensor<impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>, R>,
+    ) -> Tensor<ConcreteTensor<E, R>, R>
+    where
+        E: Default + IsNonZero,
+    {
+        Tensor::new(where_cond_ref(&self.inner.to_concrete(), &on_true.inner.to_concrete(), &on_false.inner.to_concrete()))
+    }
+
+    /// Cast tensor to another element type
+    #[inline]
+    pub fn cast<E2>(&self) -> Tensor<ConcreteTensor<E2, R>, R>
+    where
+        E: CastTo<E2>,
+        E2: SimdElement,
+    {
+        Tensor::new(cast_tensor(&self.inner.to_concrete()))
+    }
+
+    /// Select elements along a dimension using indices
+    #[inline]
+    pub fn index_select(&self, dimension: usize, indices: &Tensor<ConcreteTensor<u32, 1>, 1>) -> Tensor<ConcreteTensor<E, R>, R> {
+        Tensor::new(index_select_ref(&self.inner.to_concrete(), dimension, &indices.inner))
+    }
+
+    /// Sum along a specific axis, reducing the tensor rank by 1
+    #[inline]
+    pub fn sum_axis<const OUT_RANK: usize, const AXIS: usize>(&self) -> Tensor<ConcreteTensor<E, OUT_RANK>, OUT_RANK>
+    where
+        E: Default,
+        ConcreteTensor<E, R>: LastRank<OUT_RANK, E>,
+        SumOp: SimdReduceOp<E>,
+    {
+        Tensor::new(reduce_tensor_axis::<E, R, OUT_RANK, AXIS, SumOp>(&self.inner.to_concrete()))
+    }
+
+    /// Maximum along a specific axis, reducing the tensor rank by 1
+    #[inline]
+    pub fn max_axis<const OUT_RANK: usize, const AXIS: usize>(&self) -> Tensor<ConcreteTensor<E, OUT_RANK>, OUT_RANK>
+    where
+        E: Default,
+        ConcreteTensor<E, R>: LastRank<OUT_RANK, E>,
+        MaxOp: SimdReduceOp<E>,
+    {
+        Tensor::new(reduce_tensor_axis::<E, R, OUT_RANK, AXIS, MaxOp>(&self.inner.to_concrete()))
+    }
+
+    /// Minimum along a specific axis, reducing the tensor rank by 1
+    #[inline]
+    pub fn min_axis<const OUT_RANK: usize, const AXIS: usize>(&self) -> Tensor<ConcreteTensor<E, OUT_RANK>, OUT_RANK>
+    where
+        E: Default,
+        ConcreteTensor<E, R>: LastRank<OUT_RANK, E>,
+        MinOp: SimdReduceOp<E>,
+    {
+        Tensor::new(reduce_tensor_axis::<E, R, OUT_RANK, AXIS, MinOp>(&self.inner.to_concrete()))
+    }
+}
+
+impl<T: TensorBacking<R>, const R: usize> TensorBacking<R> for Tensor<T, R> {
+    type Elem = T::Elem;
+}
+
+// Implement std::ops traits for Tensor wrapper to enable operator syntax
+
+impl<T1, T2, const R: usize> StdAdd<Tensor<T2, R>> for Tensor<T1, R>
+where
+    T1: TensorBacking<R>,
+    T2: TensorBacking<R, Elem = T1::Elem>,
+    T1::Elem: SimdElement + StdAdd<Output = T1::Elem> + Default,
+    AddOp: SimdBinaryOp<T1::Elem>,
+{
+    type Output = Tensor<pairwise::Add<T1::Elem, R, T1, T2>, R>;
+
+    fn add(self, rhs: Tensor<T2, R>) -> Self::Output {
+        Tensor::new(pairwise::Add::new(self.inner, rhs.inner))
+    }
+}
+
+impl<T1, T2, const R: usize> StdSub<Tensor<T2, R>> for Tensor<T1, R>
+where
+    T1: TensorBacking<R>,
+    T2: TensorBacking<R, Elem = T1::Elem>,
+    T1::Elem: SimdElement + StdSub<Output = T1::Elem> + Default,
+    SubOp: SimdBinaryOp<T1::Elem>,
+{
+    type Output = Tensor<pairwise::Sub<T1::Elem, R, T1, T2>, R>;
+
+    fn sub(self, rhs: Tensor<T2, R>) -> Self::Output {
+        Tensor::new(pairwise::Sub::new(self.inner, rhs.inner))
+    }
+}
+
+impl<T1, T2, const R: usize> StdMul<Tensor<T2, R>> for Tensor<T1, R>
+where
+    T1: TensorBacking<R>,
+    T2: TensorBacking<R, Elem = T1::Elem>,
+    T1::Elem: SimdElement + StdMul<Output = T1::Elem> + Default,
+    MulOp: SimdBinaryOp<T1::Elem>,
+{
+    type Output = Tensor<pairwise::Mul<T1::Elem, R, T1, T2>, R>;
+
+    fn mul(self, rhs: Tensor<T2, R>) -> Self::Output {
+        Tensor::new(pairwise::Mul::new(self.inner, rhs.inner))
+    }
+}
+
+impl<T1, T2, const R: usize> StdDiv<Tensor<T2, R>> for Tensor<T1, R>
+where
+    T1: TensorBacking<R>,
+    T2: TensorBacking<R, Elem = T1::Elem>,
+    T1::Elem: SimdElement + StdDiv<Output = T1::Elem> + Default,
+    DivOp: SimdBinaryOp<T1::Elem>,
+{
+    type Output = Tensor<pairwise::Div<T1::Elem, R, T1, T2>, R>;
+
+    fn div(self, rhs: Tensor<T2, R>) -> Self::Output {
+        Tensor::new(pairwise::Div::new(self.inner, rhs.inner))
+    }
+}
+
+impl<T, const R: usize> StdNeg for Tensor<T, R>
+where
+    T: TensorBacking<R>,
+    T::Elem: SimdElement + StdNeg<Output = T::Elem> + Default,
+    NegOp: SimdUnaryOp<T::Elem>,
+{
+    type Output = Tensor<elementwise::Neg<T::Elem, R, T>, R>;
+
+    fn neg(self) -> Self::Output {
+        Tensor::new(elementwise::Neg::new(self.inner))
+    }
+}
+
+// Implement Expr for Tensor to enable evaluation
+impl<E, T, const R: usize> Expr for Tensor<T, R>
+where
+    E: SimdElement,
+    T: TensorBacking<R, Elem = E> + Expr<Elem = E>,
+{
+    type Elem = E;
+
+    #[inline(always)]
+    fn eval_scalar(&self, idx: usize) -> Self::Elem {
+        self.inner.eval_scalar(idx)
+    }
+
+    #[inline(always)]
+    fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> E::Simd<S> {
+        self.inner.eval_simd(simd, base_idx)
+    }
+
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    fn shape(&self) -> &[usize] {
+        self.inner.shape()
+    }
+
+    fn is_contiguous(&self) -> bool {
+        self.inner.is_contiguous()
+    }
+}
+
+// Implement ResolveTensor for Tensor to enable materialization
+impl<E, T, const R: usize> ResolveTensor<R> for Tensor<T, R>
+where
+    E: SimdElement,
+    T: TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>,
+{
+    fn to_concrete(&self) -> ConcreteTensor<E, R> {
+        self.inner.to_concrete()
+    }
 }
 
 /// Helper to iterate over indices of a tensor with given shape
@@ -209,7 +640,7 @@ pub struct ConcreteTensor<T: SimdElement, const R: usize> {
     backing: ABox<[T]>,
 }
 
-impl<T, const R: usize> Tensor<R> for ConcreteTensor<T, R>
+impl<T, const R: usize> TensorBacking<R> for ConcreteTensor<T, R>
 where
     T: SimdElement,
 {
@@ -297,8 +728,8 @@ impl<T: SimdElement, const R: usize> Expr for ConcreteTensor<T, R> {
     }
 }
 
-// Implement Tensor for references so they can be used in expression trees
-impl<T: SimdElement, const R: usize> Tensor<R> for &ConcreteTensor<T, R> {
+// Implement TensorBacking for references so they can be used in expression trees
+impl<T: SimdElement, const R: usize> TensorBacking<R> for &ConcreteTensor<T, R> {
     type Elem = T;
 }
 
@@ -917,3 +1348,129 @@ impl_simd_element!(u8, u8s, as_simd_u8s, as_mut_simd_u8s, splat_u8s);
 impl_simd_element!(u16, u16s, as_simd_u16s, as_mut_simd_u16s, splat_u16s);
 impl_simd_element!(u32, u32s, as_simd_u32s, as_mut_simd_u32s, splat_u32s);
 impl_simd_element!(u64, u64s, as_simd_u64s, as_mut_simd_u64s, splat_u64s);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tensor_add_operator() {
+        // Use Tensor::from_slice directly - cleaner API
+        let a: Tensor<ConcreteTensor<f32, 1>, 1> = Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
+        let b: Tensor<ConcreteTensor<f32, 1>, 1> = Tensor::from_slice([4], &[10.0, 20.0, 30.0, 40.0]);
+
+        // Use + operator and eval() to get result
+        let result = (a + b).eval();
+
+        assert_eq!(result.get([0]), 11.0);
+        assert_eq!(result.get([1]), 22.0);
+        assert_eq!(result.get([2]), 33.0);
+        assert_eq!(result.get([3]), 44.0);
+    }
+
+    #[test]
+    fn test_tensor_sub_operator() {
+        let a: Tensor<ConcreteTensor<f32, 1>, 1> = Tensor::from_slice([4], &[10.0, 20.0, 30.0, 40.0]);
+        let b: Tensor<ConcreteTensor<f32, 1>, 1> = Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
+
+        let result = (a - b).eval();
+
+        assert_eq!(result.get([0]), 9.0);
+        assert_eq!(result.get([1]), 18.0);
+        assert_eq!(result.get([2]), 27.0);
+        assert_eq!(result.get([3]), 36.0);
+    }
+
+    #[test]
+    fn test_tensor_mul_operator() {
+        let a: Tensor<ConcreteTensor<f32, 1>, 1> = Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
+        let b: Tensor<ConcreteTensor<f32, 1>, 1> = Tensor::from_slice([4], &[2.0, 3.0, 4.0, 5.0]);
+
+        let result = (a * b).eval();
+
+        assert_eq!(result.get([0]), 2.0);
+        assert_eq!(result.get([1]), 6.0);
+        assert_eq!(result.get([2]), 12.0);
+        assert_eq!(result.get([3]), 20.0);
+    }
+
+    #[test]
+    fn test_tensor_div_operator() {
+        let a: Tensor<ConcreteTensor<f32, 1>, 1> = Tensor::from_slice([4], &[10.0, 20.0, 30.0, 40.0]);
+        let b: Tensor<ConcreteTensor<f32, 1>, 1> = Tensor::from_slice([4], &[2.0, 4.0, 5.0, 8.0]);
+
+        let result = (a / b).eval();
+
+        assert_eq!(result.get([0]), 5.0);
+        assert_eq!(result.get([1]), 5.0);
+        assert_eq!(result.get([2]), 6.0);
+        assert_eq!(result.get([3]), 5.0);
+    }
+
+    #[test]
+    fn test_tensor_neg_operator() {
+        let a: Tensor<ConcreteTensor<f32, 1>, 1> = Tensor::from_slice([4], &[1.0, -2.0, 3.0, -4.0]);
+
+        let result = (-a).eval();
+
+        assert_eq!(result.get([0]), -1.0);
+        assert_eq!(result.get([1]), 2.0);
+        assert_eq!(result.get([2]), -3.0);
+        assert_eq!(result.get([3]), 4.0);
+    }
+
+    #[test]
+    fn test_tensor_chained_operators() {
+        // Test (a + b) * c with lazy evaluation
+        let a: Tensor<ConcreteTensor<f32, 1>, 1> = Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
+        let b: Tensor<ConcreteTensor<f32, 1>, 1> = Tensor::from_slice([4], &[1.0, 1.0, 1.0, 1.0]);
+        let c: Tensor<ConcreteTensor<f32, 1>, 1> = Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]);
+
+        let result = ((a + b) * c).eval();
+
+        // (1+1)*2=4, (2+1)*2=6, (3+1)*2=8, (4+1)*2=10
+        assert_eq!(result.get([0]), 4.0);
+        assert_eq!(result.get([1]), 6.0);
+        assert_eq!(result.get([2]), 8.0);
+        assert_eq!(result.get([3]), 10.0);
+    }
+
+    #[test]
+    fn test_tensor_2d_operators() {
+        let a: Tensor<ConcreteTensor<f32, 2>, 2> = Tensor::from_slice([2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        let b: Tensor<ConcreteTensor<f32, 2>, 2> = Tensor::from_slice([2, 3], &[10.0, 20.0, 30.0, 40.0, 50.0, 60.0]);
+
+        let result = (a + b).eval();
+
+        assert_eq!(result.get([0, 0]), 11.0);
+        assert_eq!(result.get([0, 2]), 33.0);
+        assert_eq!(result.get([1, 0]), 44.0);
+        assert_eq!(result.get([1, 2]), 66.0);
+    }
+
+    #[test]
+    fn test_tensor_methods() {
+        // Test the new methods on Tensor
+        let a: Tensor<ConcreteTensor<f32, 1>, 1> = Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
+        let b: Tensor<ConcreteTensor<f32, 1>, 1> = Tensor::from_slice([4], &[10.0, 20.0, 30.0, 40.0]);
+
+        // Test add_ref method
+        let result = a.add_ref(&b);
+        assert_eq!(result.get([0]), 11.0);
+
+        // Test sum reduction
+        let c: Tensor<ConcreteTensor<f32, 1>, 1> = Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(c.sum(), 10.0);
+
+        // Test max/min
+        assert_eq!(c.max(), 4.0);
+        assert_eq!(c.min(), 1.0);
+    }
+
+    #[test]
+    fn test_tensor_zeros() {
+        let t: Tensor<ConcreteTensor<f32, 2>, 2> = Tensor::zeros([3, 4]);
+        assert_eq!(t.get([0, 0]), 0.0);
+        assert_eq!(t.get([2, 3]), 0.0);
+    }
+}

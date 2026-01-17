@@ -6,7 +6,7 @@ use pulp::{Arch, Simd, WithSimd};
 
 use crate::{
     materialize_expr, ConcreteTensor, Expr, IndexIterator, ResolveTensor, ResolvedTensor,
-    SimdElement, Tensor,
+    SimdElement, TensorBacking,
 };
 
 /// Trait for unary operations that have SIMD support
@@ -245,7 +245,7 @@ where
 /// Macro to define unary tensor operations (Neg, Abs, Sqrt)
 macro_rules! define_unary_tensor_op {
     ($name:ident, $simd_op:ty) => {
-        pub struct $name<E: SimdElement, const R: usize, T: Tensor<R, Elem = E>> {
+        pub struct $name<E: SimdElement, const R: usize, T: TensorBacking<R, Elem = E>> {
             input: T,
             _marker: std::marker::PhantomData<E>,
         }
@@ -253,7 +253,7 @@ macro_rules! define_unary_tensor_op {
         impl<E, const R: usize, T> $name<E, R, T>
         where
             E: SimdElement,
-            T: Tensor<R, Elem = E>,
+            T: TensorBacking<R, Elem = E>,
         {
             pub fn new(input: T) -> Self {
                 Self {
@@ -263,11 +263,11 @@ macro_rules! define_unary_tensor_op {
             }
         }
 
-        impl<E, const R: usize, T> Tensor<R> for $name<E, R, T>
+        impl<E, const R: usize, T> TensorBacking<R> for $name<E, R, T>
         where
             E: SimdElement + Default,
             $simd_op: SimdUnaryOp<E>,
-            T: Tensor<R, Elem = E>,
+            T: TensorBacking<R, Elem = E>,
         {
             type Elem = E;
         }
@@ -276,7 +276,7 @@ macro_rules! define_unary_tensor_op {
         where
             E: SimdElement,
             $simd_op: SimdUnaryOp<E>,
-            T: Expr<Elem = E> + Tensor<R, Elem = E>,
+            T: Expr<Elem = E> + TensorBacking<R, Elem = E>,
         {
             type Elem = E;
 
@@ -318,7 +318,7 @@ macro_rules! define_unary_tensor_op {
         }
     };
     ($name:ident, $simd_op:ty, $std_trait:ident) => {
-        pub struct $name<E: SimdElement, const R: usize, T: Tensor<R, Elem = E>> {
+        pub struct $name<E: SimdElement, const R: usize, T: TensorBacking<R, Elem = E>> {
             input: T,
             _marker: std::marker::PhantomData<E>,
         }
@@ -326,7 +326,7 @@ macro_rules! define_unary_tensor_op {
         impl<E, const R: usize, T> $name<E, R, T>
         where
             E: SimdElement,
-            T: Tensor<R, Elem = E>,
+            T: TensorBacking<R, Elem = E>,
         {
             pub fn new(input: T) -> Self {
                 Self {
@@ -336,11 +336,11 @@ macro_rules! define_unary_tensor_op {
             }
         }
 
-        impl<E, const R: usize, T> Tensor<R> for $name<E, R, T>
+        impl<E, const R: usize, T> TensorBacking<R> for $name<E, R, T>
         where
             E: SimdElement + $std_trait<Output = E> + Default,
             $simd_op: SimdUnaryOp<E>,
-            T: Tensor<R, Elem = E>,
+            T: TensorBacking<R, Elem = E>,
         {
             type Elem = E;
         }
@@ -349,7 +349,7 @@ macro_rules! define_unary_tensor_op {
         where
             E: SimdElement + $std_trait<Output = E>,
             $simd_op: SimdUnaryOp<E>,
-            T: Expr<Elem = E> + Tensor<R, Elem = E>,
+            T: Expr<Elem = E> + TensorBacking<R, Elem = E>,
         {
             type Elem = E;
 
