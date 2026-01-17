@@ -2,12 +2,9 @@
 
 use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Sub as StdSub};
 
-use pulp::{Arch, Simd, WithSimd};
+use pulp::Simd;
 
-use crate::{
-    materialize_expr, ConcreteTensor, Expr, IndexIterator, ResolveTensor, ResolvedTensor,
-    SimdElement, TensorBacking,
-};
+use crate::{ConcreteTensor, Expr, ResolveTensor, SimdElement, TensorBacking, materialize_expr};
 
 /// Trait for binary operations that have SIMD support
 pub trait SimdBinaryOp<E: SimdElement>: Copy {
@@ -82,92 +79,6 @@ impl_binary_op!(MulOp, *, mul_u32s, u32);
 impl_binary_op!(DivOp, /, div_f32s, f32);
 impl_binary_op!(DivOp, /, div_f64s, f64);
 
-/// Helper struct for dispatching binary operations via Arch::dispatch
-struct BinaryOpDispatch<'a, E: SimdElement, Op: SimdBinaryOp<E>> {
-    lhs: &'a [E],
-    rhs: &'a [E],
-    out: &'a mut [E],
-    _op: std::marker::PhantomData<Op>,
-}
-
-impl<E: SimdElement, Op: SimdBinaryOp<E>> WithSimd for BinaryOpDispatch<'_, E, Op> {
-    type Output = ();
-
-    #[inline(always)]
-    fn with_simd<S: Simd>(self, simd: S) -> Self::Output {
-        let (lhs_simd, lhs_tail) = E::as_simd::<S>(self.lhs);
-        let (rhs_simd, rhs_tail) = E::as_simd::<S>(self.rhs);
-        let (out_simd, out_tail) = E::as_mut_simd::<S>(self.out);
-
-        for ((a, b), c) in lhs_simd
-            .iter()
-            .zip(rhs_simd.iter())
-            .zip(out_simd.iter_mut())
-        {
-            *c = Op::apply_simd_vec(simd, *a, *b);
-        }
-
-        for ((a, b), c) in lhs_tail
-            .iter()
-            .zip(rhs_tail.iter())
-            .zip(out_tail.iter_mut())
-        {
-            *c = Op::apply_scalar(*a, *b);
-        }
-    }
-}
-
-/// Perform a binary operation on contiguous slices using SIMD dispatch
-#[inline(always)]
-pub(crate) fn binary_op_contiguous<E: SimdElement, Op: SimdBinaryOp<E>>(
-    lhs: &[E],
-    rhs: &[E],
-    out: &mut [E],
-) {
-    Arch::new().dispatch(BinaryOpDispatch::<E, Op> {
-        lhs,
-        rhs,
-        out,
-        _op: std::marker::PhantomData,
-    });
-}
-
-/// Optimized binary tensor operation that works directly with ConcreteTensor references
-/// Avoids cloning by working with references directly
-#[inline(always)]
-pub(crate) fn binary_tensor_op_ref<E, const R: usize, Op>(
-    lhs: &ConcreteTensor<E, R>,
-    rhs: &ConcreteTensor<E, R>,
-) -> ConcreteTensor<E, R>
-where
-    E: SimdElement,
-    Op: SimdBinaryOp<E>,
-{
-    let shape: [usize; R] = ResolvedTensor::shape(lhs)
-        .try_into()
-        .expect("Shape length mismatch");
-    // SAFETY: We write to all elements before returning
-    let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
-
-    // Fast path: all contiguous (common case)
-    // Output is always contiguous since we just created it
-    let all_contiguous = lhs.layout().is_contiguous() && rhs.layout().is_contiguous();
-
-    if all_contiguous {
-        binary_op_contiguous::<E, Op>(lhs.data(), rhs.data(), output.data_mut());
-    } else {
-        let tensor_shape = ResolvedTensor::shape(lhs);
-        for indices in IndexIterator::new(tensor_shape) {
-            let lhs_idx = lhs.layout().linear_index(&indices);
-            let rhs_idx = rhs.layout().linear_index(&indices);
-            let out_idx = output.layout().linear_index(&indices);
-            output.data_mut()[out_idx] = Op::apply_scalar(lhs.data()[lhs_idx], rhs.data()[rhs_idx]);
-        }
-    }
-
-    output
-}
-
 /// Macro to define binary tensor operations (Add, Sub, Mul, Div)
 macro_rules! define_binary_tensor_op {
     ($name:ident, $std_trait:ident, $simd_op:ty, $error_msg:literal) => {
@@ -218,10 +129,7 @@ macro_rules! define_binary_tensor_op {
 
             #[inline(always)]
             fn eval_scalar(&self, idx: usize) -> E {
-                <$simd_op>::apply_scalar(
-                    self.lhs.eval_scalar(idx),
-                    self.rhs.eval_scalar(idx),
-                )
+                <$simd_op>::apply_scalar(self.lhs.eval_scalar(idx), self.rhs.eval_scalar(idx))
             }
 
             #[inline(always)]
