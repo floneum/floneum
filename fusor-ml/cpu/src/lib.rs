@@ -275,14 +275,11 @@ impl<T: SimdElement, const RANK: usize> Expr for ConcreteTensor<T, RANK> {
     fn eval_simd<S: Simd>(&self, _simd: S, base_idx: usize) -> T::Simd<S> {
         if self.layout.is_contiguous() {
             // Fast path: direct SIMD load from contiguous, aligned data
-            // SAFETY:
             // - base_idx is always aligned to SIMD width (caller guarantees this)
             // - backing is allocated with 64-byte alignment via aligned-vec
             // - base_idx + lane_count <= len (caller guarantees this)
-            unsafe {
-                let ptr = self.backing.as_ptr().add(base_idx) as *const T::Simd<S>;
-                ptr.read_unaligned()
-            }
+            let (simd_slice, _) = T::as_simd::<S>(&self.backing[base_idx..]);
+            simd_slice[0]
         } else {
             // Slow path: gather elements one by one
             // For strided tensors, we fall back to scalar evaluation

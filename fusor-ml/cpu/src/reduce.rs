@@ -164,10 +164,8 @@ macro_rules! impl_reduce_op {
 
             #[inline(always)]
             fn reduce_simd_vec<S: Simd>(_simd: S, v: <$elem as SimdElement>::Simd<S>) -> $elem {
-                // Convert SIMD to slice via pointer cast (safe for Pod types)
-                let ptr = &v as *const _ as *const $elem;
-                let len = std::mem::size_of_val(&v) / std::mem::size_of::<$elem>();
-                let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
+                // Safe: cast SIMD ref to scalar slice via bytemuck
+                let slice: &[$elem] = pulp::bytemuck::cast_slice(std::slice::from_ref(&v));
                 slice
                     .iter()
                     .copied()
