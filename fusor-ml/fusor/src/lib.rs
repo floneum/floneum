@@ -8,22 +8,20 @@
 //! - CPU kernel fusion is preserved (expression types stay lazy)
 //! - GPU laziness is preserved (compute graph batching)
 
-pub mod composite;
 mod device;
 mod error;
-mod gpu;
-mod ops;
 
 pub use device::Device;
 pub use error::Error;
-pub use gpu::{GpuAbs, GpuCos, GpuExp, GpuExp2, GpuLog, GpuLog2, GpuSin, GpuSqrt, GpuTan, GpuTanh};
-pub use gpu::{GpuAdd, GpuDiv, GpuMul, GpuNeg, GpuSub, GpuTensor, GpuTensorLike, HasDevice};
+use fusor_cpu::TensorBacking;
 
 // Re-export from fusor-cpu
 pub use fusor_cpu::{
     Abs, Add, ConcreteTensor, Cos, Div, Exp, Exp2, Expr, Log, Log2, Mul, Neg, ResolveTensor,
     ResolvedTensor, SimdElement, Sin, Sqrt, Sub, Tan, Tanh, Tensor as CpuTensor,
 };
+
+pub use fusor_core::Tensor as GpuTensor;
 
 // Re-export from fusor-core for GPU types
 pub use fusor_core::{DataType, FloatDataType};
@@ -35,12 +33,12 @@ pub use fusor_core::{DataType, FloatDataType};
 /// - CPU: Expression types stay lazy and fuse at resolve time
 /// - GPU: Operations build a compute graph that batches at resolve time
 #[derive(Clone)]
-pub enum GpuOr<const R: usize, D, CpuT = fusor_cpu::ConcreteTensor<D, R>> {
-    Cpu(CpuT),
+pub enum GpuOr<const R: usize, D, B: TensorBacking<R, Elem=D> = fusor_cpu::ConcreteTensor<D, R>> {
+    Cpu(CpuTensor<R, B>),
     Gpu(GpuTensor<R, D>),
 }
 
-impl<const R: usize, D, CpuT: CpuTensor<RANK = { R }, Elem = D>> GpuOr<{ R }, D, CpuT> {
+impl<const R: usize, D, B> GpuOr<R , D, B> where B: TensorBacking<R, Elem=D> {
     /// Returns true if this is the CPU variant.
     #[inline]
     pub fn is_cpu(&self) -> bool {
@@ -55,7 +53,7 @@ impl<const R: usize, D, CpuT: CpuTensor<RANK = { R }, Elem = D>> GpuOr<{ R }, D,
 
     /// Returns a reference to the CPU tensor if this is the CPU variant.
     #[inline]
-    pub fn as_cpu(&self) -> Option<&CpuT> {
+    pub fn as_cpu(&self) -> Option<&CpuTensor<R, B>> {
         match self {
             GpuOr::Cpu(t) => Some(t),
             _ => None,
@@ -64,7 +62,7 @@ impl<const R: usize, D, CpuT: CpuTensor<RANK = { R }, Elem = D>> GpuOr<{ R }, D,
 
     /// Returns a reference to the GPU tensor if this is the GPU variant.
     #[inline]
-    pub fn as_gpu(&self) -> Option<&GpuT> {
+    pub fn as_gpu(&self) -> Option<&GpuTensor<R, D>> {
         match self {
             GpuOr::Gpu(t) => Some(t),
             _ => None,
@@ -73,7 +71,7 @@ impl<const R: usize, D, CpuT: CpuTensor<RANK = { R }, Elem = D>> GpuOr<{ R }, D,
 
     /// Returns a mutable reference to the CPU tensor if this is the CPU variant.
     #[inline]
-    pub fn as_cpu_mut(&mut self) -> Option<&mut CpuT> {
+    pub fn as_cpu_mut(&mut self) -> Option<&mut CpuTensor<R, B>> {
         match self {
             GpuOr::Cpu(t) => Some(t),
             _ => None,
@@ -82,7 +80,7 @@ impl<const R: usize, D, CpuT: CpuTensor<RANK = { R }, Elem = D>> GpuOr<{ R }, D,
 
     /// Returns a mutable reference to the GPU tensor if this is the GPU variant.
     #[inline]
-    pub fn as_gpu_mut(&mut self) -> Option<&mut GpuT> {
+    pub fn as_gpu_mut(&mut self) -> Option<&mut GpuTensor<R, D>> {
         match self {
             GpuOr::Gpu(t) => Some(t),
             _ => None,
@@ -91,7 +89,7 @@ impl<const R: usize, D, CpuT: CpuTensor<RANK = { R }, Elem = D>> GpuOr<{ R }, D,
 
     /// Unwrap the CPU variant, panicking if this is a GPU tensor.
     #[inline]
-    pub fn unwrap_cpu(self) -> CpuT {
+    pub fn unwrap_cpu(self) -> CpuTensor<R, B> {
         match self {
             GpuOr::Cpu(t) => t,
             GpuOr::Gpu(_) => panic!("Expected CPU tensor, found GPU tensor"),
@@ -100,86 +98,48 @@ impl<const R: usize, D, CpuT: CpuTensor<RANK = { R }, Elem = D>> GpuOr<{ R }, D,
 
     /// Unwrap the GPU variant, panicking if this is a CPU tensor.
     #[inline]
-    pub fn unwrap_gpu(self) -> GpuT {
+    pub fn unwrap_gpu(self) -> GpuTensor<R, D> {
         match self {
             GpuOr::Gpu(t) => t,
             GpuOr::Cpu(_) => panic!("Expected GPU tensor, found CPU tensor"),
         }
     }
 
-    /// Maps the CPU variant using the provided function.
     #[inline]
-    pub fn map_cpu<CpuT2, F: FnOnce(CpuT) -> CpuT2>(self, f: F) -> GpuOr<CpuT2, GpuT> {
+    pub fn dispatch<const R2: usize, D2, B2>(self, cpu_fn: impl FnOnce(CpuTensor<R, B>) -> CpuTensor<R2, B2>, gpu_fn: impl FnOnce(GpuTensor<R, D>) -> GpuTensor<R2, D2>) -> GpuOr<R2, D2, B2> where B2: TensorBacking<R2, Elem=D2> {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(f(t)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t),
-        }
-    }
-
-    /// Maps the GPU variant using the provided function.
-    #[inline]
-    pub fn map_gpu<GpuT2, F: FnOnce(GpuT) -> GpuT2>(self, f: F) -> GpuOr<CpuT, GpuT2> {
-        match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t),
-            GpuOr::Gpu(t) => GpuOr::Gpu(f(t)),
-        }
-    }
-
-    /// Maps both variants using the provided functions.
-    #[inline]
-    pub fn map<CpuT2, GpuT2, Fc: FnOnce(CpuT) -> CpuT2, Fg: FnOnce(GpuT) -> GpuT2>(
-        self,
-        cpu_f: Fc,
-        gpu_f: Fg,
-    ) -> GpuOr<CpuT2, GpuT2> {
-        match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(cpu_f(t)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(gpu_f(t)),
-        }
-    }
-
-    /// Returns the device this tensor is on.
-    pub fn device(&self) -> Device
-    where
-        GpuT: gpu::HasDevice,
-    {
-        match self {
-            GpuOr::Cpu(_) => Device::Cpu,
-            GpuOr::Gpu(t) => Device::Gpu(t.gpu_device().clone()),
+            GpuOr::Cpu(t) => GpuOr::Cpu(cpu_fn(t)),
+            GpuOr::Gpu(t) => GpuOr::Gpu(gpu_fn(t)),
         }
     }
 }
 
-impl<CpuT: std::fmt::Debug, GpuT: std::fmt::Debug> std::fmt::Debug for GpuOr<CpuT, GpuT> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            GpuOr::Cpu(t) => f.debug_tuple("Cpu").field(t).finish(),
-            GpuOr::Gpu(t) => f.debug_tuple("Gpu").field(t).finish(),
+impl<const R: usize, D, B, B2> std::ops::Add for GpuOr<R, D, B> where CpuTensor<R, B>: std::ops::Add<Output=CpuTensor<R, B2>>, GpuTensor<R, D>: std::ops::Add<Output=GpuTensor<R, D>>, B: TensorBacking<R, Elem=D>, B2: TensorBacking<R, Elem=D> {
+    type Output = GpuOr<R, D, B2>;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (GpuOr::Cpu(lhs), GpuOr::Cpu(rhs)) => GpuOr::Cpu(lhs + rhs),
+            (GpuOr::Gpu(lhs), GpuOr::Gpu(rhs)) => GpuOr::Gpu(lhs + rhs),
+            _ => panic!("Cannot add CPU tensor to GPU tensor"),
         }
     }
 }
 
-impl<const R: usize, T> GpuOr<fusor_cpu::ConcreteTensor<T, R>, gpu::GpuTensor<R, T>>
-where
-    T: fusor_cpu::SimdElement + fusor_core::DataType + Default,
-{
-    /// Create a CPU tensor filled with zeros.
-    pub fn cpu_zeros(shape: [usize; R]) -> Self {
-        GpuOr::Cpu(fusor_cpu::ConcreteTensor::zeros(shape))
-    }
+#[cfg(test)]
+#[tokio::test]
+async fn test_gpu_or_add() {
+    let a_cpu: CpuTensor<1, fusor_cpu::ConcreteTensor<f32, 1>> = fusor_cpu::Tensor::from_slice([3], &[1.0, 2.0, 3.0]);
+    let b_cpu: CpuTensor<1, fusor_cpu::ConcreteTensor<f32, 1>> = fusor_cpu::Tensor::from_slice([3], &[4.0, 5.0, 6.0]);
+    let device = fusor_core::Device::new().await.unwrap();
+    let a_gpu: GpuTensor<1, f32> = GpuTensor::new(&device, &[1.0, 2.0, 3.0]);
+    let b_gpu: GpuTensor<1, f32> = GpuTensor::new(&device, &[4.0, 5.0, 6.0]);
 
-    /// Create a CPU tensor from a slice.
-    pub fn cpu_from_slice(shape: [usize; R], data: &[T]) -> Self {
-        GpuOr::Cpu(fusor_cpu::ConcreteTensor::from_slice(shape, data))
-    }
+    let a_cpu_or = GpuOr::Cpu(a_cpu);
+    let b_cpu_or = GpuOr::Cpu(b_cpu);
+    let a_gpu_or = GpuOr::Gpu(a_gpu);
+    let b_gpu_or = GpuOr::Gpu(b_gpu);
 
-    /// Create a GPU tensor filled with zeros.
-    pub fn gpu_zeros(device: &fusor_core::Device, shape: [usize; R]) -> Self {
-        GpuOr::Gpu(gpu::GpuTensor::zeros(device, shape))
-    }
-
-    /// Create a GPU tensor filled with a specific value.
-    pub fn gpu_full(device: &fusor_core::Device, value: T, shape: [usize; R]) -> Self {
-        GpuOr::Gpu(gpu::GpuTensor::full(device, value, shape))
-    }
+    let c_cpu_or = a_cpu_or + b_cpu_or;
+    let c_gpu_or = a_gpu_or + b_gpu_or;
 }
