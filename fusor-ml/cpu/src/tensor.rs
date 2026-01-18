@@ -2,11 +2,13 @@
 
 use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Neg as StdNeg, Range, Sub as StdSub};
 
+use fusor_types::Layout;
 use pulp::Simd;
 
 use crate::cast::{CastTo, cast_tensor};
 use crate::comparison::{EqOp, GtOp, GteOp, LtOp, LteOp, NeOp, SimdComparisonOp};
 use crate::comparison::{comparison_scalar_op_ref, comparison_tensor_op_ref};
+use crate::concrete_tensor::IndexIterator;
 use crate::conditional::{IsNonZero, where_cond_ref};
 use crate::elementwise::{
     AbsOp, CosOp, Exp2Op, ExpOp, Log2Op, LogOp, NegOp, SimdUnaryOp, SinOp, SqrtOp, TanOp, TanhOp,
@@ -88,6 +90,336 @@ where
     /// Materialize the tensor to a ConcreteTensor
     pub fn eval(&self) -> Tensor<R, ConcreteTensor<E, R>> {
         Tensor::new(self.inner.to_concrete())
+    }
+
+    /// Slice the tensor along all dimensions
+    ///
+    /// Returns a view into the tensor's data with updated layout.
+    pub fn slice(
+        &self,
+        slices: [Range<usize>; R],
+    ) -> Tensor<R, ConcreteTensor<E, R>> {
+        let concrete = self.inner.to_concrete();
+        let new_layout = concrete.layout().slice(&slices);
+        Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+    }
+
+    /// Permute the tensor dimensions according to the given axes order
+    ///
+    /// # Arguments
+    /// * `axes` - A permutation of [0, 1, ..., R-1] specifying the new order
+    pub fn permute(&self, axes: [usize; R]) -> Tensor<R, ConcreteTensor<E, R>> {
+        // Validate axes are a valid permutation
+        let mut seen = [false; R];
+        for &axis in &axes {
+            assert!(axis < R, "Axis {} out of range for rank {}", axis, R);
+            assert!(!seen[axis], "Duplicate axis {} in permutation", axis);
+            seen[axis] = true;
+        }
+
+        let concrete = self.inner.to_concrete();
+        let old_shape = concrete.layout().shape();
+        let old_strides = concrete.layout().strides();
+
+        let mut new_shape = vec![0usize; R];
+        let mut new_strides = vec![0usize; R];
+        for (new_idx, &old_idx) in axes.iter().enumerate() {
+            new_shape[new_idx] = old_shape[old_idx];
+            new_strides[new_idx] = old_strides[old_idx];
+        }
+
+        let new_layout = Layout::from_parts(
+            concrete.layout().offset(),
+            new_shape.into_boxed_slice(),
+            new_strides.into_boxed_slice(),
+        );
+
+        Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+    }
+
+    /// Transpose two dimensions of the tensor
+    ///
+    /// # Arguments
+    /// * `dim0` - First dimension to swap
+    /// * `dim1` - Second dimension to swap
+    pub fn transpose(&self, dim0: usize, dim1: usize) -> Tensor<R, ConcreteTensor<E, R>> {
+        assert!(dim0 < R, "dim0 {} out of range for rank {}", dim0, R);
+        assert!(dim1 < R, "dim1 {} out of range for rank {}", dim1, R);
+
+        let concrete = self.inner.to_concrete();
+        let old_shape = concrete.layout().shape();
+        let old_strides = concrete.layout().strides();
+
+        let mut new_shape: Vec<usize> = old_shape.to_vec();
+        let mut new_strides: Vec<usize> = old_strides.to_vec();
+
+        new_shape.swap(dim0, dim1);
+        new_strides.swap(dim0, dim1);
+
+        let new_layout = Layout::from_parts(
+            concrete.layout().offset(),
+            new_shape.into_boxed_slice(),
+            new_strides.into_boxed_slice(),
+        );
+
+        Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+    }
+
+    /// Broadcast the tensor to a larger shape
+    ///
+    /// Broadcasting rules:
+    /// - Dimensions are aligned from the right
+    /// - A dimension can be broadcast if it's 1 or matches the target
+    /// - New dimensions can be added on the left
+    pub fn broadcast_as<const R2: usize>(
+        &self,
+        out_shape: [usize; R2],
+    ) -> Tensor<R2, ConcreteTensor<E, R2>> {
+        assert!(R2 >= R, "Cannot broadcast to smaller rank");
+
+        let concrete = self.inner.to_concrete();
+        let old_shape = concrete.layout().shape();
+        let old_strides = concrete.layout().strides();
+
+        // Align dimensions from the right
+        let offset = R2 - R;
+        let mut new_strides = vec![0usize; R2];
+
+        for i in 0..R {
+            let new_idx = i + offset;
+            if old_shape[i] == out_shape[new_idx] {
+                new_strides[new_idx] = old_strides[i];
+            } else if old_shape[i] == 1 {
+                new_strides[new_idx] = 0;
+            } else {
+                panic!(
+                    "Cannot broadcast dimension {} from {} to {}",
+                    i, old_shape[i], out_shape[new_idx]
+                );
+            }
+        }
+
+        let new_layout = Layout::from_parts(
+            concrete.layout().offset(),
+            out_shape.to_vec().into_boxed_slice(),
+            new_strides.into_boxed_slice(),
+        );
+
+        Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+    }
+
+    /// Reshape the tensor to a new shape
+    ///
+    /// The total number of elements must remain the same.
+    pub fn reshape<const R2: usize>(
+        &self,
+        new_shape: [usize; R2],
+    ) -> Tensor<R2, ConcreteTensor<E, R2>> {
+        let concrete = self.inner.to_concrete();
+        let old_elements: usize = concrete.layout().shape().iter().product();
+        let new_elements: usize = new_shape.iter().product();
+        assert_eq!(
+            old_elements, new_elements,
+            "Cannot reshape: element count mismatch ({} vs {})",
+            old_elements, new_elements
+        );
+
+        if concrete.layout().is_contiguous() {
+            let new_layout = Layout::contiguous(&new_shape);
+            Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+        } else {
+            // Make contiguous first, then reshape
+            let contiguous = self.make_contiguous();
+            let new_layout = Layout::contiguous(&new_shape);
+            Tensor::new(ConcreteTensor::from_parts(new_layout, contiguous.inner.backing().clone()))
+        }
+    }
+
+    /// Flatten the tensor to 1D
+    pub fn flatten_all(&self) -> Tensor<1, ConcreteTensor<E, 1>> {
+        let concrete = self.inner.to_concrete();
+        let total: usize = concrete.layout().shape().iter().product();
+        self.reshape([total])
+    }
+
+    /// Make the tensor contiguous by copying data if necessary
+    pub fn make_contiguous(&self) -> Tensor<R, ConcreteTensor<E, R>> {
+        let concrete = self.inner.to_concrete();
+        if concrete.layout().is_contiguous() {
+            return Tensor::new(concrete);
+        }
+
+        let shape: [usize; R] = concrete.layout().shape().try_into().expect("Shape length mismatch");
+        let mut output = ConcreteTensor::<E, R>::zeros(shape);
+
+        for indices in IndexIterator::new(concrete.layout().shape()) {
+            let indices_arr: [usize; R] = indices.try_into().expect("Indices length mismatch");
+            let src_idx = concrete.layout().linear_index(&indices_arr);
+            let dst_idx = output.layout().linear_index(&indices_arr);
+            output.backing_mut()[dst_idx] = concrete.backing()[src_idx];
+        }
+
+        Tensor::new(output)
+    }
+
+    /// Narrow the tensor along a given dimension
+    ///
+    /// # Arguments
+    /// * `dim` - The dimension to narrow
+    /// * `start` - The starting index
+    /// * `length` - The length of the slice
+    pub fn narrow(&self, dim: usize, start: usize, length: usize) -> Tensor<R, ConcreteTensor<E, R>> {
+        let concrete = self.inner.to_concrete();
+        assert!(dim < R, "Dimension {} out of range for rank {}", dim, R);
+        assert!(
+            start + length <= concrete.layout().shape()[dim],
+            "Narrow out of bounds: {}..{} for dimension of size {}",
+            start,
+            start + length,
+            concrete.layout().shape()[dim]
+        );
+
+        let shape = concrete.layout().shape();
+        let mut slices: Vec<Range<usize>> = Vec::with_capacity(R);
+        for (i, &size) in shape.iter().enumerate() {
+            if i == dim {
+                slices.push(start..start + length);
+            } else {
+                slices.push(0..size);
+            }
+        }
+
+        let slices_arr: [Range<usize>; R] = slices.try_into().expect("Slice length mismatch");
+        self.slice(slices_arr)
+    }
+
+    /// Split the tensor into chunks along a given dimension
+    ///
+    /// # Arguments
+    /// * `chunks` - Number of chunks to split into
+    /// * `dim` - The dimension to split along
+    pub fn chunk(&self, chunks: usize, dim: usize) -> Vec<Tensor<R, ConcreteTensor<E, R>>> {
+        let concrete = self.inner.to_concrete();
+        assert!(dim < R, "Dimension {} out of range for rank {}", dim, R);
+        assert!(chunks > 0, "Number of chunks must be positive");
+
+        let dim_size = concrete.layout().shape()[dim];
+        let chunk_size = (dim_size + chunks - 1) / chunks;
+
+        let mut result = Vec::with_capacity(chunks);
+        let mut start = 0;
+
+        while start < dim_size {
+            let length = chunk_size.min(dim_size - start);
+            result.push(self.narrow(dim, start, length));
+            start += length;
+        }
+
+        result
+    }
+
+    /// Repeat the tensor along each dimension
+    ///
+    /// # Arguments
+    /// * `repeats` - Number of times to repeat along each dimension
+    pub fn repeat(&self, repeats: [usize; R]) -> Tensor<R, ConcreteTensor<E, R>> {
+        let concrete = self.inner.to_concrete();
+        let old_shape = concrete.layout().shape();
+        let mut new_shape = [0usize; R];
+        for i in 0..R {
+            new_shape[i] = old_shape[i] * repeats[i];
+        }
+
+        let mut output = ConcreteTensor::<E, R>::zeros(new_shape);
+
+        for out_indices in IndexIterator::new(&new_shape) {
+            let out_arr: [usize; R] = out_indices.try_into().expect("Indices length mismatch");
+
+            let mut in_arr = [0usize; R];
+            for i in 0..R {
+                in_arr[i] = out_arr[i] % old_shape[i];
+            }
+
+            let src_idx = concrete.layout().linear_index(&in_arr);
+            let dst_idx = output.layout().linear_index(&out_arr);
+            output.backing_mut()[dst_idx] = concrete.backing()[src_idx];
+        }
+
+        Tensor::new(output)
+    }
+
+    /// Squeeze a dimension of size 1
+    ///
+    /// # Arguments
+    /// * `dim` - The dimension to squeeze (must have size 1)
+    pub fn squeeze<const R2: usize>(&self, dim: usize) -> Tensor<R2, ConcreteTensor<E, R2>> {
+        assert!(R > 0, "Cannot squeeze a scalar tensor");
+        assert!(R2 == R - 1, "Output rank must be R - 1");
+        assert!(dim < R, "Dimension {} out of range for rank {}", dim, R);
+
+        let concrete = self.inner.to_concrete();
+        assert!(
+            concrete.layout().shape()[dim] == 1,
+            "Cannot squeeze dimension {} of size {} (must be 1)",
+            dim,
+            concrete.layout().shape()[dim]
+        );
+
+        let old_shape = concrete.layout().shape();
+        let old_strides = concrete.layout().strides();
+
+        let mut new_shape = Vec::with_capacity(R2);
+        let mut new_strides = Vec::with_capacity(R2);
+
+        for i in 0..R {
+            if i != dim {
+                new_shape.push(old_shape[i]);
+                new_strides.push(old_strides[i]);
+            }
+        }
+
+        let new_layout = Layout::from_parts(
+            concrete.layout().offset(),
+            new_shape.into_boxed_slice(),
+            new_strides.into_boxed_slice(),
+        );
+
+        Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+    }
+
+    /// Unsqueeze (add a dimension of size 1)
+    ///
+    /// # Arguments
+    /// * `dim` - Where to insert the new dimension
+    pub fn unsqueeze<const R2: usize>(&self, dim: usize) -> Tensor<R2, ConcreteTensor<E, R2>> {
+        assert!(R2 == R + 1, "Output rank must be R + 1");
+        assert!(dim <= R, "Dimension {} out of range for inserting into rank {}", dim, R);
+
+        let concrete = self.inner.to_concrete();
+        let old_shape = concrete.layout().shape();
+        let old_strides = concrete.layout().strides();
+
+        let mut new_shape = Vec::with_capacity(R2);
+        let mut new_strides = Vec::with_capacity(R2);
+
+        for i in 0..R2 {
+            if i == dim {
+                new_shape.push(1);
+                new_strides.push(1);
+            } else {
+                let old_idx = if i < dim { i } else { i - 1 };
+                new_shape.push(old_shape[old_idx]);
+                new_strides.push(old_strides[old_idx]);
+            }
+        }
+
+        let new_layout = Layout::from_parts(
+            concrete.layout().offset(),
+            new_shape.into_boxed_slice(),
+            new_strides.into_boxed_slice(),
+        );
+
+        Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
     }
 
     /// Absolute value element-wise
@@ -894,5 +1226,175 @@ where
 {
     fn to_concrete(&self) -> ConcreteTensor<E, R> {
         self.inner.to_concrete()
+    }
+}
+
+// Matrix transpose for 2D tensors
+impl<E, T> Tensor<2, T>
+where
+    E: SimdElement,
+    T: TensorBacking<2, Elem = E> + ResolveTensor<2, Elem = E>,
+{
+    /// Transpose a 2D matrix (swap dimensions 0 and 1)
+    pub fn t(&self) -> Tensor<2, ConcreteTensor<E, 2>> {
+        self.transpose(0, 1)
+    }
+}
+
+// Matrix transpose for 3D tensors
+impl<E, T> Tensor<3, T>
+where
+    E: SimdElement,
+    T: TensorBacking<3, Elem = E> + ResolveTensor<3, Elem = E>,
+{
+    /// Transpose last two dimensions
+    pub fn t(&self) -> Tensor<3, ConcreteTensor<E, 3>> {
+        self.transpose(1, 2)
+    }
+}
+
+// Matrix transpose for 4D tensors
+impl<E, T> Tensor<4, T>
+where
+    E: SimdElement,
+    T: TensorBacking<4, Elem = E> + ResolveTensor<4, Elem = E>,
+{
+    /// Transpose last two dimensions
+    pub fn t(&self) -> Tensor<4, ConcreteTensor<E, 4>> {
+        self.transpose(2, 3)
+    }
+}
+
+// Static methods for concatenation and stacking
+impl<const R: usize, E: SimdElement> Tensor<R, ConcreteTensor<E, R>> {
+    /// Concatenate multiple tensors along a given dimension
+    ///
+    /// # Arguments
+    /// * `tensors` - Iterator of tensors to concatenate
+    /// * `dim` - The dimension to concatenate along
+    pub fn cat(tensors: impl IntoIterator<Item = Self>, dim: usize) -> Self
+    where
+        E: Default,
+    {
+        let tensors: Vec<_> = tensors.into_iter().collect();
+        assert!(!tensors.is_empty(), "Cannot concatenate empty list of tensors");
+        assert!(dim < R, "Dimension {} out of range for rank {}", dim, R);
+
+        let first_shape = tensors[0].inner.layout().shape();
+
+        // Validate shapes and calculate output dimension size
+        let mut cat_dim_size = 0;
+        for tensor in &tensors {
+            let shape = tensor.inner.layout().shape();
+            for (i, (&s1, &s2)) in first_shape.iter().zip(shape.iter()).enumerate() {
+                if i == dim {
+                    cat_dim_size += s2;
+                } else {
+                    assert_eq!(s1, s2, "Shape mismatch at dimension {}: {} vs {}", i, s1, s2);
+                }
+            }
+        }
+
+        // Build output shape
+        let mut out_shape = [0usize; R];
+        for (i, &s) in first_shape.iter().enumerate() {
+            out_shape[i] = if i == dim { cat_dim_size } else { s };
+        }
+
+        let mut output = ConcreteTensor::<E, R>::zeros(out_shape);
+        let mut offset_in_dim = 0;
+
+        for tensor in tensors {
+            let tensor_shape = tensor.inner.layout().shape();
+            let tensor_dim_size = tensor_shape[dim];
+
+            for indices in IndexIterator::new(tensor_shape) {
+                let src_arr: [usize; R] = indices.clone().try_into().expect("Indices length mismatch");
+
+                let mut dst_arr = src_arr;
+                dst_arr[dim] += offset_in_dim;
+
+                let src_idx = tensor.inner.layout().linear_index(&src_arr);
+                let dst_idx = output.layout().linear_index(&dst_arr);
+                output.backing_mut()[dst_idx] = tensor.inner.backing()[src_idx];
+            }
+
+            offset_in_dim += tensor_dim_size;
+        }
+
+        Tensor::new(output)
+    }
+
+    /// Stack tensors along a new dimension
+    ///
+    /// # Arguments
+    /// * `tensors` - Iterator of tensors to stack
+    /// * `dim` - Where to insert the new stacking dimension
+    pub fn stack<const R2: usize>(
+        tensors: impl IntoIterator<Item = Self>,
+        dim: usize,
+    ) -> Tensor<R2, ConcreteTensor<E, R2>>
+    where
+        E: Default,
+    {
+        assert!(R2 == R + 1, "Output rank must be R + 1");
+        assert!(dim <= R, "Stack dimension {} out of range for rank {}", dim, R);
+
+        let tensors: Vec<_> = tensors.into_iter().collect();
+        assert!(!tensors.is_empty(), "Cannot stack empty list of tensors");
+
+        let first_shape = tensors[0].inner.layout().shape();
+
+        // Validate all tensors have same shape
+        for tensor in &tensors {
+            assert_eq!(
+                tensor.inner.layout().shape(), first_shape,
+                "All tensors must have same shape for stacking"
+            );
+        }
+
+        // Unsqueeze each tensor and concatenate
+        let unsqueezed: Vec<Tensor<R2, ConcreteTensor<E, R2>>> = tensors
+            .into_iter()
+            .map(|t| t.unsqueeze(dim))
+            .collect();
+
+        Tensor::cat(unsqueezed, dim)
+    }
+}
+
+// Static methods for creating 1D tensors
+impl<E: SimdElement> Tensor<1, ConcreteTensor<E, 1>> {
+    /// Create a range tensor from start (inclusive) to end (exclusive)
+    ///
+    /// # Arguments
+    /// * `start` - Starting value
+    /// * `end` - Ending value (exclusive)
+    pub fn arange(start: E, end: E) -> Self
+    where
+        E: std::ops::Add<Output = E> + PartialOrd + From<u8>,
+    {
+        Self::arange_step(start, end, E::from(1u8))
+    }
+
+    /// Create a range tensor with a custom step
+    ///
+    /// # Arguments
+    /// * `start` - Starting value
+    /// * `end` - Ending value (exclusive)
+    /// * `step` - Step size between values
+    pub fn arange_step(start: E, end: E, step: E) -> Self
+    where
+        E: std::ops::Add<Output = E> + PartialOrd,
+    {
+        let mut values = Vec::new();
+        let mut current = start;
+        while current < end {
+            values.push(current);
+            current = current + step;
+        }
+
+        let len = values.len();
+        Tensor::from_slice([len], &values)
     }
 }

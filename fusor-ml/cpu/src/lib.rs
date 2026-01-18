@@ -109,6 +109,111 @@ macro_rules! impl_last_rank {
 // Generate for ranks 1-10
 impl_last_rank!(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
 
+// Trait for mapping tensor to its next-higher rank type (for unsqueeze)
+pub trait NextRankInner {
+    type NextRank;
+}
+
+pub trait NextRank<const R: usize, T: SimdElement>:
+    NextRankInner<NextRank = ConcreteTensor<T, R>>
+{
+}
+
+impl<const R: usize, T: SimdElement, X> NextRank<R, T> for X where
+    X: NextRankInner<NextRank = ConcreteTensor<T, R>>
+{
+}
+
+// Macro to generate NextRankInner implementations for each rank
+macro_rules! impl_next_rank {
+    ($($R:literal),*) => {
+        $(
+            impl<T: SimdElement> NextRankInner for ConcreteTensor<T, $R> {
+                type NextRank = ConcreteTensor<T, { $R + 1 }>;
+            }
+        )*
+    };
+}
+
+// Generate for ranks 0-9 (so next rank goes up to 10)
+impl_next_rank!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+
+// Trait for mapping tensor to a smaller rank (for squeeze, reduce)
+pub trait SmallerRankInner<const DIFF: usize> {
+    type SmallerRank;
+}
+
+pub trait SmallerRank<const R: usize, const DIFF: usize, T: SimdElement>:
+    SmallerRankInner<DIFF, SmallerRank = ConcreteTensor<T, R>>
+{
+}
+
+impl<const R: usize, const DIFF: usize, T: SimdElement, X> SmallerRank<R, DIFF, T> for X where
+    X: SmallerRankInner<DIFF, SmallerRank = ConcreteTensor<T, R>>
+{
+}
+
+// Macro to generate SmallerRankInner implementations
+macro_rules! impl_smaller_rank {
+    ($R:literal, $($DIFF:literal => $OUT:literal),*) => {
+        $(
+            impl<T: SimdElement> SmallerRankInner<$DIFF> for ConcreteTensor<T, $R> {
+                type SmallerRank = ConcreteTensor<T, $OUT>;
+            }
+        )*
+    };
+}
+
+// Generate smaller rank mappings
+impl_smaller_rank!(1, 1 => 0);
+impl_smaller_rank!(2, 1 => 1, 2 => 0);
+impl_smaller_rank!(3, 1 => 2, 2 => 1, 3 => 0);
+impl_smaller_rank!(4, 1 => 3, 2 => 2, 3 => 1, 4 => 0);
+impl_smaller_rank!(5, 1 => 4, 2 => 3, 3 => 2, 4 => 1, 5 => 0);
+impl_smaller_rank!(6, 1 => 5, 2 => 4, 3 => 3, 4 => 2, 5 => 1, 6 => 0);
+impl_smaller_rank!(7, 1 => 6, 2 => 5, 3 => 4, 4 => 3, 5 => 2, 6 => 1, 7 => 0);
+impl_smaller_rank!(8, 1 => 7, 2 => 6, 3 => 5, 4 => 4, 5 => 3, 6 => 2, 7 => 1, 8 => 0);
+impl_smaller_rank!(9, 1 => 8, 2 => 7, 3 => 6, 4 => 5, 5 => 4, 6 => 3, 7 => 2, 8 => 1, 9 => 0);
+impl_smaller_rank!(10, 1 => 9, 2 => 8, 3 => 7, 4 => 6, 5 => 5, 6 => 4, 7 => 3, 8 => 2, 9 => 1, 10 => 0);
+
+// Trait for mapping tensor to a larger rank (for unsqueeze, expand)
+pub trait LargerRankInner<const DIFF: usize> {
+    type LargerRank;
+}
+
+pub trait LargerRank<const R: usize, const DIFF: usize, T: SimdElement>:
+    LargerRankInner<DIFF, LargerRank = ConcreteTensor<T, R>>
+{
+}
+
+impl<const R: usize, const DIFF: usize, T: SimdElement, X> LargerRank<R, DIFF, T> for X where
+    X: LargerRankInner<DIFF, LargerRank = ConcreteTensor<T, R>>
+{
+}
+
+// Macro to generate LargerRankInner implementations
+macro_rules! impl_larger_rank {
+    ($R:literal, $($DIFF:literal => $OUT:literal),*) => {
+        $(
+            impl<T: SimdElement> LargerRankInner<$DIFF> for ConcreteTensor<T, $R> {
+                type LargerRank = ConcreteTensor<T, $OUT>;
+            }
+        )*
+    };
+}
+
+// Generate larger rank mappings
+impl_larger_rank!(0, 1 => 1, 2 => 2, 3 => 3, 4 => 4, 5 => 5, 6 => 6, 7 => 7, 8 => 8, 9 => 9, 10 => 10);
+impl_larger_rank!(1, 1 => 2, 2 => 3, 3 => 4, 4 => 5, 5 => 6, 6 => 7, 7 => 8, 8 => 9, 9 => 10);
+impl_larger_rank!(2, 1 => 3, 2 => 4, 3 => 5, 4 => 6, 5 => 7, 6 => 8, 7 => 9, 8 => 10);
+impl_larger_rank!(3, 1 => 4, 2 => 5, 3 => 6, 4 => 7, 5 => 8, 6 => 9, 7 => 10);
+impl_larger_rank!(4, 1 => 5, 2 => 6, 3 => 7, 4 => 8, 5 => 9, 6 => 10);
+impl_larger_rank!(5, 1 => 6, 2 => 7, 3 => 8, 4 => 9, 5 => 10);
+impl_larger_rank!(6, 1 => 7, 2 => 8, 3 => 9, 4 => 10);
+impl_larger_rank!(7, 1 => 8, 2 => 9, 3 => 10);
+impl_larger_rank!(8, 1 => 9, 2 => 10);
+impl_larger_rank!(9, 1 => 10);
+
 pub trait TensorBacking<const R: usize> {
     type Elem: SimdElement;
 }
@@ -306,5 +411,272 @@ mod tests {
         let t: Tensor<2, ConcreteTensor<f32, 2>> = Tensor::zeros([3, 4]);
         assert_eq!(t.get([0, 0]), 0.0);
         assert_eq!(t.get([2, 3]), 0.0);
+    }
+
+    #[test]
+    fn test_slice_2d() {
+        // Create a 3x4 tensor
+        let t: Tensor<2, ConcreteTensor<f32, 2>> =
+            Tensor::from_slice([3, 4], &[
+                1.0, 2.0, 3.0, 4.0,
+                5.0, 6.0, 7.0, 8.0,
+                9.0, 10.0, 11.0, 12.0
+            ]);
+
+        // Slice to get a 2x2 sub-tensor starting at [1, 1]
+        let sliced = t.slice([1..3, 1..3]);
+        assert_eq!(sliced.get([0, 0]), 6.0);
+        assert_eq!(sliced.get([0, 1]), 7.0);
+        assert_eq!(sliced.get([1, 0]), 10.0);
+        assert_eq!(sliced.get([1, 1]), 11.0);
+    }
+
+    #[test]
+    fn test_permute_2d() {
+        // Create a 2x3 tensor
+        let t: Tensor<2, ConcreteTensor<f32, 2>> =
+            Tensor::from_slice([2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+
+        // Permute to 3x2
+        let permuted = t.permute([1, 0]);
+        assert_eq!(permuted.inner().layout().shape(), &[3, 2]);
+        assert_eq!(permuted.get([0, 0]), 1.0);
+        assert_eq!(permuted.get([0, 1]), 4.0);
+        assert_eq!(permuted.get([1, 0]), 2.0);
+        assert_eq!(permuted.get([2, 1]), 6.0);
+    }
+
+    #[test]
+    fn test_transpose_2d() {
+        let t: Tensor<2, ConcreteTensor<f32, 2>> =
+            Tensor::from_slice([2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+
+        let transposed = t.t();
+        assert_eq!(transposed.inner().layout().shape(), &[3, 2]);
+        assert_eq!(transposed.get([0, 0]), 1.0);
+        assert_eq!(transposed.get([0, 1]), 4.0);
+        assert_eq!(transposed.get([2, 0]), 3.0);
+        assert_eq!(transposed.get([2, 1]), 6.0);
+    }
+
+    #[test]
+    fn test_broadcast_as() {
+        // Create a 1x3 tensor
+        let t: Tensor<1, ConcreteTensor<f32, 1>> =
+            Tensor::from_slice([3], &[1.0, 2.0, 3.0]);
+
+        // Broadcast to 2x3
+        let broadcasted: Tensor<2, ConcreteTensor<f32, 2>> = t.broadcast_as([2, 3]);
+        assert_eq!(broadcasted.inner().layout().shape(), &[2, 3]);
+        assert_eq!(broadcasted.get([0, 0]), 1.0);
+        assert_eq!(broadcasted.get([0, 2]), 3.0);
+        assert_eq!(broadcasted.get([1, 0]), 1.0);
+        assert_eq!(broadcasted.get([1, 2]), 3.0);
+    }
+
+    #[test]
+    fn test_reshape() {
+        let t: Tensor<1, ConcreteTensor<f32, 1>> =
+            Tensor::from_slice([6], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+
+        // Reshape to 2x3
+        let reshaped: Tensor<2, ConcreteTensor<f32, 2>> = t.reshape([2, 3]);
+        assert_eq!(reshaped.inner().layout().shape(), &[2, 3]);
+        assert_eq!(reshaped.get([0, 0]), 1.0);
+        assert_eq!(reshaped.get([0, 2]), 3.0);
+        assert_eq!(reshaped.get([1, 0]), 4.0);
+        assert_eq!(reshaped.get([1, 2]), 6.0);
+    }
+
+    #[test]
+    fn test_flatten_all() {
+        let t: Tensor<2, ConcreteTensor<f32, 2>> =
+            Tensor::from_slice([2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+
+        let flattened = t.flatten_all();
+        assert_eq!(flattened.inner().layout().shape(), &[6]);
+        assert_eq!(flattened.get([0]), 1.0);
+        assert_eq!(flattened.get([5]), 6.0);
+    }
+
+    #[test]
+    fn test_narrow() {
+        let t: Tensor<2, ConcreteTensor<f32, 2>> =
+            Tensor::from_slice([3, 4], &[
+                1.0, 2.0, 3.0, 4.0,
+                5.0, 6.0, 7.0, 8.0,
+                9.0, 10.0, 11.0, 12.0
+            ]);
+
+        // Narrow dimension 0, starting at 1, length 2
+        let narrowed = t.narrow(0, 1, 2);
+        assert_eq!(narrowed.inner().layout().shape(), &[2, 4]);
+        assert_eq!(narrowed.get([0, 0]), 5.0);
+        assert_eq!(narrowed.get([1, 3]), 12.0);
+    }
+
+    #[test]
+    fn test_chunk() {
+        let t: Tensor<1, ConcreteTensor<f32, 1>> =
+            Tensor::from_slice([6], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+
+        let chunks = t.chunk(3, 0);
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].get([0]), 1.0);
+        assert_eq!(chunks[0].get([1]), 2.0);
+        assert_eq!(chunks[1].get([0]), 3.0);
+        assert_eq!(chunks[2].get([1]), 6.0);
+    }
+
+    #[test]
+    fn test_repeat() {
+        let t: Tensor<2, ConcreteTensor<f32, 2>> =
+            Tensor::from_slice([2, 2], &[1.0, 2.0, 3.0, 4.0]);
+
+        let repeated = t.repeat([2, 3]);
+        assert_eq!(repeated.inner().layout().shape(), &[4, 6]);
+        assert_eq!(repeated.get([0, 0]), 1.0);
+        assert_eq!(repeated.get([0, 2]), 1.0);  // Repeated column
+        assert_eq!(repeated.get([2, 0]), 1.0);  // Repeated row
+        assert_eq!(repeated.get([3, 5]), 4.0);  // Last element repeated
+    }
+
+    #[test]
+    fn test_squeeze_unsqueeze() {
+        // Start with a 2x1x3 tensor
+        let t: Tensor<3, ConcreteTensor<f32, 3>> =
+            Tensor::from_slice([2, 1, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+
+        // Squeeze dimension 1 to get 2x3
+        let squeezed: Tensor<2, ConcreteTensor<f32, 2>> = t.squeeze(1);
+        assert_eq!(squeezed.inner().layout().shape(), &[2, 3]);
+        assert_eq!(squeezed.get([0, 0]), 1.0);
+        assert_eq!(squeezed.get([1, 2]), 6.0);
+
+        // Unsqueeze back to get 2x1x3
+        let unsqueezed: Tensor<3, ConcreteTensor<f32, 3>> = squeezed.unsqueeze(1);
+        assert_eq!(unsqueezed.inner().layout().shape(), &[2, 1, 3]);
+        assert_eq!(unsqueezed.get([0, 0, 0]), 1.0);
+        assert_eq!(unsqueezed.get([1, 0, 2]), 6.0);
+    }
+
+    #[test]
+    fn test_cat() {
+        let a: Tensor<2, ConcreteTensor<f32, 2>> =
+            Tensor::from_slice([2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        let b: Tensor<2, ConcreteTensor<f32, 2>> =
+            Tensor::from_slice([2, 3], &[7.0, 8.0, 9.0, 10.0, 11.0, 12.0]);
+
+        // Cat along dim 0
+        let cat_dim0 = Tensor::cat([a.eval(), b.eval()], 0);
+        assert_eq!(cat_dim0.inner().layout().shape(), &[4, 3]);
+        assert_eq!(cat_dim0.get([0, 0]), 1.0);
+        assert_eq!(cat_dim0.get([2, 0]), 7.0);
+
+        let a2: Tensor<2, ConcreteTensor<f32, 2>> =
+            Tensor::from_slice([2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        let b2: Tensor<2, ConcreteTensor<f32, 2>> =
+            Tensor::from_slice([2, 3], &[7.0, 8.0, 9.0, 10.0, 11.0, 12.0]);
+
+        // Cat along dim 1
+        let cat_dim1 = Tensor::cat([a2.eval(), b2.eval()], 1);
+        assert_eq!(cat_dim1.inner().layout().shape(), &[2, 6]);
+        assert_eq!(cat_dim1.get([0, 0]), 1.0);
+        assert_eq!(cat_dim1.get([0, 3]), 7.0);
+    }
+
+    #[test]
+    fn test_stack() {
+        let a: Tensor<1, ConcreteTensor<f32, 1>> =
+            Tensor::from_slice([3], &[1.0, 2.0, 3.0]);
+        let b: Tensor<1, ConcreteTensor<f32, 1>> =
+            Tensor::from_slice([3], &[4.0, 5.0, 6.0]);
+
+        // Stack along dim 0 to get 2x3
+        let stacked: Tensor<2, ConcreteTensor<f32, 2>> =
+            Tensor::stack([a.eval(), b.eval()], 0);
+        assert_eq!(stacked.inner().layout().shape(), &[2, 3]);
+        assert_eq!(stacked.get([0, 0]), 1.0);
+        assert_eq!(stacked.get([1, 0]), 4.0);
+    }
+
+    #[test]
+    fn test_arange() {
+        let t: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::arange(0.0f32, 5.0);
+        assert_eq!(t.inner().layout().shape(), &[5]);
+        assert_eq!(t.get([0]), 0.0);
+        assert_eq!(t.get([4]), 4.0);
+    }
+
+    #[test]
+    fn test_arange_step() {
+        let t: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::arange_step(0.0f32, 2.0, 0.5);
+        assert_eq!(t.inner().layout().shape(), &[4]);
+        assert_eq!(t.get([0]), 0.0);
+        assert_eq!(t.get([1]), 0.5);
+        assert_eq!(t.get([2]), 1.0);
+        assert_eq!(t.get([3]), 1.5);
+    }
+
+    #[test]
+    fn test_slice_then_arithmetic() {
+        // Test SIMD on non-contiguous sliced tensor
+        let a: Tensor<2, ConcreteTensor<f32, 2>> =
+            Tensor::from_slice([4, 4], &[
+                1.0, 2.0, 3.0, 4.0,
+                5.0, 6.0, 7.0, 8.0,
+                9.0, 10.0, 11.0, 12.0,
+                13.0, 14.0, 15.0, 16.0
+            ]);
+
+        // Slice to get a 2x2 sub-tensor
+        let sliced = a.slice([1..3, 1..3]);
+
+        // Add scalar to sliced tensor
+        let result = sliced.add_scalar(10.0).eval();
+        assert_eq!(result.get([0, 0]), 16.0);  // 6 + 10
+        assert_eq!(result.get([0, 1]), 17.0);  // 7 + 10
+        assert_eq!(result.get([1, 0]), 20.0);  // 10 + 10
+        assert_eq!(result.get([1, 1]), 21.0);  // 11 + 10
+    }
+
+    #[test]
+    fn test_transpose_then_reshape() {
+        // This should force a copy because transpose makes it non-contiguous
+        let t: Tensor<2, ConcreteTensor<f32, 2>> =
+            Tensor::from_slice([2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+
+        // Transpose to 3x2
+        let transposed = t.t();
+
+        // Reshape to 6
+        let reshaped: Tensor<1, ConcreteTensor<f32, 1>> = transposed.reshape([6]);
+        assert_eq!(reshaped.inner().layout().shape(), &[6]);
+        // After transpose, data should be: [1, 4, 2, 5, 3, 6]
+        assert_eq!(reshaped.get([0]), 1.0);
+        assert_eq!(reshaped.get([1]), 4.0);
+        assert_eq!(reshaped.get([2]), 2.0);
+    }
+
+    #[test]
+    fn test_make_contiguous() {
+        let t: Tensor<2, ConcreteTensor<f32, 2>> =
+            Tensor::from_slice([3, 3], &[
+                1.0, 2.0, 3.0,
+                4.0, 5.0, 6.0,
+                7.0, 8.0, 9.0
+            ]);
+
+        // Slice to make non-contiguous
+        let sliced = t.slice([0..2, 1..3]);
+
+        // Make contiguous
+        let contiguous = sliced.make_contiguous();
+
+        // Verify data is correct
+        assert_eq!(contiguous.get([0, 0]), 2.0);
+        assert_eq!(contiguous.get([0, 1]), 3.0);
+        assert_eq!(contiguous.get([1, 0]), 5.0);
+        assert_eq!(contiguous.get([1, 1]), 6.0);
     }
 }

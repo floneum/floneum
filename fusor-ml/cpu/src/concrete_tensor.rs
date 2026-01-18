@@ -10,14 +10,14 @@ use crate::expr::{Expr, linear_to_indices};
 use crate::{MAX_SIMD_LANES, ResolveTensor, ResolvedTensor, SimdElement, TensorBacking};
 
 /// Helper to iterate over indices of a tensor with given shape
-pub(crate) struct IndexIterator {
+pub struct IndexIterator {
     shape: Box<[usize]>,
     indices: Vec<usize>,
     done: bool,
 }
 
 impl IndexIterator {
-    pub(crate) fn new(shape: &[usize]) -> Self {
+    pub fn new(shape: &[usize]) -> Self {
         let done = shape.iter().any(|&s| s == 0);
         Self {
             shape: shape.into(),
@@ -221,5 +221,20 @@ impl<T: SimdElement, const R: usize> ConcreteTensor<T, R> {
     pub fn set(&mut self, indices: [usize; R], value: T) {
         let idx = self.linear_index(&indices);
         self.backing[idx] = value;
+    }
+
+    /// Create a new tensor from existing layout and backing data
+    pub(crate) fn from_parts(layout: Layout, backing: ABox<[T]>) -> Self {
+        Self { layout, backing }
+    }
+
+    /// Get the backing data
+    pub(crate) fn backing(&self) -> &ABox<[T]> {
+        &self.backing
+    }
+
+    /// Get the backing data mutably
+    pub(crate) fn backing_mut(&mut self) -> &mut ABox<[T]> {
+        &mut self.backing
     }
 }
