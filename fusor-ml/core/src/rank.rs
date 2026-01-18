@@ -1,7 +1,7 @@
 use crate::Tensor;
 
 // Re-export dimension helpers from fusor-types
-pub use fusor_types::{Dim, D};
+pub use fusor_types::{D, Dim};
 
 pub trait NextRankInner {
     type NextRank: LastRankInner + NextRankInner;

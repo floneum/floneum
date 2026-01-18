@@ -1,6 +1,9 @@
 //! Tests for elementwise (unary) tensor operations: Neg, Abs, Sqrt, transcendentals
 
-use fusor_cpu::{Abs, ConcreteTensor, Cos, Exp, Exp2, Log, Log2, Neg, ResolveTensor, Sin, Sqrt, Tan, Tanh, Tensor};
+use fusor_cpu::{
+    Abs, ConcreteTensor, Cos, Exp, Exp2, Log, Log2, Neg, ResolveTensor, Sin, Sqrt, Tan, Tanh,
+    Tensor,
+};
 
 // ========== Neg Tests ==========
 
@@ -116,10 +119,10 @@ fn test_exp_f32() {
     let exp = Exp::new(&tensor);
     let result = exp.to_concrete();
 
-    assert!((result.get([0]) - 1.0).abs() < 1e-6);         // e^0 = 1
-    assert!((result.get([1]) - std::f32::consts::E).abs() < 1e-6);  // e^1 = e
+    assert!((result.get([0]) - 1.0).abs() < 1e-6); // e^0 = 1
+    assert!((result.get([1]) - std::f32::consts::E).abs() < 1e-6); // e^1 = e
     assert!((result.get([2]) - std::f32::consts::E.powi(2)).abs() < 1e-5);
-    assert!((result.get([3]) - 1.0/std::f32::consts::E).abs() < 1e-6);
+    assert!((result.get([3]) - 1.0 / std::f32::consts::E).abs() < 1e-6);
 }
 
 #[test]
@@ -133,14 +136,17 @@ fn test_exp_ref_method() {
 
 #[test]
 fn test_log_f32() {
-    let tensor = ConcreteTensor::from_slice([3], &[1.0f32, std::f32::consts::E, std::f32::consts::E.powi(2)]);
+    let tensor = ConcreteTensor::from_slice(
+        [3],
+        &[1.0f32, std::f32::consts::E, std::f32::consts::E.powi(2)],
+    );
 
     let log = Log::new(&tensor);
     let result = log.to_concrete();
 
-    assert!((result.get([0]) - 0.0).abs() < 1e-6);  // ln(1) = 0
-    assert!((result.get([1]) - 1.0).abs() < 1e-6);  // ln(e) = 1
-    assert!((result.get([2]) - 2.0).abs() < 1e-5);  // ln(e^2) = 2
+    assert!((result.get([0]) - 0.0).abs() < 1e-6); // ln(1) = 0
+    assert!((result.get([1]) - 1.0).abs() < 1e-6); // ln(e) = 1
+    assert!((result.get([2]) - 2.0).abs() < 1e-5); // ln(e^2) = 2
 }
 
 #[test]
@@ -167,7 +173,7 @@ fn test_sin_cos_f32() {
 #[test]
 fn test_tan_f32() {
     use std::f32::consts::PI;
-    let tensor = ConcreteTensor::from_slice([2], &[0.0f32, PI / 4.0]);  // tan(0) = 0, tan(π/4) = 1
+    let tensor = ConcreteTensor::from_slice([2], &[0.0f32, PI / 4.0]); // tan(0) = 0, tan(π/4) = 1
 
     let tan_result = Tan::new(&tensor).to_concrete();
 
@@ -181,10 +187,13 @@ fn test_tanh_f32() {
 
     let tanh_result = Tanh::new(&tensor).to_concrete();
 
-    assert!((tanh_result.get([0]) - 0.0).abs() < 1e-6);  // tanh(0) = 0
-    assert!((tanh_result.get([1]) - 0.0_f32.tanh()).abs() < 1e-6 || (tanh_result.get([1]) - 1.0_f32.tanh()).abs() < 1e-6);
+    assert!((tanh_result.get([0]) - 0.0).abs() < 1e-6); // tanh(0) = 0
+    assert!(
+        (tanh_result.get([1]) - 0.0_f32.tanh()).abs() < 1e-6
+            || (tanh_result.get([1]) - 1.0_f32.tanh()).abs() < 1e-6
+    );
     assert!((tanh_result.get([2]) - (-1.0_f32).tanh()).abs() < 1e-6);
-    assert!((tanh_result.get([3]) - 1.0).abs() < 1e-5);  // tanh(10) ≈ 1
+    assert!((tanh_result.get([3]) - 1.0).abs() < 1e-5); // tanh(10) ≈ 1
 }
 
 #[test]
@@ -254,10 +263,10 @@ fn test_max_scalar_f32() {
     let tensor = Tensor::from_slice([4], &[-1.0f32, 0.0, 1.0, 2.0]);
     let result = tensor.max_scalar(0.5);
 
-    assert_eq!(result.get([0]), 0.5);  // max(-1, 0.5) = 0.5
-    assert_eq!(result.get([1]), 0.5);  // max(0, 0.5) = 0.5
-    assert_eq!(result.get([2]), 1.0);  // max(1, 0.5) = 1
-    assert_eq!(result.get([3]), 2.0);  // max(2, 0.5) = 2
+    assert_eq!(result.get([0]), 0.5); // max(-1, 0.5) = 0.5
+    assert_eq!(result.get([1]), 0.5); // max(0, 0.5) = 0.5
+    assert_eq!(result.get([2]), 1.0); // max(1, 0.5) = 1
+    assert_eq!(result.get([3]), 2.0); // max(2, 0.5) = 2
 }
 
 #[test]
@@ -266,9 +275,9 @@ fn test_min_scalar_f32() {
     let result = tensor.min_scalar(0.5);
 
     assert_eq!(result.get([0]), -1.0); // min(-1, 0.5) = -1
-    assert_eq!(result.get([1]), 0.0);  // min(0, 0.5) = 0
-    assert_eq!(result.get([2]), 0.5);  // min(1, 0.5) = 0.5
-    assert_eq!(result.get([3]), 0.5);  // min(2, 0.5) = 0.5
+    assert_eq!(result.get([1]), 0.0); // min(0, 0.5) = 0
+    assert_eq!(result.get([2]), 0.5); // min(1, 0.5) = 0.5
+    assert_eq!(result.get([3]), 0.5); // min(2, 0.5) = 0.5
 }
 
 #[test]
@@ -276,9 +285,9 @@ fn test_clamp_f32() {
     let tensor = Tensor::from_slice([5], &[-2.0f32, -0.5, 0.5, 1.5, 3.0]);
     let result = tensor.clamp(0.0, 1.0);
 
-    assert_eq!(result.get([0]), 0.0);  // clamp(-2, 0, 1) = 0
-    assert_eq!(result.get([1]), 0.0);  // clamp(-0.5, 0, 1) = 0
-    assert_eq!(result.get([2]), 0.5);  // clamp(0.5, 0, 1) = 0.5
-    assert_eq!(result.get([3]), 1.0);  // clamp(1.5, 0, 1) = 1
-    assert_eq!(result.get([4]), 1.0);  // clamp(3, 0, 1) = 1
+    assert_eq!(result.get([0]), 0.0); // clamp(-2, 0, 1) = 0
+    assert_eq!(result.get([1]), 0.0); // clamp(-0.5, 0, 1) = 0
+    assert_eq!(result.get([2]), 0.5); // clamp(0.5, 0, 1) = 0.5
+    assert_eq!(result.get([3]), 1.0); // clamp(1.5, 0, 1) = 1
+    assert_eq!(result.get([4]), 1.0); // clamp(3, 0, 1) = 1
 }

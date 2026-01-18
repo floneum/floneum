@@ -80,10 +80,10 @@ mod tests {
         let a = ConcreteTensor::<f32, 1>::from_slice([4], &[1.5, 2.7, -3.2, 4.9]);
         let b: ConcreteTensor<i32, 1> = cast_tensor(&a);
 
-        assert_eq!(b.get([0]), 1);  // 1.5 -> 1
-        assert_eq!(b.get([1]), 2);  // 2.7 -> 2
+        assert_eq!(b.get([0]), 1); // 1.5 -> 1
+        assert_eq!(b.get([1]), 2); // 2.7 -> 2
         assert_eq!(b.get([2]), -3); // -3.2 -> -3
-        assert_eq!(b.get([3]), 4);  // 4.9 -> 4
+        assert_eq!(b.get([3]), 4); // 4.9 -> 4
     }
 
     #[test]

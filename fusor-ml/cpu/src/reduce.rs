@@ -166,10 +166,9 @@ macro_rules! impl_reduce_op {
             fn reduce_simd_vec<S: Simd>(_simd: S, v: <$elem as SimdElement>::Simd<S>) -> $elem {
                 // Safe: cast SIMD ref to scalar slice via bytemuck
                 let slice: &[$elem] = pulp::bytemuck::cast_slice(std::slice::from_ref(&v));
-                slice
-                    .iter()
-                    .copied()
-                    .fold($identity, |acc, x| <$op as ScalarCombine<$elem>>::combine(acc, x))
+                slice.iter().copied().fold($identity, |acc, x| {
+                    <$op as ScalarCombine<$elem>>::combine(acc, x)
+                })
             }
         }
     };

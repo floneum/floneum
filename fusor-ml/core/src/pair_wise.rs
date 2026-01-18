@@ -400,11 +400,8 @@ macro_rules! impl_pairwise_method {
             pub fn $method(&self, other: &Self) -> Self {
                 self.pair_wise(
                     other,
-                    PairWiseFunction::new(
-                        concat!("let output = ", $wgsl_op, ";"),
-                        T::WGSL_TYPE,
-                    )
-                    .with_name($op_name),
+                    PairWiseFunction::new(concat!("let output = ", $wgsl_op, ";"), T::WGSL_TYPE)
+                        .with_name($op_name),
                 )
             }
 

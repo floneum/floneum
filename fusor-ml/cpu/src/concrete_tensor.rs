@@ -6,8 +6,8 @@ use aligned_vec::{ABox, AVec};
 use fusor_types::Layout;
 use pulp::Simd;
 
-use crate::expr::{linear_to_indices, Expr};
-use crate::{ResolveTensor, ResolvedTensor, SimdElement, TensorBacking, MAX_SIMD_LANES};
+use crate::expr::{Expr, linear_to_indices};
+use crate::{MAX_SIMD_LANES, ResolveTensor, ResolvedTensor, SimdElement, TensorBacking};
 
 /// Helper to iterate over indices of a tensor with given shape
 pub(crate) struct IndexIterator {

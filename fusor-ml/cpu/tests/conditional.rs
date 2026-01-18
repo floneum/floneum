@@ -10,10 +10,10 @@ fn test_where_cond_basic_f32() {
 
     let result = cond.where_cond(&on_true, &on_false);
 
-    assert_eq!(result.get([0]), 10.0);   // cond=1 (nonzero), select on_true
-    assert_eq!(result.get([1]), 200.0);  // cond=0, select on_false
-    assert_eq!(result.get([2]), 30.0);   // cond=1 (nonzero), select on_true
-    assert_eq!(result.get([3]), 400.0);  // cond=0, select on_false
+    assert_eq!(result.get([0]), 10.0); // cond=1 (nonzero), select on_true
+    assert_eq!(result.get([1]), 200.0); // cond=0, select on_false
+    assert_eq!(result.get([2]), 30.0); // cond=1 (nonzero), select on_true
+    assert_eq!(result.get([3]), 400.0); // cond=0, select on_false
 }
 
 #[test]
@@ -25,10 +25,10 @@ fn test_where_cond_nonzero_values_f32() {
 
     let result = cond.where_cond(&on_true, &on_false);
 
-    assert_eq!(result.get([0]), 1.0);  // 0.5 != 0
-    assert_eq!(result.get([1]), 1.0);  // -1.0 != 0
-    assert_eq!(result.get([2]), 0.0);  // 0.0 == 0
-    assert_eq!(result.get([3]), 1.0);  // 100.0 != 0
+    assert_eq!(result.get([0]), 1.0); // 0.5 != 0
+    assert_eq!(result.get([1]), 1.0); // -1.0 != 0
+    assert_eq!(result.get([2]), 0.0); // 0.0 == 0
+    assert_eq!(result.get([3]), 1.0); // 100.0 != 0
 }
 
 #[test]
@@ -39,10 +39,10 @@ fn test_where_cond_i32() {
 
     let result = cond.where_cond(&on_true, &on_false);
 
-    assert_eq!(result.get([0]), 10);   // 1 != 0
-    assert_eq!(result.get([1]), 200);  // 0 == 0
-    assert_eq!(result.get([2]), 30);   // -1 != 0
-    assert_eq!(result.get([3]), 400);  // 0 == 0
+    assert_eq!(result.get([0]), 10); // 1 != 0
+    assert_eq!(result.get([1]), 200); // 0 == 0
+    assert_eq!(result.get([2]), 30); // -1 != 0
+    assert_eq!(result.get([3]), 400); // 0 == 0
 }
 
 #[test]
@@ -53,10 +53,10 @@ fn test_where_cond_2d() {
 
     let result = cond.where_cond(&on_true, &on_false);
 
-    assert_eq!(result.get([0, 0]), 1.0);   // cond=1
-    assert_eq!(result.get([0, 1]), 20.0);  // cond=0
-    assert_eq!(result.get([1, 0]), 30.0);  // cond=0
-    assert_eq!(result.get([1, 1]), 4.0);   // cond=1
+    assert_eq!(result.get([0, 0]), 1.0); // cond=1
+    assert_eq!(result.get([0, 1]), 20.0); // cond=0
+    assert_eq!(result.get([1, 0]), 30.0); // cond=0
+    assert_eq!(result.get([1, 1]), 4.0); // cond=1
 }
 
 #[test]
@@ -72,16 +72,18 @@ fn test_where_cond_with_comparison() {
     // Use mask to select: where a > b, return a, else return b
     let result = mask.where_cond(&a, &b);
 
-    assert_eq!(result.get([0]), 2.5);  // 1 > 2.5 = false, select b
-    assert_eq!(result.get([1]), 2.5);  // 2 > 2.5 = false, select b
-    assert_eq!(result.get([2]), 3.0);  // 3 > 2.5 = true, select a
-    assert_eq!(result.get([3]), 4.0);  // 4 > 2.5 = true, select a
+    assert_eq!(result.get([0]), 2.5); // 1 > 2.5 = false, select b
+    assert_eq!(result.get([1]), 2.5); // 2 > 2.5 = false, select b
+    assert_eq!(result.get([2]), 3.0); // 3 > 2.5 = true, select a
+    assert_eq!(result.get([3]), 4.0); // 4 > 2.5 = true, select a
 }
 
 #[test]
 fn test_where_cond_large() {
     let size = 1024;
-    let cond_data: Vec<f32> = (0..size).map(|i| if i % 2 == 0 { 1.0 } else { 0.0 }).collect();
+    let cond_data: Vec<f32> = (0..size)
+        .map(|i| if i % 2 == 0 { 1.0 } else { 0.0 })
+        .collect();
     let true_data: Vec<f32> = (0..size).map(|i| i as f32).collect();
     let false_data: Vec<f32> = (0..size).map(|i| -(i as f32)).collect();
 

@@ -18,12 +18,12 @@ fn bench_qmatmul(c: &mut Criterion) {
 
     // Matrix sizes: (M, K, N) where LHS is M x K and RHS is K x N
     let sizes: &[(usize, usize, usize)] = &[
-        (1, 256, 256),      // Single row (typical for inference)
+        (1, 256, 256), // Single row (typical for inference)
         (1, 512, 512),
         (1, 1024, 1024),
-        (4, 256, 256),      // Small batch
+        (4, 256, 256), // Small batch
         (4, 512, 512),
-        (32, 256, 256),     // Larger batch
+        (32, 256, 256), // Larger batch
         (32, 512, 512),
     ];
 

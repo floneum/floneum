@@ -877,7 +877,9 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         count
     }
 
-    pub async fn as_slice(&self) -> Result<TensorSlice<R, D, MappedBuffer>, wgpu::BufferAsyncError> {
+    pub async fn as_slice(
+        &self,
+    ) -> Result<TensorSlice<R, D, MappedBuffer>, wgpu::BufferAsyncError> {
         #[cfg(not(target_arch = "wasm32"))]
         let start_time = std::time::Instant::now();
         let (tensor, _) = self.data.materialize();

@@ -317,7 +317,10 @@ mod tests {
     #[test]
     fn test_slice_assign_3d() {
         // 2x2x2 tensor
-        let input = ConcreteTensor::<f32, 3>::from_slice([2, 2, 2], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
+        let input = ConcreteTensor::<f32, 3>::from_slice(
+            [2, 2, 2],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+        );
         let value = ConcreteTensor::<f32, 3>::from_slice([1, 1, 2], &[100.0, 200.0]);
 
         let result = slice_assign_ref(&input, [0..1, 1..2, 0..2], &value);

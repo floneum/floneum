@@ -3,8 +3,8 @@
 use std::ops::Deref;
 
 use aligned_vec::ABox;
-use pulp::bytemuck::Pod;
 use pulp::Simd;
+use pulp::bytemuck::Pod;
 
 // Module declarations
 mod cast;
@@ -29,13 +29,13 @@ pub(crate) const MAX_SIMD_LANES: usize = 64;
 // Re-export public types
 pub use concrete_tensor::ConcreteTensor;
 pub use elementwise::{Abs, Cos, Exp, Exp2, Log, Log2, Neg, Sin, Sqrt, Tan, Tanh};
-pub use expr::{materialize_expr, Expr};
+pub use expr::{Expr, materialize_expr};
 pub use pairwise::{Add, Div, Mul, Sub};
 pub use quantized::{Dequantize, QuantizedTensor};
 pub use tensor::{FloatOps, Tensor};
 
 // Re-export GGUF types for convenience
-pub use fusor_gguf::{BlockQ4K, BlockQ4_0, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, GgufBlock};
+pub use fusor_gguf::{BlockQ4_0, BlockQ4K, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, GgufBlock};
 
 // Re-export TensorSlice from fusor-types
 pub use fusor_types::TensorSlice;
@@ -65,15 +65,15 @@ impl Deref for CpuMappedBuffer {
 }
 
 // Re-export operation traits and markers for public bounds
+pub use cast::CastTo;
+pub use comparison::{EqOp, GtOp, GteOp, LtOp, LteOp, NeOp, SimdComparisonOp};
+pub use conditional::IsNonZero;
 pub use elementwise::{
     AbsOp, CosOp, Exp2Op, ExpOp, Log2Op, LogOp, NegOp, SimdUnaryOp, SinOp, SqrtOp, TanOp, TanhOp,
 };
+pub use matmul::MatmulImpl;
 pub use pairwise::{AddOp, DivOp, MulOp, SimdBinaryOp, SubOp};
 pub use reduce::{MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp};
-pub use comparison::{EqOp, NeOp, LtOp, LteOp, GtOp, GteOp, SimdComparisonOp};
-pub use conditional::IsNonZero;
-pub use cast::CastTo;
-pub use matmul::MatmulImpl;
 
 // Re-export internal types used by other modules
 pub(crate) use concrete_tensor::IndexIterator;
@@ -183,7 +183,8 @@ mod tests {
     fn test_tensor_add_operator() {
         // Use Tensor::from_slice directly - cleaner API
         let a: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
-        let b: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([4], &[10.0, 20.0, 30.0, 40.0]);
+        let b: Tensor<1, ConcreteTensor<f32, 1>> =
+            Tensor::from_slice([4], &[10.0, 20.0, 30.0, 40.0]);
 
         // Use + operator and eval() to get result
         let result = (a + b).eval();
@@ -196,7 +197,8 @@ mod tests {
 
     #[test]
     fn test_tensor_sub_operator() {
-        let a: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([4], &[10.0, 20.0, 30.0, 40.0]);
+        let a: Tensor<1, ConcreteTensor<f32, 1>> =
+            Tensor::from_slice([4], &[10.0, 20.0, 30.0, 40.0]);
         let b: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
 
         let result = (a - b).eval();
@@ -222,7 +224,8 @@ mod tests {
 
     #[test]
     fn test_tensor_div_operator() {
-        let a: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([4], &[10.0, 20.0, 30.0, 40.0]);
+        let a: Tensor<1, ConcreteTensor<f32, 1>> =
+            Tensor::from_slice([4], &[10.0, 20.0, 30.0, 40.0]);
         let b: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([4], &[2.0, 4.0, 5.0, 8.0]);
 
         let result = (a / b).eval();
@@ -263,8 +266,10 @@ mod tests {
 
     #[test]
     fn test_tensor_2d_operators() {
-        let a: Tensor<2, ConcreteTensor<f32, 2>> = Tensor::from_slice([2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
-        let b: Tensor<2, ConcreteTensor<f32, 2>> = Tensor::from_slice([2, 3], &[10.0, 20.0, 30.0, 40.0, 50.0, 60.0]);
+        let a: Tensor<2, ConcreteTensor<f32, 2>> =
+            Tensor::from_slice([2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        let b: Tensor<2, ConcreteTensor<f32, 2>> =
+            Tensor::from_slice([2, 3], &[10.0, 20.0, 30.0, 40.0, 50.0, 60.0]);
 
         let result = (a + b).eval();
 
@@ -278,7 +283,8 @@ mod tests {
     fn test_tensor_methods() {
         // Test the new methods on Tensor
         let a: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
-        let b: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([4], &[10.0, 20.0, 30.0, 40.0]);
+        let b: Tensor<1, ConcreteTensor<f32, 1>> =
+            Tensor::from_slice([4], &[10.0, 20.0, 30.0, 40.0]);
 
         // Test &Tensor + &Tensor operator
         let result = (&a + &b).eval();

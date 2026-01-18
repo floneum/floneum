@@ -1,7 +1,7 @@
 use std::{fmt::Write, ops::Range};
 
 use crate::{
-    Tensor, TensorData, TILE_SIZE,
+    TILE_SIZE, Tensor, TensorData,
     compute_graph::{ComputeGraphInner, NodeIndex},
     mir::{
         inputs::MirValue,

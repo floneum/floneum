@@ -1,5 +1,5 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use fusor_cpu::{Add, Abs, ConcreteTensor, Div, Mul, Neg, ResolveTensor, Sqrt, Sub};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use fusor_cpu::{Abs, Add, ConcreteTensor, Div, Mul, Neg, ResolveTensor, Sqrt, Sub};
 
 const SIZES: &[usize] = &[64, 256];
 
@@ -182,7 +182,9 @@ fn bench_abs_f32(c: &mut Criterion) {
         group.throughput(Throughput::Elements(size as u64));
         group.bench_with_input(BenchmarkId::new("1d", size), &size, |b, &size| {
             // Create tensor with negative values
-            let data: Vec<f32> = (0..size).map(|i| if i % 2 == 0 { i as f32 } else { -(i as f32) }).collect();
+            let data: Vec<f32> = (0..size)
+                .map(|i| if i % 2 == 0 { i as f32 } else { -(i as f32) })
+                .collect();
             let tensor = ConcreteTensor::from_slice([size], &data);
             b.iter(|| {
                 let op = Abs::new(black_box(tensor.clone()));
@@ -200,7 +202,9 @@ fn bench_abs_i32(c: &mut Criterion) {
     for &size in SIZES {
         group.throughput(Throughput::Elements(size as u64));
         group.bench_with_input(BenchmarkId::new("1d", size), &size, |b, &size| {
-            let data: Vec<i32> = (0..size).map(|i| if i % 2 == 0 { i as i32 } else { -(i as i32) }).collect();
+            let data: Vec<i32> = (0..size)
+                .map(|i| if i % 2 == 0 { i as i32 } else { -(i as i32) })
+                .collect();
             let tensor = ConcreteTensor::from_slice([size], &data);
             b.iter(|| {
                 let op = Abs::new(black_box(tensor.clone()));
@@ -238,17 +242,17 @@ fn bench_tensor_creation(c: &mut Criterion) {
         group.throughput(Throughput::Elements(size as u64));
 
         group.bench_with_input(BenchmarkId::new("zeros_f32", size), &size, |b, &size| {
-            b.iter(|| {
-                black_box(ConcreteTensor::<f32, 1>::zeros([size]))
-            });
+            b.iter(|| black_box(ConcreteTensor::<f32, 1>::zeros([size])));
         });
 
-        group.bench_with_input(BenchmarkId::new("from_slice_f32", size), &size, |b, &size| {
-            let data: Vec<f32> = (0..size).map(|i| i as f32).collect();
-            b.iter(|| {
-                black_box(ConcreteTensor::from_slice([size], &data))
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::new("from_slice_f32", size),
+            &size,
+            |b, &size| {
+                let data: Vec<f32> = (0..size).map(|i| i as f32).collect();
+                b.iter(|| black_box(ConcreteTensor::from_slice([size], &data)));
+            },
+        );
     }
 
     group.finish();
@@ -265,14 +269,17 @@ fn bench_chained_ops(c: &mut Criterion) {
             let c_tensor = create_f32_tensor_1d(size);
             b.iter(|| {
                 // (a + b) * c
-                let add_result = Add::new(black_box(a.clone()), black_box(b_tensor.clone())).to_concrete();
+                let add_result =
+                    Add::new(black_box(a.clone()), black_box(b_tensor.clone())).to_concrete();
                 let op = Mul::new(black_box(add_result), black_box(c_tensor.clone()));
                 black_box(op.to_concrete())
             });
         });
 
         group.bench_with_input(BenchmarkId::new("abs_sqrt_f32", size), &size, |b, &size| {
-            let data: Vec<f32> = (1..=size).map(|i| if i % 2 == 0 { -(i as f32) } else { i as f32 }).collect();
+            let data: Vec<f32> = (1..=size)
+                .map(|i| if i % 2 == 0 { -(i as f32) } else { i as f32 })
+                .collect();
             let tensor = ConcreteTensor::from_slice([size], &data);
             b.iter(|| {
                 // sqrt(abs(x))

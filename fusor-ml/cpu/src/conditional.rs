@@ -3,9 +3,7 @@
 
 use pulp::{Arch, Simd, WithSimd};
 
-use crate::{
-    ConcreteTensor, IndexIterator, ResolvedTensor, SimdElement,
-};
+use crate::{ConcreteTensor, IndexIterator, ResolvedTensor, SimdElement};
 
 /// Helper trait for types that can be compared to zero
 pub trait IsNonZero: SimdElement {
@@ -13,43 +11,63 @@ pub trait IsNonZero: SimdElement {
 }
 
 impl IsNonZero for f32 {
-    fn is_nonzero(&self) -> bool { *self != 0.0 }
+    fn is_nonzero(&self) -> bool {
+        *self != 0.0
+    }
 }
 
 impl IsNonZero for f64 {
-    fn is_nonzero(&self) -> bool { *self != 0.0 }
+    fn is_nonzero(&self) -> bool {
+        *self != 0.0
+    }
 }
 
 impl IsNonZero for i8 {
-    fn is_nonzero(&self) -> bool { *self != 0 }
+    fn is_nonzero(&self) -> bool {
+        *self != 0
+    }
 }
 
 impl IsNonZero for i16 {
-    fn is_nonzero(&self) -> bool { *self != 0 }
+    fn is_nonzero(&self) -> bool {
+        *self != 0
+    }
 }
 
 impl IsNonZero for i32 {
-    fn is_nonzero(&self) -> bool { *self != 0 }
+    fn is_nonzero(&self) -> bool {
+        *self != 0
+    }
 }
 
 impl IsNonZero for i64 {
-    fn is_nonzero(&self) -> bool { *self != 0 }
+    fn is_nonzero(&self) -> bool {
+        *self != 0
+    }
 }
 
 impl IsNonZero for u8 {
-    fn is_nonzero(&self) -> bool { *self != 0 }
+    fn is_nonzero(&self) -> bool {
+        *self != 0
+    }
 }
 
 impl IsNonZero for u16 {
-    fn is_nonzero(&self) -> bool { *self != 0 }
+    fn is_nonzero(&self) -> bool {
+        *self != 0
+    }
 }
 
 impl IsNonZero for u32 {
-    fn is_nonzero(&self) -> bool { *self != 0 }
+    fn is_nonzero(&self) -> bool {
+        *self != 0
+    }
 }
 
 impl IsNonZero for u64 {
-    fn is_nonzero(&self) -> bool { *self != 0 }
+    fn is_nonzero(&self) -> bool {
+        *self != 0
+    }
 }
 
 /// Helper struct for dispatching where_cond operations via Arch::dispatch
@@ -66,7 +84,9 @@ impl<E: SimdElement + IsNonZero> WithSimd for WhereCondDispatch<'_, E> {
     #[inline(always)]
     fn with_simd<S: Simd>(self, _simd: S) -> Self::Output {
         // No native SIMD select for arbitrary masks - process all elements via scalar path
-        for (((c, t), f), o) in self.cond.iter()
+        for (((c, t), f), o) in self
+            .cond
+            .iter()
             .zip(self.on_true.iter())
             .zip(self.on_false.iter())
             .zip(self.out.iter_mut())
@@ -112,7 +132,12 @@ where
         && on_false.layout().is_contiguous();
 
     if all_contiguous {
-        where_cond_contiguous(cond.data(), on_true.data(), on_false.data(), output.data_mut());
+        where_cond_contiguous(
+            cond.data(),
+            on_true.data(),
+            on_false.data(),
+            output.data_mut(),
+        );
     } else {
         let tensor_shape = ResolvedTensor::shape(cond);
         for indices in IndexIterator::new(tensor_shape) {
@@ -145,10 +170,10 @@ mod tests {
 
         let result = where_cond_ref(&cond, &on_true, &on_false);
 
-        assert_eq!(result.get([0]), 10.0);   // cond=1, select on_true
-        assert_eq!(result.get([1]), 200.0);  // cond=0, select on_false
-        assert_eq!(result.get([2]), 30.0);   // cond=1, select on_true
-        assert_eq!(result.get([3]), 400.0);  // cond=0, select on_false
+        assert_eq!(result.get([0]), 10.0); // cond=1, select on_true
+        assert_eq!(result.get([1]), 200.0); // cond=0, select on_false
+        assert_eq!(result.get([2]), 30.0); // cond=1, select on_true
+        assert_eq!(result.get([3]), 400.0); // cond=0, select on_false
     }
 
     #[test]
@@ -159,9 +184,9 @@ mod tests {
 
         let result = where_cond_ref(&cond, &on_true, &on_false);
 
-        assert_eq!(result.get([0]), 10);   // cond=1 (nonzero), select on_true
-        assert_eq!(result.get([1]), 200);  // cond=0, select on_false
-        assert_eq!(result.get([2]), 30);   // cond=-1 (nonzero), select on_true
-        assert_eq!(result.get([3]), 400);  // cond=0, select on_false
+        assert_eq!(result.get([0]), 10); // cond=1 (nonzero), select on_true
+        assert_eq!(result.get([1]), 200); // cond=0, select on_false
+        assert_eq!(result.get([2]), 30); // cond=-1 (nonzero), select on_true
+        assert_eq!(result.get([3]), 400); // cond=0, select on_false
     }
 }

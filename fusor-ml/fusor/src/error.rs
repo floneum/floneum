@@ -17,7 +17,11 @@ impl std::fmt::Display for Error {
         match self {
             Error::Gpu(e) => write!(f, "GPU error: {}", e),
             Error::DeviceMismatch { operation } => {
-                write!(f, "Device mismatch in {}: tensors must be on the same device", operation)
+                write!(
+                    f,
+                    "Device mismatch in {}: tensors must be on the same device",
+                    operation
+                )
             }
         }
     }

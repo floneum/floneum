@@ -38,7 +38,11 @@ fn bench_creation(c: &mut Criterion) {
 
         // Fusor zeros
         group.bench_with_input(BenchmarkId::new("fusor_zeros", size), &size, |b, &size| {
-            b.iter(|| black_box(Tensor::<1, fusor_cpu::ConcreteTensor<f32, 1>>::zeros([size])));
+            b.iter(|| {
+                black_box(Tensor::<1, fusor_cpu::ConcreteTensor<f32, 1>>::zeros([
+                    size,
+                ]))
+            });
         });
 
         // Candle zeros

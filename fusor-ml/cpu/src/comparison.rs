@@ -3,9 +3,7 @@
 
 use pulp::{Arch, Simd, WithSimd};
 
-use crate::{
-    ConcreteTensor, IndexIterator, ResolvedTensor, SimdElement,
-};
+use crate::{ConcreteTensor, IndexIterator, ResolvedTensor, SimdElement};
 
 /// Trait for comparison operations
 pub trait SimdComparisonOp<E: SimdElement>: Copy {
@@ -34,53 +32,93 @@ trait NumericBool: SimdElement {
 }
 
 impl NumericBool for f32 {
-    fn zero() -> Self { 0.0 }
-    fn one() -> Self { 1.0 }
+    fn zero() -> Self {
+        0.0
+    }
+    fn one() -> Self {
+        1.0
+    }
 }
 
 impl NumericBool for f64 {
-    fn zero() -> Self { 0.0 }
-    fn one() -> Self { 1.0 }
+    fn zero() -> Self {
+        0.0
+    }
+    fn one() -> Self {
+        1.0
+    }
 }
 
 impl NumericBool for i8 {
-    fn zero() -> Self { 0 }
-    fn one() -> Self { 1 }
+    fn zero() -> Self {
+        0
+    }
+    fn one() -> Self {
+        1
+    }
 }
 
 impl NumericBool for i16 {
-    fn zero() -> Self { 0 }
-    fn one() -> Self { 1 }
+    fn zero() -> Self {
+        0
+    }
+    fn one() -> Self {
+        1
+    }
 }
 
 impl NumericBool for i32 {
-    fn zero() -> Self { 0 }
-    fn one() -> Self { 1 }
+    fn zero() -> Self {
+        0
+    }
+    fn one() -> Self {
+        1
+    }
 }
 
 impl NumericBool for i64 {
-    fn zero() -> Self { 0 }
-    fn one() -> Self { 1 }
+    fn zero() -> Self {
+        0
+    }
+    fn one() -> Self {
+        1
+    }
 }
 
 impl NumericBool for u8 {
-    fn zero() -> Self { 0 }
-    fn one() -> Self { 1 }
+    fn zero() -> Self {
+        0
+    }
+    fn one() -> Self {
+        1
+    }
 }
 
 impl NumericBool for u16 {
-    fn zero() -> Self { 0 }
-    fn one() -> Self { 1 }
+    fn zero() -> Self {
+        0
+    }
+    fn one() -> Self {
+        1
+    }
 }
 
 impl NumericBool for u32 {
-    fn zero() -> Self { 0 }
-    fn one() -> Self { 1 }
+    fn zero() -> Self {
+        0
+    }
+    fn one() -> Self {
+        1
+    }
 }
 
 impl NumericBool for u64 {
-    fn zero() -> Self { 0 }
-    fn one() -> Self { 1 }
+    fn zero() -> Self {
+        0
+    }
+    fn one() -> Self {
+        1
+    }
 }
 
 // Macro for scalar-only comparison ops (convert boolean mask to 1.0/0.0)
@@ -94,8 +132,8 @@ macro_rules! impl_scalar_comparison_op {
                 b: <$elem as SimdElement>::Simd<S>,
             ) -> <$elem as SimdElement>::Simd<S> {
                 // Process each lane with scalar comparison
-                let lane_count =
-                    std::mem::size_of::<<$elem as SimdElement>::Simd<S>>() / std::mem::size_of::<$elem>();
+                let lane_count = std::mem::size_of::<<$elem as SimdElement>::Simd<S>>()
+                    / std::mem::size_of::<$elem>();
                 let mut temp_out = [<$elem>::default(); crate::MAX_SIMD_LANES];
 
                 // Safe: cast SIMD refs to scalar slices via bytemuck
@@ -104,7 +142,11 @@ macro_rules! impl_scalar_comparison_op {
 
                 let cmp: fn($elem, $elem) -> bool = $cmp_fn;
                 for i in 0..lane_count {
-                    temp_out[i] = if cmp(slice_a[i], slice_b[i]) { <$elem as NumericBool>::one() } else { <$elem as NumericBool>::zero() };
+                    temp_out[i] = if cmp(slice_a[i], slice_b[i]) {
+                        <$elem as NumericBool>::one()
+                    } else {
+                        <$elem as NumericBool>::zero()
+                    };
                 }
 
                 // Safe: reconstruct SIMD from scalar slice via as_simd
@@ -115,7 +157,11 @@ macro_rules! impl_scalar_comparison_op {
             #[inline(always)]
             fn apply_scalar(a: $elem, b: $elem) -> $elem {
                 let cmp: fn($elem, $elem) -> bool = $cmp_fn;
-                if cmp(a, b) { <$elem as NumericBool>::one() } else { <$elem as NumericBool>::zero() }
+                if cmp(a, b) {
+                    <$elem as NumericBool>::one()
+                } else {
+                    <$elem as NumericBool>::zero()
+                }
             }
         }
     };

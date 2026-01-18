@@ -11,10 +11,10 @@ fn test_eq_tensor_f32() {
 
     let result = a.eq(&b);
 
-    assert_eq!(result.get([0]), 1.0);  // 1 == 1
-    assert_eq!(result.get([1]), 0.0);  // 2 != 3
-    assert_eq!(result.get([2]), 1.0);  // 3 == 3
-    assert_eq!(result.get([3]), 0.0);  // 4 != 5
+    assert_eq!(result.get([0]), 1.0); // 1 == 1
+    assert_eq!(result.get([1]), 0.0); // 2 != 3
+    assert_eq!(result.get([2]), 1.0); // 3 == 3
+    assert_eq!(result.get([3]), 0.0); // 4 != 5
 }
 
 #[test]
@@ -24,10 +24,10 @@ fn test_ne_tensor_f32() {
 
     let result = a.ne(&b);
 
-    assert_eq!(result.get([0]), 0.0);  // 1 == 1 -> false
-    assert_eq!(result.get([1]), 1.0);  // 2 != 3 -> true
-    assert_eq!(result.get([2]), 0.0);  // 3 == 3 -> false
-    assert_eq!(result.get([3]), 1.0);  // 4 != 5 -> true
+    assert_eq!(result.get([0]), 0.0); // 1 == 1 -> false
+    assert_eq!(result.get([1]), 1.0); // 2 != 3 -> true
+    assert_eq!(result.get([2]), 0.0); // 3 == 3 -> false
+    assert_eq!(result.get([3]), 1.0); // 4 != 5 -> true
 }
 
 #[test]
@@ -37,10 +37,10 @@ fn test_lt_tensor_f32() {
 
     let result = a.lt(&b);
 
-    assert_eq!(result.get([0]), 1.0);  // 1 < 2
-    assert_eq!(result.get([1]), 0.0);  // 2 < 2
-    assert_eq!(result.get([2]), 0.0);  // 3 < 2
-    assert_eq!(result.get([3]), 0.0);  // 4 < 2
+    assert_eq!(result.get([0]), 1.0); // 1 < 2
+    assert_eq!(result.get([1]), 0.0); // 2 < 2
+    assert_eq!(result.get([2]), 0.0); // 3 < 2
+    assert_eq!(result.get([3]), 0.0); // 4 < 2
 }
 
 #[test]
@@ -50,10 +50,10 @@ fn test_lte_tensor_f32() {
 
     let result = a.lte(&b);
 
-    assert_eq!(result.get([0]), 1.0);  // 1 <= 2
-    assert_eq!(result.get([1]), 1.0);  // 2 <= 2
-    assert_eq!(result.get([2]), 0.0);  // 3 <= 2
-    assert_eq!(result.get([3]), 0.0);  // 4 <= 2
+    assert_eq!(result.get([0]), 1.0); // 1 <= 2
+    assert_eq!(result.get([1]), 1.0); // 2 <= 2
+    assert_eq!(result.get([2]), 0.0); // 3 <= 2
+    assert_eq!(result.get([3]), 0.0); // 4 <= 2
 }
 
 #[test]
@@ -63,10 +63,10 @@ fn test_gt_tensor_f32() {
 
     let result = a.gt(&b);
 
-    assert_eq!(result.get([0]), 0.0);  // 1 > 2
-    assert_eq!(result.get([1]), 0.0);  // 2 > 2
-    assert_eq!(result.get([2]), 1.0);  // 3 > 2
-    assert_eq!(result.get([3]), 1.0);  // 4 > 2
+    assert_eq!(result.get([0]), 0.0); // 1 > 2
+    assert_eq!(result.get([1]), 0.0); // 2 > 2
+    assert_eq!(result.get([2]), 1.0); // 3 > 2
+    assert_eq!(result.get([3]), 1.0); // 4 > 2
 }
 
 #[test]
@@ -76,10 +76,10 @@ fn test_gte_tensor_f32() {
 
     let result = a.gte(&b);
 
-    assert_eq!(result.get([0]), 0.0);  // 1 >= 2
-    assert_eq!(result.get([1]), 1.0);  // 2 >= 2
-    assert_eq!(result.get([2]), 1.0);  // 3 >= 2
-    assert_eq!(result.get([3]), 1.0);  // 4 >= 2
+    assert_eq!(result.get([0]), 0.0); // 1 >= 2
+    assert_eq!(result.get([1]), 1.0); // 2 >= 2
+    assert_eq!(result.get([2]), 1.0); // 3 >= 2
+    assert_eq!(result.get([3]), 1.0); // 4 >= 2
 }
 
 // ========== Tensor vs Scalar Tests ==========
@@ -100,10 +100,10 @@ fn test_lt_scalar_f32() {
     let a = Tensor::from_slice([4], &[1.0f32, 2.0, 3.0, 4.0]);
     let result = a.lt_scalar(2.5);
 
-    assert_eq!(result.get([0]), 1.0);  // 1 < 2.5
-    assert_eq!(result.get([1]), 1.0);  // 2 < 2.5
-    assert_eq!(result.get([2]), 0.0);  // 3 < 2.5
-    assert_eq!(result.get([3]), 0.0);  // 4 < 2.5
+    assert_eq!(result.get([0]), 1.0); // 1 < 2.5
+    assert_eq!(result.get([1]), 1.0); // 2 < 2.5
+    assert_eq!(result.get([2]), 0.0); // 3 < 2.5
+    assert_eq!(result.get([3]), 0.0); // 4 < 2.5
 }
 
 #[test]
@@ -111,10 +111,10 @@ fn test_gt_scalar_f32() {
     let a = Tensor::from_slice([4], &[1.0f32, 2.0, 3.0, 4.0]);
     let result = a.gt_scalar(2.5);
 
-    assert_eq!(result.get([0]), 0.0);  // 1 > 2.5
-    assert_eq!(result.get([1]), 0.0);  // 2 > 2.5
-    assert_eq!(result.get([2]), 1.0);  // 3 > 2.5
-    assert_eq!(result.get([3]), 1.0);  // 4 > 2.5
+    assert_eq!(result.get([0]), 0.0); // 1 > 2.5
+    assert_eq!(result.get([1]), 0.0); // 2 > 2.5
+    assert_eq!(result.get([2]), 1.0); // 3 > 2.5
+    assert_eq!(result.get([3]), 1.0); // 4 > 2.5
 }
 
 // ========== Integer Tests ==========
@@ -125,10 +125,10 @@ fn test_comparison_i32() {
     let b = Tensor::from_slice([4], &[2i32, 2, 2, 2]);
 
     let lt_result = a.lt(&b);
-    assert_eq!(lt_result.get([0]), 1);  // 1 < 2
-    assert_eq!(lt_result.get([1]), 0);  // 2 < 2
-    assert_eq!(lt_result.get([2]), 0);  // 3 < 2
-    assert_eq!(lt_result.get([3]), 0);  // 4 < 2
+    assert_eq!(lt_result.get([0]), 1); // 1 < 2
+    assert_eq!(lt_result.get([1]), 0); // 2 < 2
+    assert_eq!(lt_result.get([2]), 0); // 3 < 2
+    assert_eq!(lt_result.get([3]), 0); // 4 < 2
 
     let eq_result = a.eq_scalar(2);
     assert_eq!(eq_result.get([0]), 0);
@@ -151,7 +151,11 @@ fn test_comparison_large_tensor() {
     let result = a.lt(&b);
 
     for i in 0..size {
-        let expected = if (i as f32) < (size / 2) as f32 { 1.0 } else { 0.0 };
+        let expected = if (i as f32) < (size / 2) as f32 {
+            1.0
+        } else {
+            0.0
+        };
         assert_eq!(result.get([i]), expected);
     }
 }

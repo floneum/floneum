@@ -12,7 +12,7 @@ use fusor_gguf::GgufBlock;
 use pulp::Simd;
 
 use crate::expr::Expr;
-use crate::{ConcreteTensor, ResolvedTensor, SimdElement, MAX_SIMD_LANES};
+use crate::{ConcreteTensor, MAX_SIMD_LANES, ResolvedTensor, SimdElement};
 
 /// A tensor storing quantized blocks.
 ///
@@ -166,7 +166,8 @@ where
     fn eval_simd<S: Simd>(&self, _simd: S, base_idx: usize) -> <f32 as SimdElement>::Simd<S> {
         // Block boundaries don't typically align with SIMD lanes,
         // so we fall back to scalar gathering
-        let lane_count = std::mem::size_of::<<f32 as SimdElement>::Simd<S>>() / std::mem::size_of::<f32>();
+        let lane_count =
+            std::mem::size_of::<<f32 as SimdElement>::Simd<S>>() / std::mem::size_of::<f32>();
         let mut temp = [0.0f32; MAX_SIMD_LANES];
         for i in 0..lane_count {
             temp[i] = self.eval_scalar(base_idx + i);
@@ -199,7 +200,10 @@ impl ConcreteTensor<f32, 2> {
     /// This is optimized for the case where the RHS (weights) are quantized.
     /// Instead of dequantizing the entire RHS matrix, it processes block-by-block
     /// with SIMD acceleration.
-    pub fn matmul_quantized<B: GgufBlock + Sync>(&self, rhs: &QuantizedTensor<B, 2>) -> ConcreteTensor<f32, 2>
+    pub fn matmul_quantized<B: GgufBlock + Sync>(
+        &self,
+        rhs: &QuantizedTensor<B, 2>,
+    ) -> ConcreteTensor<f32, 2>
     where
         B::Dequantized: AsRef<[f32]>,
     {
@@ -276,10 +280,13 @@ where
 
             // Process rows in parallel
             let out_chunks: Vec<&mut [f32]> = out_data.chunks_mut(n).collect();
-            out_chunks.into_par_iter().enumerate().for_each(|(i, out_row)| {
-                let lhs_row = &lhs_data[i * k..(i + 1) * k];
-                process_row_simd::<B, S>(simd, lhs_row, rhs_blocks, out_row, k, blocks_per_row);
-            });
+            out_chunks
+                .into_par_iter()
+                .enumerate()
+                .for_each(|(i, out_row)| {
+                    let lhs_row = &lhs_data[i * k..(i + 1) * k];
+                    process_row_simd::<B, S>(simd, lhs_row, rhs_blocks, out_row, k, blocks_per_row);
+                });
         } else {
             // Sequential processing for small matrices
             for i in 0..m {
@@ -443,10 +450,7 @@ mod tests {
     fn test_matmul_quantized_simple() {
         // LHS: [2, 32] f32 tensor (all ones)
         // RHS: [32, 32] quantized (identity-like pattern)
-        let lhs = ConcreteTensor::<f32, 2>::from_slice(
-            [2, 32],
-            &vec![1.0f32; 64],
-        );
+        let lhs = ConcreteTensor::<f32, 2>::from_slice([2, 32], &vec![1.0f32; 64]);
 
         // Create a Q8_0 tensor where each block dequantizes to known values
         let shape = [32, 32];

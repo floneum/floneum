@@ -4,18 +4,26 @@ use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Neg as StdNeg, Range
 
 use pulp::Simd;
 
-use crate::cast::{cast_tensor, CastTo};
+use crate::cast::{CastTo, cast_tensor};
+use crate::comparison::{EqOp, GtOp, GteOp, LtOp, LteOp, NeOp, SimdComparisonOp};
 use crate::comparison::{comparison_scalar_op_ref, comparison_tensor_op_ref};
-use crate::comparison::{EqOp, GteOp, GtOp, LteOp, LtOp, NeOp, SimdComparisonOp};
-use crate::conditional::{where_cond_ref, IsNonZero};
-use crate::elementwise::{unary_tensor_op_ref, AbsOp, CosOp, ExpOp, Exp2Op, LogOp, Log2Op, NegOp, SimdUnaryOp, SinOp, SqrtOp, TanOp, TanhOp};
+use crate::conditional::{IsNonZero, where_cond_ref};
+use crate::elementwise::{
+    AbsOp, CosOp, Exp2Op, ExpOp, Log2Op, LogOp, NegOp, SimdUnaryOp, SinOp, SqrtOp, TanOp, TanhOp,
+    unary_tensor_op_ref,
+};
 use crate::expr::Expr;
 use crate::index::index_select_ref;
-use crate::slice_assign::slice_assign_ref;
 use crate::matmul::MatmulImpl;
 use crate::pairwise::{AddOp, DivOp, MulOp, SimdBinaryOp, SubOp};
-use crate::reduce::{reduce_tensor_axis, reduce_tensor_op, MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp};
-use crate::{elementwise, pairwise, ConcreteTensor, CpuMappedBuffer, LastRank, ResolveTensor, ResolvedTensor, SimdElement, TensorBacking, TensorSlice};
+use crate::reduce::{
+    MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp, reduce_tensor_axis, reduce_tensor_op,
+};
+use crate::slice_assign::slice_assign_ref;
+use crate::{
+    ConcreteTensor, CpuMappedBuffer, LastRank, ResolveTensor, ResolvedTensor, SimdElement,
+    TensorBacking, TensorSlice, elementwise, pairwise,
+};
 
 /// A tensor wrapper that provides a unified interface over different tensor backends.
 #[derive(Clone)]
@@ -89,7 +97,9 @@ where
         E: Default,
         AbsOp: SimdUnaryOp<E>,
     {
-        Tensor::new(unary_tensor_op_ref::<E, R, AbsOp>(&self.inner.to_concrete()))
+        Tensor::new(unary_tensor_op_ref::<E, R, AbsOp>(
+            &self.inner.to_concrete(),
+        ))
     }
 
     /// Square root element-wise
@@ -99,7 +109,9 @@ where
         E: Default,
         SqrtOp: SimdUnaryOp<E>,
     {
-        Tensor::new(unary_tensor_op_ref::<E, R, SqrtOp>(&self.inner.to_concrete()))
+        Tensor::new(unary_tensor_op_ref::<E, R, SqrtOp>(
+            &self.inner.to_concrete(),
+        ))
     }
 
     /// Exponential (e^x) element-wise
@@ -109,7 +121,9 @@ where
         E: Default,
         ExpOp: SimdUnaryOp<E>,
     {
-        Tensor::new(unary_tensor_op_ref::<E, R, ExpOp>(&self.inner.to_concrete()))
+        Tensor::new(unary_tensor_op_ref::<E, R, ExpOp>(
+            &self.inner.to_concrete(),
+        ))
     }
 
     /// Natural logarithm element-wise
@@ -119,7 +133,9 @@ where
         E: Default,
         LogOp: SimdUnaryOp<E>,
     {
-        Tensor::new(unary_tensor_op_ref::<E, R, LogOp>(&self.inner.to_concrete()))
+        Tensor::new(unary_tensor_op_ref::<E, R, LogOp>(
+            &self.inner.to_concrete(),
+        ))
     }
 
     /// Sine element-wise
@@ -129,7 +145,9 @@ where
         E: Default,
         SinOp: SimdUnaryOp<E>,
     {
-        Tensor::new(unary_tensor_op_ref::<E, R, SinOp>(&self.inner.to_concrete()))
+        Tensor::new(unary_tensor_op_ref::<E, R, SinOp>(
+            &self.inner.to_concrete(),
+        ))
     }
 
     /// Cosine element-wise
@@ -139,7 +157,9 @@ where
         E: Default,
         CosOp: SimdUnaryOp<E>,
     {
-        Tensor::new(unary_tensor_op_ref::<E, R, CosOp>(&self.inner.to_concrete()))
+        Tensor::new(unary_tensor_op_ref::<E, R, CosOp>(
+            &self.inner.to_concrete(),
+        ))
     }
 
     /// Hyperbolic tangent element-wise
@@ -149,7 +169,9 @@ where
         E: Default,
         TanhOp: SimdUnaryOp<E>,
     {
-        Tensor::new(unary_tensor_op_ref::<E, R, TanhOp>(&self.inner.to_concrete()))
+        Tensor::new(unary_tensor_op_ref::<E, R, TanhOp>(
+            &self.inner.to_concrete(),
+        ))
     }
 
     /// Base-2 exponential (2^x) element-wise
@@ -159,7 +181,9 @@ where
         E: Default,
         Exp2Op: SimdUnaryOp<E>,
     {
-        Tensor::new(unary_tensor_op_ref::<E, R, Exp2Op>(&self.inner.to_concrete()))
+        Tensor::new(unary_tensor_op_ref::<E, R, Exp2Op>(
+            &self.inner.to_concrete(),
+        ))
     }
 
     /// Base-2 logarithm element-wise
@@ -169,7 +193,9 @@ where
         E: Default,
         Log2Op: SimdUnaryOp<E>,
     {
-        Tensor::new(unary_tensor_op_ref::<E, R, Log2Op>(&self.inner.to_concrete()))
+        Tensor::new(unary_tensor_op_ref::<E, R, Log2Op>(
+            &self.inner.to_concrete(),
+        ))
     }
 
     /// Tangent element-wise
@@ -179,7 +205,9 @@ where
         E: Default,
         TanOp: SimdUnaryOp<E>,
     {
-        Tensor::new(unary_tensor_op_ref::<E, R, TanOp>(&self.inner.to_concrete()))
+        Tensor::new(unary_tensor_op_ref::<E, R, TanOp>(
+            &self.inner.to_concrete(),
+        ))
     }
 
     /// Sum all elements in the tensor
@@ -220,62 +248,98 @@ where
 
     /// Element-wise equality comparison
     #[inline]
-    pub fn eq(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn eq(
+        &self,
+        rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>,
+    ) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
         EqOp: SimdComparisonOp<E>,
     {
-        Tensor::new(comparison_tensor_op_ref::<E, R, EqOp>(&self.inner.to_concrete(), &rhs.inner.to_concrete()))
+        Tensor::new(comparison_tensor_op_ref::<E, R, EqOp>(
+            &self.inner.to_concrete(),
+            &rhs.inner.to_concrete(),
+        ))
     }
 
     /// Element-wise less than comparison
     #[inline]
-    pub fn lt(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn lt(
+        &self,
+        rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>,
+    ) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
         LtOp: SimdComparisonOp<E>,
     {
-        Tensor::new(comparison_tensor_op_ref::<E, R, LtOp>(&self.inner.to_concrete(), &rhs.inner.to_concrete()))
+        Tensor::new(comparison_tensor_op_ref::<E, R, LtOp>(
+            &self.inner.to_concrete(),
+            &rhs.inner.to_concrete(),
+        ))
     }
 
     /// Element-wise greater than comparison
     #[inline]
-    pub fn gt(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn gt(
+        &self,
+        rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>,
+    ) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
         GtOp: SimdComparisonOp<E>,
     {
-        Tensor::new(comparison_tensor_op_ref::<E, R, GtOp>(&self.inner.to_concrete(), &rhs.inner.to_concrete()))
+        Tensor::new(comparison_tensor_op_ref::<E, R, GtOp>(
+            &self.inner.to_concrete(),
+            &rhs.inner.to_concrete(),
+        ))
     }
 
     /// Element-wise not equal comparison
     #[inline]
-    pub fn ne(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn ne(
+        &self,
+        rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>,
+    ) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
         NeOp: SimdComparisonOp<E>,
     {
-        Tensor::new(comparison_tensor_op_ref::<E, R, NeOp>(&self.inner.to_concrete(), &rhs.inner.to_concrete()))
+        Tensor::new(comparison_tensor_op_ref::<E, R, NeOp>(
+            &self.inner.to_concrete(),
+            &rhs.inner.to_concrete(),
+        ))
     }
 
     /// Element-wise less than or equal comparison
     #[inline]
-    pub fn lte(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn lte(
+        &self,
+        rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>,
+    ) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
         LteOp: SimdComparisonOp<E>,
     {
-        Tensor::new(comparison_tensor_op_ref::<E, R, LteOp>(&self.inner.to_concrete(), &rhs.inner.to_concrete()))
+        Tensor::new(comparison_tensor_op_ref::<E, R, LteOp>(
+            &self.inner.to_concrete(),
+            &rhs.inner.to_concrete(),
+        ))
     }
 
     /// Element-wise greater than or equal comparison
     #[inline]
-    pub fn gte(&self, rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn gte(
+        &self,
+        rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>,
+    ) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
         GteOp: SimdComparisonOp<E>,
     {
-        Tensor::new(comparison_tensor_op_ref::<E, R, GteOp>(&self.inner.to_concrete(), &rhs.inner.to_concrete()))
+        Tensor::new(comparison_tensor_op_ref::<E, R, GteOp>(
+            &self.inner.to_concrete(),
+            &rhs.inner.to_concrete(),
+        ))
     }
 
     /// Compare tensor elements with scalar for equality
@@ -284,7 +348,10 @@ where
     where
         EqOp: SimdComparisonOp<E>,
     {
-        Tensor::new(comparison_scalar_op_ref::<E, R, EqOp>(&self.inner.to_concrete(), scalar))
+        Tensor::new(comparison_scalar_op_ref::<E, R, EqOp>(
+            &self.inner.to_concrete(),
+            scalar,
+        ))
     }
 
     /// Compare tensor elements with scalar for inequality
@@ -293,7 +360,10 @@ where
     where
         NeOp: SimdComparisonOp<E>,
     {
-        Tensor::new(comparison_scalar_op_ref::<E, R, NeOp>(&self.inner.to_concrete(), scalar))
+        Tensor::new(comparison_scalar_op_ref::<E, R, NeOp>(
+            &self.inner.to_concrete(),
+            scalar,
+        ))
     }
 
     /// Compare tensor elements with scalar for less than
@@ -302,7 +372,10 @@ where
     where
         LtOp: SimdComparisonOp<E>,
     {
-        Tensor::new(comparison_scalar_op_ref::<E, R, LtOp>(&self.inner.to_concrete(), scalar))
+        Tensor::new(comparison_scalar_op_ref::<E, R, LtOp>(
+            &self.inner.to_concrete(),
+            scalar,
+        ))
     }
 
     /// Compare tensor elements with scalar for less than or equal
@@ -311,7 +384,10 @@ where
     where
         LteOp: SimdComparisonOp<E>,
     {
-        Tensor::new(comparison_scalar_op_ref::<E, R, LteOp>(&self.inner.to_concrete(), scalar))
+        Tensor::new(comparison_scalar_op_ref::<E, R, LteOp>(
+            &self.inner.to_concrete(),
+            scalar,
+        ))
     }
 
     /// Compare tensor elements with scalar for greater than
@@ -320,7 +396,10 @@ where
     where
         GtOp: SimdComparisonOp<E>,
     {
-        Tensor::new(comparison_scalar_op_ref::<E, R, GtOp>(&self.inner.to_concrete(), scalar))
+        Tensor::new(comparison_scalar_op_ref::<E, R, GtOp>(
+            &self.inner.to_concrete(),
+            scalar,
+        ))
     }
 
     /// Compare tensor elements with scalar for greater than or equal
@@ -329,7 +408,10 @@ where
     where
         GteOp: SimdComparisonOp<E>,
     {
-        Tensor::new(comparison_scalar_op_ref::<E, R, GteOp>(&self.inner.to_concrete(), scalar))
+        Tensor::new(comparison_scalar_op_ref::<E, R, GteOp>(
+            &self.inner.to_concrete(),
+            scalar,
+        ))
     }
 
     /// Conditional selection: where self != 0, select on_true, else on_false
@@ -342,7 +424,11 @@ where
     where
         E: Default + IsNonZero,
     {
-        Tensor::new(where_cond_ref(&self.inner.to_concrete(), &on_true.inner.to_concrete(), &on_false.inner.to_concrete()))
+        Tensor::new(where_cond_ref(
+            &self.inner.to_concrete(),
+            &on_true.inner.to_concrete(),
+            &on_false.inner.to_concrete(),
+        ))
     }
 
     /// Cast tensor to another element type
@@ -369,8 +455,16 @@ where
 
     /// Select elements along a dimension using indices
     #[inline]
-    pub fn index_select(&self, dimension: usize, indices: &Tensor<1, ConcreteTensor<u32, 1>>) -> Tensor<R, ConcreteTensor<E, R>> {
-        Tensor::new(index_select_ref(&self.inner.to_concrete(), dimension, &indices.inner))
+    pub fn index_select(
+        &self,
+        dimension: usize,
+        indices: &Tensor<1, ConcreteTensor<u32, 1>>,
+    ) -> Tensor<R, ConcreteTensor<E, R>> {
+        Tensor::new(index_select_ref(
+            &self.inner.to_concrete(),
+            dimension,
+            &indices.inner,
+        ))
     }
 
     /// Returns a new tensor with the slice region replaced by values from the value tensor
@@ -405,46 +499,62 @@ where
 
     /// Sum along a specific axis, reducing the tensor rank by 1
     #[inline]
-    pub fn sum_axis<const OUT_RANK: usize, const AXIS: usize>(&self) -> Tensor<OUT_RANK, ConcreteTensor<E, OUT_RANK>>
+    pub fn sum_axis<const OUT_RANK: usize, const AXIS: usize>(
+        &self,
+    ) -> Tensor<OUT_RANK, ConcreteTensor<E, OUT_RANK>>
     where
         E: Default,
         ConcreteTensor<E, R>: LastRank<OUT_RANK, E>,
         SumOp: SimdReduceOp<E>,
     {
-        Tensor::new(reduce_tensor_axis::<E, R, OUT_RANK, AXIS, SumOp>(&self.inner.to_concrete()))
+        Tensor::new(reduce_tensor_axis::<E, R, OUT_RANK, AXIS, SumOp>(
+            &self.inner.to_concrete(),
+        ))
     }
 
     /// Maximum along a specific axis, reducing the tensor rank by 1
     #[inline]
-    pub fn max_axis<const OUT_RANK: usize, const AXIS: usize>(&self) -> Tensor<OUT_RANK, ConcreteTensor<E, OUT_RANK>>
+    pub fn max_axis<const OUT_RANK: usize, const AXIS: usize>(
+        &self,
+    ) -> Tensor<OUT_RANK, ConcreteTensor<E, OUT_RANK>>
     where
         E: Default,
         ConcreteTensor<E, R>: LastRank<OUT_RANK, E>,
         MaxOp: SimdReduceOp<E>,
     {
-        Tensor::new(reduce_tensor_axis::<E, R, OUT_RANK, AXIS, MaxOp>(&self.inner.to_concrete()))
+        Tensor::new(reduce_tensor_axis::<E, R, OUT_RANK, AXIS, MaxOp>(
+            &self.inner.to_concrete(),
+        ))
     }
 
     /// Minimum along a specific axis, reducing the tensor rank by 1
     #[inline]
-    pub fn min_axis<const OUT_RANK: usize, const AXIS: usize>(&self) -> Tensor<OUT_RANK, ConcreteTensor<E, OUT_RANK>>
+    pub fn min_axis<const OUT_RANK: usize, const AXIS: usize>(
+        &self,
+    ) -> Tensor<OUT_RANK, ConcreteTensor<E, OUT_RANK>>
     where
         E: Default,
         ConcreteTensor<E, R>: LastRank<OUT_RANK, E>,
         MinOp: SimdReduceOp<E>,
     {
-        Tensor::new(reduce_tensor_axis::<E, R, OUT_RANK, AXIS, MinOp>(&self.inner.to_concrete()))
+        Tensor::new(reduce_tensor_axis::<E, R, OUT_RANK, AXIS, MinOp>(
+            &self.inner.to_concrete(),
+        ))
     }
 
     /// Product along a specific axis, reducing the tensor rank by 1
     #[inline]
-    pub fn prod_axis<const OUT_RANK: usize, const AXIS: usize>(&self) -> Tensor<OUT_RANK, ConcreteTensor<E, OUT_RANK>>
+    pub fn prod_axis<const OUT_RANK: usize, const AXIS: usize>(
+        &self,
+    ) -> Tensor<OUT_RANK, ConcreteTensor<E, OUT_RANK>>
     where
         E: Default,
         ConcreteTensor<E, R>: LastRank<OUT_RANK, E>,
         ProdOp: SimdReduceOp<E>,
     {
-        Tensor::new(reduce_tensor_axis::<E, R, OUT_RANK, AXIS, ProdOp>(&self.inner.to_concrete()))
+        Tensor::new(reduce_tensor_axis::<E, R, OUT_RANK, AXIS, ProdOp>(
+            &self.inner.to_concrete(),
+        ))
     }
 }
 
@@ -457,20 +567,32 @@ pub trait FloatOps: SimdElement + PartialOrd {
 
 impl FloatOps for f32 {
     #[inline(always)]
-    fn powf(self, exp: Self) -> Self { self.powf(exp) }
+    fn powf(self, exp: Self) -> Self {
+        self.powf(exp)
+    }
     #[inline(always)]
-    fn float_max(self, other: Self) -> Self { self.max(other) }
+    fn float_max(self, other: Self) -> Self {
+        self.max(other)
+    }
     #[inline(always)]
-    fn float_min(self, other: Self) -> Self { self.min(other) }
+    fn float_min(self, other: Self) -> Self {
+        self.min(other)
+    }
 }
 
 impl FloatOps for f64 {
     #[inline(always)]
-    fn powf(self, exp: Self) -> Self { self.powf(exp) }
+    fn powf(self, exp: Self) -> Self {
+        self.powf(exp)
+    }
     #[inline(always)]
-    fn float_max(self, other: Self) -> Self { self.max(other) }
+    fn float_max(self, other: Self) -> Self {
+        self.max(other)
+    }
     #[inline(always)]
-    fn float_min(self, other: Self) -> Self { self.min(other) }
+    fn float_min(self, other: Self) -> Self {
+        self.min(other)
+    }
 }
 
 // Specialized methods for float tensors (f32 and f64)
@@ -536,16 +658,26 @@ where
     }
 }
 
-// Specialized methods for 2D tensors (matrix operations)
-impl<E, T> Tensor<2, T>
+// Matrix multiplication for N-dimensional tensors (N >= 2)
+impl<const R: usize, E, T> Tensor<R, T>
 where
     E: SimdElement + MatmulImpl,
-    T: TensorBacking<2, Elem = E> + ResolveTensor<2, Elem = E>,
+    T: TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>,
 {
-    /// Matrix multiplication: self (M x K) @ rhs (K x N) -> (M x N)
+    /// Matrix multiplication (batched for rank > 2)
+    /// For 2D: [M, K] @ [K, N] -> [M, N]
+    /// For ND: [...batch, M, K] @ [...batch, K, N] -> [...batch, M, N]
+    /// Panics if R < 2
     #[inline]
-    pub fn matmul(&self, rhs: &Tensor<2, impl TensorBacking<2, Elem = E> + ResolveTensor<2, Elem = E>>) -> Tensor<2, ConcreteTensor<E, 2>> {
-        Tensor::new(self.inner.to_concrete().matmul_ref(&rhs.inner.to_concrete()))
+    pub fn matmul(
+        &self,
+        rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>,
+    ) -> Tensor<R, ConcreteTensor<E, R>> {
+        Tensor::new(
+            self.inner
+                .to_concrete()
+                .matmul_ref(&rhs.inner.to_concrete()),
+        )
     }
 }
 

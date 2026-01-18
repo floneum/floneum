@@ -5,8 +5,8 @@ use std::ops::Neg as StdNeg;
 use pulp::{Arch, Simd, WithSimd};
 
 use crate::{
-    materialize_expr, ConcreteTensor, Expr, IndexIterator, ResolveTensor, ResolvedTensor,
-    SimdElement, TensorBacking,
+    ConcreteTensor, Expr, IndexIterator, ResolveTensor, ResolvedTensor, SimdElement, TensorBacking,
+    materialize_expr,
 };
 
 /// Trait for unary operations that have SIMD support
@@ -27,7 +27,9 @@ macro_rules! define_op_marker {
         )*
     };
 }
-define_op_marker!(NegOp, AbsOp, SqrtOp, ExpOp, Exp2Op, LogOp, Log2Op, SinOp, CosOp, TanOp, TanhOp);
+define_op_marker!(
+    NegOp, AbsOp, SqrtOp, ExpOp, Exp2Op, LogOp, Log2Op, SinOp, CosOp, TanOp, TanhOp
+);
 
 // Macro for unary ops with SIMD support
 macro_rules! impl_unary_op {
@@ -125,8 +127,8 @@ macro_rules! impl_scalar_unary_op {
                 a: <$elem as SimdElement>::Simd<S>,
             ) -> <$elem as SimdElement>::Simd<S> {
                 // Process each lane with scalar operation
-                let lane_count =
-                    std::mem::size_of::<<$elem as SimdElement>::Simd<S>>() / std::mem::size_of::<$elem>();
+                let lane_count = std::mem::size_of::<<$elem as SimdElement>::Simd<S>>()
+                    / std::mem::size_of::<$elem>();
                 let mut temp = [<$elem>::default(); crate::MAX_SIMD_LANES];
 
                 // Safe: cast SIMD ref to scalar slice via bytemuck
@@ -199,10 +201,7 @@ impl<E: SimdElement, Op: SimdUnaryOp<E>> WithSimd for UnaryOpDispatch<'_, E, Op>
 
 /// Perform a unary operation on contiguous slices using SIMD dispatch
 #[inline(always)]
-pub(crate) fn unary_op_contiguous<E: SimdElement, Op: SimdUnaryOp<E>>(
-    input: &[E],
-    out: &mut [E],
-) {
+pub(crate) fn unary_op_contiguous<E: SimdElement, Op: SimdUnaryOp<E>>(input: &[E], out: &mut [E]) {
     Arch::new().dispatch(UnaryOpDispatch::<E, Op> {
         input,
         out,

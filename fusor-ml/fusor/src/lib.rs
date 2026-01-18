@@ -20,18 +20,48 @@ use fusor_cpu::TensorBacking;
 
 // Re-export from fusor-cpu
 pub use fusor_cpu::{
-    Abs, Add, ConcreteTensor, Cos, Div, Exp, Exp2, Expr, Log, Log2, Mul, Neg, ResolveTensor,
-    ResolvedTensor, SimdElement, Sin, Sqrt, Sub, Tan, Tanh, Tensor as CpuTensor,
+    Abs,
     // Op types for bounds
-    AbsOp, CosOp, ExpOp, Exp2Op, LogOp, Log2Op, NegOp, SimdUnaryOp, SinOp, SqrtOp, TanOp, TanhOp,
-    // Conditional operations
-    IsNonZero,
+    AbsOp,
+    Add,
     // Cast operations
     CastTo,
+    ConcreteTensor,
+    Cos,
+    CosOp,
+    Div,
+    Exp,
+    Exp2,
+    Exp2Op,
+    ExpOp,
+    Expr,
     // Float operations
     FloatOps,
+    // Conditional operations
+    IsNonZero,
+    Log,
+    Log2,
+    Log2Op,
+    LogOp,
     // Matmul
     MatmulImpl,
+    Mul,
+    Neg,
+    NegOp,
+    ResolveTensor,
+    ResolvedTensor,
+    SimdElement,
+    SimdUnaryOp,
+    Sin,
+    SinOp,
+    Sqrt,
+    SqrtOp,
+    Sub,
+    Tan,
+    TanOp,
+    Tanh,
+    TanhOp,
+    Tensor as CpuTensor,
 };
 
 pub use fusor_core::Tensor as GpuTensor;
@@ -420,7 +450,11 @@ where
     D: SimdElement + DataType + Default,
 {
     /// Select elements along a dimension using indices.
-    pub fn index_select(&self, dimension: usize, indices: &GpuOr<1, u32, ConcreteTensor<u32, 1>>) -> Self {
+    pub fn index_select(
+        &self,
+        dimension: usize,
+        indices: &GpuOr<1, u32, ConcreteTensor<u32, 1>>,
+    ) -> Self {
         match (self, indices) {
             (GpuOr::Cpu(t), GpuOr::Cpu(idx)) => GpuOr::Cpu(t.index_select(dimension, idx)),
             (GpuOr::Gpu(t), GpuOr::Gpu(idx)) => GpuOr::Gpu(t.index_select(dimension, idx)),
@@ -444,12 +478,15 @@ where
     }
 }
 
-// Matrix multiplication (2D tensors only)
-impl<D> GpuOr<2, D, ConcreteTensor<D, 2>>
+// Matrix multiplication for N-dimensional tensors (N >= 2)
+impl<const R: usize, D> GpuOr<R, D, ConcreteTensor<D, R>>
 where
     D: SimdElement + DataType + FloatDataType + Default + MatmulImpl,
 {
-    /// Matrix multiplication: self (M x K) @ rhs (K x N) -> (M x N).
+    /// Matrix multiplication (batched for rank > 2)
+    /// For 2D: [M, K] @ [K, N] -> [M, N]
+    /// For ND: [...batch, M, K] @ [...batch, K, N] -> [...batch, M, N]
+    /// Panics if R < 2
     pub fn matmul(&self, rhs: &Self) -> Self {
         match (self, rhs) {
             (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu(a.matmul(b)),
