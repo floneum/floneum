@@ -96,7 +96,7 @@ fn test_sum_axis_2d_axis0() {
     // sum along axis 0 -> [5, 7, 9]
     let tensor = Tensor::from_slice([2, 3], &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0]);
 
-    let result = tensor.sum_axis::<1, 0>();
+    let result = tensor.sum_axis::<1>(0);
 
     assert_eq!(result.inner().shape(), &[3]);
     assert_eq!(result.get([0]), 5.0);
@@ -111,7 +111,7 @@ fn test_sum_axis_2d_axis1() {
     // sum along axis 1 -> [6, 15]
     let tensor = Tensor::from_slice([2, 3], &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0]);
 
-    let result = tensor.sum_axis::<1, 1>();
+    let result = tensor.sum_axis::<1>(1);
 
     assert_eq!(result.inner().shape(), &[2]);
     assert_eq!(result.get([0]), 6.0);
@@ -125,7 +125,7 @@ fn test_max_axis_2d() {
     // max along axis 0 -> [4, 5, 6]
     let tensor = Tensor::from_slice([2, 3], &[1.0f32, 5.0, 3.0, 4.0, 2.0, 6.0]);
 
-    let result = tensor.max_axis::<1, 0>();
+    let result = tensor.max_axis::<1>(0);
 
     assert_eq!(result.inner().shape(), &[3]);
     assert_eq!(result.get([0]), 4.0);
@@ -140,7 +140,7 @@ fn test_min_axis_2d() {
     // min along axis 1 -> [1, 2]
     let tensor = Tensor::from_slice([2, 3], &[1.0f32, 5.0, 3.0, 4.0, 2.0, 6.0]);
 
-    let result = tensor.min_axis::<1, 1>();
+    let result = tensor.min_axis::<1>(1);
 
     assert_eq!(result.inner().shape(), &[2]);
     assert_eq!(result.get([0]), 1.0);
@@ -154,7 +154,7 @@ fn test_prod_axis_2d() {
     // prod along axis 0 -> [3, 8]
     let tensor = Tensor::from_slice([2, 2], &[1.0f32, 2.0, 3.0, 4.0]);
 
-    let result = tensor.prod_axis::<1, 0>();
+    let result = tensor.prod_axis::<1>(0);
 
     assert_eq!(result.inner().shape(), &[2]);
     assert_eq!(result.get([0]), 3.0);
@@ -167,7 +167,7 @@ fn test_sum_axis_3d() {
     let tensor = Tensor::from_slice([2, 2, 2], &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
 
     // Sum along axis 0 -> 2x2 tensor
-    let result = tensor.sum_axis::<2, 0>();
+    let result = tensor.sum_axis::<2>(0);
 
     assert_eq!(result.inner().shape(), &[2, 2]);
     // [1,2;3,4] + [5,6;7,8] = [6,8;10,12]

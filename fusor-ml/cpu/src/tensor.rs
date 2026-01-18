@@ -17,7 +17,7 @@ use crate::index::index_select_ref;
 use crate::matmul::MatmulImpl;
 use crate::pairwise::{AddOp, DivOp, MulOp, SimdBinaryOp, SubOp};
 use crate::reduce::{
-    MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp, reduce_tensor_axis, reduce_tensor_op,
+    MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp, reduce_tensor_axis_dyn, reduce_tensor_op,
 };
 use crate::slice_assign::slice_assign_ref;
 use crate::{
@@ -499,61 +499,69 @@ where
 
     /// Sum along a specific axis, reducing the tensor rank by 1
     #[inline]
-    pub fn sum_axis<const OUT_RANK: usize, const AXIS: usize>(
+    pub fn sum_axis<const OUT_RANK: usize>(
         &self,
+        axis: usize,
     ) -> Tensor<OUT_RANK, ConcreteTensor<E, OUT_RANK>>
     where
         E: Default,
         ConcreteTensor<E, R>: LastRank<OUT_RANK, E>,
         SumOp: SimdReduceOp<E>,
     {
-        Tensor::new(reduce_tensor_axis::<E, R, OUT_RANK, AXIS, SumOp>(
+        Tensor::new(reduce_tensor_axis_dyn::<E, R, OUT_RANK, SumOp>(
             &self.inner.to_concrete(),
+            axis,
         ))
     }
 
     /// Maximum along a specific axis, reducing the tensor rank by 1
     #[inline]
-    pub fn max_axis<const OUT_RANK: usize, const AXIS: usize>(
+    pub fn max_axis<const OUT_RANK: usize>(
         &self,
+        axis: usize,
     ) -> Tensor<OUT_RANK, ConcreteTensor<E, OUT_RANK>>
     where
         E: Default,
         ConcreteTensor<E, R>: LastRank<OUT_RANK, E>,
         MaxOp: SimdReduceOp<E>,
     {
-        Tensor::new(reduce_tensor_axis::<E, R, OUT_RANK, AXIS, MaxOp>(
+        Tensor::new(reduce_tensor_axis_dyn::<E, R, OUT_RANK, MaxOp>(
             &self.inner.to_concrete(),
+            axis,
         ))
     }
 
     /// Minimum along a specific axis, reducing the tensor rank by 1
     #[inline]
-    pub fn min_axis<const OUT_RANK: usize, const AXIS: usize>(
+    pub fn min_axis<const OUT_RANK: usize>(
         &self,
+        axis: usize,
     ) -> Tensor<OUT_RANK, ConcreteTensor<E, OUT_RANK>>
     where
         E: Default,
         ConcreteTensor<E, R>: LastRank<OUT_RANK, E>,
         MinOp: SimdReduceOp<E>,
     {
-        Tensor::new(reduce_tensor_axis::<E, R, OUT_RANK, AXIS, MinOp>(
+        Tensor::new(reduce_tensor_axis_dyn::<E, R, OUT_RANK, MinOp>(
             &self.inner.to_concrete(),
+            axis,
         ))
     }
 
     /// Product along a specific axis, reducing the tensor rank by 1
     #[inline]
-    pub fn prod_axis<const OUT_RANK: usize, const AXIS: usize>(
+    pub fn prod_axis<const OUT_RANK: usize>(
         &self,
+        axis: usize,
     ) -> Tensor<OUT_RANK, ConcreteTensor<E, OUT_RANK>>
     where
         E: Default,
         ConcreteTensor<E, R>: LastRank<OUT_RANK, E>,
         ProdOp: SimdReduceOp<E>,
     {
-        Tensor::new(reduce_tensor_axis::<E, R, OUT_RANK, AXIS, ProdOp>(
+        Tensor::new(reduce_tensor_axis_dyn::<E, R, OUT_RANK, ProdOp>(
             &self.inner.to_concrete(),
+            axis,
         ))
     }
 }

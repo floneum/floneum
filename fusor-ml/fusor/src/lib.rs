@@ -48,6 +48,9 @@ pub use fusor_cpu::{
     LogOp,
     // Matmul
     MatmulImpl,
+    // Reduction ops
+    MaxOp,
+    MinOp,
     Mul,
     MulOp,
     Neg,
@@ -56,6 +59,7 @@ pub use fusor_cpu::{
     ResolvedTensor,
     SimdBinaryOp,
     SimdElement,
+    SimdReduceOp,
     SimdUnaryOp,
     Sin,
     SinOp,
@@ -63,6 +67,7 @@ pub use fusor_cpu::{
     SqrtOp,
     Sub,
     SubOp,
+    SumOp,
     Tan,
     TanOp,
     Tanh,
@@ -198,6 +203,18 @@ where
         match self {
             GpuOr::Cpu(t) => GpuOr::Cpu(t.eval()),
             GpuOr::Gpu(t) => GpuOr::Gpu(t.clone()),
+        }
+    }
+
+    /// Returns the shape of the tensor.
+    pub fn shape(&self) -> [usize; R]
+    where
+        B: Expr<Elem = D>,
+        D: SimdElement + DataType,
+    {
+        match self {
+            GpuOr::Cpu(t) => Expr::shape(t).try_into().expect("Shape length mismatch"),
+            GpuOr::Gpu(t) => *t.shape(),
         }
     }
 }

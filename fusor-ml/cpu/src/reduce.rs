@@ -304,44 +304,47 @@ pub(crate) fn reduce_tensor_op<E: SimdElement, const R: usize, Op: SimdReduceOp<
     }
 }
 
-/// Reduce along a specific axis, returning tensor with OUT_RANK dimensions
-pub(crate) fn reduce_tensor_axis<
+/// Reduce along a specific axis (runtime axis), returning tensor with OUT_RANK dimensions
+pub(crate) fn reduce_tensor_axis_dyn<
     E: SimdElement + Default,
     const R: usize,
     const OUT_RANK: usize,
-    const AXIS: usize,
     Op: SimdReduceOp<E>,
 >(
     tensor: &ConcreteTensor<E, R>,
+    axis: usize,
 ) -> ConcreteTensor<E, OUT_RANK>
 where
     ConcreteTensor<E, R>: LastRank<OUT_RANK, E>,
 {
-    // Compute output shape (remove AXIS dimension)
+    assert!(axis < R, "Axis {} out of bounds for tensor with rank {}", axis, R);
+    assert_eq!(OUT_RANK, R - 1, "Output rank must be input rank - 1");
+
+    // Compute output shape (remove axis dimension)
     let in_shape = tensor.shape();
     let mut out_shape = [0usize; OUT_RANK];
     let mut j = 0;
     for i in 0..R {
-        if i != AXIS {
+        if i != axis {
             out_shape[j] = in_shape[i];
             j += 1;
         }
     }
 
     let mut output = ConcreteTensor::<E, OUT_RANK>::zeros(out_shape);
-    let reduce_dim = in_shape[AXIS];
+    let reduce_dim = in_shape[axis];
 
     // Pre-compute strides for the reduction axis for faster linear index calculation
-    let axis_stride = tensor.strides()[AXIS];
+    let axis_stride = tensor.strides()[axis];
 
-    // Iterate over output indices and reduce along AXIS
+    // Iterate over output indices and reduce along axis
     // Use fixed-size array to avoid allocation
     let mut in_indices = [0usize; R];
     for out_indices in IndexIterator::new(&out_shape) {
-        // Build base input indices (with AXIS = 0)
+        // Build base input indices (with axis = 0)
         let mut j = 0;
         for i in 0..R {
-            if i == AXIS {
+            if i == axis {
                 in_indices[i] = 0;
             } else {
                 in_indices[i] = out_indices[j];
