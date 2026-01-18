@@ -6,4 +6,5 @@
 mod activations;
 mod construction;
 mod math;
+mod normalization;
 mod reductions;

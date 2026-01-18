@@ -37,6 +37,12 @@ impl Iterator for IndexIterator {
 
         let result = self.indices.clone();
 
+        // Special case: 0D tensor (scalar) - yield once then done
+        if self.shape.is_empty() {
+            self.done = true;
+            return Some(result);
+        }
+
         // Increment indices (row-major order)
         for i in (0..self.shape.len()).rev() {
             self.indices[i] += 1;

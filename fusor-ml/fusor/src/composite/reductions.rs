@@ -62,9 +62,12 @@ where
         }
     }
 
-    /// Sum along a specific axis, keeping the dimension (with size 1).
+    /// Sum along a specific axis, broadcasting result back to original shape.
     ///
-    /// Output has same rank as input, with the reduced dimension having size 1.
+    /// For CPU: Returns a tensor with the original shape where values are repeated
+    /// along the reduced axis. This enables element-wise operations without explicit broadcasting.
+    ///
+    /// For GPU: Uses native keepdim which supports broadcasting.
     pub fn sum_keepdim<const OUT_RANK: usize>(&self, axis: usize) -> Self
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
@@ -75,44 +78,77 @@ where
     {
         match self {
             GpuOr::Cpu(t) => {
-                // CPU: sum then reshape to keep dim
+                // CPU: reduce, then broadcast back to original shape
                 let reduced = t.sum_axis::<OUT_RANK>(axis);
-                // Get shape and insert 1 at axis position
-                let reduced_shape = Expr::shape(&reduced);
-                let mut new_shape = [0usize; R];
-                for i in 0..R {
-                    if i < axis {
-                        new_shape[i] = reduced_shape[i];
-                    } else if i == axis {
-                        new_shape[i] = 1;
-                    } else {
-                        new_shape[i] = reduced_shape[i - 1];
-                    }
-                }
-                // Create output with correct shape by creating and assigning
-                let total_elements: usize = new_shape.iter().product();
-                let reduced_concrete = reduced.eval();
-                let data: Vec<D> = (0..total_elements)
-                    .map(|i| {
-                        // Map linear index in new shape to reduced shape
-                        let mut reduced_idx = [0usize; OUT_RANK];
-                        let mut remainder = i;
-                        for j in (0..R).rev() {
-                            if j == axis {
-                                remainder /= 1; // skip the size-1 dimension
-                            } else {
-                                let dim_idx = if j < axis { j } else { j - 1 };
-                                reduced_idx[dim_idx] = remainder % new_shape[j];
-                                remainder /= new_shape[j];
-                            }
-                        }
-                        reduced_concrete.get(reduced_idx)
-                    })
-                    .collect();
-                GpuOr::Cpu(fusor_cpu::Tensor::from_slice(new_shape, &data))
+                let original_shape: [usize; R] = Expr::shape(t).try_into().expect("Shape mismatch");
+                GpuOr::Cpu(Self::broadcast_reduced_to_original::<OUT_RANK>(
+                    &reduced,
+                    original_shape,
+                    axis,
+                ))
             }
             GpuOr::Gpu(t) => GpuOr::Gpu(t.sum_keepdim(axis)),
         }
+    }
+
+    /// Max along a specific axis, broadcasting result back to original shape.
+    pub fn max_keepdim<const OUT_RANK: usize>(&self, axis: usize) -> Self
+    where
+        ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
+        fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
+        <fusor_core::Tensor<R, D> as fusor_core::LastRankInner>::LastRank:
+            GpuNextRankInner<NextRank = fusor_core::Tensor<R, D>>,
+        MaxOp: SimdReduceOp<D>,
+    {
+        match self {
+            GpuOr::Cpu(t) => {
+                let reduced = t.max_axis::<OUT_RANK>(axis);
+                let original_shape: [usize; R] = Expr::shape(t).try_into().expect("Shape mismatch");
+                GpuOr::Cpu(Self::broadcast_reduced_to_original::<OUT_RANK>(
+                    &reduced,
+                    original_shape,
+                    axis,
+                ))
+            }
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.max_keepdim(axis)),
+        }
+    }
+
+    /// Helper function to broadcast a reduced tensor back to the original shape.
+    /// The reduced tensor has OUT_RANK dimensions (one less than original R).
+    /// The result has the original R dimensions with values repeated along the reduced axis.
+    fn broadcast_reduced_to_original<const OUT_RANK: usize>(
+        reduced: &fusor_cpu::Tensor<OUT_RANK, ConcreteTensor<D, OUT_RANK>>,
+        original_shape: [usize; R],
+        axis: usize,
+    ) -> fusor_cpu::Tensor<R, ConcreteTensor<D, R>>
+    where
+        ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
+    {
+        let total_elements: usize = original_shape.iter().product();
+        let reduced_concrete = reduced.eval();
+        let data: Vec<D> = (0..total_elements)
+            .map(|i| {
+                // Convert linear index to original shape indices
+                let mut indices = [0usize; R];
+                let mut remainder = i;
+                for dim in (0..R).rev() {
+                    indices[dim] = remainder % original_shape[dim];
+                    remainder /= original_shape[dim];
+                }
+                // Map to reduced tensor indices (skip axis dimension)
+                let mut reduced_idx = [0usize; OUT_RANK];
+                let mut j = 0;
+                for dim in 0..R {
+                    if dim != axis {
+                        reduced_idx[j] = indices[dim];
+                        j += 1;
+                    }
+                }
+                reduced_concrete.get(reduced_idx)
+            })
+            .collect();
+        fusor_cpu::Tensor::from_slice(original_shape, &data)
     }
 
     /// Mean along a specific axis, reducing the tensor rank by 1.
@@ -149,6 +185,65 @@ where
         let axis_size = shape[axis];
         let sum = self.sum_keepdim::<OUT_RANK>(axis);
         sum.div_scalar(D::from_f32(axis_size as f32))
+    }
+
+    /// Variance along a specific axis, reducing the tensor rank by 1.
+    ///
+    /// Uses the formula: var(x) = mean(x^2) - mean(x)^2
+    pub fn var<const OUT_RANK: usize>(
+        &self,
+        axis: usize,
+    ) -> GpuOr<OUT_RANK, D, ConcreteTensor<D, OUT_RANK>>
+    where
+        ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
+        fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
+        SumOp: SimdReduceOp<D>,
+        D: std::ops::Mul<Output = D> + std::ops::Sub<Output = D> + std::ops::Div<Output = D>,
+        crate::MulOp: SimdBinaryOp<D>,
+        crate::SubOp: SimdBinaryOp<D>,
+        DivOp: SimdBinaryOp<D>,
+    {
+        // var(x) = mean(x^2) - mean(x)^2
+        let mean_x = self.mean::<OUT_RANK>(axis);
+        let mean_x_sq = mean_x.sqr();
+        let x_sq = self.sqr();
+        let mean_x2 = x_sq.mean::<OUT_RANK>(axis);
+        // mean(x^2) - mean(x)^2
+        match (&mean_x2, &mean_x_sq) {
+            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a - b).eval()),
+            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a - b),
+            _ => panic!("Cannot mix CPU and GPU tensors"),
+        }
+    }
+
+    /// Variance along a specific axis, keeping the dimension (with size 1).
+    pub fn var_keepdim<const OUT_RANK: usize>(&self, axis: usize) -> Self
+    where
+        ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
+        fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
+        <fusor_core::Tensor<R, D> as fusor_core::LastRankInner>::LastRank:
+            GpuNextRankInner<NextRank = fusor_core::Tensor<R, D>>,
+        SumOp: SimdReduceOp<D>,
+        D: std::ops::Mul<Output = D>
+            + std::ops::Sub<Output = D>
+            + std::ops::Add<Output = D>
+            + std::ops::Div<Output = D>,
+        crate::MulOp: SimdBinaryOp<D>,
+        crate::SubOp: SimdBinaryOp<D>,
+        AddOp: SimdBinaryOp<D>,
+        DivOp: SimdBinaryOp<D>,
+    {
+        // var(x) = mean(x^2) - mean(x)^2
+        let mean_x = self.mean_keepdim::<OUT_RANK>(axis);
+        let mean_x_sq = mean_x.sqr();
+        let x_sq = self.sqr();
+        let mean_x2 = x_sq.mean_keepdim::<OUT_RANK>(axis);
+        // mean(x^2) - mean(x)^2
+        match (&mean_x2, &mean_x_sq) {
+            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a - b).eval()),
+            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a - b),
+            _ => panic!("Cannot mix CPU and GPU tensors"),
+        }
     }
 }
 
@@ -214,12 +309,20 @@ mod tests {
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
         let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
 
-        // Sum along axis 1 with keepdim: [[1+2+3], [4+5+6]] = [[6], [15]]
+        // Sum along axis 1, broadcast back to original shape
+        // Row 0 sum: 1+2+3 = 6, Row 1 sum: 4+5+6 = 15
+        // Result: [[6, 6, 6], [15, 15, 15]]
         let result = t.sum_keepdim::<1>(1);
-        assert_eq!(result.shape(), [2, 1]);
+        assert_eq!(result.shape(), [2, 3]); // Original shape, not [2, 1]
         let slice = result.as_slice().await.unwrap();
+        // Row 0 all have the same sum value
         assert!((slice[[0, 0]] - 6.0).abs() < 0.001);
+        assert!((slice[[0, 1]] - 6.0).abs() < 0.001);
+        assert!((slice[[0, 2]] - 6.0).abs() < 0.001);
+        // Row 1 all have the same sum value
         assert!((slice[[1, 0]] - 15.0).abs() < 0.001);
+        assert!((slice[[1, 1]] - 15.0).abs() < 0.001);
+        assert!((slice[[1, 2]] - 15.0).abs() < 0.001);
     }
 
     #[tokio::test]
@@ -241,11 +344,70 @@ mod tests {
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
         let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
 
-        // Mean along axis 1 with keepdim: [[(1+2+3)/3], [(4+5+6)/3]] = [[2], [5]]
+        // Mean along axis 1, broadcast back: [[2, 2, 2], [5, 5, 5]]
         let result = t.mean_keepdim::<1>(1);
-        assert_eq!(result.shape(), [2, 1]);
+        assert_eq!(result.shape(), [2, 3]); // Original shape
         let slice = result.as_slice().await.unwrap();
+        // Row 0: mean = 2
         assert!((slice[[0, 0]] - 2.0).abs() < 0.001);
+        assert!((slice[[0, 1]] - 2.0).abs() < 0.001);
+        assert!((slice[[0, 2]] - 2.0).abs() < 0.001);
+        // Row 1: mean = 5
         assert!((slice[[1, 0]] - 5.0).abs() < 0.001);
+        assert!((slice[[1, 1]] - 5.0).abs() < 0.001);
+        assert!((slice[[1, 2]] - 5.0).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn test_var_cpu() {
+        // Test variance: var([1, 2, 3]) = mean([1, 4, 9]) - mean([1, 2, 3])^2
+        //                              = 14/3 - 4 = 2/3 ≈ 0.6667
+        let data = [1.0f32, 2.0, 3.0];
+        let t: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([3], &data));
+
+        let result: GpuOr<0, f32, _> = t.var::<0>(0);
+        let slice = result.as_slice().await.unwrap();
+        let expected = 2.0 / 3.0; // population variance
+        assert!(
+            (slice[[]] - expected).abs() < 0.001,
+            "Expected {}, got {}",
+            expected,
+            slice[[]]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_var_2d_cpu() {
+        // 2x3 tensor
+        let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
+
+        // Variance along axis 1
+        // Row 0: [1, 2, 3] -> mean=2, var = (1+4+9)/3 - 4 = 14/3 - 4 = 2/3
+        // Row 1: [4, 5, 6] -> mean=5, var = (16+25+36)/3 - 25 = 77/3 - 25 = 2/3
+        let result: GpuOr<1, f32, _> = t.var::<1>(1);
+        let slice = result.as_slice().await.unwrap();
+        let expected = 2.0 / 3.0;
+        assert!((slice[[0]] - expected).abs() < 0.001);
+        assert!((slice[[1]] - expected).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn test_var_keepdim_cpu() {
+        // 2x3 tensor
+        let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
+
+        let result = t.var_keepdim::<1>(1);
+        assert_eq!(result.shape(), [2, 3]); // Original shape, broadcast
+        let slice = result.as_slice().await.unwrap();
+        let expected = 2.0 / 3.0;
+        // Both rows have the same variance, broadcast across all columns
+        assert!((slice[[0, 0]] - expected).abs() < 0.001);
+        assert!((slice[[0, 1]] - expected).abs() < 0.001);
+        assert!((slice[[0, 2]] - expected).abs() < 0.001);
+        assert!((slice[[1, 0]] - expected).abs() < 0.001);
+        assert!((slice[[1, 1]] - expected).abs() < 0.001);
+        assert!((slice[[1, 2]] - expected).abs() < 0.001);
     }
 }
