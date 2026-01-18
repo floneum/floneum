@@ -22,6 +22,8 @@ use fusor_cpu::TensorBacking;
 pub use fusor_cpu::{
     Abs, Add, ConcreteTensor, Cos, Div, Exp, Exp2, Expr, Log, Log2, Mul, Neg, ResolveTensor,
     ResolvedTensor, SimdElement, Sin, Sqrt, Sub, Tan, Tanh, Tensor as CpuTensor,
+    // Op types for bounds
+    AbsOp, CosOp, ExpOp, LogOp, NegOp, SimdUnaryOp, SinOp, SqrtOp, TanhOp,
 };
 
 pub use fusor_core::Tensor as GpuTensor;
@@ -139,6 +141,21 @@ where
             }
         }
     }
+
+    /// Materialize the tensor to a concrete form.
+    ///
+    /// For CPU tensors, this evaluates any lazy expressions.
+    /// For GPU tensors, this is a no-op as GPU tensors are already concrete.
+    pub fn to_concrete(&self) -> GpuOr<R, D>
+    where
+        B: ResolveTensor<R>,
+        D: SimdElement,
+    {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(t.eval()),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.clone()),
+        }
+    }
 }
 
 pub enum EitherMappedBuffer {
@@ -252,6 +269,68 @@ impl_gpuor_pairwise_op!(Add, add, +, "Cannot add CPU tensor to GPU tensor");
 impl_gpuor_pairwise_op!(Sub, sub, -, "Cannot subtract CPU tensor from GPU tensor");
 impl_gpuor_pairwise_op!(Mul, mul, *, "Cannot multiply CPU tensor with GPU tensor");
 impl_gpuor_pairwise_op!(Div, div, /, "Cannot divide CPU tensor by GPU tensor");
+
+// Neg trait implementation for GpuOr
+impl<const R: usize, D, B, B2> std::ops::Neg for GpuOr<R, D, B>
+where
+    CpuTensor<R, B>: std::ops::Neg<Output = CpuTensor<R, B2>>,
+    GpuTensor<R, D>: std::ops::Neg<Output = GpuTensor<R, D>>,
+    B: TensorBacking<R, Elem = D>,
+    B2: TensorBacking<R, Elem = D>,
+{
+    type Output = GpuOr<R, D, B2>;
+
+    fn neg(self) -> Self::Output {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(-t),
+            GpuOr::Gpu(t) => GpuOr::Gpu(-t),
+        }
+    }
+}
+
+impl<'a, const R: usize, D, B, B2> std::ops::Neg for &'a GpuOr<R, D, B>
+where
+    &'a CpuTensor<R, B>: std::ops::Neg<Output = CpuTensor<R, B2>>,
+    &'a GpuTensor<R, D>: std::ops::Neg<Output = GpuTensor<R, D>>,
+    B: TensorBacking<R, Elem = D>,
+    B2: TensorBacking<R, Elem = D>,
+{
+    type Output = GpuOr<R, D, B2>;
+
+    fn neg(self) -> Self::Output {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(-t),
+            GpuOr::Gpu(t) => GpuOr::Gpu(-t),
+        }
+    }
+}
+
+/// Macro to implement unary element-wise operations for GpuOr.
+macro_rules! impl_gpuor_unary_op {
+    ($method:ident, $op:ident) => {
+        impl<const R: usize, D> GpuOr<R, D, ConcreteTensor<D, R>>
+        where
+            D: SimdElement + DataType + FloatDataType + Default,
+            fusor_cpu::$op: fusor_cpu::SimdUnaryOp<D>,
+        {
+            #[doc = concat!("Element-wise ", stringify!($method), " operation.")]
+            pub fn $method(&self) -> GpuOr<R, D, ConcreteTensor<D, R>> {
+                match self {
+                    GpuOr::Cpu(t) => GpuOr::Cpu(t.$method()),
+                    GpuOr::Gpu(t) => GpuOr::Gpu(t.$method()),
+                }
+            }
+        }
+    };
+}
+
+impl_gpuor_unary_op!(abs, AbsOp);
+impl_gpuor_unary_op!(sqrt, SqrtOp);
+impl_gpuor_unary_op!(exp, ExpOp);
+impl_gpuor_unary_op!(log, LogOp);
+impl_gpuor_unary_op!(sin, SinOp);
+impl_gpuor_unary_op!(cos, CosOp);
+impl_gpuor_unary_op!(tanh, TanhOp);
 
 #[cfg(test)]
 #[tokio::test]
