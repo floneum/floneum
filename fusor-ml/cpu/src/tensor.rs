@@ -8,7 +8,7 @@ use crate::cast::{cast_tensor, CastTo};
 use crate::comparison::{comparison_scalar_op_ref, comparison_tensor_op_ref};
 use crate::comparison::{EqOp, GteOp, GtOp, LteOp, LtOp, NeOp, SimdComparisonOp};
 use crate::conditional::{where_cond_ref, IsNonZero};
-use crate::elementwise::{unary_tensor_op_ref, AbsOp, CosOp, ExpOp, LogOp, NegOp, SimdUnaryOp, SinOp, SqrtOp, TanhOp};
+use crate::elementwise::{unary_tensor_op_ref, AbsOp, CosOp, ExpOp, Exp2Op, LogOp, Log2Op, NegOp, SimdUnaryOp, SinOp, SqrtOp, TanOp, TanhOp};
 use crate::expr::Expr;
 use crate::index::index_select_ref;
 use crate::slice_assign::slice_assign_ref;
@@ -150,6 +150,36 @@ where
         TanhOp: SimdUnaryOp<E>,
     {
         Tensor::new(unary_tensor_op_ref::<E, R, TanhOp>(&self.inner.to_concrete()))
+    }
+
+    /// Base-2 exponential (2^x) element-wise
+    #[inline]
+    pub fn exp2(&self) -> Tensor<R, ConcreteTensor<E, R>>
+    where
+        E: Default,
+        Exp2Op: SimdUnaryOp<E>,
+    {
+        Tensor::new(unary_tensor_op_ref::<E, R, Exp2Op>(&self.inner.to_concrete()))
+    }
+
+    /// Base-2 logarithm element-wise
+    #[inline]
+    pub fn log2(&self) -> Tensor<R, ConcreteTensor<E, R>>
+    where
+        E: Default,
+        Log2Op: SimdUnaryOp<E>,
+    {
+        Tensor::new(unary_tensor_op_ref::<E, R, Log2Op>(&self.inner.to_concrete()))
+    }
+
+    /// Tangent element-wise
+    #[inline]
+    pub fn tan(&self) -> Tensor<R, ConcreteTensor<E, R>>
+    where
+        E: Default,
+        TanOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(unary_tensor_op_ref::<E, R, TanOp>(&self.inner.to_concrete()))
     }
 
     /// Sum all elements in the tensor

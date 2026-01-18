@@ -11,7 +11,7 @@
 mod device;
 mod error;
 
-use std::ops::Deref;
+use std::ops::{Deref, Range};
 
 pub use device::Device;
 pub use error::Error;
@@ -23,7 +23,15 @@ pub use fusor_cpu::{
     Abs, Add, ConcreteTensor, Cos, Div, Exp, Exp2, Expr, Log, Log2, Mul, Neg, ResolveTensor,
     ResolvedTensor, SimdElement, Sin, Sqrt, Sub, Tan, Tanh, Tensor as CpuTensor,
     // Op types for bounds
-    AbsOp, CosOp, ExpOp, LogOp, NegOp, SimdUnaryOp, SinOp, SqrtOp, TanhOp,
+    AbsOp, CosOp, ExpOp, Exp2Op, LogOp, Log2Op, NegOp, SimdUnaryOp, SinOp, SqrtOp, TanOp, TanhOp,
+    // Conditional operations
+    IsNonZero,
+    // Cast operations
+    CastTo,
+    // Float operations
+    FloatOps,
+    // Matmul
+    MatmulImpl,
 };
 
 pub use fusor_core::Tensor as GpuTensor;
@@ -327,10 +335,129 @@ macro_rules! impl_gpuor_unary_op {
 impl_gpuor_unary_op!(abs, AbsOp);
 impl_gpuor_unary_op!(sqrt, SqrtOp);
 impl_gpuor_unary_op!(exp, ExpOp);
+impl_gpuor_unary_op!(exp2, Exp2Op);
 impl_gpuor_unary_op!(log, LogOp);
+impl_gpuor_unary_op!(log2, Log2Op);
 impl_gpuor_unary_op!(sin, SinOp);
 impl_gpuor_unary_op!(cos, CosOp);
+impl_gpuor_unary_op!(tan, TanOp);
 impl_gpuor_unary_op!(tanh, TanhOp);
+
+// Conditional operation (where_cond)
+impl<const R: usize, D> GpuOr<R, D, ConcreteTensor<D, R>>
+where
+    D: SimdElement + DataType + Default + IsNonZero,
+{
+    /// Conditional selection: where self != 0, select on_true, else on_false.
+    pub fn where_cond(&self, on_true: &Self, on_false: &Self) -> Self {
+        match (self, on_true, on_false) {
+            (GpuOr::Cpu(c), GpuOr::Cpu(t), GpuOr::Cpu(f)) => GpuOr::Cpu(c.where_cond(t, f)),
+            (GpuOr::Gpu(c), GpuOr::Gpu(t), GpuOr::Gpu(f)) => GpuOr::Gpu(c.clone().where_cond(t, f)),
+            _ => panic!("Cannot mix CPU and GPU tensors in where_cond"),
+        }
+    }
+}
+
+// Float operations (pow_scalar, max_scalar, min_scalar, clamp)
+impl<const R: usize, D> GpuOr<R, D, ConcreteTensor<D, R>>
+where
+    D: SimdElement + DataType + FloatDataType + FloatOps + Default,
+{
+    /// Raise each element to a power.
+    pub fn pow_scalar(&self, exponent: D) -> Self {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(t.pow_scalar(exponent)),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.pow_elementwise(exponent)),
+        }
+    }
+
+    /// Element-wise maximum with a scalar.
+    pub fn max_scalar(&self, scalar: D) -> Self {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(t.max_scalar(scalar)),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.max_elementwise(scalar)),
+        }
+    }
+
+    /// Element-wise minimum with a scalar.
+    pub fn min_scalar(&self, scalar: D) -> Self {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(t.min_scalar(scalar)),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.min_elementwise(scalar)),
+        }
+    }
+
+    /// Clamp each element to a range [min, max].
+    pub fn clamp(&self, min: D, max: D) -> Self {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(t.clamp(min, max)),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.max_elementwise(min).min_elementwise(max)),
+        }
+    }
+}
+
+// Cast operation
+impl<const R: usize, D> GpuOr<R, D, ConcreteTensor<D, R>>
+where
+    D: SimdElement + DataType + Default,
+{
+    /// Cast tensor to another element type.
+    pub fn cast<D2>(&self) -> GpuOr<R, D2, ConcreteTensor<D2, R>>
+    where
+        D: CastTo<D2> + fusor_core::CastTensor<D2>,
+        D2: SimdElement + DataType + Default,
+    {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(t.cast()),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.cast()),
+        }
+    }
+}
+
+// Index select operation
+impl<const R: usize, D> GpuOr<R, D, ConcreteTensor<D, R>>
+where
+    D: SimdElement + DataType + Default,
+{
+    /// Select elements along a dimension using indices.
+    pub fn index_select(&self, dimension: usize, indices: &GpuOr<1, u32, ConcreteTensor<u32, 1>>) -> Self {
+        match (self, indices) {
+            (GpuOr::Cpu(t), GpuOr::Cpu(idx)) => GpuOr::Cpu(t.index_select(dimension, idx)),
+            (GpuOr::Gpu(t), GpuOr::Gpu(idx)) => GpuOr::Gpu(t.index_select(dimension, idx)),
+            _ => panic!("Cannot mix CPU and GPU tensors in index_select"),
+        }
+    }
+}
+
+// Slice assign operation
+impl<const R: usize, D> GpuOr<R, D, ConcreteTensor<D, R>>
+where
+    D: SimdElement + DataType + Default,
+{
+    /// Returns a new tensor with the slice region replaced by values from the value tensor.
+    pub fn slice_assign(&self, slices: [Range<usize>; R], value: &Self) -> Self {
+        match (self, value) {
+            (GpuOr::Cpu(t), GpuOr::Cpu(v)) => GpuOr::Cpu(t.slice_assign(slices, v)),
+            (GpuOr::Gpu(t), GpuOr::Gpu(v)) => GpuOr::Gpu(t.slice_assign(slices, v)),
+            _ => panic!("Cannot mix CPU and GPU tensors in slice_assign"),
+        }
+    }
+}
+
+// Matrix multiplication (2D tensors only)
+impl<D> GpuOr<2, D, ConcreteTensor<D, 2>>
+where
+    D: SimdElement + DataType + FloatDataType + Default + MatmulImpl,
+{
+    /// Matrix multiplication: self (M x K) @ rhs (K x N) -> (M x N).
+    pub fn matmul(&self, rhs: &Self) -> Self {
+        match (self, rhs) {
+            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu(a.matmul(b)),
+            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a.mat_mul(b)),
+            _ => panic!("Cannot multiply CPU tensor with GPU tensor"),
+        }
+    }
+}
 
 #[cfg(test)]
 #[tokio::test]

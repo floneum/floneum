@@ -73,6 +73,7 @@ pub use reduce::{MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp};
 pub use comparison::{EqOp, NeOp, LtOp, LteOp, GtOp, GteOp, SimdComparisonOp};
 pub use conditional::IsNonZero;
 pub use cast::CastTo;
+pub use matmul::MatmulImpl;
 
 // Re-export internal types used by other modules
 pub(crate) use concrete_tensor::IndexIterator;
