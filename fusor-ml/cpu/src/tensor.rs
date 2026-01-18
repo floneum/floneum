@@ -22,7 +22,7 @@ use crate::reduce::{
 use crate::slice_assign::slice_assign_ref;
 use crate::{
     ConcreteTensor, CpuMappedBuffer, LastRank, ResolveTensor, ResolvedTensor, SimdElement,
-    TensorBacking, TensorSlice, elementwise, pairwise,
+    TensorBacking, TensorSlice, elementwise, pairwise, scalar,
 };
 
 /// A tensor wrapper that provides a unified interface over different tensor backends.
@@ -785,6 +785,65 @@ where
 
     fn neg(self) -> Self::Output {
         Tensor::new(elementwise::Neg::new(&self.inner))
+    }
+}
+
+// Scalar arithmetic methods for Tensor
+impl<const R: usize, E, T> Tensor<R, T>
+where
+    E: SimdElement + Default,
+    T: TensorBacking<R, Elem = E>,
+{
+    /// Add a scalar to each element
+    #[inline]
+    pub fn add_scalar(
+        &self,
+        scalar_val: E,
+    ) -> Tensor<R, scalar::AddScalar<E, R, &T>>
+    where
+        E: StdAdd<Output = E>,
+        AddOp: SimdBinaryOp<E>,
+    {
+        Tensor::new(scalar::AddScalar::new(&self.inner, scalar_val))
+    }
+
+    /// Subtract a scalar from each element
+    #[inline]
+    pub fn sub_scalar(
+        &self,
+        scalar_val: E,
+    ) -> Tensor<R, scalar::SubScalar<E, R, &T>>
+    where
+        E: StdSub<Output = E>,
+        SubOp: SimdBinaryOp<E>,
+    {
+        Tensor::new(scalar::SubScalar::new(&self.inner, scalar_val))
+    }
+
+    /// Multiply each element by a scalar
+    #[inline]
+    pub fn mul_scalar(
+        &self,
+        scalar_val: E,
+    ) -> Tensor<R, scalar::MulScalar<E, R, &T>>
+    where
+        E: StdMul<Output = E>,
+        MulOp: SimdBinaryOp<E>,
+    {
+        Tensor::new(scalar::MulScalar::new(&self.inner, scalar_val))
+    }
+
+    /// Divide each element by a scalar
+    #[inline]
+    pub fn div_scalar(
+        &self,
+        scalar_val: E,
+    ) -> Tensor<R, scalar::DivScalar<E, R, &T>>
+    where
+        E: StdDiv<Output = E>,
+        DivOp: SimdBinaryOp<E>,
+    {
+        Tensor::new(scalar::DivScalar::new(&self.inner, scalar_val))
     }
 }
 

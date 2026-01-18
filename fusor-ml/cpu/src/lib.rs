@@ -18,6 +18,7 @@ mod matmul;
 mod pairwise;
 mod quantized;
 mod reduce;
+mod scalar;
 mod slice_assign;
 mod tensor;
 
@@ -31,6 +32,7 @@ pub use concrete_tensor::ConcreteTensor;
 pub use elementwise::{Abs, Cos, Exp, Exp2, Log, Log2, Neg, Sin, Sqrt, Tan, Tanh};
 pub use expr::{Expr, materialize_expr};
 pub use pairwise::{Add, Div, Mul, Sub};
+pub use scalar::{AddScalar, DivScalar, MulScalar, SubScalar};
 pub use quantized::{Dequantize, QuantizedTensor};
 pub use tensor::{FloatOps, Tensor};
 

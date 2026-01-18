@@ -8,6 +8,7 @@
 //! - CPU kernel fusion is preserved (expression types stay lazy)
 //! - GPU laziness is preserved (compute graph batching)
 
+mod composite;
 mod device;
 mod error;
 
@@ -24,12 +25,14 @@ pub use fusor_cpu::{
     // Op types for bounds
     AbsOp,
     Add,
+    AddOp,
     // Cast operations
     CastTo,
     ConcreteTensor,
     Cos,
     CosOp,
     Div,
+    DivOp,
     Exp,
     Exp2,
     Exp2Op,
@@ -46,10 +49,12 @@ pub use fusor_cpu::{
     // Matmul
     MatmulImpl,
     Mul,
+    MulOp,
     Neg,
     NegOp,
     ResolveTensor,
     ResolvedTensor,
+    SimdBinaryOp,
     SimdElement,
     SimdUnaryOp,
     Sin,
@@ -57,6 +62,7 @@ pub use fusor_cpu::{
     Sqrt,
     SqrtOp,
     Sub,
+    SubOp,
     Tan,
     TanOp,
     Tanh,
@@ -422,6 +428,54 @@ where
         match self {
             GpuOr::Cpu(t) => GpuOr::Cpu(t.clamp(min, max)),
             GpuOr::Gpu(t) => GpuOr::Gpu(t.max_elementwise(min).min_elementwise(max)),
+        }
+    }
+
+    /// Add a scalar to each element.
+    pub fn add_scalar(&self, scalar: D) -> Self
+    where
+        D: std::ops::Add<Output = D>,
+        AddOp: SimdBinaryOp<D>,
+    {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(t.add_scalar(scalar).eval()),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.clone() + scalar),
+        }
+    }
+
+    /// Subtract a scalar from each element.
+    pub fn sub_scalar(&self, scalar: D) -> Self
+    where
+        D: std::ops::Sub<Output = D>,
+        SubOp: SimdBinaryOp<D>,
+    {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(t.sub_scalar(scalar).eval()),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.clone() - scalar),
+        }
+    }
+
+    /// Multiply each element by a scalar.
+    pub fn mul_scalar(&self, scalar: D) -> Self
+    where
+        D: std::ops::Mul<Output = D>,
+        MulOp: SimdBinaryOp<D>,
+    {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(t.mul_scalar(scalar).eval()),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.clone() * scalar),
+        }
+    }
+
+    /// Divide each element by a scalar.
+    pub fn div_scalar(&self, scalar: D) -> Self
+    where
+        D: std::ops::Div<Output = D>,
+        DivOp: SimdBinaryOp<D>,
+    {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(t.div_scalar(scalar).eval()),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.clone() / scalar),
         }
     }
 }
