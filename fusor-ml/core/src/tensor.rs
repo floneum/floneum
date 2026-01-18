@@ -312,7 +312,10 @@ impl LazyTensorData {
 
     pub(crate) fn map_layout(&self, op: MapLayoutOperation) -> Self {
         let device = self.device.clone();
-        let info = TensorInfo::new((op.map_size)(self.info.shape()), self.info.datatype());
+        // Compute output shape by applying the layout transformation to a temporary layout
+        let temp_layout = Layout::contiguous(self.info.shape());
+        let new_layout = op.map_layout(&temp_layout);
+        let info = TensorInfo::new(new_layout.shape().into(), self.info.datatype());
         let key = device.compute_graph().create_map_layout(op);
 
         Self::from_parts(device, info, key)

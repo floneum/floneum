@@ -1,4 +1,4 @@
-use crate::{DataType, LargerRank, LargerRankInner, Tensor, map_layout::MapLayoutOperation};
+use crate::{DataType, LargerRank, LargerRankInner, Layout, Tensor, map_layout::MapLayoutOperation};
 
 /// Configuration for sliding window
 #[derive(Debug, Clone, Copy)]
@@ -75,7 +75,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
     where
         Self: LargerRank<DIFF, R2, D>,
     {
-        let shape = *self.shape();
+        let _shape = *self.shape();
         let mut windows: [SlidingWindow; DIFF] = windows.map(|w| w.into());
         windows.sort_by_key(|w| w.axis);
         #[cfg(debug_assertions)]
@@ -91,55 +91,57 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             });
         }
 
-        self.add_map_layout(MapLayoutOperation::new(
-            self.key(),
+        self.add_map_layout(MapLayoutOperation::new(self.key(), move |layout| {
+            let old_shape = layout.shape();
+            let old_strides = layout.strides();
+
             // Transform shape: insert num_windows and window_size dimensions
-            move |shape| {
-                Box::new(std::array::from_fn::<_, R2, _>(|i| {
-                    if i < shape.len() {
+            let new_shape: Box<[usize]> = (0..R2)
+                .map(|i| {
+                    if i < old_shape.len() {
                         // Original dimension
                         if let Ok(idx) = windows.binary_search_by_key(&i, |w| w.axis) {
                             // This dimension is being windowed
-                            let dim_size = shape[i];
+                            let dim_size = old_shape[i];
                             let window = &windows[idx];
                             (dim_size - window.window_size) / window.step + 1
                         } else {
                             // Not windowed
-                            shape[i]
+                            old_shape[i]
                         }
                     } else {
                         // New dimensions for windows
-                        let index = i - shape.len();
+                        let index = i - old_shape.len();
                         let window = &windows[index];
                         window.window_size
                     }
-                }))
-            },
+                })
+                .collect();
+
             // Transform strides: insert strides for the new dimensions
-            move |offset, strides| {
-                (
-                    offset,
-                    Box::new(std::array::from_fn::<_, R2, _>(|i| {
-                        if i < strides.len() {
-                            // Original dimension
-                            if let Ok(idx) = windows.binary_search_by_key(&i, |w| w.axis) {
-                                // This dimension is being windowed
-                                let window = &windows[idx];
-                                strides[i] * window.step
-                            } else {
-                                // Not windowed - keep original stride
-                                strides[i]
-                            }
+            let new_strides: Box<[usize]> = (0..R2)
+                .map(|i| {
+                    if i < old_strides.len() {
+                        // Original dimension
+                        if let Ok(idx) = windows.binary_search_by_key(&i, |w| w.axis) {
+                            // This dimension is being windowed
+                            let window = &windows[idx];
+                            old_strides[i] * window.step
                         } else {
-                            // New dimensions for windows
-                            let index = i - shape.len();
-                            let window = &windows[index];
-                            strides[window.axis]
+                            // Not windowed - keep original stride
+                            old_strides[i]
                         }
-                    })),
-                )
-            },
-        ))
+                    } else {
+                        // New dimensions for windows
+                        let index = i - old_shape.len();
+                        let window = &windows[index];
+                        old_strides[window.axis]
+                    }
+                })
+                .collect();
+
+            Layout::from_parts(layout.offset(), new_shape, new_strides)
+        }))
     }
 }
 

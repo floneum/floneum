@@ -2,7 +2,6 @@
 
 use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Neg as StdNeg, Range, Sub as StdSub};
 
-use fusor_types::Layout;
 use pulp::Simd;
 
 use crate::cast::{CastTo, cast_tensor};
@@ -109,31 +108,8 @@ where
     /// # Arguments
     /// * `axes` - A permutation of [0, 1, ..., R-1] specifying the new order
     pub fn permute(&self, axes: [usize; R]) -> Tensor<R, ConcreteTensor<E, R>> {
-        // Validate axes are a valid permutation
-        let mut seen = [false; R];
-        for &axis in &axes {
-            assert!(axis < R, "Axis {} out of range for rank {}", axis, R);
-            assert!(!seen[axis], "Duplicate axis {} in permutation", axis);
-            seen[axis] = true;
-        }
-
         let concrete = self.inner.to_concrete();
-        let old_shape = concrete.layout().shape();
-        let old_strides = concrete.layout().strides();
-
-        let mut new_shape = vec![0usize; R];
-        let mut new_strides = vec![0usize; R];
-        for (new_idx, &old_idx) in axes.iter().enumerate() {
-            new_shape[new_idx] = old_shape[old_idx];
-            new_strides[new_idx] = old_strides[old_idx];
-        }
-
-        let new_layout = Layout::from_parts(
-            concrete.layout().offset(),
-            new_shape.into_boxed_slice(),
-            new_strides.into_boxed_slice(),
-        );
-
+        let new_layout = concrete.layout().permute(&axes);
         Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
     }
 
@@ -143,25 +119,8 @@ where
     /// * `dim0` - First dimension to swap
     /// * `dim1` - Second dimension to swap
     pub fn transpose(&self, dim0: usize, dim1: usize) -> Tensor<R, ConcreteTensor<E, R>> {
-        assert!(dim0 < R, "dim0 {} out of range for rank {}", dim0, R);
-        assert!(dim1 < R, "dim1 {} out of range for rank {}", dim1, R);
-
         let concrete = self.inner.to_concrete();
-        let old_shape = concrete.layout().shape();
-        let old_strides = concrete.layout().strides();
-
-        let mut new_shape: Vec<usize> = old_shape.to_vec();
-        let mut new_strides: Vec<usize> = old_strides.to_vec();
-
-        new_shape.swap(dim0, dim1);
-        new_strides.swap(dim0, dim1);
-
-        let new_layout = Layout::from_parts(
-            concrete.layout().offset(),
-            new_shape.into_boxed_slice(),
-            new_strides.into_boxed_slice(),
-        );
-
+        let new_layout = concrete.layout().transpose(dim0, dim1);
         Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
     }
 
@@ -175,36 +134,8 @@ where
         &self,
         out_shape: [usize; R2],
     ) -> Tensor<R2, ConcreteTensor<E, R2>> {
-        assert!(R2 >= R, "Cannot broadcast to smaller rank");
-
         let concrete = self.inner.to_concrete();
-        let old_shape = concrete.layout().shape();
-        let old_strides = concrete.layout().strides();
-
-        // Align dimensions from the right
-        let offset = R2 - R;
-        let mut new_strides = vec![0usize; R2];
-
-        for i in 0..R {
-            let new_idx = i + offset;
-            if old_shape[i] == out_shape[new_idx] {
-                new_strides[new_idx] = old_strides[i];
-            } else if old_shape[i] == 1 {
-                new_strides[new_idx] = 0;
-            } else {
-                panic!(
-                    "Cannot broadcast dimension {} from {} to {}",
-                    i, old_shape[i], out_shape[new_idx]
-                );
-            }
-        }
-
-        let new_layout = Layout::from_parts(
-            concrete.layout().offset(),
-            out_shape.to_vec().into_boxed_slice(),
-            new_strides.into_boxed_slice(),
-        );
-
+        let new_layout = concrete.layout().broadcast_to(&out_shape);
         Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
     }
 
@@ -216,21 +147,14 @@ where
         new_shape: [usize; R2],
     ) -> Tensor<R2, ConcreteTensor<E, R2>> {
         let concrete = self.inner.to_concrete();
-        let old_elements: usize = concrete.layout().shape().iter().product();
-        let new_elements: usize = new_shape.iter().product();
-        assert_eq!(
-            old_elements, new_elements,
-            "Cannot reshape: element count mismatch ({} vs {})",
-            old_elements, new_elements
-        );
 
         if concrete.layout().is_contiguous() {
-            let new_layout = Layout::contiguous(&new_shape);
+            let new_layout = concrete.layout().reshape(&new_shape);
             Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
         } else {
             // Make contiguous first, then reshape
             let contiguous = self.make_contiguous();
-            let new_layout = Layout::contiguous(&new_shape);
+            let new_layout = contiguous.inner.layout().reshape(&new_shape);
             Tensor::new(ConcreteTensor::from_parts(new_layout, contiguous.inner.backing().clone()))
         }
     }
@@ -238,7 +162,7 @@ where
     /// Flatten the tensor to 1D
     pub fn flatten_all(&self) -> Tensor<1, ConcreteTensor<E, 1>> {
         let concrete = self.inner.to_concrete();
-        let total: usize = concrete.layout().shape().iter().product();
+        let total: usize = concrete.layout().num_elements();
         self.reshape([total])
     }
 
@@ -270,27 +194,8 @@ where
     /// * `length` - The length of the slice
     pub fn narrow(&self, dim: usize, start: usize, length: usize) -> Tensor<R, ConcreteTensor<E, R>> {
         let concrete = self.inner.to_concrete();
-        assert!(dim < R, "Dimension {} out of range for rank {}", dim, R);
-        assert!(
-            start + length <= concrete.layout().shape()[dim],
-            "Narrow out of bounds: {}..{} for dimension of size {}",
-            start,
-            start + length,
-            concrete.layout().shape()[dim]
-        );
-
-        let shape = concrete.layout().shape();
-        let mut slices: Vec<Range<usize>> = Vec::with_capacity(R);
-        for (i, &size) in shape.iter().enumerate() {
-            if i == dim {
-                slices.push(start..start + length);
-            } else {
-                slices.push(0..size);
-            }
-        }
-
-        let slices_arr: [Range<usize>; R] = slices.try_into().expect("Slice length mismatch");
-        self.slice(slices_arr)
+        let new_layout = concrete.layout().narrow(dim, start, length);
+        Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
     }
 
     /// Split the tensor into chunks along a given dimension
@@ -353,37 +258,9 @@ where
     /// # Arguments
     /// * `dim` - The dimension to squeeze (must have size 1)
     pub fn squeeze<const R2: usize>(&self, dim: usize) -> Tensor<R2, ConcreteTensor<E, R2>> {
-        assert!(R > 0, "Cannot squeeze a scalar tensor");
         assert!(R2 == R - 1, "Output rank must be R - 1");
-        assert!(dim < R, "Dimension {} out of range for rank {}", dim, R);
-
         let concrete = self.inner.to_concrete();
-        assert!(
-            concrete.layout().shape()[dim] == 1,
-            "Cannot squeeze dimension {} of size {} (must be 1)",
-            dim,
-            concrete.layout().shape()[dim]
-        );
-
-        let old_shape = concrete.layout().shape();
-        let old_strides = concrete.layout().strides();
-
-        let mut new_shape = Vec::with_capacity(R2);
-        let mut new_strides = Vec::with_capacity(R2);
-
-        for i in 0..R {
-            if i != dim {
-                new_shape.push(old_shape[i]);
-                new_strides.push(old_strides[i]);
-            }
-        }
-
-        let new_layout = Layout::from_parts(
-            concrete.layout().offset(),
-            new_shape.into_boxed_slice(),
-            new_strides.into_boxed_slice(),
-        );
-
+        let new_layout = concrete.layout().squeeze(dim);
         Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
     }
 
@@ -393,32 +270,8 @@ where
     /// * `dim` - Where to insert the new dimension
     pub fn unsqueeze<const R2: usize>(&self, dim: usize) -> Tensor<R2, ConcreteTensor<E, R2>> {
         assert!(R2 == R + 1, "Output rank must be R + 1");
-        assert!(dim <= R, "Dimension {} out of range for inserting into rank {}", dim, R);
-
         let concrete = self.inner.to_concrete();
-        let old_shape = concrete.layout().shape();
-        let old_strides = concrete.layout().strides();
-
-        let mut new_shape = Vec::with_capacity(R2);
-        let mut new_strides = Vec::with_capacity(R2);
-
-        for i in 0..R2 {
-            if i == dim {
-                new_shape.push(1);
-                new_strides.push(1);
-            } else {
-                let old_idx = if i < dim { i } else { i - 1 };
-                new_shape.push(old_shape[old_idx]);
-                new_strides.push(old_strides[old_idx]);
-            }
-        }
-
-        let new_layout = Layout::from_parts(
-            concrete.layout().offset(),
-            new_shape.into_boxed_slice(),
-            new_strides.into_boxed_slice(),
-        );
-
+        let new_layout = concrete.layout().unsqueeze(dim);
         Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
     }
 
