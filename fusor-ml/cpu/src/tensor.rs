@@ -2,6 +2,7 @@
 
 use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Neg as StdNeg, Range, Sub as StdSub};
 
+use fusor_types::SlidingWindow;
 use pulp::Simd;
 
 use crate::cast::{CastTo, cast_tensor};
@@ -272,6 +273,126 @@ where
         assert!(R2 == R + 1, "Output rank must be R + 1");
         let concrete = self.inner.to_concrete();
         let new_layout = concrete.layout().unsqueeze(dim);
+        Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+    }
+
+    /// Expand the tensor to a larger shape (alias for broadcast_as)
+    ///
+    /// This is an alias for `broadcast_as` for compatibility with other tensor libraries.
+    pub fn expand<const R2: usize>(
+        &self,
+        out_shape: [usize; R2],
+    ) -> Tensor<R2, ConcreteTensor<E, R2>> {
+        self.broadcast_as(out_shape)
+    }
+
+    /// Flatten the last N dimensions into one
+    ///
+    /// # Type Parameters
+    /// * `N` - Number of dimensions from the end to flatten (must be >= 1)
+    /// * `R2` - Output rank (must be R - N + 1)
+    ///
+    /// # Example
+    /// A tensor of shape [2, 3, 4] with N=2 becomes [2, 12]
+    pub fn flatten_last_n<const N: usize, const R2: usize>(
+        &self,
+    ) -> Tensor<R2, ConcreteTensor<E, R2>> {
+        assert!(R2 == R - N + 1, "Output rank must be R - N + 1");
+        let concrete = self.inner.to_concrete();
+
+        if concrete.layout().is_contiguous() {
+            let new_layout = concrete.layout().flatten_last_n(N);
+            Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+        } else {
+            // Make contiguous first
+            let contiguous = self.make_contiguous();
+            let new_layout = contiguous.inner.layout().flatten_last_n(N);
+            Tensor::new(ConcreteTensor::from_parts(new_layout, contiguous.inner.backing().clone()))
+        }
+    }
+
+    /// Flatten the first N+1 dimensions into one
+    ///
+    /// # Type Parameters
+    /// * `N` - Number indicating how many dimensions to include (flattens first N+1 dims)
+    /// * `R2` - Output rank (must be R - N)
+    ///
+    /// # Example
+    /// A tensor of shape [2, 3, 4] with N=1 becomes [6, 4]
+    pub fn flatten_first_n<const N: usize, const R2: usize>(
+        &self,
+    ) -> Tensor<R2, ConcreteTensor<E, R2>> {
+        assert!(R2 == R - N, "Output rank must be R - N");
+        let concrete = self.inner.to_concrete();
+
+        if concrete.layout().is_contiguous() {
+            let new_layout = concrete.layout().flatten_first_n(N);
+            Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+        } else {
+            // Make contiguous first
+            let contiguous = self.make_contiguous();
+            let new_layout = contiguous.inner.layout().flatten_first_n(N);
+            Tensor::new(ConcreteTensor::from_parts(new_layout, contiguous.inner.backing().clone()))
+        }
+    }
+
+    /// Squeeze (remove) multiple dimensions of size 1 at once
+    ///
+    /// # Type Parameters
+    /// * `DIFF` - Number of dimensions to remove
+    /// * `R2` - Output rank (must be R - DIFF)
+    ///
+    /// # Arguments
+    /// * `axes` - The dimensions to squeeze (must all have size 1)
+    pub fn squeeze_dims<const DIFF: usize, const R2: usize>(
+        &self,
+        axes: [usize; DIFF],
+    ) -> Tensor<R2, ConcreteTensor<E, R2>> {
+        assert!(R2 == R - DIFF, "Output rank must be R - DIFF");
+        let concrete = self.inner.to_concrete();
+        let new_layout = concrete.layout().squeeze_dims(&axes);
+        Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+    }
+
+    /// Unsqueeze (add) multiple dimensions of size 1 at specified positions
+    ///
+    /// # Type Parameters
+    /// * `DIFF` - Number of dimensions to add
+    /// * `R2` - Output rank (must be R + DIFF)
+    ///
+    /// # Arguments
+    /// * `axes` - Where to insert the new dimensions (positions in the output tensor)
+    pub fn unsqueeze_dims<const DIFF: usize, const R2: usize>(
+        &self,
+        axes: [usize; DIFF],
+    ) -> Tensor<R2, ConcreteTensor<E, R2>> {
+        assert!(R2 == R + DIFF, "Output rank must be R + DIFF");
+        let concrete = self.inner.to_concrete();
+        let new_layout = concrete.layout().unsqueeze_dims(&axes);
+        Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+    }
+
+    /// Create a sliding window view of the tensor (zero-copy)
+    ///
+    /// This creates overlapping windows along specified dimensions without copying data.
+    ///
+    /// # Type Parameters
+    /// * `DIFF` - Number of windows to create
+    /// * `R2` - Output rank (must be R + DIFF)
+    ///
+    /// # Arguments
+    /// * `windows` - Array of SlidingWindow configurations specifying axis, window size, and step
+    ///
+    /// # Example
+    /// A 1D tensor [1, 2, 3, 4, 5, 6, 7] with window size 3 and step 2 becomes:
+    /// [[1, 2, 3], [3, 4, 5], [5, 6, 7]]
+    pub fn sliding_window_view<const DIFF: usize, const R2: usize>(
+        &self,
+        windows: [SlidingWindow; DIFF],
+    ) -> Tensor<R2, ConcreteTensor<E, R2>> {
+        assert!(R2 == R + DIFF, "Output rank must be R + DIFF");
+        let concrete = self.inner.to_concrete();
+        let new_layout = concrete.layout().sliding_window(&windows);
         Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
     }
 

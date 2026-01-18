@@ -1,63 +1,4 @@
-use crate::{DataType, LargerRank, LargerRankInner, Layout, Tensor, map_layout::MapLayoutOperation};
-
-/// Configuration for sliding window
-#[derive(Debug, Clone, Copy)]
-pub struct SlidingWindow {
-    axis: usize,
-    window_size: usize,
-    step: usize,
-}
-
-impl SlidingWindow {
-    /// Create a new SlidingWindow configuration
-    pub fn new(axis: usize, window_size: usize, step: usize) -> Self {
-        Self {
-            axis,
-            window_size,
-            step,
-        }
-    }
-}
-
-impl From<(usize, usize)> for SlidingWindow {
-    fn from(val: (usize, usize)) -> Self {
-        SlidingWindow {
-            axis: val.0,
-            window_size: val.1,
-            step: 1,
-        }
-    }
-}
-
-impl From<[usize; 2]> for SlidingWindow {
-    fn from(val: [usize; 2]) -> Self {
-        SlidingWindow {
-            axis: val[0],
-            window_size: val[1],
-            step: 1,
-        }
-    }
-}
-
-impl From<(usize, usize, usize)> for SlidingWindow {
-    fn from(val: (usize, usize, usize)) -> Self {
-        SlidingWindow {
-            axis: val.0,
-            window_size: val.1,
-            step: val.2,
-        }
-    }
-}
-
-impl From<[usize; 3]> for SlidingWindow {
-    fn from(val: [usize; 3]) -> Self {
-        SlidingWindow {
-            axis: val[0],
-            window_size: val[1],
-            step: val[2],
-        }
-    }
-}
+use crate::{DataType, LargerRank, LargerRankInner, SlidingWindow, Tensor, map_layout::MapLayoutOperation};
 
 impl<const R: usize, D: DataType> Tensor<R, D> {
     /// Create a sliding window view of a tensor using strided views (zero-copy)
@@ -75,72 +16,10 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
     where
         Self: LargerRank<DIFF, R2, D>,
     {
-        let _shape = *self.shape();
-        let mut windows: [SlidingWindow; DIFF] = windows.map(|w| w.into());
-        windows.sort_by_key(|w| w.axis);
-        #[cfg(debug_assertions)]
-        {
-            windows.iter().for_each(|w| {
-                assert!(w.axis < R, "Sliding window axis out of bounds");
-            });
-            windows.windows(2).for_each(|w_pair| {
-                assert!(
-                    w_pair[0].axis != w_pair[1].axis,
-                    "Sliding window axes must be unique"
-                );
-            });
-        }
+        let windows: [SlidingWindow; DIFF] = windows.map(|w| w.into());
 
         self.add_map_layout(MapLayoutOperation::new(self.key(), move |layout| {
-            let old_shape = layout.shape();
-            let old_strides = layout.strides();
-
-            // Transform shape: insert num_windows and window_size dimensions
-            let new_shape: Box<[usize]> = (0..R2)
-                .map(|i| {
-                    if i < old_shape.len() {
-                        // Original dimension
-                        if let Ok(idx) = windows.binary_search_by_key(&i, |w| w.axis) {
-                            // This dimension is being windowed
-                            let dim_size = old_shape[i];
-                            let window = &windows[idx];
-                            (dim_size - window.window_size) / window.step + 1
-                        } else {
-                            // Not windowed
-                            old_shape[i]
-                        }
-                    } else {
-                        // New dimensions for windows
-                        let index = i - old_shape.len();
-                        let window = &windows[index];
-                        window.window_size
-                    }
-                })
-                .collect();
-
-            // Transform strides: insert strides for the new dimensions
-            let new_strides: Box<[usize]> = (0..R2)
-                .map(|i| {
-                    if i < old_strides.len() {
-                        // Original dimension
-                        if let Ok(idx) = windows.binary_search_by_key(&i, |w| w.axis) {
-                            // This dimension is being windowed
-                            let window = &windows[idx];
-                            old_strides[i] * window.step
-                        } else {
-                            // Not windowed - keep original stride
-                            old_strides[i]
-                        }
-                    } else {
-                        // New dimensions for windows
-                        let index = i - old_shape.len();
-                        let window = &windows[index];
-                        old_strides[window.axis]
-                    }
-                })
-                .collect();
-
-            Layout::from_parts(layout.offset(), new_shape, new_strides)
+            layout.sliding_window(&windows)
         }))
     }
 }

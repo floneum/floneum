@@ -36,6 +36,9 @@ pub use scalar::{AddScalar, DivScalar, MulScalar, SubScalar};
 pub use quantized::{Dequantize, QuantizedTensor};
 pub use tensor::{FloatOps, Tensor};
 
+// Re-export SlidingWindow from fusor-types
+pub use fusor_types::SlidingWindow;
+
 // Re-export GGUF types for convenience
 pub use fusor_gguf::{BlockQ4_0, BlockQ4K, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, GgufBlock};
 
@@ -678,5 +681,118 @@ mod tests {
         assert_eq!(contiguous.get([0, 1]), 3.0);
         assert_eq!(contiguous.get([1, 0]), 5.0);
         assert_eq!(contiguous.get([1, 1]), 6.0);
+    }
+
+    #[test]
+    fn test_expand() {
+        // Test expand (alias for broadcast_as)
+        let t: Tensor<1, ConcreteTensor<f32, 1>> =
+            Tensor::from_slice([3], &[1.0, 2.0, 3.0]);
+
+        let expanded: Tensor<2, ConcreteTensor<f32, 2>> = t.expand([2, 3]);
+        assert_eq!(expanded.inner().layout().shape(), &[2, 3]);
+        assert_eq!(expanded.get([0, 0]), 1.0);
+        assert_eq!(expanded.get([1, 2]), 3.0);
+    }
+
+    #[test]
+    fn test_flatten_last_n() {
+        // Flatten last 2 dimensions of a 3D tensor
+        let t: Tensor<3, ConcreteTensor<f32, 3>> =
+            Tensor::from_slice([2, 3, 4], &(0..24).map(|i| i as f32).collect::<Vec<_>>());
+
+        let flattened: Tensor<2, ConcreteTensor<f32, 2>> = t.flatten_last_n::<2, 2>();
+        assert_eq!(flattened.inner().layout().shape(), &[2, 12]);
+        assert_eq!(flattened.get([0, 0]), 0.0);
+        assert_eq!(flattened.get([0, 11]), 11.0);
+        assert_eq!(flattened.get([1, 0]), 12.0);
+    }
+
+    #[test]
+    fn test_flatten_first_n() {
+        // Flatten first 2 dimensions of a 3D tensor
+        let t: Tensor<3, ConcreteTensor<f32, 3>> =
+            Tensor::from_slice([2, 3, 4], &(0..24).map(|i| i as f32).collect::<Vec<_>>());
+
+        let flattened: Tensor<2, ConcreteTensor<f32, 2>> = t.flatten_first_n::<1, 2>();
+        assert_eq!(flattened.inner().layout().shape(), &[6, 4]);
+        assert_eq!(flattened.get([0, 0]), 0.0);
+        assert_eq!(flattened.get([0, 3]), 3.0);
+        assert_eq!(flattened.get([5, 3]), 23.0);
+    }
+
+    #[test]
+    fn test_squeeze_dims() {
+        // Squeeze two dimensions at once
+        let t: Tensor<4, ConcreteTensor<f32, 4>> =
+            Tensor::from_slice([1, 3, 1, 4], &(0..12).map(|i| i as f32).collect::<Vec<_>>());
+
+        let squeezed: Tensor<2, ConcreteTensor<f32, 2>> = t.squeeze_dims::<2, 2>([0, 2]);
+        assert_eq!(squeezed.inner().layout().shape(), &[3, 4]);
+        assert_eq!(squeezed.get([0, 0]), 0.0);
+        assert_eq!(squeezed.get([2, 3]), 11.0);
+    }
+
+    #[test]
+    fn test_unsqueeze_dims() {
+        // Unsqueeze two dimensions at once
+        let t: Tensor<2, ConcreteTensor<f32, 2>> =
+            Tensor::from_slice([3, 4], &(0..12).map(|i| i as f32).collect::<Vec<_>>());
+
+        let unsqueezed: Tensor<4, ConcreteTensor<f32, 4>> = t.unsqueeze_dims::<2, 4>([0, 2]);
+        assert_eq!(unsqueezed.inner().layout().shape(), &[1, 3, 1, 4]);
+        assert_eq!(unsqueezed.get([0, 0, 0, 0]), 0.0);
+        assert_eq!(unsqueezed.get([0, 2, 0, 3]), 11.0);
+    }
+
+    #[test]
+    fn test_sliding_window_view_1d() {
+        // Test 1D sliding window
+        let t: Tensor<1, ConcreteTensor<f32, 1>> =
+            Tensor::from_slice([7], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
+
+        let windows: Tensor<2, ConcreteTensor<f32, 2>> =
+            t.sliding_window_view::<1, 2>([SlidingWindow::new(0, 3, 2)]);
+
+        // (7 - 3) / 2 + 1 = 3 positions, window size 3
+        assert_eq!(windows.inner().layout().shape(), &[3, 3]);
+
+        // First window: [1, 2, 3]
+        assert_eq!(windows.get([0, 0]), 1.0);
+        assert_eq!(windows.get([0, 1]), 2.0);
+        assert_eq!(windows.get([0, 2]), 3.0);
+
+        // Second window: [3, 4, 5]
+        assert_eq!(windows.get([1, 0]), 3.0);
+        assert_eq!(windows.get([1, 1]), 4.0);
+        assert_eq!(windows.get([1, 2]), 5.0);
+
+        // Third window: [5, 6, 7]
+        assert_eq!(windows.get([2, 0]), 5.0);
+        assert_eq!(windows.get([2, 1]), 6.0);
+        assert_eq!(windows.get([2, 2]), 7.0);
+    }
+
+    #[test]
+    fn test_sliding_window_view_2d() {
+        // Test 2D sliding window
+        let data: Vec<f32> = (1..=36).map(|i| i as f32).collect();
+        let t: Tensor<2, ConcreteTensor<f32, 2>> =
+            Tensor::from_slice([6, 6], &data);
+
+        let windows: Tensor<4, ConcreteTensor<f32, 4>> =
+            t.sliding_window_view::<2, 4>([
+                SlidingWindow::new(0, 3, 3),
+                SlidingWindow::new(1, 3, 3)
+            ]);
+
+        // (6 - 3) / 3 + 1 = 2 positions in each dimension
+        assert_eq!(windows.inner().layout().shape(), &[2, 2, 3, 3]);
+
+        // Verify some values
+        assert_eq!(windows.get([0, 0, 0, 0]), 1.0);  // Top-left of first window
+        assert_eq!(windows.get([0, 0, 2, 2]), 15.0); // Bottom-right of first 3x3 window
+        assert_eq!(windows.get([0, 1, 0, 0]), 4.0);  // Top-left of second window (row 0, col 1)
+        assert_eq!(windows.get([1, 0, 0, 0]), 19.0); // Top-left of window at (1, 0)
     }
 }
