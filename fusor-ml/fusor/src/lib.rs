@@ -8,12 +8,15 @@
 //! - CPU kernel fusion is preserved (expression types stay lazy)
 //! - GPU laziness is preserved (compute graph batching)
 
+pub mod cache;
 mod composite;
 mod device;
 mod error;
+pub mod layers;
 
 use std::ops::{Deref, Range};
 
+pub use composite::{arange, arange_step, cat, stack};
 pub use device::Device;
 pub use error::Error;
 use fusor_core::TensorSlice;
@@ -24,13 +27,27 @@ pub use fusor_cpu::{
     Abs,
     // Op types for bounds
     AbsOp,
+    Acos,
+    AcosOp,
+    Acosh,
+    AcoshOp,
     Add,
     AddOp,
+    Asin,
+    AsinOp,
+    Asinh,
+    AsinhOp,
+    Atan,
+    AtanOp,
+    Atanh,
+    AtanhOp,
     // Cast operations
     CastTo,
     ConcreteTensor,
     Cos,
     CosOp,
+    Cosh,
+    CoshOp,
     Div,
     DivOp,
     Exp,
@@ -63,6 +80,8 @@ pub use fusor_cpu::{
     SimdUnaryOp,
     Sin,
     SinOp,
+    Sinh,
+    SinhOp,
     Sqrt,
     SqrtOp,
     Sub,
@@ -369,13 +388,13 @@ where
 /// Macro to implement unary element-wise operations for GpuOr.
 macro_rules! impl_gpuor_unary_op {
     ($method:ident, $op:ident) => {
-        impl<const R: usize, D> GpuOr<R, D, ConcreteTensor<D, R>>
+        impl<const R: usize, D> GpuOr<R, D>
         where
             D: SimdElement + DataType + FloatDataType + Default,
             fusor_cpu::$op: fusor_cpu::SimdUnaryOp<D>,
         {
             #[doc = concat!("Element-wise ", stringify!($method), " operation.")]
-            pub fn $method(&self) -> GpuOr<R, D, ConcreteTensor<D, R>> {
+            pub fn $method(&self) -> GpuOr<R, D> {
                 match self {
                     GpuOr::Cpu(t) => GpuOr::Cpu(t.$method()),
                     GpuOr::Gpu(t) => GpuOr::Gpu(t.$method()),
@@ -395,9 +414,17 @@ impl_gpuor_unary_op!(sin, SinOp);
 impl_gpuor_unary_op!(cos, CosOp);
 impl_gpuor_unary_op!(tan, TanOp);
 impl_gpuor_unary_op!(tanh, TanhOp);
+impl_gpuor_unary_op!(asin, AsinOp);
+impl_gpuor_unary_op!(acos, AcosOp);
+impl_gpuor_unary_op!(atan, AtanOp);
+impl_gpuor_unary_op!(sinh, SinhOp);
+impl_gpuor_unary_op!(cosh, CoshOp);
+impl_gpuor_unary_op!(asinh, AsinhOp);
+impl_gpuor_unary_op!(acosh, AcoshOp);
+impl_gpuor_unary_op!(atanh, AtanhOp);
 
 // Conditional operation (where_cond)
-impl<const R: usize, D> GpuOr<R, D, ConcreteTensor<D, R>>
+impl<const R: usize, D> GpuOr<R, D>
 where
     D: SimdElement + DataType + Default + IsNonZero,
 {
@@ -412,7 +439,7 @@ where
 }
 
 // Float operations (pow_scalar, max_scalar, min_scalar, clamp)
-impl<const R: usize, D> GpuOr<R, D, ConcreteTensor<D, R>>
+impl<const R: usize, D> GpuOr<R, D>
 where
     D: SimdElement + DataType + FloatDataType + FloatOps + Default,
 {
@@ -498,7 +525,7 @@ where
 }
 
 // Cast operation
-impl<const R: usize, D> GpuOr<R, D, ConcreteTensor<D, R>>
+impl<const R: usize, D> GpuOr<R, D>
 where
     D: SimdElement + DataType + Default,
 {
@@ -516,7 +543,7 @@ where
 }
 
 // Index select operation
-impl<const R: usize, D> GpuOr<R, D, ConcreteTensor<D, R>>
+impl<const R: usize, D> GpuOr<R, D>
 where
     D: SimdElement + DataType + Default,
 {
@@ -535,7 +562,7 @@ where
 }
 
 // Slice assign operation
-impl<const R: usize, D> GpuOr<R, D, ConcreteTensor<D, R>>
+impl<const R: usize, D> GpuOr<R, D>
 where
     D: SimdElement + DataType + Default,
 {
@@ -550,7 +577,7 @@ where
 }
 
 // Matrix multiplication for N-dimensional tensors (N >= 2)
-impl<const R: usize, D> GpuOr<R, D, ConcreteTensor<D, R>>
+impl<const R: usize, D> GpuOr<R, D>
 where
     D: SimdElement + DataType + FloatDataType + Default + MatmulImpl,
 {
@@ -563,6 +590,66 @@ where
             (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu(a.matmul(b)),
             (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a.mat_mul(b)),
             _ => panic!("Cannot multiply CPU tensor with GPU tensor"),
+        }
+    }
+
+    /// Alias for matmul (for API compatibility with fusor-core)
+    pub fn mat_mul(&self, rhs: &Self) -> Self {
+        self.matmul(rhs)
+    }
+}
+
+// Flatten operations
+impl<const R: usize, D> GpuOr<R, D>
+where
+    D: SimdElement + DataType + Default,
+{
+    /// Flatten the last FROM_END+1 dimensions into one.
+    ///
+    /// This follows the GPU/fusor-core semantic where FROM_END is the number of
+    /// extra dimensions beyond the one being flattened into.
+    /// So FROM_END=0 flattens just the last dimension (no-op),
+    /// FROM_END=1 flattens the last 2 dimensions, etc.
+    ///
+    /// Output rank R2 = R - FROM_END.
+    pub fn flatten_last_n<const FROM_END: usize, const R2: usize>(
+        &self,
+    ) -> GpuOr<R2, D, ConcreteTensor<D, R2>>
+    where
+        fusor_core::Tensor<R, D>: fusor_core::SmallerRank<FROM_END, R2, D>,
+    {
+        match self {
+            GpuOr::Cpu(t) => {
+                // CPU flatten_last_n takes N where output = input - N + 1
+                // So we need CPU_N = FROM_END + 1 to match GPU semantics
+                // Calculate new shape manually since we can't do const arithmetic
+                let shape = t.shape();
+                let new_shape: [usize; R2] = std::array::from_fn(|i| {
+                    if i < R - 1 - FROM_END {
+                        shape[i]
+                    } else if i == R - 1 - FROM_END {
+                        shape[R - 1 - FROM_END..].iter().product()
+                    } else {
+                        1
+                    }
+                });
+                GpuOr::Cpu(t.reshape(new_shape))
+            }
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.flatten_last_n::<FROM_END, R2>()),
+        }
+    }
+}
+
+// Device accessor
+impl<const R: usize, D, B: TensorBacking<R, Elem = D>> GpuOr<R, D, B>
+where
+    D: SimdElement + DataType,
+{
+    /// Get the device this tensor is on.
+    pub fn device(&self) -> Device {
+        match self {
+            GpuOr::Cpu(_) => Device::Cpu,
+            GpuOr::Gpu(t) => Device::Gpu(t.device().clone()),
         }
     }
 }

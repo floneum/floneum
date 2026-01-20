@@ -3,7 +3,7 @@
 use crate::{ConcreteTensor, Device, Expr, GpuOr, SimdElement};
 use fusor_core::DataType;
 
-impl<const R: usize, D> GpuOr<R, D, ConcreteTensor<D, R>>
+impl<const R: usize, D> GpuOr<R, D>
 where
     D: SimdElement + DataType + Default,
 {

@@ -11,8 +11,8 @@ use crate::comparison::{comparison_scalar_op_ref, comparison_tensor_op_ref};
 use crate::concrete_tensor::IndexIterator;
 use crate::conditional::{IsNonZero, where_cond_ref};
 use crate::elementwise::{
-    AbsOp, CosOp, Exp2Op, ExpOp, Log2Op, LogOp, NegOp, SimdUnaryOp, SinOp, SqrtOp, TanOp, TanhOp,
-    unary_tensor_op_ref,
+    AbsOp, AcosOp, AcoshOp, AsinOp, AsinhOp, AtanOp, AtanhOp, CosOp, CoshOp, Exp2Op, ExpOp,
+    Log2Op, LogOp, NegOp, SimdUnaryOp, SinOp, SinhOp, SqrtOp, TanOp, TanhOp, unary_tensor_op_ref,
 };
 use crate::expr::Expr;
 use crate::index::index_select_ref;
@@ -512,6 +512,102 @@ where
         TanOp: SimdUnaryOp<E>,
     {
         Tensor::new(unary_tensor_op_ref::<E, R, TanOp>(
+            &self.inner.to_concrete(),
+        ))
+    }
+
+    /// Arc sine (inverse sin) element-wise
+    #[inline]
+    pub fn asin(&self) -> Tensor<R, ConcreteTensor<E, R>>
+    where
+        E: Default,
+        AsinOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(unary_tensor_op_ref::<E, R, AsinOp>(
+            &self.inner.to_concrete(),
+        ))
+    }
+
+    /// Arc cosine (inverse cos) element-wise
+    #[inline]
+    pub fn acos(&self) -> Tensor<R, ConcreteTensor<E, R>>
+    where
+        E: Default,
+        AcosOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(unary_tensor_op_ref::<E, R, AcosOp>(
+            &self.inner.to_concrete(),
+        ))
+    }
+
+    /// Arc tangent (inverse tan) element-wise
+    #[inline]
+    pub fn atan(&self) -> Tensor<R, ConcreteTensor<E, R>>
+    where
+        E: Default,
+        AtanOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(unary_tensor_op_ref::<E, R, AtanOp>(
+            &self.inner.to_concrete(),
+        ))
+    }
+
+    /// Hyperbolic sine element-wise
+    #[inline]
+    pub fn sinh(&self) -> Tensor<R, ConcreteTensor<E, R>>
+    where
+        E: Default,
+        SinhOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(unary_tensor_op_ref::<E, R, SinhOp>(
+            &self.inner.to_concrete(),
+        ))
+    }
+
+    /// Hyperbolic cosine element-wise
+    #[inline]
+    pub fn cosh(&self) -> Tensor<R, ConcreteTensor<E, R>>
+    where
+        E: Default,
+        CoshOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(unary_tensor_op_ref::<E, R, CoshOp>(
+            &self.inner.to_concrete(),
+        ))
+    }
+
+    /// Inverse hyperbolic sine element-wise
+    #[inline]
+    pub fn asinh(&self) -> Tensor<R, ConcreteTensor<E, R>>
+    where
+        E: Default,
+        AsinhOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(unary_tensor_op_ref::<E, R, AsinhOp>(
+            &self.inner.to_concrete(),
+        ))
+    }
+
+    /// Inverse hyperbolic cosine element-wise
+    #[inline]
+    pub fn acosh(&self) -> Tensor<R, ConcreteTensor<E, R>>
+    where
+        E: Default,
+        AcoshOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(unary_tensor_op_ref::<E, R, AcoshOp>(
+            &self.inner.to_concrete(),
+        ))
+    }
+
+    /// Inverse hyperbolic tangent element-wise
+    #[inline]
+    pub fn atanh(&self) -> Tensor<R, ConcreteTensor<E, R>>
+    where
+        E: Default,
+        AtanhOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(unary_tensor_op_ref::<E, R, AtanhOp>(
             &self.inner.to_concrete(),
         ))
     }

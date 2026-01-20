@@ -29,7 +29,10 @@ pub(crate) const MAX_SIMD_LANES: usize = 64;
 
 // Re-export public types
 pub use concrete_tensor::ConcreteTensor;
-pub use elementwise::{Abs, Cos, Exp, Exp2, Log, Log2, Neg, Sin, Sqrt, Tan, Tanh};
+pub use elementwise::{
+    Abs, Acos, Acosh, Asin, Asinh, Atan, Atanh, Cos, Cosh, Exp, Exp2, Log, Log2, Neg, Sin, Sinh,
+    Sqrt, Tan, Tanh,
+};
 pub use expr::{Expr, materialize_expr};
 pub use pairwise::{Add, Div, Mul, Sub};
 pub use scalar::{AddScalar, DivScalar, MulScalar, SubScalar};
@@ -74,7 +77,8 @@ pub use cast::CastTo;
 pub use comparison::{EqOp, GtOp, GteOp, LtOp, LteOp, NeOp, SimdComparisonOp};
 pub use conditional::IsNonZero;
 pub use elementwise::{
-    AbsOp, CosOp, Exp2Op, ExpOp, Log2Op, LogOp, NegOp, SimdUnaryOp, SinOp, SqrtOp, TanOp, TanhOp,
+    AbsOp, AcosOp, AcoshOp, AsinOp, AsinhOp, AtanOp, AtanhOp, CosOp, CoshOp, Exp2Op, ExpOp,
+    Log2Op, LogOp, NegOp, SimdUnaryOp, SinOp, SinhOp, SqrtOp, TanOp, TanhOp,
 };
 pub use matmul::MatmulImpl;
 pub use pairwise::{AddOp, DivOp, MulOp, SimdBinaryOp, SubOp};

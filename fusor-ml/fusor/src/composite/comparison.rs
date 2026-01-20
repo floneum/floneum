@@ -1,0 +1,248 @@
+//! Comparison operations that work on both CPU and GPU backends.
+//!
+//! These operations return tensors with 1.0 for true and 0.0 for false.
+
+use crate::{ConcreteTensor, GpuOr, SimdElement};
+use fusor_core::DataType;
+use fusor_cpu::{EqOp, GtOp, GteOp, LtOp, LteOp, SimdComparisonOp};
+
+impl<const R: usize, D> GpuOr<R, D>
+where
+    D: SimdElement + DataType + Default,
+{
+    /// Element-wise equality comparison between two tensors.
+    ///
+    /// Returns 1.0 where elements are equal, 0.0 otherwise.
+    /// Note: GPU comparison is only available for CPU tensors at this time.
+    pub fn eq_tensor(&self, rhs: &Self) -> Self
+    where
+        EqOp: SimdComparisonOp<D>,
+    {
+        match (self, rhs) {
+            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu(a.eq(b)),
+            _ => panic!("Tensor-to-tensor comparison is only supported on CPU tensors"),
+        }
+    }
+
+    /// Element-wise less-than comparison between two tensors.
+    ///
+    /// Returns 1.0 where self < rhs, 0.0 otherwise.
+    /// Note: GPU comparison is only available for CPU tensors at this time.
+    pub fn lt_tensor(&self, rhs: &Self) -> Self
+    where
+        LtOp: SimdComparisonOp<D>,
+    {
+        match (self, rhs) {
+            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu(a.lt(b)),
+            _ => panic!("Tensor-to-tensor comparison is only supported on CPU tensors"),
+        }
+    }
+
+    /// Element-wise less-than-or-equal comparison between two tensors.
+    ///
+    /// Returns 1.0 where self <= rhs, 0.0 otherwise.
+    /// Note: GPU comparison is only available for CPU tensors at this time.
+    pub fn lte_tensor(&self, rhs: &Self) -> Self
+    where
+        LteOp: SimdComparisonOp<D>,
+    {
+        match (self, rhs) {
+            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu(a.lte(b)),
+            _ => panic!("Tensor-to-tensor comparison is only supported on CPU tensors"),
+        }
+    }
+
+    /// Element-wise greater-than comparison between two tensors.
+    ///
+    /// Returns 1.0 where self > rhs, 0.0 otherwise.
+    /// Note: GPU comparison is only available for CPU tensors at this time.
+    pub fn gt_tensor(&self, rhs: &Self) -> Self
+    where
+        GtOp: SimdComparisonOp<D>,
+    {
+        match (self, rhs) {
+            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu(a.gt(b)),
+            _ => panic!("Tensor-to-tensor comparison is only supported on CPU tensors"),
+        }
+    }
+
+    /// Element-wise greater-than-or-equal comparison between two tensors.
+    ///
+    /// Returns 1.0 where self >= rhs, 0.0 otherwise.
+    /// Note: GPU comparison is only available for CPU tensors at this time.
+    pub fn gte_tensor(&self, rhs: &Self) -> Self
+    where
+        GteOp: SimdComparisonOp<D>,
+    {
+        match (self, rhs) {
+            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu(a.gte(b)),
+            _ => panic!("Tensor-to-tensor comparison is only supported on CPU tensors"),
+        }
+    }
+
+    /// Element-wise equality comparison with a scalar.
+    ///
+    /// Returns 1.0 where elements equal the scalar, 0.0 otherwise.
+    pub fn eq_scalar(&self, scalar: D) -> Self
+    where
+        EqOp: SimdComparisonOp<D>,
+    {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(t.eq_scalar(scalar)),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.eq(scalar)),
+        }
+    }
+
+    /// Element-wise less-than comparison with a scalar.
+    ///
+    /// Returns 1.0 where self < scalar, 0.0 otherwise.
+    pub fn lt_scalar(&self, scalar: D) -> Self
+    where
+        LtOp: SimdComparisonOp<D>,
+    {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(t.lt_scalar(scalar)),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.lt(scalar)),
+        }
+    }
+
+    /// Element-wise less-than-or-equal comparison with a scalar.
+    ///
+    /// Returns 1.0 where self <= scalar, 0.0 otherwise.
+    pub fn lte_scalar(&self, scalar: D) -> Self
+    where
+        LteOp: SimdComparisonOp<D>,
+    {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(t.lte_scalar(scalar)),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.lte(scalar)),
+        }
+    }
+
+    /// Element-wise greater-than comparison with a scalar.
+    ///
+    /// Returns 1.0 where self > scalar, 0.0 otherwise.
+    pub fn gt_scalar(&self, scalar: D) -> Self
+    where
+        GtOp: SimdComparisonOp<D>,
+    {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(t.gt_scalar(scalar)),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.mt(scalar)),
+        }
+    }
+
+    /// Element-wise greater-than-or-equal comparison with a scalar.
+    ///
+    /// Returns 1.0 where self >= scalar, 0.0 otherwise.
+    pub fn gte_scalar(&self, scalar: D) -> Self
+    where
+        GteOp: SimdComparisonOp<D>,
+    {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(t.gte_scalar(scalar)),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.mte(scalar)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_eq_tensor_cpu() {
+        let a: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
+        let b: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 3.0, 3.0, 5.0]));
+
+        let result = a.eq_tensor(&b);
+        let slice = result.as_slice().await.unwrap();
+
+        assert_eq!(slice[[0]], 1.0); // 1 == 1
+        assert_eq!(slice[[1]], 0.0); // 2 != 3
+        assert_eq!(slice[[2]], 1.0); // 3 == 3
+        assert_eq!(slice[[3]], 0.0); // 4 != 5
+    }
+
+    #[tokio::test]
+    async fn test_lt_tensor_cpu() {
+        let a: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
+        let b: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]));
+
+        let result = a.lt_tensor(&b);
+        let slice = result.as_slice().await.unwrap();
+
+        assert_eq!(slice[[0]], 1.0); // 1 < 2
+        assert_eq!(slice[[1]], 0.0); // 2 < 2
+        assert_eq!(slice[[2]], 0.0); // 3 < 2
+        assert_eq!(slice[[3]], 0.0); // 4 < 2
+    }
+
+    #[tokio::test]
+    async fn test_gt_tensor_cpu() {
+        let a: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
+        let b: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]));
+
+        let result = a.gt_tensor(&b);
+        let slice = result.as_slice().await.unwrap();
+
+        assert_eq!(slice[[0]], 0.0); // 1 > 2
+        assert_eq!(slice[[1]], 0.0); // 2 > 2
+        assert_eq!(slice[[2]], 1.0); // 3 > 2
+        assert_eq!(slice[[3]], 1.0); // 4 > 2
+    }
+
+    #[tokio::test]
+    async fn test_lte_tensor_cpu() {
+        let a: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
+        let b: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]));
+
+        let result = a.lte_tensor(&b);
+        let slice = result.as_slice().await.unwrap();
+
+        assert_eq!(slice[[0]], 1.0); // 1 <= 2
+        assert_eq!(slice[[1]], 1.0); // 2 <= 2
+        assert_eq!(slice[[2]], 0.0); // 3 <= 2
+        assert_eq!(slice[[3]], 0.0); // 4 <= 2
+    }
+
+    #[tokio::test]
+    async fn test_gte_tensor_cpu() {
+        let a: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
+        let b: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]));
+
+        let result = a.gte_tensor(&b);
+        let slice = result.as_slice().await.unwrap();
+
+        assert_eq!(slice[[0]], 0.0); // 1 >= 2
+        assert_eq!(slice[[1]], 1.0); // 2 >= 2
+        assert_eq!(slice[[2]], 1.0); // 3 >= 2
+        assert_eq!(slice[[3]], 1.0); // 4 >= 2
+    }
+
+    #[tokio::test]
+    async fn test_eq_scalar_cpu() {
+        let a: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 2.0, 4.0]));
+
+        let result = a.eq_scalar(2.0);
+        let slice = result.as_slice().await.unwrap();
+
+        assert_eq!(slice[[0]], 0.0);
+        assert_eq!(slice[[1]], 1.0);
+        assert_eq!(slice[[2]], 1.0);
+        assert_eq!(slice[[3]], 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_lt_scalar_cpu() {
+        let a: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
+
+        let result = a.lt_scalar(2.5);
+        let slice = result.as_slice().await.unwrap();
+
+        assert_eq!(slice[[0]], 1.0); // 1 < 2.5
+        assert_eq!(slice[[1]], 1.0); // 2 < 2.5
+        assert_eq!(slice[[2]], 0.0); // 3 < 2.5
+        assert_eq!(slice[[3]], 0.0); // 4 < 2.5
+    }
+}

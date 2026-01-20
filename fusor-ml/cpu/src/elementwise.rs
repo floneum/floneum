@@ -28,7 +28,8 @@ macro_rules! define_op_marker {
     };
 }
 define_op_marker!(
-    NegOp, AbsOp, SqrtOp, ExpOp, Exp2Op, LogOp, Log2Op, SinOp, CosOp, TanOp, TanhOp
+    NegOp, AbsOp, SqrtOp, ExpOp, Exp2Op, LogOp, Log2Op, SinOp, CosOp, TanOp, TanhOp,
+    AsinOp, AcosOp, AtanOp, SinhOp, CoshOp, AsinhOp, AcoshOp, AtanhOp
 );
 
 // Macro for unary ops with SIMD support
@@ -173,6 +174,26 @@ impl_scalar_unary_op!(SinOp, |x: f64| x.sin(), f64);
 impl_scalar_unary_op!(CosOp, |x: f64| x.cos(), f64);
 impl_scalar_unary_op!(TanOp, |x: f64| x.tan(), f64);
 impl_scalar_unary_op!(TanhOp, |x: f64| x.tanh(), f64);
+
+// Additional inverse trig and hyperbolic ops for f32
+impl_scalar_unary_op!(AsinOp, |x: f32| x.asin(), f32);
+impl_scalar_unary_op!(AcosOp, |x: f32| x.acos(), f32);
+impl_scalar_unary_op!(AtanOp, |x: f32| x.atan(), f32);
+impl_scalar_unary_op!(SinhOp, |x: f32| x.sinh(), f32);
+impl_scalar_unary_op!(CoshOp, |x: f32| x.cosh(), f32);
+impl_scalar_unary_op!(AsinhOp, |x: f32| x.asinh(), f32);
+impl_scalar_unary_op!(AcoshOp, |x: f32| x.acosh(), f32);
+impl_scalar_unary_op!(AtanhOp, |x: f32| x.atanh(), f32);
+
+// Additional inverse trig and hyperbolic ops for f64
+impl_scalar_unary_op!(AsinOp, |x: f64| x.asin(), f64);
+impl_scalar_unary_op!(AcosOp, |x: f64| x.acos(), f64);
+impl_scalar_unary_op!(AtanOp, |x: f64| x.atan(), f64);
+impl_scalar_unary_op!(SinhOp, |x: f64| x.sinh(), f64);
+impl_scalar_unary_op!(CoshOp, |x: f64| x.cosh(), f64);
+impl_scalar_unary_op!(AsinhOp, |x: f64| x.asinh(), f64);
+impl_scalar_unary_op!(AcoshOp, |x: f64| x.acosh(), f64);
+impl_scalar_unary_op!(AtanhOp, |x: f64| x.atanh(), f64);
 
 /// Helper struct for dispatching unary operations via Arch::dispatch
 struct UnaryOpDispatch<'a, E: SimdElement, Op: SimdUnaryOp<E>> {
@@ -405,6 +426,16 @@ define_unary_tensor_op!(Sin, SinOp);
 define_unary_tensor_op!(Cos, CosOp);
 define_unary_tensor_op!(Tan, TanOp);
 define_unary_tensor_op!(Tanh, TanhOp);
+
+// Additional inverse trig and hyperbolic tensor operations
+define_unary_tensor_op!(Asin, AsinOp);
+define_unary_tensor_op!(Acos, AcosOp);
+define_unary_tensor_op!(Atan, AtanOp);
+define_unary_tensor_op!(Sinh, SinhOp);
+define_unary_tensor_op!(Cosh, CoshOp);
+define_unary_tensor_op!(Asinh, AsinhOp);
+define_unary_tensor_op!(Acosh, AcoshOp);
+define_unary_tensor_op!(Atanh, AtanhOp);
 
 #[cfg(test)]
 mod tests {

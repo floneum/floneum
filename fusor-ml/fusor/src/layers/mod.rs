@@ -1,0 +1,15 @@
+//! Neural network layer implementations that work on both CPU and GPU backends.
+//!
+//! These layers wrap the GpuOr tensor operations into convenient layer abstractions.
+
+mod conv1d;
+mod embedding;
+mod layer_norm;
+mod linear;
+mod rms_norm;
+
+pub use conv1d::{Conv1d, Conv1dConfig};
+pub use embedding::Embedding;
+pub use layer_norm::LayerNorm;
+pub use linear::Linear;
+pub use rms_norm::RmsNorm;

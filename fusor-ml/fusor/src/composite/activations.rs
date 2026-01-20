@@ -6,7 +6,7 @@ use crate::{
 };
 use fusor_core::{DataType, FloatDataType};
 
-impl<const R: usize, D> GpuOr<R, D, ConcreteTensor<D, R>>
+impl<const R: usize, D> GpuOr<R, D>
 where
     D: SimdElement + DataType + FloatDataType + FloatOps + Default,
 {

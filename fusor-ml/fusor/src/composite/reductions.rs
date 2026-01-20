@@ -2,9 +2,9 @@
 
 use crate::{AddOp, ConcreteTensor, DivOp, Expr, FloatOps, GpuOr, SimdBinaryOp, SimdElement};
 use fusor_core::{DataType, FloatDataType, LastRank as GpuLastRank, NextRankInner as GpuNextRankInner};
-use fusor_cpu::{LastRank as CpuLastRank, MaxOp, MinOp, SimdReduceOp, SumOp};
+use fusor_cpu::{LastRank as CpuLastRank, MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp};
 
-impl<const R: usize, D> GpuOr<R, D, ConcreteTensor<D, R>>
+impl<const R: usize, D> GpuOr<R, D>
 where
     D: SimdElement + DataType + FloatDataType + FloatOps + Default,
 {
@@ -59,6 +59,45 @@ where
         match self {
             GpuOr::Cpu(t) => GpuOr::Cpu(t.min_axis::<OUT_RANK>(axis)),
             GpuOr::Gpu(t) => GpuOr::Gpu(t.min(axis)),
+        }
+    }
+
+    /// Product along a specific axis, reducing the tensor rank by 1.
+    pub fn product<const OUT_RANK: usize>(
+        &self,
+        axis: usize,
+    ) -> GpuOr<OUT_RANK, D, ConcreteTensor<D, OUT_RANK>>
+    where
+        ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
+        fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
+        ProdOp: SimdReduceOp<D>,
+    {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(t.prod_axis::<OUT_RANK>(axis)),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.product(axis)),
+        }
+    }
+
+    /// Product along a specific axis, broadcasting result back to original shape.
+    pub fn product_keepdim<const OUT_RANK: usize>(&self, axis: usize) -> Self
+    where
+        ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
+        fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
+        <fusor_core::Tensor<R, D> as fusor_core::LastRankInner>::LastRank:
+            GpuNextRankInner<NextRank = fusor_core::Tensor<R, D>>,
+        ProdOp: SimdReduceOp<D>,
+    {
+        match self {
+            GpuOr::Cpu(t) => {
+                let reduced = t.prod_axis::<OUT_RANK>(axis);
+                let original_shape: [usize; R] = Expr::shape(t).try_into().expect("Shape mismatch");
+                GpuOr::Cpu(Self::broadcast_reduced_to_original::<OUT_RANK>(
+                    &reduced,
+                    original_shape,
+                    axis,
+                ))
+            }
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.product_keepdim(axis)),
         }
     }
 

@@ -2908,6 +2908,7 @@ version = "0.1.0"
 dependencies = [
  "fusor-core",
  "fusor-cpu",
+ "fusor-types",
  "paste",
  "pollster",
  "tokio",
