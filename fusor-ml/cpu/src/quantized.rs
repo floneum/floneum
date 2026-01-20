@@ -200,7 +200,7 @@ impl ConcreteTensor<f32, 2> {
     /// This is optimized for the case where the RHS (weights) are quantized.
     /// Instead of dequantizing the entire RHS matrix, it processes block-by-block
     /// with SIMD acceleration.
-    pub fn matmul_quantized<B: GgufBlock + Sync>(
+    pub fn q_mat_mul<B: GgufBlock + Sync>(
         &self,
         rhs: &QuantizedTensor<B, 2>,
     ) -> ConcreteTensor<f32, 2>
@@ -464,7 +464,7 @@ mod tests {
         let blocks = blocks_vec.into_boxed_slice();
         let rhs = QuantizedTensor::from_blocks(shape, blocks);
 
-        let result = lhs.matmul_quantized(&rhs);
+        let result = lhs.q_mat_mul(&rhs);
 
         // Each output element should be sum of 32 ones = 32.0
         assert_eq!(<ConcreteTensor<f32, 2> as Expr>::shape(&result), &[2, 32]);
@@ -506,7 +506,7 @@ mod tests {
         let rhs = QuantizedTensor::from_blocks(shape, blocks);
 
         // Compute using quantized matmul
-        let result_quantized = lhs.matmul_quantized(&rhs);
+        let result_quantized = lhs.q_mat_mul(&rhs);
 
         // Compute using dequantize + regular matmul
         let rhs_dequantized = rhs.dequantize();

@@ -53,7 +53,7 @@ fn bench_qmatmul(c: &mut Criterion) {
                 let blocks = blocks_vec.into_boxed_slice();
                 let rhs = QuantizedTensor::from_blocks(rhs_shape, blocks);
 
-                b.iter(|| black_box(black_box(&lhs).matmul_quantized(black_box(&rhs))));
+                b.iter(|| black_box(black_box(&lhs).q_mat_mul(black_box(&rhs))));
             },
         );
 
