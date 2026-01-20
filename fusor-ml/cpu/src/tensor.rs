@@ -1,6 +1,6 @@
 //! Tensor - the unified interface over different tensor backends
 
-use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Neg as StdNeg, Range, Sub as StdSub};
+use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Neg as StdNeg, Range, Rem as StdRem, Sub as StdSub};
 
 use fusor_types::SlidingWindow;
 use pulp::Simd;
@@ -17,7 +17,7 @@ use crate::elementwise::{
 use crate::expr::Expr;
 use crate::index::index_select_ref;
 use crate::matmul::MatmulImpl;
-use crate::pairwise::{AddOp, DivOp, MulOp, SimdBinaryOp, SubOp};
+use crate::pairwise::{AddOp, DivOp, MulOp, RemOp, SimdBinaryOp, SubOp};
 use crate::reduce::{
     MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp, reduce_tensor_axis_dyn, reduce_tensor_op,
 };
@@ -1170,6 +1170,7 @@ impl_cpu_pairwise_op!(StdAdd, add, Add, AddOp);
 impl_cpu_pairwise_op!(StdSub, sub, Sub, SubOp);
 impl_cpu_pairwise_op!(StdMul, mul, Mul, MulOp);
 impl_cpu_pairwise_op!(StdDiv, div, Div, DivOp);
+impl_cpu_pairwise_op!(StdRem, rem, Rem, RemOp);
 
 // Neg is unary, so handle separately
 impl<const R: usize, T> StdNeg for Tensor<R, T>

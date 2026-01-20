@@ -1,6 +1,6 @@
 //! Pairwise (binary) tensor operations: Add, Sub, Mul, Div
 
-use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Sub as StdSub};
+use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Rem as StdRem, Sub as StdSub};
 
 use pulp::Simd;
 
@@ -24,7 +24,7 @@ macro_rules! define_op_marker {
         )*
     };
 }
-define_op_marker!(AddOp, SubOp, MulOp, DivOp);
+define_op_marker!(AddOp, SubOp, MulOp, DivOp, RemOp);
 
 // Macro to implement binary operations for numeric types
 macro_rules! impl_binary_op {
@@ -78,6 +78,56 @@ impl_binary_op!(MulOp, *, mul_u32s, u32);
 // Implement DivOp for float types only
 impl_binary_op!(DivOp, /, div_f32s, f32);
 impl_binary_op!(DivOp, /, div_f64s, f64);
+
+// Implement RemOp for integer types (no SIMD instruction, use scalar fallback)
+macro_rules! impl_rem_op_scalar {
+    ($elem:ty) => {
+        impl SimdBinaryOp<$elem> for RemOp {
+            #[inline(always)]
+            fn apply_simd_vec<S: Simd>(
+                _simd: S,
+                a: <$elem as SimdElement>::Simd<S>,
+                b: <$elem as SimdElement>::Simd<S>,
+            ) -> <$elem as SimdElement>::Simd<S> {
+                // Modulo doesn't have SIMD support, so we need to do element-wise
+                // This is a fallback that will be slower but correct
+                let mut result = a;
+                let a_slice = unsafe {
+                    std::slice::from_raw_parts(
+                        &a as *const _ as *const $elem,
+                        std::mem::size_of_val(&a) / std::mem::size_of::<$elem>(),
+                    )
+                };
+                let b_slice = unsafe {
+                    std::slice::from_raw_parts(
+                        &b as *const _ as *const $elem,
+                        std::mem::size_of_val(&b) / std::mem::size_of::<$elem>(),
+                    )
+                };
+                let result_slice = unsafe {
+                    std::slice::from_raw_parts_mut(
+                        &mut result as *mut _ as *mut $elem,
+                        std::mem::size_of_val(&result) / std::mem::size_of::<$elem>(),
+                    )
+                };
+                for i in 0..result_slice.len() {
+                    result_slice[i] = a_slice[i] % b_slice[i];
+                }
+                result
+            }
+
+            #[inline(always)]
+            fn apply_scalar(a: $elem, b: $elem) -> $elem {
+                a % b
+            }
+        }
+    };
+}
+
+impl_rem_op_scalar!(u32);
+impl_rem_op_scalar!(u64);
+impl_rem_op_scalar!(i32);
+impl_rem_op_scalar!(i64);
 
 /// Macro to define binary tensor operations (Add, Sub, Mul, Div)
 macro_rules! define_binary_tensor_op {
@@ -176,6 +226,7 @@ define_binary_tensor_op!(Add, StdAdd, AddOp, "Tensor rank mismatch in Add");
 define_binary_tensor_op!(Sub, StdSub, SubOp, "Tensor rank mismatch in Sub");
 define_binary_tensor_op!(Mul, StdMul, MulOp, "Tensor rank mismatch in Mul");
 define_binary_tensor_op!(Div, StdDiv, DivOp, "Tensor rank mismatch in Div");
+define_binary_tensor_op!(Rem, StdRem, RemOp, "Tensor rank mismatch in Rem");
 
 #[cfg(test)]
 mod tests {
@@ -254,5 +305,26 @@ mod tests {
         assert_eq!(div_expr.eval_scalar(0), 5.0);
         assert_eq!(div_expr.eval_scalar(1), 5.0);
         assert_eq!(div_expr.eval_scalar(2), 6.0);
+    }
+
+    #[test]
+    fn test_rem_expr() {
+        let a = ConcreteTensor::<u32, 1>::from_slice([4], &[10, 17, 25, 100]);
+        let b = ConcreteTensor::<u32, 1>::from_slice([4], &[3, 5, 7, 30]);
+
+        let rem_expr: Rem<u32, 1, _, _> = Rem::new(&a, &b);
+
+        // Test scalar evaluation
+        assert_eq!(rem_expr.eval_scalar(0), 1);  // 10 % 3 = 1
+        assert_eq!(rem_expr.eval_scalar(1), 2);  // 17 % 5 = 2
+        assert_eq!(rem_expr.eval_scalar(2), 4);  // 25 % 7 = 4
+        assert_eq!(rem_expr.eval_scalar(3), 10); // 100 % 30 = 10
+
+        // Test materialization
+        let result = rem_expr.to_concrete();
+        assert_eq!(result.get([0]), 1);
+        assert_eq!(result.get([1]), 2);
+        assert_eq!(result.get([2]), 4);
+        assert_eq!(result.get([3]), 10);
     }
 }

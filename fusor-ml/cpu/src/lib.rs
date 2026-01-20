@@ -34,7 +34,7 @@ pub use elementwise::{
     Sqrt, Tan, Tanh,
 };
 pub use expr::{Expr, materialize_expr};
-pub use pairwise::{Add, Div, Mul, Sub};
+pub use pairwise::{Add, Div, Mul, Rem, Sub};
 pub use scalar::{AddScalar, DivScalar, MulScalar, SubScalar};
 pub use quantized::{Dequantize, QuantizedTensor};
 pub use tensor::{FloatOps, Tensor};
@@ -81,7 +81,7 @@ pub use elementwise::{
     Log2Op, LogOp, NegOp, SimdUnaryOp, SinOp, SinhOp, SqrtOp, TanOp, TanhOp,
 };
 pub use matmul::MatmulImpl;
-pub use pairwise::{AddOp, DivOp, MulOp, SimdBinaryOp, SubOp};
+pub use pairwise::{AddOp, DivOp, MulOp, RemOp, SimdBinaryOp, SubOp};
 pub use reduce::{MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp};
 
 // Re-export internal types used by other modules

@@ -144,6 +144,63 @@ where
             GpuOr::Gpu(t) => GpuOr::Gpu(t.mte(scalar)),
         }
     }
+
+    /// Element-wise equality comparison with a scalar (fusor-core compatible API).
+    ///
+    /// Returns 1.0 where elements equal the scalar, 0.0 otherwise.
+    /// This is an alias for `eq_scalar` to match fusor-core's API.
+    pub fn eq(&self, rhs: D) -> Self
+    where
+        EqOp: SimdComparisonOp<D>,
+    {
+        self.eq_scalar(rhs)
+    }
+
+    /// Element-wise less-than comparison with a scalar (fusor-core compatible API).
+    ///
+    /// Returns 1.0 where self < scalar, 0.0 otherwise.
+    /// This is an alias for `lt_scalar` to match fusor-core's API.
+    pub fn lt(&self, rhs: D) -> Self
+    where
+        LtOp: SimdComparisonOp<D>,
+    {
+        self.lt_scalar(rhs)
+    }
+
+    /// Element-wise less-than-or-equal comparison with a scalar (fusor-core compatible API).
+    ///
+    /// Returns 1.0 where self <= scalar, 0.0 otherwise.
+    /// This is an alias for `lte_scalar` to match fusor-core's API.
+    pub fn lte(&self, rhs: D) -> Self
+    where
+        LteOp: SimdComparisonOp<D>,
+    {
+        self.lte_scalar(rhs)
+    }
+
+    /// Element-wise greater-than comparison with a scalar (fusor-core compatible API).
+    ///
+    /// Returns 1.0 where self > scalar, 0.0 otherwise.
+    /// This is an alias for `gt_scalar` to match fusor-core's API.
+    /// Named `mt` (more than) to match fusor-core.
+    pub fn mt(&self, rhs: D) -> Self
+    where
+        GtOp: SimdComparisonOp<D>,
+    {
+        self.gt_scalar(rhs)
+    }
+
+    /// Element-wise greater-than-or-equal comparison with a scalar (fusor-core compatible API).
+    ///
+    /// Returns 1.0 where self >= scalar, 0.0 otherwise.
+    /// This is an alias for `gte_scalar` to match fusor-core's API.
+    /// Named `mte` (more than or equal) to match fusor-core.
+    pub fn mte(&self, rhs: D) -> Self
+    where
+        GteOp: SimdComparisonOp<D>,
+    {
+        self.gte_scalar(rhs)
+    }
 }
 
 #[cfg(test)]

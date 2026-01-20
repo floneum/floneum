@@ -349,6 +349,7 @@ impl_gpuor_pairwise_op!(Add, add, +, "Cannot add CPU tensor to GPU tensor");
 impl_gpuor_pairwise_op!(Sub, sub, -, "Cannot subtract CPU tensor from GPU tensor");
 impl_gpuor_pairwise_op!(Mul, mul, *, "Cannot multiply CPU tensor with GPU tensor");
 impl_gpuor_pairwise_op!(Div, div, /, "Cannot divide CPU tensor by GPU tensor");
+impl_gpuor_pairwise_op!(Rem, rem, %, "Cannot perform remainder on CPU tensor with GPU tensor");
 
 // Neg trait implementation for GpuOr
 impl<const R: usize, D, B, B2> std::ops::Neg for GpuOr<R, D, B>
