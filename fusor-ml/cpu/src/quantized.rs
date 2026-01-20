@@ -194,22 +194,27 @@ where
 ///
 /// Computes `self @ rhs` where `self` is an f32 tensor and `rhs` is quantized.
 /// This processes blocks one at a time to avoid the memory cost of full dequantization.
-impl ConcreteTensor<f32, 2> {
-    /// Matrix multiplication: self (M x K) @ rhs (K x N) -> (M x N)
+/// Supports batched inputs: `[batch_dims..., M, K] @ [K, N] -> [batch_dims..., M, N]`
+impl<const R: usize> ConcreteTensor<f32, R> {
+    /// Matrix multiplication: self ([batch_dims..., M, K]) @ rhs (K x N) -> ([batch_dims..., M, N])
     ///
     /// This is optimized for the case where the RHS (weights) are quantized.
     /// Instead of dequantizing the entire RHS matrix, it processes block-by-block
     /// with SIMD acceleration.
+    ///
+    /// The RHS is always 2D (K x N), while the LHS can have arbitrary batch dimensions.
     pub fn q_mat_mul<B: GgufBlock + Sync>(
         &self,
         rhs: &QuantizedTensor<B, 2>,
-    ) -> ConcreteTensor<f32, 2>
+    ) -> ConcreteTensor<f32, R>
     where
         B::Dequantized: AsRef<[f32]>,
     {
-        let lhs_shape = <Self as ResolvedTensor<2>>::shape(self);
-        let m = lhs_shape[0];
-        let k = lhs_shape[1];
+        const { assert!(R >= 2, "q_mat_mul requires at least 2 dimensions") };
+
+        let lhs_shape = <Self as ResolvedTensor<R>>::shape(self);
+        let m = lhs_shape[R - 2];
+        let k = lhs_shape[R - 1];
         let rhs_shape = rhs.element_shape();
         let k2 = rhs_shape[0];
         let n = rhs_shape[1];
@@ -220,24 +225,93 @@ impl ConcreteTensor<f32, 2> {
             k, k2
         );
 
-        let mut output = ConcreteTensor::<f32, 2>::zeros([m, n]);
-        let lhs_data = self.data();
-        let out_data = output.data_mut();
+        // Output shape: preserve batch dims, replace last two with [M, N]
+        let mut out_shape: [usize; R] = [0; R];
+        out_shape.copy_from_slice(lhs_shape);
+        out_shape[R - 1] = n;
+
+        let mut output = ConcreteTensor::<f32, R>::zeros(out_shape);
+
+        // Compute batch size (product of all dims except last 2)
+        let batch_size: usize = if R > 2 {
+            lhs_shape[..R - 2].iter().product()
+        } else {
+            1
+        };
+
+        let lhs_matrix_size = m * k;
+        let out_matrix_size = m * n;
 
         // Number of blocks per row in the RHS
         let blocks_per_row = n / B::BLOCK_SIZE;
 
-        // Use SIMD-optimized inner loop
-        pulp::Arch::new().dispatch(QMatmulSimd {
-            lhs_data,
-            rhs_blocks: rhs.blocks(),
-            out_data,
-            m,
-            k,
-            n,
-            blocks_per_row,
-            _phantom: std::marker::PhantomData::<B>,
-        });
+        let lhs_contiguous = self.layout().is_contiguous();
+
+        if lhs_contiguous {
+            // Fast path: LHS is contiguous
+            let lhs_data = self.data();
+            let out_data = output.data_mut();
+
+            for b in 0..batch_size {
+                let lhs_slice = &lhs_data[b * lhs_matrix_size..(b + 1) * lhs_matrix_size];
+                let out_slice = &mut out_data[b * out_matrix_size..(b + 1) * out_matrix_size];
+
+                pulp::Arch::new().dispatch(QMatmulSimd {
+                    lhs_data: lhs_slice,
+                    rhs_blocks: rhs.blocks(),
+                    out_data: out_slice,
+                    m,
+                    k,
+                    n,
+                    blocks_per_row,
+                    _phantom: std::marker::PhantomData::<B>,
+                });
+            }
+        } else {
+            // Slow path: LHS is not contiguous, need to extract each batch to contiguous memory
+            let batch_dims = &lhs_shape[..R - 2];
+            let mut batch_indices = vec![0usize; R - 2];
+
+            for b in 0..batch_size {
+                // Extract this batch's matrix to contiguous memory
+                let mut lhs_batch = vec![0.0f32; lhs_matrix_size];
+                for i in 0..m {
+                    for l in 0..k {
+                        let mut lhs_idx_arr = [0usize; R];
+                        for (idx, &bi) in batch_indices.iter().enumerate() {
+                            lhs_idx_arr[idx] = bi;
+                        }
+                        lhs_idx_arr[R - 2] = i;
+                        lhs_idx_arr[R - 1] = l;
+                        let lhs_idx = self.layout().linear_index(&lhs_idx_arr);
+                        lhs_batch[i * k + l] = self.data()[lhs_idx];
+                    }
+                }
+
+                let out_slice =
+                    &mut output.data_mut()[b * out_matrix_size..(b + 1) * out_matrix_size];
+
+                pulp::Arch::new().dispatch(QMatmulSimd {
+                    lhs_data: &lhs_batch,
+                    rhs_blocks: rhs.blocks(),
+                    out_data: out_slice,
+                    m,
+                    k,
+                    n,
+                    blocks_per_row,
+                    _phantom: std::marker::PhantomData::<B>,
+                });
+
+                // Increment batch indices (like a multi-digit counter)
+                for d in (0..batch_indices.len()).rev() {
+                    batch_indices[d] += 1;
+                    if batch_indices[d] < batch_dims[d] {
+                        break;
+                    }
+                    batch_indices[d] = 0;
+                }
+            }
+        }
 
         output
     }
@@ -585,5 +659,183 @@ mod tests {
         }
         let blocks = blocks_vec.into_boxed_slice();
         let _ = QuantizedTensor::from_blocks(shape, blocks);
+    }
+
+    #[test]
+    fn test_batched_q_mat_mul_3d() {
+        // Test batched q_mat_mul with 3D input: [batch, M, K] @ [K, N] -> [batch, M, N]
+        let batch = 2;
+        let m = 3;
+        let k = 64;
+        let n = 32;
+
+        // Create batched LHS: [2, 3, 64]
+        let lhs_data: Vec<f32> = (0..(batch * m * k))
+            .map(|x| (x as f32) * 0.01)
+            .collect();
+        let lhs = ConcreteTensor::<f32, 3>::from_slice([batch, m, k], &lhs_data);
+
+        // Create quantized RHS: [64, 32]
+        let rhs_shape = [k, n];
+        let num_blocks = k * n / 32;
+        let mut blocks_vec: AVec<BlockQ8_0> = AVec::with_capacity(64, num_blocks);
+        for i in 0..num_blocks {
+            let mut data = [0i8; 32];
+            for j in 0..32 {
+                data[j] = ((i + j) % 100) as i8 - 50;
+            }
+            blocks_vec.push(make_q8_0_block(0.1, data));
+        }
+        let blocks = blocks_vec.into_boxed_slice();
+        let rhs = QuantizedTensor::from_blocks(rhs_shape, blocks);
+
+        // Compute using batched q_mat_mul
+        let result = lhs.q_mat_mul(&rhs);
+
+        // Verify output shape
+        assert_eq!(<ConcreteTensor<f32, 3> as Expr>::shape(&result), &[batch, m, n]);
+
+        // Compare with dequantize + regular batched matmul for each batch
+        let rhs_dequantized = rhs.dequantize();
+        for b in 0..batch {
+            for i in 0..m {
+                for j in 0..n {
+                    // Compute expected value manually
+                    let mut expected = 0.0f32;
+                    for l in 0..k {
+                        expected += lhs.get([b, i, l]) * rhs_dequantized.get([l, j]);
+                    }
+                    let actual = result.get([b, i, j]);
+                    assert!(
+                        (actual - expected).abs() < 1e-3,
+                        "Mismatch at [{}, {}, {}]: expected={}, actual={}",
+                        b, i, j, expected, actual
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_batched_q_mat_mul_4d() {
+        // Test batched q_mat_mul with 4D input: [b1, b2, M, K] @ [K, N] -> [b1, b2, M, N]
+        let b1 = 2;
+        let b2 = 3;
+        let m = 2;
+        let k = 32;
+        let n = 32;
+
+        // Create batched LHS: [2, 3, 2, 32]
+        let lhs_data: Vec<f32> = (0..(b1 * b2 * m * k))
+            .map(|x| (x as f32) * 0.02)
+            .collect();
+        let lhs = ConcreteTensor::<f32, 4>::from_slice([b1, b2, m, k], &lhs_data);
+
+        // Create quantized RHS: [32, 32]
+        let rhs_shape = [k, n];
+        let num_blocks = k * n / 32;
+        let mut blocks_vec: AVec<BlockQ8_0> = AVec::with_capacity(64, num_blocks);
+        for i in 0..num_blocks {
+            let mut data = [0i8; 32];
+            for j in 0..32 {
+                data[j] = ((i * 2 + j) % 80) as i8 - 40;
+            }
+            blocks_vec.push(make_q8_0_block(0.05, data));
+        }
+        let blocks = blocks_vec.into_boxed_slice();
+        let rhs = QuantizedTensor::from_blocks(rhs_shape, blocks);
+
+        // Compute using batched q_mat_mul
+        let result = lhs.q_mat_mul(&rhs);
+
+        // Verify output shape
+        assert_eq!(<ConcreteTensor<f32, 4> as Expr>::shape(&result), &[b1, b2, m, n]);
+
+        // Compare with dequantize for spot checks
+        let rhs_dequantized = rhs.dequantize();
+        for bi in 0..b1 {
+            for bj in 0..b2 {
+                for i in 0..m {
+                    for j in 0..n {
+                        let mut expected = 0.0f32;
+                        for l in 0..k {
+                            expected += lhs.get([bi, bj, i, l]) * rhs_dequantized.get([l, j]);
+                        }
+                        let actual = result.get([bi, bj, i, j]);
+                        assert!(
+                            (actual - expected).abs() < 1e-3,
+                            "Mismatch at [{}, {}, {}, {}]: expected={}, actual={}",
+                            bi, bj, i, j, expected, actual
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_batched_q_mat_mul_matches_unbatched() {
+        // Verify that batched results match unbatched when run individually
+        let m = 2;
+        let k = 64;
+        let n = 32;
+
+        // Create two separate 2D matrices
+        let lhs1_data: Vec<f32> = (0..(m * k)).map(|x| (x as f32) * 0.01).collect();
+        let lhs2_data: Vec<f32> = (0..(m * k)).map(|x| (x as f32) * 0.02 + 0.5).collect();
+
+        let lhs1 = ConcreteTensor::<f32, 2>::from_slice([m, k], &lhs1_data);
+        let lhs2 = ConcreteTensor::<f32, 2>::from_slice([m, k], &lhs2_data);
+
+        // Create batched version: [2, m, k]
+        let mut batched_data = lhs1_data.clone();
+        batched_data.extend(&lhs2_data);
+        let lhs_batched = ConcreteTensor::<f32, 3>::from_slice([2, m, k], &batched_data);
+
+        // Create quantized RHS
+        let rhs_shape = [k, n];
+        let num_blocks = k * n / 32;
+        let mut blocks_vec: AVec<BlockQ8_0> = AVec::with_capacity(64, num_blocks);
+        for i in 0..num_blocks {
+            let mut data = [0i8; 32];
+            for j in 0..32 {
+                data[j] = ((i + j * 3) % 100) as i8 - 50;
+            }
+            blocks_vec.push(make_q8_0_block(0.1, data));
+        }
+        let blocks = blocks_vec.into_boxed_slice();
+        let rhs = QuantizedTensor::from_blocks(rhs_shape, blocks);
+
+        // Compute separately
+        let result1 = lhs1.q_mat_mul(&rhs);
+        let result2 = lhs2.q_mat_mul(&rhs);
+
+        // Compute batched
+        let result_batched = lhs_batched.q_mat_mul(&rhs);
+
+        // Verify shapes
+        assert_eq!(<ConcreteTensor<f32, 2> as Expr>::shape(&result1), &[m, n]);
+        assert_eq!(<ConcreteTensor<f32, 3> as Expr>::shape(&result_batched), &[2, m, n]);
+
+        // Verify values match
+        for i in 0..m {
+            for j in 0..n {
+                let v1 = result1.get([i, j]);
+                let v1_batched = result_batched.get([0, i, j]);
+                assert!(
+                    (v1 - v1_batched).abs() < 1e-6,
+                    "Batch 0 mismatch at [{}, {}]: unbatched={}, batched={}",
+                    i, j, v1, v1_batched
+                );
+
+                let v2 = result2.get([i, j]);
+                let v2_batched = result_batched.get([1, i, j]);
+                assert!(
+                    (v2 - v2_batched).abs() < 1e-6,
+                    "Batch 1 mismatch at [{}, {}]: unbatched={}, batched={}",
+                    i, j, v2, v2_batched
+                );
+            }
+        }
     }
 }
