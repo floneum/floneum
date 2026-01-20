@@ -2,7 +2,6 @@
 
 use crate::{ConcreteTensor, Device, GpuOr, SimdElement};
 use fusor_core::FloatDataType;
-use fusor_cpu::Expr;
 
 /// Attention mask for causal (decoder) attention
 ///

@@ -1,6 +1,6 @@
 //! Math operations that work on both CPU and GPU backends.
 
-use crate::{ConcreteTensor, FloatOps, GpuOr, MulOp, SimdBinaryOp, SimdElement};
+use crate::{ConcreteTensor, FloatOps, GpuOr, MulOp, ResolvedTensor, SimdBinaryOp, SimdElement};
 use fusor_core::{DataType, FloatDataType};
 
 impl<const R: usize, D> GpuOr<R, D>
@@ -16,6 +16,91 @@ where
         match self {
             GpuOr::Cpu(t) => GpuOr::Cpu((t * t).eval()),
             GpuOr::Gpu(t) => GpuOr::Gpu(t * t),
+        }
+    }
+}
+
+impl<const R: usize, D> GpuOr<R, D, ConcreteTensor<D, R>>
+where
+    D: SimdElement + DataType + FloatDataType + FloatOps + Default,
+{
+    /// Element-wise power: pow(self, other) computes self^other for each element.
+    pub fn pow(&self, other: &Self) -> Self {
+        match (self, other) {
+            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => {
+                // Use element-wise powf via iterating
+                let shape = self.shape();
+                let a_data = ResolvedTensor::data(a.inner());
+                let b_data = ResolvedTensor::data(b.inner());
+                let result: Vec<D> = a_data
+                    .iter()
+                    .zip(b_data.iter())
+                    .map(|(x, y)| x.powf(*y))
+                    .collect();
+                GpuOr::Cpu(fusor_cpu::Tensor::new(fusor_cpu::ConcreteTensor::from_slice(shape, &result)))
+            }
+            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a.pow(b)),
+            _ => panic!("Cannot mix CPU and GPU tensors in pow"),
+        }
+    }
+
+    /// Resize tensor to new shape with padding/truncation.
+    pub fn resize(&self, new_shape: [usize; R]) -> Self {
+        match self {
+            GpuOr::Cpu(t) => {
+                // CPU resize: create new tensor and copy elements
+                let old_shape = self.shape();
+                let src_data = ResolvedTensor::data(t.inner());
+                let mut result = vec![D::default(); new_shape.iter().product()];
+
+                // Calculate how many elements to copy per dimension
+                let copy_shape: [usize; R] = std::array::from_fn(|i| old_shape[i].min(new_shape[i]));
+
+                // Copy elements using nested iteration
+                fn copy_recursive<D: Copy, const R: usize>(
+                    src: &[D],
+                    dst: &mut [D],
+                    old_shape: &[usize; R],
+                    new_shape: &[usize; R],
+                    copy_shape: &[usize; R],
+                    dim: usize,
+                    src_offset: usize,
+                    dst_offset: usize,
+                ) {
+                    if dim == R {
+                        dst[dst_offset] = src[src_offset];
+                    } else {
+                        let old_stride: usize = old_shape[dim + 1..].iter().product();
+                        let new_stride: usize = new_shape[dim + 1..].iter().product();
+                        for i in 0..copy_shape[dim] {
+                            copy_recursive(
+                                src,
+                                dst,
+                                old_shape,
+                                new_shape,
+                                copy_shape,
+                                dim + 1,
+                                src_offset + i * old_stride,
+                                dst_offset + i * new_stride,
+                            );
+                        }
+                    }
+                }
+
+                copy_recursive(
+                    src_data.as_ref(),
+                    &mut result,
+                    &old_shape,
+                    &new_shape,
+                    &copy_shape,
+                    0,
+                    0,
+                    0,
+                );
+
+                GpuOr::Cpu(fusor_cpu::Tensor::new(fusor_cpu::ConcreteTensor::from_slice(new_shape, &result)))
+            }
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.resize(new_shape)),
         }
     }
 }

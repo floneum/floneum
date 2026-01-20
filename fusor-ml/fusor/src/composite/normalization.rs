@@ -29,6 +29,87 @@ where
         DivOp: SimdBinaryOp<D>,
         ExpOp: SimdUnaryOp<D>,
     {
+        match self {
+            GpuOr::Cpu(_) => self.softmax_cpu_impl(axis),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.softmax(axis)),
+        }
+    }
+
+    /// Softmax along the last dimension.
+    ///
+    /// This is a convenience method equivalent to `softmax(R - 1)`.
+    pub fn softmax_last_dim<const OUT_RANK: usize>(&self) -> Self
+    where
+        ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
+        fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
+        <fusor_core::Tensor<R, D> as fusor_core::LastRankInner>::LastRank:
+            GpuNextRankInner<NextRank = fusor_core::Tensor<R, D>>,
+        MaxOp: SimdReduceOp<D>,
+        SumOp: SimdReduceOp<D>,
+        D: std::ops::Sub<Output = D> + std::ops::Div<Output = D>,
+        SubOp: SimdBinaryOp<D>,
+        DivOp: SimdBinaryOp<D>,
+        ExpOp: SimdUnaryOp<D>,
+    {
+        self.softmax::<OUT_RANK>(R - 1)
+    }
+
+    /// Slow softmax using composite operations (non-fused).
+    ///
+    /// This is provided for API parity with fusor-core. On CPU, this is the same
+    /// as `softmax`. On GPU, fusor-core has an optimized fused kernel.
+    pub fn softmax_slow<const OUT_RANK: usize>(&self, axis: usize) -> Self
+    where
+        ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
+        fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
+        <fusor_core::Tensor<R, D> as fusor_core::LastRankInner>::LastRank:
+            GpuNextRankInner<NextRank = fusor_core::Tensor<R, D>>,
+        MaxOp: SimdReduceOp<D>,
+        SumOp: SimdReduceOp<D>,
+        D: std::ops::Sub<Output = D> + std::ops::Div<Output = D>,
+        SubOp: SimdBinaryOp<D>,
+        DivOp: SimdBinaryOp<D>,
+        ExpOp: SimdUnaryOp<D>,
+    {
+        match self {
+            GpuOr::Cpu(_) => self.softmax_cpu_impl(axis),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.softmax_slow(axis)),
+        }
+    }
+
+    /// Slow softmax along the last dimension using composite operations.
+    ///
+    /// This is provided for API parity with fusor-core.
+    pub fn softmax_slow_last_dim<const OUT_RANK: usize>(&self) -> Self
+    where
+        ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
+        fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
+        <fusor_core::Tensor<R, D> as fusor_core::LastRankInner>::LastRank:
+            GpuNextRankInner<NextRank = fusor_core::Tensor<R, D>>,
+        MaxOp: SimdReduceOp<D>,
+        SumOp: SimdReduceOp<D>,
+        D: std::ops::Sub<Output = D> + std::ops::Div<Output = D>,
+        SubOp: SimdBinaryOp<D>,
+        DivOp: SimdBinaryOp<D>,
+        ExpOp: SimdUnaryOp<D>,
+    {
+        self.softmax_slow::<OUT_RANK>(R - 1)
+    }
+
+    /// CPU implementation of softmax
+    fn softmax_cpu_impl<const OUT_RANK: usize>(&self, axis: usize) -> Self
+    where
+        ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
+        fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
+        <fusor_core::Tensor<R, D> as fusor_core::LastRankInner>::LastRank:
+            GpuNextRankInner<NextRank = fusor_core::Tensor<R, D>>,
+        MaxOp: SimdReduceOp<D>,
+        SumOp: SimdReduceOp<D>,
+        D: std::ops::Sub<Output = D> + std::ops::Div<Output = D>,
+        SubOp: SimdBinaryOp<D>,
+        DivOp: SimdBinaryOp<D>,
+        ExpOp: SimdUnaryOp<D>,
+    {
         // max(x) with keepdim for broadcasting
         let max_val = self.max_keepdim::<OUT_RANK>(axis);
 
@@ -175,6 +256,148 @@ where
                 (GpuOr::Cpu(a), GpuOr::Cpu(c)) => GpuOr::Cpu((a + c).eval()),
                 (GpuOr::Gpu(a), GpuOr::Gpu(c)) => GpuOr::Gpu(a + c),
                 _ => panic!("Cannot mix CPU and GPU tensors"),
+            }
+        } else {
+            scaled
+        }
+    }
+
+    /// Fused RMSNorm kernel that performs the entire normalization in a single kernel launch (GPU).
+    ///
+    /// Formula: output = input / sqrt(mean(input^2) + eps) * weight + bias
+    ///
+    /// On GPU, this is more efficient than the composite implementation which requires multiple
+    /// kernel launches. On CPU, this delegates to the composite operations.
+    ///
+    /// # Type Parameters
+    /// * `W` - Rank of the weight/bias tensor (typically 1 for per-feature weights)
+    ///
+    /// # Arguments
+    /// * `weight` - Scale tensor to apply after normalization
+    /// * `bias` - Optional bias tensor to add after scaling
+    /// * `eps` - Epsilon for numerical stability
+    pub fn rms_norm_fused<const W: usize, const OUT_RANK: usize>(
+        &self,
+        weight: &GpuOr<W, D, ConcreteTensor<D, W>>,
+        bias: Option<&GpuOr<W, D, ConcreteTensor<D, W>>>,
+        eps: f32,
+    ) -> Self
+    where
+        ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
+        fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
+        <fusor_core::Tensor<R, D> as fusor_core::LastRankInner>::LastRank:
+            GpuNextRankInner<NextRank = fusor_core::Tensor<R, D>>,
+        SumOp: SimdReduceOp<D>,
+        D: std::ops::Mul<Output = D>
+            + std::ops::Div<Output = D>
+            + std::ops::Add<Output = D>
+            + fusor_core::CastTensor<f32>,
+        f32: fusor_core::CastTensor<D>,
+        MulOp: SimdBinaryOp<D>,
+        DivOp: SimdBinaryOp<D>,
+        AddOp: SimdBinaryOp<D>,
+        SqrtOp: SimdUnaryOp<D>,
+        (fusor_core::Tensor<R, D>, fusor_core::Tensor<W, D>): fusor_core::MaxRank<R, D>,
+    {
+        match (self, weight, bias) {
+            // GPU path - use the optimized fused kernel
+            (GpuOr::Gpu(input), GpuOr::Gpu(weight), bias_opt) => {
+                let gpu_bias = bias_opt.map(|b| match b {
+                    GpuOr::Gpu(bias) => bias,
+                    _ => panic!("Bias must be on GPU when input is on GPU"),
+                });
+                GpuOr::Gpu(input.rms_norm_fused(weight, gpu_bias, eps))
+            }
+            // CPU path - use composite operations
+            (GpuOr::Cpu(_), GpuOr::Cpu(_), _) => {
+                self.rms_norm_fused_cpu_impl::<W, OUT_RANK>(weight, bias, eps)
+            }
+            _ => panic!("All tensors must be on the same device"),
+        }
+    }
+
+    /// Fused RMSNorm without bias
+    pub fn rms_norm_fused_no_bias<const W: usize, const OUT_RANK: usize>(
+        &self,
+        weight: &GpuOr<W, D, ConcreteTensor<D, W>>,
+        eps: f32,
+    ) -> Self
+    where
+        ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
+        fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
+        <fusor_core::Tensor<R, D> as fusor_core::LastRankInner>::LastRank:
+            GpuNextRankInner<NextRank = fusor_core::Tensor<R, D>>,
+        SumOp: SimdReduceOp<D>,
+        D: std::ops::Mul<Output = D>
+            + std::ops::Div<Output = D>
+            + std::ops::Add<Output = D>
+            + fusor_core::CastTensor<f32>,
+        f32: fusor_core::CastTensor<D>,
+        MulOp: SimdBinaryOp<D>,
+        DivOp: SimdBinaryOp<D>,
+        AddOp: SimdBinaryOp<D>,
+        SqrtOp: SimdUnaryOp<D>,
+        (fusor_core::Tensor<R, D>, fusor_core::Tensor<W, D>): fusor_core::MaxRank<R, D>,
+    {
+        self.rms_norm_fused::<W, OUT_RANK>(weight, None, eps)
+    }
+
+    /// CPU implementation of fused RMS norm using composite operations
+    fn rms_norm_fused_cpu_impl<const W: usize, const OUT_RANK: usize>(
+        &self,
+        weight: &GpuOr<W, D, ConcreteTensor<D, W>>,
+        bias: Option<&GpuOr<W, D, ConcreteTensor<D, W>>>,
+        eps: f32,
+    ) -> Self
+    where
+        ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
+        fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
+        <fusor_core::Tensor<R, D> as fusor_core::LastRankInner>::LastRank:
+            GpuNextRankInner<NextRank = fusor_core::Tensor<R, D>>,
+        SumOp: SimdReduceOp<D>,
+        D: std::ops::Mul<Output = D>
+            + std::ops::Div<Output = D>
+            + std::ops::Add<Output = D>,
+        MulOp: SimdBinaryOp<D>,
+        DivOp: SimdBinaryOp<D>,
+        AddOp: SimdBinaryOp<D>,
+        SqrtOp: SimdUnaryOp<D>,
+    {
+        let axis = R - 1; // Normalize along last axis
+        let eps_d = D::from_f32(eps);
+
+        // x^2
+        let x_sq = self.sqr();
+
+        // mean(x^2) with keepdim along last axis
+        let mean_sq = x_sq.mean_keepdim::<OUT_RANK>(axis);
+
+        // mean(x^2) + eps
+        let mean_sq_eps = mean_sq.add_scalar(eps_d);
+
+        // sqrt(mean(x^2) + eps)
+        let rms = mean_sq_eps.sqrt();
+
+        // x / rms
+        let normalized = match (self, &rms) {
+            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a / b).eval()),
+            _ => unreachable!(),
+        };
+
+        // Broadcast weight to input shape if needed and multiply
+        let input_shape = self.shape();
+        let weight_broadcast = weight.broadcast_as(input_shape);
+        let scaled = match (&normalized, &weight_broadcast) {
+            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a * b).eval()),
+            _ => unreachable!(),
+        };
+
+        // Add bias if present
+        if let Some(b) = bias {
+            let bias_broadcast = b.broadcast_as(input_shape);
+            match (&scaled, &bias_broadcast) {
+                (GpuOr::Cpu(a), GpuOr::Cpu(c)) => GpuOr::Cpu((a + c).eval()),
+                _ => unreachable!(),
             }
         } else {
             scaled

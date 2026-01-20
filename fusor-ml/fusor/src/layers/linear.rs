@@ -2,7 +2,7 @@
 
 use crate::{ConcreteTensor, Device, GpuOr, MatmulImpl, SimdElement};
 use fusor_core::{DataType, FloatDataType};
-use fusor_cpu::{Expr, FloatOps};
+use fusor_cpu::FloatOps;
 
 /// A linear (fully connected) layer.
 ///
@@ -121,7 +121,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_linear_2d() {
-        let device = Device::cpu();
+        let _device = Device::cpu();
 
         // Weight: (3, 2) - 3 out features, 2 in features
         let weight_data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
@@ -152,7 +152,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_linear_3d() {
-        let device = Device::cpu();
+        let _device = Device::cpu();
 
         // Weight: (3, 2) - 3 out features, 2 in features
         let weight_data = [1.0f32, 0.0, 0.0, 1.0, 1.0, 1.0];

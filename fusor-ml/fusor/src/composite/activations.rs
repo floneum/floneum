@@ -1,7 +1,7 @@
 //! Activation functions that work on both CPU and GPU backends.
 
 use crate::{
-    AddOp, ConcreteTensor, DivOp, ExpOp, FloatOps, GpuOr, MulOp, NegOp, SimdBinaryOp, SimdElement,
+    AddOp, DivOp, ExpOp, FloatOps, GpuOr, MulOp, NegOp, SimdBinaryOp, SimdElement,
     SimdUnaryOp, TanhOp,
 };
 use fusor_core::{DataType, FloatDataType};

@@ -1,7 +1,8 @@
 //! Construction operations that work on both CPU and GPU backends.
 
-use crate::{ConcreteTensor, Device, Expr, GpuOr, SimdElement};
+use crate::{Device, GpuOr, SimdElement};
 use fusor_core::DataType;
+use fusor_cpu::Expr;
 
 impl<const R: usize, D> GpuOr<R, D>
 where
@@ -39,6 +40,11 @@ where
             }
             Device::Gpu(gpu_device) => GpuOr::Gpu(fusor_core::Tensor::splat(gpu_device, value, shape)),
         }
+    }
+
+    /// Create a tensor filled with a specific value (alias for splat).
+    pub fn full(device: &Device, shape: [usize; R], value: D) -> Self {
+        Self::splat(device, value, shape)
     }
 }
 

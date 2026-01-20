@@ -2,7 +2,7 @@
 //!
 //! These operations return tensors with 1.0 for true and 0.0 for false.
 
-use crate::{ConcreteTensor, GpuOr, SimdElement};
+use crate::{GpuOr, SimdElement};
 use fusor_core::DataType;
 use fusor_cpu::{EqOp, GtOp, GteOp, LtOp, LteOp, SimdComparisonOp};
 

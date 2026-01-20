@@ -16,7 +16,7 @@ pub mod layers;
 
 use std::ops::{Deref, Range};
 
-pub use composite::{arange, arange_step, cat, stack};
+pub use composite::{arange, arange_step, cat, stack, ToVec1, ToVec2, ToVec3};
 pub use device::Device;
 pub use error::Error;
 use fusor_core::TensorSlice;
@@ -385,6 +385,148 @@ where
     }
 }
 
+// Broadcasting binary operations that can work with tensors of different ranks
+impl<const R: usize, D> GpuOr<R, D>
+where
+    D: SimdElement + DataType + Default,
+{
+    /// Broadcasting add: broadcasts both tensors to a common shape and adds them.
+    pub fn add_<const R2: usize, const R3: usize>(
+        &self,
+        second: &GpuOr<R2, D>,
+    ) -> GpuOr<R3, D, ConcreteTensor<D, R3>>
+    where
+        (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
+        D: std::ops::Add<Output = D>,
+        AddOp: SimdBinaryOp<D>,
+    {
+        self.broadcast_binary_op(second, |a, b| match (a, b) {
+            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((&a + &b).eval()),
+            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(&a + &b),
+            _ => panic!("Cannot mix CPU and GPU tensors"),
+        })
+    }
+
+    /// Broadcasting subtract: broadcasts both tensors to a common shape and subtracts them.
+    pub fn sub_<const R2: usize, const R3: usize>(
+        &self,
+        second: &GpuOr<R2, D>,
+    ) -> GpuOr<R3, D, ConcreteTensor<D, R3>>
+    where
+        (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
+        D: std::ops::Sub<Output = D>,
+        SubOp: SimdBinaryOp<D>,
+    {
+        self.broadcast_binary_op(second, |a, b| match (a, b) {
+            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((&a - &b).eval()),
+            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(&a - &b),
+            _ => panic!("Cannot mix CPU and GPU tensors"),
+        })
+    }
+
+    /// Broadcasting multiply: broadcasts both tensors to a common shape and multiplies them.
+    pub fn mul_<const R2: usize, const R3: usize>(
+        &self,
+        second: &GpuOr<R2, D>,
+    ) -> GpuOr<R3, D, ConcreteTensor<D, R3>>
+    where
+        (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
+        D: std::ops::Mul<Output = D>,
+        MulOp: SimdBinaryOp<D>,
+    {
+        self.broadcast_binary_op(second, |a, b| match (a, b) {
+            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((&a * &b).eval()),
+            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(&a * &b),
+            _ => panic!("Cannot mix CPU and GPU tensors"),
+        })
+    }
+
+    /// Broadcasting divide: broadcasts both tensors to a common shape and divides them.
+    pub fn div_<const R2: usize, const R3: usize>(
+        &self,
+        second: &GpuOr<R2, D>,
+    ) -> GpuOr<R3, D, ConcreteTensor<D, R3>>
+    where
+        (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
+        D: std::ops::Div<Output = D>,
+        DivOp: SimdBinaryOp<D>,
+    {
+        self.broadcast_binary_op(second, |a, b| match (a, b) {
+            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((&a / &b).eval()),
+            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(&a / &b),
+            _ => panic!("Cannot mix CPU and GPU tensors"),
+        })
+    }
+
+    /// Broadcasting power: broadcasts both tensors to a common shape and computes power.
+    pub fn pow_<const R2: usize, const R3: usize>(
+        &self,
+        second: &GpuOr<R2, D>,
+    ) -> GpuOr<R3, D, ConcreteTensor<D, R3>>
+    where
+        (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
+        D: FloatDataType + FloatOps,
+    {
+        self.broadcast_binary_op(second, |a, b| match (&a, &b) {
+            (GpuOr::Cpu(_), GpuOr::Cpu(_)) => {
+                // Use the pow method from math module
+                a.to_concrete().pow(&b.to_concrete())
+            }
+            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a.pow(b)),
+            _ => panic!("Cannot mix CPU and GPU tensors"),
+        })
+    }
+
+    /// Helper function for broadcasting binary operations.
+    fn broadcast_binary_op<const R2: usize, const R3: usize>(
+        &self,
+        second: &GpuOr<R2, D>,
+        op: impl Fn(GpuOr<R3, D>, GpuOr<R3, D>) -> GpuOr<R3, D>,
+    ) -> GpuOr<R3, D, ConcreteTensor<D, R3>>
+    where
+        (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
+    {
+        // Calculate the broadcasted shape
+        let shape1 = self.shape();
+        let shape2 = second.shape();
+        let out_shape = broadcast_shapes::<R, R2, R3>(&shape1, &shape2);
+
+        // Broadcast both tensors to the output shape
+        let b1: GpuOr<R3, D, ConcreteTensor<D, R3>> = self.broadcast_as(out_shape);
+        let b2: GpuOr<R3, D, ConcreteTensor<D, R3>> = second.broadcast_as(out_shape);
+
+        // Apply the operation
+        op(b1, b2).to_concrete()
+    }
+}
+
+/// Calculate the broadcasted shape for two tensors.
+fn broadcast_shapes<const R1: usize, const R2: usize, const R3: usize>(
+    shape1: &[usize; R1],
+    shape2: &[usize; R2],
+) -> [usize; R3] {
+    let mut result = [1usize; R3];
+
+    // Align shapes from the right
+    for i in 0..R1 {
+        let idx = R3 - R1 + i;
+        result[idx] = shape1[i];
+    }
+    for i in 0..R2 {
+        let idx = R3 - R2 + i;
+        if result[idx] == 1 {
+            result[idx] = shape2[i];
+        } else if shape2[i] != 1 && shape2[i] != result[idx] {
+            panic!(
+                "Cannot broadcast shapes: dimension {} has incompatible sizes {} and {}",
+                idx, result[idx], shape2[i]
+            );
+        }
+    }
+
+    result
+}
+
 /// Macro to implement unary element-wise operations for GpuOr.
 macro_rules! impl_gpuor_unary_op {
     ($method:ident, $op:ident) => {
@@ -422,6 +564,47 @@ impl_gpuor_unary_op!(cosh, CoshOp);
 impl_gpuor_unary_op!(asinh, AsinhOp);
 impl_gpuor_unary_op!(acosh, AcoshOp);
 impl_gpuor_unary_op!(atanh, AtanhOp);
+
+// Approximate exp operations (GPU-optimized, CPU falls back to standard exp)
+impl<const R: usize, D> GpuOr<R, D>
+where
+    D: SimdElement + DataType + FloatDataType + Default,
+    fusor_cpu::ExpOp: fusor_cpu::SimdUnaryOp<D>,
+{
+    /// Approximate exp function (faster but less accurate on GPU, exact on CPU).
+    /// Uses a polynomial approximation on GPU for better performance.
+    pub fn approximate_exp(&self) -> GpuOr<R, D> {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(t.exp()),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.appoximate_exp()),
+        }
+    }
+
+    /// Less approximate exp function (medium accuracy/speed tradeoff on GPU, exact on CPU).
+    pub fn less_approximate_exp(&self) -> GpuOr<R, D> {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(t.exp()),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.less_appoximate_exp()),
+        }
+    }
+}
+
+// Exact tanh operation
+impl<const R: usize, D> GpuOr<R, D>
+where
+    D: SimdElement + DataType + FloatDataType + Default,
+    fusor_cpu::TanhOp: fusor_cpu::SimdUnaryOp<D>,
+{
+    /// Exact tanh using (e^x - e^-x) / (e^x + e^-x).
+    /// More accurate but potentially slower than built-in tanh on some platforms.
+    pub fn tanh_exact(&self) -> GpuOr<R, D> {
+        match self {
+            // CPU tanh is already exact
+            GpuOr::Cpu(t) => GpuOr::Cpu(t.tanh()),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.tanh_exact()),
+        }
+    }
+}
 
 // Conditional operation (where_cond)
 impl<const R: usize, D> GpuOr<R, D>
@@ -473,6 +656,21 @@ where
             GpuOr::Cpu(t) => GpuOr::Cpu(t.clamp(min, max)),
             GpuOr::Gpu(t) => GpuOr::Gpu(t.max_elementwise(min).min_elementwise(max)),
         }
+    }
+
+    /// Raise each element to a power (alias for pow_scalar for fusor-core API compatibility).
+    pub fn pow_elementwise(&self, exponent: D) -> Self {
+        self.pow_scalar(exponent)
+    }
+
+    /// Element-wise maximum with a scalar (alias for max_scalar for fusor-core API compatibility).
+    pub fn max_elementwise(&self, element: D) -> Self {
+        self.max_scalar(element)
+    }
+
+    /// Element-wise minimum with a scalar (alias for min_scalar for fusor-core API compatibility).
+    pub fn min_elementwise(&self, element: D) -> Self {
+        self.min_scalar(element)
     }
 
     /// Add a scalar to each element.
@@ -636,6 +834,38 @@ where
                 GpuOr::Cpu(t.reshape(new_shape))
             }
             GpuOr::Gpu(t) => GpuOr::Gpu(t.flatten_last_n::<FROM_END, R2>()),
+        }
+    }
+
+    /// Flatten the first FROM_START+1 dimensions into one.
+    ///
+    /// This follows the GPU/fusor-core semantic where FROM_START is the number of
+    /// extra dimensions beyond the one being flattened into.
+    /// So FROM_START=0 flattens just the first dimension (no-op),
+    /// FROM_START=1 flattens the first 2 dimensions, etc.
+    ///
+    /// Output rank R2 = R - FROM_START.
+    pub fn flatten_first_n<const FROM_START: usize, const R2: usize>(
+        &self,
+    ) -> GpuOr<R2, D, ConcreteTensor<D, R2>>
+    where
+        fusor_core::Tensor<R, D>: fusor_core::SmallerRank<FROM_START, R2, D>,
+    {
+        match self {
+            GpuOr::Cpu(t) => {
+                // Calculate new shape: first element is product of first FROM_START+1 dims
+                // remaining elements are the rest of the dimensions
+                let shape = t.shape();
+                let new_shape: [usize; R2] = std::array::from_fn(|i| {
+                    if i == 0 {
+                        shape[..=FROM_START].iter().product()
+                    } else {
+                        shape[i + FROM_START]
+                    }
+                });
+                GpuOr::Cpu(t.reshape(new_shape))
+            }
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.flatten_first_n::<FROM_START, R2>()),
         }
     }
 }

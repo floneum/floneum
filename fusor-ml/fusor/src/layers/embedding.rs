@@ -85,7 +85,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Device;
 
     #[tokio::test]
     async fn test_embedding_1d() {

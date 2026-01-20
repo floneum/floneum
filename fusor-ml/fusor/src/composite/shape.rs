@@ -173,6 +173,50 @@ where
         }
     }
 
+    /// Squeeze multiple dimensions of size 1.
+    ///
+    /// # Type Parameters
+    /// * `DIFF` - Number of dimensions to squeeze
+    /// * `R2` - Output rank (must be R - DIFF)
+    ///
+    /// # Arguments
+    /// * `axes` - Array of dimensions to squeeze (each must have size 1)
+    pub fn squeeze_dims<const DIFF: usize, const R2: usize>(
+        &self,
+        axes: [usize; DIFF],
+    ) -> GpuOr<R2, D, ConcreteTensor<D, R2>>
+    where
+        ConcreteTensor<D, R>: fusor_cpu::SmallerRank<R2, DIFF, D>,
+        fusor_core::Tensor<R, D>: fusor_core::SmallerRank<DIFF, R2, D>,
+    {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(t.squeeze_dims(axes)),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.squeeze_dims(axes)),
+        }
+    }
+
+    /// Unsqueeze multiple dimensions (add dimensions of size 1).
+    ///
+    /// # Type Parameters
+    /// * `DIFF` - Number of dimensions to add
+    /// * `R2` - Output rank (must be R + DIFF)
+    ///
+    /// # Arguments
+    /// * `axes` - Array of positions where to insert new dimensions
+    pub fn unsqueeze_dims<const DIFF: usize, const R2: usize>(
+        &self,
+        axes: [usize; DIFF],
+    ) -> GpuOr<R2, D, ConcreteTensor<D, R2>>
+    where
+        ConcreteTensor<D, R>: fusor_cpu::LargerRank<R2, DIFF, D>,
+        fusor_core::Tensor<R, D>: fusor_core::LargerRank<DIFF, R2, D>,
+    {
+        match self {
+            GpuOr::Cpu(t) => GpuOr::Cpu(t.unsqueeze_dims(axes)),
+            GpuOr::Gpu(t) => GpuOr::Gpu(t.unsqueeze_dims(axes)),
+        }
+    }
+
     /// Create a sliding window view of the tensor (zero-copy).
     ///
     /// This creates overlapping windows along specified dimensions without copying data.

@@ -125,6 +125,50 @@ where
 
         crate::cat([y0, y1], 4).flatten_last_n::<1, 4>()
     }
+
+    /// Apply fused interleaved RoPE (rotary position embedding).
+    /// This pairs adjacent elements: (0, 1), (2, 3), etc.
+    ///
+    /// On GPU, this uses an optimized fused kernel. On CPU, it delegates to `rope_interleaved`.
+    pub fn rope_fused(
+        &self,
+        cos: &GpuOr<2, D, ConcreteTensor<D, 2>>,
+        sin: &GpuOr<2, D, ConcreteTensor<D, 2>>,
+    ) -> Self {
+        match (self, cos, sin) {
+            // GPU path - use the optimized fused kernel
+            (GpuOr::Gpu(x), GpuOr::Gpu(cos), GpuOr::Gpu(sin)) => {
+                GpuOr::Gpu(x.rope_fused(cos, sin))
+            }
+            // CPU path - use composite operations
+            (GpuOr::Cpu(_), GpuOr::Cpu(_), GpuOr::Cpu(_)) => {
+                self.rope_interleaved(cos, sin)
+            }
+            _ => panic!("All tensors must be on the same device"),
+        }
+    }
+
+    /// Apply fused normal RoPE (rotary position embedding).
+    /// This pairs first half with second half: (0, head_dim/2), (1, head_dim/2+1), etc.
+    ///
+    /// On GPU, this uses an optimized fused kernel. On CPU, it delegates to `rope`.
+    pub fn rope_normal_fused(
+        &self,
+        cos: &GpuOr<2, D, ConcreteTensor<D, 2>>,
+        sin: &GpuOr<2, D, ConcreteTensor<D, 2>>,
+    ) -> Self {
+        match (self, cos, sin) {
+            // GPU path - use the optimized fused kernel
+            (GpuOr::Gpu(x), GpuOr::Gpu(cos), GpuOr::Gpu(sin)) => {
+                GpuOr::Gpu(x.rope_normal_fused(cos, sin))
+            }
+            // CPU path - use composite operations
+            (GpuOr::Cpu(_), GpuOr::Cpu(_), GpuOr::Cpu(_)) => {
+                self.rope(cos, sin)
+            }
+            _ => panic!("All tensors must be on the same device"),
+        }
+    }
 }
 
 #[cfg(test)]

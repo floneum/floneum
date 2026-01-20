@@ -1,6 +1,6 @@
 //! Growable tensor cache implementation.
 
-use crate::{cat, ConcreteTensor, Device, GpuOr, SimdElement};
+use crate::{cat, Device, GpuOr, SimdElement};
 use fusor_core::DataType;
 
 /// A growable tensor cache.
