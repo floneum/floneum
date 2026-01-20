@@ -1,13 +1,13 @@
 //! Normalization operations that work on both CPU and GPU backends.
 
 use crate::{
-    AddOp, ConcreteTensor, DivOp, ExpOp, FloatOps, GpuOr, MulOp, SimdBinaryOp, SimdElement,
+    AddOp, ConcreteTensor, DivOp, ExpOp, FloatOps, Tensor, MulOp, SimdBinaryOp, SimdElement,
     SimdUnaryOp, SqrtOp, SubOp,
 };
 use fusor_core::{DataType, FloatDataType, LastRank as GpuLastRank, NextRankInner as GpuNextRankInner};
 use fusor_cpu::{LastRank as CpuLastRank, MaxOp, SimdReduceOp, SumOp};
 
-impl<const R: usize, D> GpuOr<R, D>
+impl<const R: usize, D> Tensor<R, D>
 where
     D: SimdElement + DataType + FloatDataType + FloatOps + Default,
 {
@@ -30,8 +30,8 @@ where
         ExpOp: SimdUnaryOp<D>,
     {
         match self {
-            GpuOr::Cpu(_) => self.softmax_cpu_impl(axis),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.softmax(axis)),
+            Tensor::Cpu(_) => self.softmax_cpu_impl(axis),
+            Tensor::Gpu(t) => Tensor::Gpu(t.softmax(axis)),
         }
     }
 
@@ -72,8 +72,8 @@ where
         ExpOp: SimdUnaryOp<D>,
     {
         match self {
-            GpuOr::Cpu(_) => self.softmax_cpu_impl(axis),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.softmax_slow(axis)),
+            Tensor::Cpu(_) => self.softmax_cpu_impl(axis),
+            Tensor::Gpu(t) => Tensor::Gpu(t.softmax_slow(axis)),
         }
     }
 
@@ -115,8 +115,8 @@ where
 
         // x - max(x) (broadcasts automatically since max has size 1 in reduced dim)
         let shifted = match (self, &max_val) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a - b).eval()),
-            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a - b),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a - b).eval()),
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a - b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         };
 
@@ -128,8 +128,8 @@ where
 
         // exp / sum (broadcasts)
         match (&exp_val, &sum_exp) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a / b).eval()),
-            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a / b),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).eval()),
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a / b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         }
     }
@@ -171,15 +171,15 @@ where
 
         // x / rms
         let normalized = match (self, &rms) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a / b).eval()),
-            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a / b),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).eval()),
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a / b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         };
 
         // normalized * weight
         match (&normalized, weight) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a * b).eval()),
-            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a * b),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a * b).eval()),
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a * b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         }
     }
@@ -221,8 +221,8 @@ where
         let centered = if remove_mean {
             let mean = self.mean_keepdim::<OUT_RANK>(axis);
             match (self, &mean) {
-                (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a - b).eval()),
-                (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a - b),
+                (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a - b).eval()),
+                (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a - b),
                 _ => panic!("Cannot mix CPU and GPU tensors"),
             }
         } else {
@@ -238,23 +238,23 @@ where
 
         // centered / std
         let normalized = match (&centered, &std) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a / b).eval()),
-            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a / b),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).eval()),
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a / b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         };
 
         // normalized * weight
         let scaled = match (&normalized, weight) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a * b).eval()),
-            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a * b),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a * b).eval()),
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a * b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         };
 
         // + bias if present
         if let Some(b) = bias {
             match (&scaled, b) {
-                (GpuOr::Cpu(a), GpuOr::Cpu(c)) => GpuOr::Cpu((a + c).eval()),
-                (GpuOr::Gpu(a), GpuOr::Gpu(c)) => GpuOr::Gpu(a + c),
+                (Tensor::Cpu(a), Tensor::Cpu(c)) => Tensor::Cpu((a + c).eval()),
+                (Tensor::Gpu(a), Tensor::Gpu(c)) => Tensor::Gpu(a + c),
                 _ => panic!("Cannot mix CPU and GPU tensors"),
             }
         } else {
@@ -278,8 +278,8 @@ where
     /// * `eps` - Epsilon for numerical stability
     pub fn rms_norm_fused<const W: usize, const OUT_RANK: usize>(
         &self,
-        weight: &GpuOr<W, D, ConcreteTensor<D, W>>,
-        bias: Option<&GpuOr<W, D, ConcreteTensor<D, W>>>,
+        weight: &Tensor<W, D, ConcreteTensor<D, W>>,
+        bias: Option<&Tensor<W, D, ConcreteTensor<D, W>>>,
         eps: f32,
     ) -> Self
     where
@@ -301,15 +301,15 @@ where
     {
         match (self, weight, bias) {
             // GPU path - use the optimized fused kernel
-            (GpuOr::Gpu(input), GpuOr::Gpu(weight), bias_opt) => {
+            (Tensor::Gpu(input), Tensor::Gpu(weight), bias_opt) => {
                 let gpu_bias = bias_opt.map(|b| match b {
-                    GpuOr::Gpu(bias) => bias,
+                    Tensor::Gpu(bias) => bias,
                     _ => panic!("Bias must be on GPU when input is on GPU"),
                 });
-                GpuOr::Gpu(input.rms_norm_fused(weight, gpu_bias, eps))
+                Tensor::Gpu(input.rms_norm_fused(weight, gpu_bias, eps))
             }
             // CPU path - use composite operations
-            (GpuOr::Cpu(_), GpuOr::Cpu(_), _) => {
+            (Tensor::Cpu(_), Tensor::Cpu(_), _) => {
                 self.rms_norm_fused_cpu_impl::<W, OUT_RANK>(weight, bias, eps)
             }
             _ => panic!("All tensors must be on the same device"),
@@ -319,7 +319,7 @@ where
     /// Fused RMSNorm without bias
     pub fn rms_norm_fused_no_bias<const W: usize, const OUT_RANK: usize>(
         &self,
-        weight: &GpuOr<W, D, ConcreteTensor<D, W>>,
+        weight: &Tensor<W, D, ConcreteTensor<D, W>>,
         eps: f32,
     ) -> Self
     where
@@ -345,8 +345,8 @@ where
     /// CPU implementation of fused RMS norm using composite operations
     fn rms_norm_fused_cpu_impl<const W: usize, const OUT_RANK: usize>(
         &self,
-        weight: &GpuOr<W, D, ConcreteTensor<D, W>>,
-        bias: Option<&GpuOr<W, D, ConcreteTensor<D, W>>>,
+        weight: &Tensor<W, D, ConcreteTensor<D, W>>,
+        bias: Option<&Tensor<W, D, ConcreteTensor<D, W>>>,
         eps: f32,
     ) -> Self
     where
@@ -380,7 +380,7 @@ where
 
         // x / rms
         let normalized = match (self, &rms) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a / b).eval()),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).eval()),
             _ => unreachable!(),
         };
 
@@ -388,7 +388,7 @@ where
         let input_shape = self.shape();
         let weight_broadcast = weight.broadcast_as(input_shape);
         let scaled = match (&normalized, &weight_broadcast) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a * b).eval()),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a * b).eval()),
             _ => unreachable!(),
         };
 
@@ -396,7 +396,7 @@ where
         if let Some(b) = bias {
             let bias_broadcast = b.broadcast_as(input_shape);
             match (&scaled, &bias_broadcast) {
-                (GpuOr::Cpu(a), GpuOr::Cpu(c)) => GpuOr::Cpu((a + c).eval()),
+                (Tensor::Cpu(a), Tensor::Cpu(c)) => Tensor::Cpu((a + c).eval()),
                 _ => unreachable!(),
             }
         } else {
@@ -412,7 +412,7 @@ mod tests {
     #[tokio::test]
     async fn test_softmax_cpu() {
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([6], &data));
+        let t: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([6], &data));
 
         let result = t.softmax::<0>(0);
         let slice = result.as_slice().await.unwrap();
@@ -442,7 +442,7 @@ mod tests {
     async fn test_softmax_2d_cpu() {
         // 2x3 tensor, softmax along axis 1
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
+        let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
 
         let result = t.softmax::<1>(1);
         let slice = result.as_slice().await.unwrap();
@@ -458,9 +458,9 @@ mod tests {
     async fn test_rms_norm_cpu() {
         // Simple test: normalize [1, 2, 3] with weight [1, 1, 1]
         let data = [1.0f32, 2.0, 3.0];
-        let t: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([3], &data));
-        let weight: GpuOr<1, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([3], &[1.0, 1.0, 1.0]));
+        let t: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([3], &data));
+        let weight: Tensor<1, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([3], &[1.0, 1.0, 1.0]));
 
         let result = t.rms_norm::<0>(&weight, 1e-5);
         let slice = result.as_slice().await.unwrap();
@@ -484,9 +484,9 @@ mod tests {
     async fn test_rms_norm_2d_cpu() {
         // 2x3 tensor
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
-        let weight: GpuOr<2, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &[1.0, 1.0, 1.0, 1.0, 1.0, 1.0]));
+        let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
+        let weight: Tensor<2, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &[1.0, 1.0, 1.0, 1.0, 1.0, 1.0]));
 
         let result = t.rms_norm::<1>(&weight, 1e-5);
         let slice = result.as_slice().await.unwrap();
@@ -508,9 +508,9 @@ mod tests {
     async fn test_layer_norm_cpu() {
         // Simple test with remove_mean=false (RMS-like)
         let data = [1.0f32, 2.0, 3.0];
-        let t: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([3], &data));
-        let weight: GpuOr<1, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([3], &[2.0, 2.0, 2.0]));
+        let t: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([3], &data));
+        let weight: Tensor<1, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([3], &[2.0, 2.0, 2.0]));
 
         let result = t.layer_norm::<0>(&weight, None, 1e-5, false);
         let slice = result.as_slice().await.unwrap();
@@ -534,9 +534,9 @@ mod tests {
     async fn test_layer_norm_with_mean_removal() {
         // Test with remove_mean=true (standard layer norm)
         let data = [1.0f32, 2.0, 3.0];
-        let t: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([3], &data));
-        let weight: GpuOr<1, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([3], &[1.0, 1.0, 1.0]));
+        let t: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([3], &data));
+        let weight: Tensor<1, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([3], &[1.0, 1.0, 1.0]));
 
         let result = t.layer_norm::<0>(&weight, None, 1e-5, true);
         let slice = result.as_slice().await.unwrap();

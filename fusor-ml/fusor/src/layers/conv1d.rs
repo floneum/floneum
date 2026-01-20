@@ -1,6 +1,6 @@
 //! Conv1d layer implementation.
 
-use crate::{ConcreteTensor, GpuOr, MatmulImpl, SimdElement};
+use crate::{ConcreteTensor, Tensor, MatmulImpl, SimdElement};
 use fusor_core::{DataType, FloatDataType};
 use fusor_cpu::FloatOps;
 
@@ -31,8 +31,8 @@ impl Default for Conv1dConfig {
 /// Output shape: (batch, out_channels, out_length)
 /// where out_length = (length + 2*padding - kernel_size) / stride + 1
 pub struct Conv1d<D: SimdElement> {
-    weight: GpuOr<3, D, ConcreteTensor<D, 3>>,       // (out_channels, in_channels, kernel_size)
-    bias: Option<GpuOr<1, D, ConcreteTensor<D, 1>>>, // (out_channels,)
+    weight: Tensor<3, D, ConcreteTensor<D, 3>>,       // (out_channels, in_channels, kernel_size)
+    bias: Option<Tensor<1, D, ConcreteTensor<D, 1>>>, // (out_channels,)
     config: Conv1dConfig,
     in_channels: usize,
     out_channels: usize,
@@ -55,8 +55,8 @@ where
     /// Weight shape: (out_channels, in_channels, kernel_size)
     /// Bias shape: (out_channels,)
     pub fn new(
-        weight: GpuOr<3, D, ConcreteTensor<D, 3>>,
-        bias: Option<GpuOr<1, D, ConcreteTensor<D, 1>>>,
+        weight: Tensor<3, D, ConcreteTensor<D, 3>>,
+        bias: Option<Tensor<1, D, ConcreteTensor<D, 1>>>,
         config: Conv1dConfig,
     ) -> Self {
         let shape = weight.shape();
@@ -92,8 +92,8 @@ where
     /// Output shape: (batch, out_channels, out_length)
     pub fn forward(
         &self,
-        input: &GpuOr<3, D, ConcreteTensor<D, 3>>,
-    ) -> GpuOr<3, D, ConcreteTensor<D, 3>>
+        input: &Tensor<3, D, ConcreteTensor<D, 3>>,
+    ) -> Tensor<3, D, ConcreteTensor<D, 3>>
     where
         crate::MulOp: fusor_cpu::SimdBinaryOp<D>,
         crate::AddOp: fusor_cpu::SimdBinaryOp<D>,
@@ -136,21 +136,21 @@ mod tests {
     async fn test_conv1d_simple() {
         // Weight: (1, 1, 3) - 1 out channel, 1 in channel, kernel size 3
         let weight_data = [0.2f32, 0.5, 0.3];
-        let weight: GpuOr<3, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &weight_data));
+        let weight: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &weight_data));
 
         // Bias: (1,)
         let bias_data = [0.1f32];
-        let bias: GpuOr<1, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1], &bias_data));
+        let bias: Tensor<1, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1], &bias_data));
 
         let config = Conv1dConfig::default();
         let conv = Conv1d::new(weight, Some(bias), config);
 
         // Input: (1, 1, 5) - batch=1, in_channels=1, length=5
         let input_data = [1.0f32, 2.0, 3.0, 4.0, 5.0];
-        let input: GpuOr<3, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 5], &input_data));
+        let input: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 5], &input_data));
 
         let output = conv.forward(&input);
         let result = output.as_slice().await.unwrap();
@@ -170,8 +170,8 @@ mod tests {
     async fn test_conv1d_with_padding() {
         // Weight: (1, 1, 3)
         let weight_data = [1.0f32, 1.0, 1.0];
-        let weight: GpuOr<3, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &weight_data));
+        let weight: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &weight_data));
 
         let config = Conv1dConfig {
             padding: 1,
@@ -181,8 +181,8 @@ mod tests {
 
         // Input: (1, 1, 3)
         let input_data = [1.0f32, 2.0, 3.0];
-        let input: GpuOr<3, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &input_data));
+        let input: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &input_data));
 
         let output = conv.forward(&input);
         let result = output.as_slice().await.unwrap();
@@ -202,8 +202,8 @@ mod tests {
     #[tokio::test]
     async fn test_conv1d_properties() {
         let weight_data = [0.0f32; 6];
-        let weight: GpuOr<3, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3, 1], &weight_data));
+        let weight: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3, 1], &weight_data));
 
         let config = Conv1dConfig {
             padding: 2,

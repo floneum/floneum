@@ -1,10 +1,10 @@
 //! Convolution operations that work on both CPU and GPU backends.
 
-use crate::{ConcreteTensor, FloatOps, GpuOr, MatmulImpl, SimdElement};
+use crate::{ConcreteTensor, FloatOps, Tensor, MatmulImpl, SimdElement};
 use fusor_core::{DataType, FloatDataType};
 use fusor_types::SlidingWindow;
 
-impl<const R: usize, D> GpuOr<R, D>
+impl<const R: usize, D> Tensor<R, D>
 where
     D: SimdElement + DataType + FloatDataType + FloatOps + Default,
 {
@@ -27,7 +27,7 @@ where
     }
 }
 
-impl<const R: usize, D> GpuOr<R, D>
+impl<const R: usize, D> Tensor<R, D>
 where
     D: SimdElement
         + DataType
@@ -44,8 +44,8 @@ where
     /// For Conv1d: R=3, DIFF=1 gives (batch, in_channels, length) -> (batch, out_channels, out_length)
     pub fn conv<const WEIGHT_RANK: usize, const DIFF: usize, const R2: usize>(
         &self,
-        weight: &GpuOr<WEIGHT_RANK, D, ConcreteTensor<D, WEIGHT_RANK>>,
-        bias: Option<&GpuOr<1, D, ConcreteTensor<D, 1>>>,
+        weight: &Tensor<WEIGHT_RANK, D, ConcreteTensor<D, WEIGHT_RANK>>,
+        bias: Option<&Tensor<1, D, ConcreteTensor<D, 1>>>,
         padding: [usize; DIFF],
         strides: [usize; DIFF],
     ) -> Self
@@ -109,7 +109,7 @@ where
             let kernel_size = weight_shape[spatial_start + i];
             SlidingWindow::new(axis, kernel_size, strides[i])
         });
-        let windows_tensor: GpuOr<R2, D, _> = padded.sliding_window_view(windows);
+        let windows_tensor: Tensor<R2, D, _> = padded.sliding_window_view(windows);
 
         // Step 3: Prepare for matmul by reshaping and transposing
         let kernel_size: usize = weight_shape[spatial_start..].iter().product();
@@ -118,11 +118,11 @@ where
         let windows_transposed = windows_tensor.transpose(in_channels_axis, spatial_start);
 
         // Flatten to (batch * out_spatial_size, in_channels * kernel_size)
-        let windows_flat: GpuOr<2, D, _> =
+        let windows_flat: Tensor<2, D, _> =
             windows_transposed.reshape([batch * out_spatial_size, in_channels * kernel_size]);
 
         // Step 4: Reshape weight for matmul
-        let weight_reshaped: GpuOr<2, D, _> =
+        let weight_reshaped: Tensor<2, D, _> =
             weight.reshape([out_channels, in_channels * kernel_size]);
         // Transpose for matmul: (in_channels * kernel_size, out_channels)
         let weight_t = weight_reshaped.t();
@@ -131,7 +131,7 @@ where
         let output = windows_flat.mat_mul(&weight_t);
 
         // Step 6: Reshape and transpose back to (batch, out_channels, ...out_spatial...)
-        let output_reshaped: GpuOr<3, D, _> =
+        let output_reshaped: Tensor<3, D, _> =
             output.reshape([batch, out_spatial_size, out_channels]);
         let output_transposed = output_reshaped.transpose(in_channels_axis, spatial_start);
 
@@ -153,10 +153,10 @@ where
             let mut bias_shape = [1; R];
             bias_shape[in_channels_axis] = out_channels;
             // Use broadcast_as to properly broadcast the bias to output shape
-            let bias_broadcast: GpuOr<R, D, _> = bias.broadcast_as(bias_shape);
+            let bias_broadcast: Tensor<R, D, _> = bias.broadcast_as(bias_shape);
             match (&output_final, &bias_broadcast) {
-                (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a + b).eval()),
-                (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a.add_(b)),
+                (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a + b).eval()),
+                (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a.add_(b)),
                 _ => panic!("Cannot mix CPU and GPU tensors"),
             }
         } else {
@@ -173,14 +173,14 @@ mod tests {
     async fn test_conv_1d_cpu() {
         // Input: (batch=1, in_channels=1, length=5)
         let input_data = [1.0f32, 2.0, 3.0, 4.0, 5.0];
-        let input: GpuOr<3, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 5], &input_data));
+        let input: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 5], &input_data));
 
         // Weight: (out_channels=1, in_channels=1, kernel_size=3)
         let weight_data = [0.2f32, 0.5, 0.3];
-        let weight: GpuOr<3, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &weight_data));
+        let weight: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &weight_data));
 
         let bias_val = 0.1f32;
-        let bias: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1], &[bias_val]));
+        let bias: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1], &[bias_val]));
 
         // Perform convolution with stride 1 and no padding
         let output = input.conv(&weight, Some(&bias), [0], [1]);
@@ -219,14 +219,14 @@ mod tests {
     async fn test_conv_1d_strided_cpu() {
         // Input: (batch=1, in_channels=1, length=5)
         let input_data = [1.0f32, 2.0, 3.0, 4.0, 5.0];
-        let input: GpuOr<3, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 5], &input_data));
+        let input: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 5], &input_data));
 
         // Weight: (out_channels=1, in_channels=1, kernel_size=3)
         let weight_data = [0.2f32, 0.5, 0.3];
-        let weight: GpuOr<3, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &weight_data));
+        let weight: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &weight_data));
 
         let bias_val = 0.1f32;
-        let bias: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1], &[bias_val]));
+        let bias: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1], &[bias_val]));
         let stride = 2;
 
         let output = input.conv(&weight, Some(&bias), [0], [stride]);
@@ -265,11 +265,11 @@ mod tests {
     async fn test_conv_1d_with_padding_cpu() {
         // Input: (1, 1, 3)
         let input_data = [1.0f32, 2.0, 3.0];
-        let input: GpuOr<3, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &input_data));
+        let input: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &input_data));
 
         // Weight: (1, 1, 3)
         let weight_data = [1.0f32, 1.0, 1.0];
-        let weight: GpuOr<3, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &weight_data));
+        let weight: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &weight_data));
 
         let output = input.conv(&weight, None, [1], [1]);
 
@@ -294,7 +294,7 @@ mod tests {
         // Input: (1, 2, 4) - 2 input channels
         // Channel 0: [1, 2, 3, 4], Channel 1: [5, 6, 7, 8]
         let input_data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-        let input: GpuOr<3, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 2, 4], &input_data));
+        let input: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 2, 4], &input_data));
 
         // Weight: (3, 2, 2) - 3 output channels, 2 input channels, kernel size 2
         // out_ch 0: [[1, 0], [0, 1]]
@@ -305,7 +305,7 @@ mod tests {
             0.5, 0.5, 0.5, 0.5,     // out_channel 1
             1.0, 1.0, 1.0, 1.0,     // out_channel 2
         ];
-        let weight: GpuOr<3, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([3, 2, 2], &weight_data));
+        let weight: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([3, 2, 2], &weight_data));
 
         let output = input.conv(&weight, None, [0], [1]);
 

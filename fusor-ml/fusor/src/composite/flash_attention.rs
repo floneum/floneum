@@ -1,13 +1,13 @@
 //! Flash attention operations that work on both CPU and GPU backends.
 
 use crate::{
-    AddOp, ConcreteTensor, DivOp, ExpOp, FloatOps, GpuOr, MulOp, SimdBinaryOp, SimdElement,
+    AddOp, ConcreteTensor, DivOp, ExpOp, FloatOps, Tensor, MulOp, SimdBinaryOp, SimdElement,
     SimdUnaryOp, SubOp,
 };
 use fusor_core::{DataType, FloatDataType};
 use fusor_cpu::{MatmulImpl, MaxOp, SimdReduceOp, SumOp};
 
-impl<D> GpuOr<4, D, ConcreteTensor<D, 4>>
+impl<D> Tensor<4, D, ConcreteTensor<D, 4>>
 where
     D: SimdElement
         + DataType
@@ -43,32 +43,32 @@ where
         k: &Self,
         v: &Self,
         scale: f32,
-        mask: Option<&GpuOr<2, D, ConcreteTensor<D, 2>>>,
+        mask: Option<&Tensor<2, D, ConcreteTensor<D, 2>>>,
     ) -> Self {
         match (self, k, v) {
             // GPU path - use the optimized fused kernel
-            (GpuOr::Gpu(q), GpuOr::Gpu(k), GpuOr::Gpu(v)) => {
+            (Tensor::Gpu(q), Tensor::Gpu(k), Tensor::Gpu(v)) => {
                 let gpu_mask = mask.map(|m| match m {
-                    GpuOr::Gpu(mask) => mask,
+                    Tensor::Gpu(mask) => mask,
                     _ => panic!("Mask must be on the same device as other tensors"),
                 });
-                GpuOr::Gpu(q.flash_attention(k, v, scale, gpu_mask))
+                Tensor::Gpu(q.flash_attention(k, v, scale, gpu_mask))
             }
-            // CPU path - use composite operations via GpuOr methods
-            (GpuOr::Cpu(_), GpuOr::Cpu(_), GpuOr::Cpu(_)) => {
+            // CPU path - use composite operations via Tensor methods
+            (Tensor::Cpu(_), Tensor::Cpu(_), Tensor::Cpu(_)) => {
                 self.flash_attention_cpu_impl(k, v, scale, mask)
             }
             _ => panic!("All tensors must be on the same device"),
         }
     }
 
-    /// CPU implementation of flash attention using GpuOr composite operations
+    /// CPU implementation of flash attention using Tensor composite operations
     fn flash_attention_cpu_impl(
         &self,
         k: &Self,
         v: &Self,
         scale: f32,
-        mask: Option<&GpuOr<2, D, ConcreteTensor<D, 2>>>,
+        mask: Option<&Tensor<2, D, ConcreteTensor<D, 2>>>,
     ) -> Self {
         let q_shape = self.shape();
         let k_shape = k.shape();
@@ -90,11 +90,11 @@ where
         let num_key_value_groups = num_heads / num_kv_heads;
 
         // For GQA/MQA, we need to expand K and V to match Q heads
-        let (k_expanded, v_expanded): (GpuOr<4, D, _>, GpuOr<4, D, _>) = if num_key_value_groups > 1 {
+        let (k_expanded, v_expanded): (Tensor<4, D, _>, Tensor<4, D, _>) = if num_key_value_groups > 1 {
             // Expand K and V from [batch, num_kv_heads, kv_seq_len, head_dim]
             // to [batch, num_heads, kv_seq_len, head_dim]
-            let k_reshaped: GpuOr<5, D, _> = k.reshape([batch, num_kv_heads, 1, kv_seq_len, head_dim]);
-            let v_reshaped: GpuOr<5, D, _> = v.reshape([batch, num_kv_heads, 1, kv_seq_len, head_dim]);
+            let k_reshaped: Tensor<5, D, _> = k.reshape([batch, num_kv_heads, 1, kv_seq_len, head_dim]);
+            let v_reshaped: Tensor<5, D, _> = v.reshape([batch, num_kv_heads, 1, kv_seq_len, head_dim]);
 
             let k_broadcast = k_reshaped.broadcast_as([
                 batch,
@@ -129,10 +129,10 @@ where
         // Apply mask if provided
         let scores_masked = if let Some(m) = mask {
             // Mask is [q_seq_len, kv_seq_len], broadcast to [batch, num_heads, q_seq_len, kv_seq_len]
-            let mask_4d: GpuOr<4, D, _> = m.reshape([1, 1, q_seq_len, kv_seq_len]);
+            let mask_4d: Tensor<4, D, _> = m.reshape([1, 1, q_seq_len, kv_seq_len]);
             let mask_broadcast = mask_4d.broadcast_as([batch, num_heads, q_seq_len, kv_seq_len]);
             match (&scores_scaled, &mask_broadcast) {
-                (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a + b).eval()),
+                (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a + b).eval()),
                 _ => panic!("Cannot mix CPU and GPU tensors"),
             }
         } else {
@@ -143,13 +143,13 @@ where
         // max(scores) for numerical stability
         let max_scores = scores_masked.max_keepdim::<3>(3);
         let scores_shifted = match (&scores_masked, &max_scores) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a - b).eval()),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a - b).eval()),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         };
         let exp_scores = scores_shifted.exp();
         let sum_exp = exp_scores.sum_keepdim::<3>(3);
         let attn_weights = match (&exp_scores, &sum_exp) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a / b).eval()),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).eval()),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         };
 
@@ -169,9 +169,9 @@ mod tests {
         let k_data = vec![1.0f32, 0.0, 0.0, 1.0];
         let v_data = vec![1.0f32, 2.0, 3.0, 4.0];
 
-        let q: GpuOr<4, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2, 2], &q_data));
-        let k: GpuOr<4, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2, 2], &k_data));
-        let v: GpuOr<4, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2, 2], &v_data));
+        let q: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2, 2], &q_data));
+        let k: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2, 2], &k_data));
+        let v: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2, 2], &v_data));
 
         let scale = 1.0 / (2.0_f32.sqrt());
 
@@ -203,14 +203,14 @@ mod tests {
         let k_data = vec![1.0f32, 0.0, 0.0, 1.0];
         let v_data = vec![1.0f32, 2.0, 3.0, 4.0];
 
-        let q: GpuOr<4, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2, 2], &q_data));
-        let k: GpuOr<4, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2, 2], &k_data));
-        let v: GpuOr<4, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2, 2], &v_data));
+        let q: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2, 2], &q_data));
+        let k: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2, 2], &k_data));
+        let v: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2, 2], &v_data));
 
         // Causal mask: [[0, -inf], [0, 0]]
         let neg_inf = f32::NEG_INFINITY;
         let mask_data = vec![0.0f32, neg_inf, 0.0, 0.0];
-        let mask: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 2], &mask_data));
+        let mask: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 2], &mask_data));
 
         let scale = 1.0 / (2.0_f32.sqrt());
 
@@ -243,9 +243,9 @@ mod tests {
         let k_data: Vec<f32> = (0..8).map(|i| (i as f32) * 0.1 + 1.0).collect();
         let v_data: Vec<f32> = (0..8).map(|i| (i as f32) * 0.1 + 2.0).collect();
 
-        let q: GpuOr<4, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 4, 2, 2], &q_data));
-        let k: GpuOr<4, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 2, 2, 2], &k_data));
-        let v: GpuOr<4, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 2, 2, 2], &v_data));
+        let q: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 4, 2, 2], &q_data));
+        let k: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 2, 2, 2], &k_data));
+        let v: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 2, 2, 2], &v_data));
 
         let scale = 1.0 / (2.0_f32.sqrt());
 

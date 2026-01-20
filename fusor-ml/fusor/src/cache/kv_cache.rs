@@ -1,6 +1,6 @@
 //! KV cache implementation for attention layers.
 
-use crate::{ConcreteTensor, Device, GpuOr, SimdElement};
+use crate::{ConcreteTensor, Device, Tensor, SimdElement};
 use fusor_core::DataType;
 
 use super::TensorCache;
@@ -29,12 +29,12 @@ where
     }
 
     /// Get the current key data in the cache
-    pub fn k(&self) -> Option<&GpuOr<4, D, ConcreteTensor<D, 4>>> {
+    pub fn k(&self) -> Option<&Tensor<4, D, ConcreteTensor<D, 4>>> {
         self.key.current_data()
     }
 
     /// Get the current value data in the cache
-    pub fn v(&self) -> Option<&GpuOr<4, D, ConcreteTensor<D, 4>>> {
+    pub fn v(&self) -> Option<&Tensor<4, D, ConcreteTensor<D, 4>>> {
         self.value.current_data()
     }
 
@@ -50,11 +50,11 @@ where
     pub fn append(
         &mut self,
         device: &Device,
-        k: &GpuOr<4, D, ConcreteTensor<D, 4>>,
-        v: &GpuOr<4, D, ConcreteTensor<D, 4>>,
+        k: &Tensor<4, D, ConcreteTensor<D, 4>>,
+        v: &Tensor<4, D, ConcreteTensor<D, 4>>,
     ) -> (
-        GpuOr<4, D, ConcreteTensor<D, 4>>,
-        GpuOr<4, D, ConcreteTensor<D, 4>>,
+        Tensor<4, D, ConcreteTensor<D, 4>>,
+        Tensor<4, D, ConcreteTensor<D, 4>>,
     ) {
         let keys = self.key.append(device, k);
         let values = self.value.append(device, v);
@@ -78,10 +78,10 @@ mod tests {
 
         let key_data = [1.0f32, 2.0];
         let value_data = [3.0f32, 4.0];
-        let key: GpuOr<4, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 1, 2], &key_data));
-        let value: GpuOr<4, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 1, 2], &value_data));
+        let key: Tensor<4, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 1, 2], &key_data));
+        let value: Tensor<4, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 1, 2], &value_data));
 
         let (k_result, v_result) = cache.append(&device, &key, &value);
 
@@ -104,19 +104,19 @@ mod tests {
 
         let key_data1 = [1.0f32, 2.0];
         let value_data1 = [3.0f32, 4.0];
-        let key1: GpuOr<4, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 1, 2], &key_data1));
-        let value1: GpuOr<4, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 1, 2], &value_data1));
+        let key1: Tensor<4, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 1, 2], &key_data1));
+        let value1: Tensor<4, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 1, 2], &value_data1));
 
         cache.append(&device, &key1, &value1);
 
         let key_data2 = [5.0f32, 6.0];
         let value_data2 = [7.0f32, 8.0];
-        let key2: GpuOr<4, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 1, 2], &key_data2));
-        let value2: GpuOr<4, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 1, 2], &value_data2));
+        let key2: Tensor<4, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 1, 2], &key_data2));
+        let value2: Tensor<4, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 1, 2], &value_data2));
 
         let (k_result, v_result) = cache.append(&device, &key2, &value2);
 
@@ -143,10 +143,10 @@ mod tests {
 
         let key_data = [1.0f32, 2.0];
         let value_data = [3.0f32, 4.0];
-        let key: GpuOr<4, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 1, 2], &key_data));
-        let value: GpuOr<4, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 1, 2], &value_data));
+        let key: Tensor<4, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 1, 2], &key_data));
+        let value: Tensor<4, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 1, 2], &value_data));
 
         cache.append(&device, &key, &value);
 

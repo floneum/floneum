@@ -3,7 +3,7 @@
 //! This module provides PyTorch-style tensor indexing via the `i()` method.
 //! Example: `tensor.i((.., 0, ..))` to select a specific index along one dimension.
 
-use crate::{ConcreteTensor, GpuOr, SimdElement};
+use crate::{ConcreteTensor, Tensor, SimdElement};
 use fusor_core::DataType;
 use std::ops::{Range, RangeFrom, RangeFull, RangeTo};
 
@@ -67,13 +67,13 @@ impl IndexOp {
 }
 
 // Implement i() for 2D tensors
-impl<D> GpuOr<2, D, ConcreteTensor<D, 2>>
+impl<D> Tensor<2, D, ConcreteTensor<D, 2>>
 where
     D: SimdElement + DataType + Default,
 {
     /// Index into a 2D tensor. Returns a 1D tensor when one index is specified,
     /// or a 2D tensor when ranges are used.
-    pub fn i<I1, I2>(&self, (i1, i2): (I1, I2)) -> GpuOr<1, D, ConcreteTensor<D, 1>>
+    pub fn i<I1, I2>(&self, (i1, i2): (I1, I2)) -> Tensor<1, D, ConcreteTensor<D, 1>>
     where
         I1: Into<IndexOp>,
         I2: Into<IndexOp>,
@@ -86,9 +86,9 @@ where
 
         let slices = [i1.to_range(shape[0]), i2.to_range(shape[1])];
 
-        let sliced: GpuOr<2, D, ConcreteTensor<D, 2>> = match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.slice(slices)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.slice(slices)),
+        let sliced: Tensor<2, D, ConcreteTensor<D, 2>> = match self {
+            Tensor::Cpu(t) => Tensor::Cpu(t.slice(slices)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.slice(slices)),
         };
 
         // Squeeze dimensions that were indexed with a single value
@@ -103,12 +103,12 @@ where
 }
 
 // Implement i() for 3D tensors
-impl<D> GpuOr<3, D, ConcreteTensor<D, 3>>
+impl<D> Tensor<3, D, ConcreteTensor<D, 3>>
 where
     D: SimdElement + DataType + Default,
 {
     /// Index into a 3D tensor.
-    pub fn i<I1, I2, I3>(&self, (i1, i2, i3): (I1, I2, I3)) -> GpuOr<2, D, ConcreteTensor<D, 2>>
+    pub fn i<I1, I2, I3>(&self, (i1, i2, i3): (I1, I2, I3)) -> Tensor<2, D, ConcreteTensor<D, 2>>
     where
         I1: Into<IndexOp>,
         I2: Into<IndexOp>,
@@ -127,9 +127,9 @@ where
             i3.to_range(shape[2]),
         ];
 
-        let sliced: GpuOr<3, D, ConcreteTensor<D, 3>> = match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.slice(slices)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.slice(slices)),
+        let sliced: Tensor<3, D, ConcreteTensor<D, 3>> = match self {
+            Tensor::Cpu(t) => Tensor::Cpu(t.slice(slices)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.slice(slices)),
         };
 
         // Count how many dimensions are being removed
@@ -155,7 +155,7 @@ where
 }
 
 // Implement i() for 4D tensors
-impl<D> GpuOr<4, D, ConcreteTensor<D, 4>>
+impl<D> Tensor<4, D, ConcreteTensor<D, 4>>
 where
     D: SimdElement + DataType + Default,
 {
@@ -163,7 +163,7 @@ where
     pub fn i<I1, I2, I3, I4>(
         &self,
         (i1, i2, i3, i4): (I1, I2, I3, I4),
-    ) -> GpuOr<3, D, ConcreteTensor<D, 3>>
+    ) -> Tensor<3, D, ConcreteTensor<D, 3>>
     where
         I1: Into<IndexOp>,
         I2: Into<IndexOp>,
@@ -185,9 +185,9 @@ where
             i4.to_range(shape[3]),
         ];
 
-        let sliced: GpuOr<4, D, ConcreteTensor<D, 4>> = match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.slice(slices)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.slice(slices)),
+        let sliced: Tensor<4, D, ConcreteTensor<D, 4>> = match self {
+            Tensor::Cpu(t) => Tensor::Cpu(t.slice(slices)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.slice(slices)),
         };
 
         let removes = [
@@ -224,8 +224,8 @@ mod tests {
     #[tokio::test]
     async fn test_index_2d_row() {
         // Create a 2D tensor [[1, 2], [3, 4], [5, 6]]
-        let tensor: GpuOr<2, f32, ConcreteTensor<f32, 2>> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([3, 2], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
+        let tensor: Tensor<2, f32, ConcreteTensor<f32, 2>> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([3, 2], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
 
         // Select row 1: [3, 4]
         let indexed = tensor.i((1, ..));
@@ -238,8 +238,8 @@ mod tests {
     #[tokio::test]
     async fn test_index_2d_col() {
         // Create a 2D tensor [[1, 2], [3, 4], [5, 6]]
-        let tensor: GpuOr<2, f32, ConcreteTensor<f32, 2>> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([3, 2], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
+        let tensor: Tensor<2, f32, ConcreteTensor<f32, 2>> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([3, 2], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
 
         // Select column 0: [1, 3, 5]
         let indexed = tensor.i((.., 0));
@@ -253,7 +253,7 @@ mod tests {
     #[tokio::test]
     async fn test_index_3d() {
         // Create a 3D tensor [[[1, 2], [3, 4]], [[5, 6], [7, 8]]]
-        let tensor: GpuOr<3, f32, ConcreteTensor<f32, 3>> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice(
+        let tensor: Tensor<3, f32, ConcreteTensor<f32, 3>> = Tensor::Cpu(fusor_cpu::Tensor::from_slice(
             [2, 2, 2],
             &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
         ));
@@ -271,7 +271,7 @@ mod tests {
     #[tokio::test]
     async fn test_index_4d() {
         // Create a 4D tensor
-        let tensor: GpuOr<4, f32, ConcreteTensor<f32, 4>> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice(
+        let tensor: Tensor<4, f32, ConcreteTensor<f32, 4>> = Tensor::Cpu(fusor_cpu::Tensor::from_slice(
             [1, 2, 2, 2],
             &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
         ));

@@ -1,6 +1,6 @@
 //! Mask cache implementation for efficient attention mask management.
 
-use crate::{ConcreteTensor, Device, GpuOr, SimdElement};
+use crate::{ConcreteTensor, Device, Tensor, SimdElement};
 use fusor_core::FloatDataType;
 
 use super::AttentionMask;
@@ -74,7 +74,7 @@ where
             // Pad the mask on the left with zeros
             let mask_tensor = mask.mask();
             let [rows, cols] = mask_tensor.shape();
-            let zeros: GpuOr<2, D> = GpuOr::zeros(device, [rows, seqlen_offset + cols]);
+            let zeros: Tensor<2, D> = Tensor::zeros(device, [rows, seqlen_offset + cols]);
             let padded_mask = zeros.slice_assign(
                 [0..rows, seqlen_offset..(seqlen_offset + cols)],
                 mask_tensor,
@@ -102,11 +102,11 @@ where
             }
         }
 
-        let mask: GpuOr<2, D, ConcreteTensor<D, 2>> = match device {
-            Device::Cpu => GpuOr::Cpu(fusor_cpu::Tensor::from_slice([seq_len, seq_len], &mask_data)),
+        let mask: Tensor<2, D, ConcreteTensor<D, 2>> = match device {
+            Device::Cpu => Tensor::Cpu(fusor_cpu::Tensor::from_slice([seq_len, seq_len], &mask_data)),
             Device::Gpu(gpu) => {
                 let data_chunks: Vec<&[D]> = mask_data.chunks(seq_len).collect();
-                GpuOr::Gpu(fusor_core::Tensor::new(gpu, data_chunks))
+                Tensor::Gpu(fusor_core::Tensor::new(gpu, data_chunks))
             }
         };
         AttentionMask::new(mask)

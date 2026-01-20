@@ -1,6 +1,6 @@
 //! RMS normalization implementation.
 
-use crate::{ConcreteTensor, GpuOr, SimdElement};
+use crate::{ConcreteTensor, Tensor, SimdElement};
 use fusor_core::{DataType, FloatDataType};
 use fusor_cpu::FloatOps;
 
@@ -9,7 +9,7 @@ use fusor_cpu::FloatOps;
 /// Normalizes the input over the last dimension without centering.
 /// Formula: output = input / sqrt(mean(x^2) + eps) * weight
 pub struct RmsNorm<D: SimdElement> {
-    weight: GpuOr<1, D, ConcreteTensor<D, 1>>,
+    weight: Tensor<1, D, ConcreteTensor<D, 1>>,
     eps: D,
 }
 
@@ -20,12 +20,12 @@ where
     /// Create a new RmsNorm layer.
     ///
     /// Weight should have shape (normalized_dim,).
-    pub fn new(weight: GpuOr<1, D, ConcreteTensor<D, 1>>, eps: D) -> Self {
+    pub fn new(weight: Tensor<1, D, ConcreteTensor<D, 1>>, eps: D) -> Self {
         Self { weight, eps }
     }
 
     /// Get the weight tensor.
-    pub fn weight(&self) -> &GpuOr<1, D, ConcreteTensor<D, 1>> {
+    pub fn weight(&self) -> &Tensor<1, D, ConcreteTensor<D, 1>> {
         &self.weight
     }
 
@@ -39,8 +39,8 @@ where
     /// Normalizes over the last dimension (features).
     pub fn forward_2d(
         &self,
-        input: &GpuOr<2, D, ConcreteTensor<D, 2>>,
-    ) -> GpuOr<2, D, ConcreteTensor<D, 2>>
+        input: &Tensor<2, D, ConcreteTensor<D, 2>>,
+    ) -> Tensor<2, D, ConcreteTensor<D, 2>>
     where
         D: std::ops::Add<Output = D>
             + std::ops::Sub<Output = D>
@@ -54,7 +54,7 @@ where
         fusor_cpu::SqrtOp: fusor_cpu::SimdUnaryOp<D>,
     {
         // Broadcast weight to input shape
-        let weight_broadcast: GpuOr<2, D, _> = self.weight.broadcast_as(input.shape());
+        let weight_broadcast: Tensor<2, D, _> = self.weight.broadcast_as(input.shape());
         input.rms_norm(&weight_broadcast, self.eps)
     }
 
@@ -63,8 +63,8 @@ where
     /// Normalizes over the last dimension (features).
     pub fn forward(
         &self,
-        input: &GpuOr<3, D, ConcreteTensor<D, 3>>,
-    ) -> GpuOr<3, D, ConcreteTensor<D, 3>>
+        input: &Tensor<3, D, ConcreteTensor<D, 3>>,
+    ) -> Tensor<3, D, ConcreteTensor<D, 3>>
     where
         D: std::ops::Add<Output = D>
             + std::ops::Sub<Output = D>
@@ -78,7 +78,7 @@ where
         fusor_cpu::SqrtOp: fusor_cpu::SimdUnaryOp<D>,
     {
         // Broadcast weight to input shape
-        let weight_broadcast: GpuOr<3, D, _> = self.weight.broadcast_as(input.shape());
+        let weight_broadcast: Tensor<3, D, _> = self.weight.broadcast_as(input.shape());
         input.rms_norm(&weight_broadcast, self.eps)
     }
 }
@@ -91,15 +91,15 @@ mod tests {
     async fn test_rms_norm_2d() {
         // Weight: (3,)
         let weight_data = [1.0f32, 1.0, 1.0];
-        let weight: GpuOr<1, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([3], &weight_data));
+        let weight: Tensor<1, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([3], &weight_data));
 
         let rms_norm = RmsNorm::new(weight, 1e-5);
 
         // Input: (2, 3)
         let input_data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let input: GpuOr<2, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &input_data));
+        let input: Tensor<2, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &input_data));
 
         let output = rms_norm.forward_2d(&input);
         let result = output.as_slice().await.unwrap();
@@ -117,15 +117,15 @@ mod tests {
     #[tokio::test]
     async fn test_rms_norm_3d() {
         let weight_data = [2.0f32, 2.0];
-        let weight: GpuOr<1, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2], &weight_data));
+        let weight: Tensor<1, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([2], &weight_data));
 
         let rms_norm = RmsNorm::new(weight, 1e-5);
 
         // Input: (1, 2, 2)
         let input_data = [3.0f32, 4.0, 6.0, 8.0];
-        let input: GpuOr<3, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 2, 2], &input_data));
+        let input: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 2, 2], &input_data));
 
         let output = rms_norm.forward(&input);
         let result = output.as_slice().await.unwrap();

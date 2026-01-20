@@ -4,7 +4,7 @@
 //! and `fusor-core` (GPU tensors with compute graph batching).
 //!
 //! The key design is:
-//! - `GpuOr<CpuT, GpuT>` is a runtime dispatch enum holding either CPU or GPU version
+//! - `Tensor<CpuT, GpuT>` is a runtime dispatch enum holding either CPU or GPU version
 //! - CPU kernel fusion is preserved (expression types stay lazy)
 //! - GPU laziness is preserved (compute graph batching)
 
@@ -15,7 +15,7 @@ mod error;
 pub mod layers;
 pub mod quantized;
 
-pub use quantized::QGpuOr;
+pub use quantized::QMatrix;
 
 use std::ops::{Deref, Range};
 
@@ -109,32 +109,32 @@ pub use fusor_core::{DataType, FloatDataType};
 /// - CPU: Expression types stay lazy and fuse at resolve time
 /// - GPU: Operations build a compute graph that batches at resolve time
 #[derive(Clone)]
-pub enum GpuOr<const R: usize, D, B: TensorBacking<R, Elem = D> = fusor_cpu::ConcreteTensor<D, R>> {
+pub enum Tensor<const R: usize, D, B: TensorBacking<R, Elem = D> = fusor_cpu::ConcreteTensor<D, R>> {
     Cpu(CpuTensor<R, B>),
     Gpu(GpuTensor<R, D>),
 }
 
-impl<const R: usize, D, B> GpuOr<R, D, B>
+impl<const R: usize, D, B> Tensor<R, D, B>
 where
     B: TensorBacking<R, Elem = D>,
 {
     /// Returns true if this is the CPU variant.
     #[inline]
     pub fn is_cpu(&self) -> bool {
-        matches!(self, GpuOr::Cpu(_))
+        matches!(self, Tensor::Cpu(_))
     }
 
     /// Returns true if this is the GPU variant.
     #[inline]
     pub fn is_gpu(&self) -> bool {
-        matches!(self, GpuOr::Gpu(_))
+        matches!(self, Tensor::Gpu(_))
     }
 
     /// Returns a reference to the CPU tensor if this is the CPU variant.
     #[inline]
     pub fn as_cpu(&self) -> Option<&CpuTensor<R, B>> {
         match self {
-            GpuOr::Cpu(t) => Some(t),
+            Tensor::Cpu(t) => Some(t),
             _ => None,
         }
     }
@@ -143,7 +143,7 @@ where
     #[inline]
     pub fn as_gpu(&self) -> Option<&GpuTensor<R, D>> {
         match self {
-            GpuOr::Gpu(t) => Some(t),
+            Tensor::Gpu(t) => Some(t),
             _ => None,
         }
     }
@@ -152,7 +152,7 @@ where
     #[inline]
     pub fn as_cpu_mut(&mut self) -> Option<&mut CpuTensor<R, B>> {
         match self {
-            GpuOr::Cpu(t) => Some(t),
+            Tensor::Cpu(t) => Some(t),
             _ => None,
         }
     }
@@ -161,7 +161,7 @@ where
     #[inline]
     pub fn as_gpu_mut(&mut self) -> Option<&mut GpuTensor<R, D>> {
         match self {
-            GpuOr::Gpu(t) => Some(t),
+            Tensor::Gpu(t) => Some(t),
             _ => None,
         }
     }
@@ -170,8 +170,8 @@ where
     #[inline]
     pub fn unwrap_cpu(self) -> CpuTensor<R, B> {
         match self {
-            GpuOr::Cpu(t) => t,
-            GpuOr::Gpu(_) => panic!("Expected CPU tensor, found GPU tensor"),
+            Tensor::Cpu(t) => t,
+            Tensor::Gpu(_) => panic!("Expected CPU tensor, found GPU tensor"),
         }
     }
 
@@ -179,8 +179,8 @@ where
     #[inline]
     pub fn unwrap_gpu(self) -> GpuTensor<R, D> {
         match self {
-            GpuOr::Gpu(t) => t,
-            GpuOr::Cpu(_) => panic!("Expected GPU tensor, found CPU tensor"),
+            Tensor::Gpu(t) => t,
+            Tensor::Cpu(_) => panic!("Expected GPU tensor, found CPU tensor"),
         }
     }
 
@@ -189,13 +189,13 @@ where
         self,
         cpu_fn: impl FnOnce(CpuTensor<R, B>) -> CpuTensor<R2, B2>,
         gpu_fn: impl FnOnce(GpuTensor<R, D>) -> GpuTensor<R2, D2>,
-    ) -> GpuOr<R2, D2, B2>
+    ) -> Tensor<R2, D2, B2>
     where
         B2: TensorBacking<R2, Elem = D2>,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(cpu_fn(t)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(gpu_fn(t)),
+            Tensor::Cpu(t) => Tensor::Cpu(cpu_fn(t)),
+            Tensor::Gpu(t) => Tensor::Gpu(gpu_fn(t)),
         }
     }
 
@@ -205,8 +205,8 @@ where
         D: fusor_cpu::SimdElement + DataType,
     {
         match self {
-            GpuOr::Cpu(t) => Ok(t.as_slice().map_bytes(EitherMappedBuffer::Cpu)),
-            GpuOr::Gpu(t) => {
+            Tensor::Cpu(t) => Ok(t.as_slice().map_bytes(EitherMappedBuffer::Cpu)),
+            Tensor::Gpu(t) => {
                 let mapped = t.as_slice().await.map_err(|err| Error::Gpu(err.into()))?;
                 Ok(mapped.map_bytes(EitherMappedBuffer::Gpu))
             }
@@ -217,14 +217,14 @@ where
     ///
     /// For CPU tensors, this evaluates any lazy expressions.
     /// For GPU tensors, this is a no-op as GPU tensors are already concrete.
-    pub fn to_concrete(&self) -> GpuOr<R, D>
+    pub fn to_concrete(&self) -> Tensor<R, D>
     where
         B: ResolveTensor<R>,
         D: SimdElement,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.eval()),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.clone()),
+            Tensor::Cpu(t) => Tensor::Cpu(t.eval()),
+            Tensor::Gpu(t) => Tensor::Gpu(t.clone()),
         }
     }
 
@@ -235,8 +235,8 @@ where
         D: SimdElement + DataType,
     {
         match self {
-            GpuOr::Cpu(t) => Expr::shape(t).try_into().expect("Shape length mismatch"),
-            GpuOr::Gpu(t) => *t.shape(),
+            Tensor::Cpu(t) => Expr::shape(t).try_into().expect("Shape length mismatch"),
+            Tensor::Gpu(t) => *t.shape(),
         }
     }
 }
@@ -257,17 +257,17 @@ impl Deref for EitherMappedBuffer {
     }
 }
 
-/// Macro to implement pairwise operators for GpuOr.
+/// Macro to implement pairwise operators for Tensor.
 ///
 /// Generates all four combinations of owned/reference implementations:
-/// - `GpuOr op GpuOr` (owned + owned)
-/// - `&GpuOr op &GpuOr` (ref + ref)
-/// - `GpuOr op &GpuOr` (owned + ref)
-/// - `&GpuOr op GpuOr` (ref + owned)
-macro_rules! impl_gpuor_pairwise_op {
+/// - `Tensor op Tensor` (owned + owned)
+/// - `&Tensor op &Tensor` (ref + ref)
+/// - `Tensor op &Tensor` (owned + ref)
+/// - `&Tensor op Tensor` (ref + owned)
+macro_rules! impl_tensor_pairwise_op {
     ($trait:ident, $method:ident, $op:tt, $panic_msg:literal) => {
         // Owned + Owned
-        impl<const R: usize, D, B, B2, O> std::ops::$trait<GpuOr<R, D, O>> for GpuOr<R, D, B>
+        impl<const R: usize, D, B, B2, O> std::ops::$trait<Tensor<R, D, O>> for Tensor<R, D, B>
         where
             CpuTensor<R, B>: std::ops::$trait<CpuTensor<R, O>, Output = CpuTensor<R, B2>>,
             GpuTensor<R, D>: std::ops::$trait<Output = GpuTensor<R, D>>,
@@ -275,19 +275,19 @@ macro_rules! impl_gpuor_pairwise_op {
             O: TensorBacking<R, Elem = D>,
             B2: TensorBacking<R, Elem = D>,
         {
-            type Output = GpuOr<R, D, B2>;
+            type Output = Tensor<R, D, B2>;
 
-            fn $method(self, rhs: GpuOr<R, D, O>) -> Self::Output {
+            fn $method(self, rhs: Tensor<R, D, O>) -> Self::Output {
                 match (self, rhs) {
-                    (GpuOr::Cpu(lhs), GpuOr::Cpu(rhs)) => GpuOr::Cpu(lhs $op rhs),
-                    (GpuOr::Gpu(lhs), GpuOr::Gpu(rhs)) => GpuOr::Gpu(lhs $op rhs),
+                    (Tensor::Cpu(lhs), Tensor::Cpu(rhs)) => Tensor::Cpu(lhs $op rhs),
+                    (Tensor::Gpu(lhs), Tensor::Gpu(rhs)) => Tensor::Gpu(lhs $op rhs),
                     _ => panic!($panic_msg),
                 }
             }
         }
 
         // Ref + Ref
-        impl<'a, const R: usize, D, B, B2, O> std::ops::$trait<&'a GpuOr<R, D, O>> for &'a GpuOr<R, D, B>
+        impl<'a, const R: usize, D, B, B2, O> std::ops::$trait<&'a Tensor<R, D, O>> for &'a Tensor<R, D, B>
         where
             &'a CpuTensor<R, B>: std::ops::$trait<&'a CpuTensor<R, O>, Output = CpuTensor<R, B2>>,
             &'a GpuTensor<R, D>: std::ops::$trait<Output = GpuTensor<R, D>>,
@@ -295,19 +295,19 @@ macro_rules! impl_gpuor_pairwise_op {
             O: TensorBacking<R, Elem = D>,
             B2: TensorBacking<R, Elem = D>,
         {
-            type Output = GpuOr<R, D, B2>;
+            type Output = Tensor<R, D, B2>;
 
-            fn $method(self, rhs: &'a GpuOr<R, D, O>) -> Self::Output {
+            fn $method(self, rhs: &'a Tensor<R, D, O>) -> Self::Output {
                 match (self, rhs) {
-                    (GpuOr::Cpu(lhs), GpuOr::Cpu(rhs)) => GpuOr::Cpu(lhs $op rhs),
-                    (GpuOr::Gpu(lhs), GpuOr::Gpu(rhs)) => GpuOr::Gpu(lhs $op rhs),
+                    (Tensor::Cpu(lhs), Tensor::Cpu(rhs)) => Tensor::Cpu(lhs $op rhs),
+                    (Tensor::Gpu(lhs), Tensor::Gpu(rhs)) => Tensor::Gpu(lhs $op rhs),
                     _ => panic!($panic_msg),
                 }
             }
         }
 
         // Ref + Owned
-        impl<'a, const R: usize, D, B, B2, O> std::ops::$trait<GpuOr<R, D, O>> for &'a GpuOr<R, D, B>
+        impl<'a, const R: usize, D, B, B2, O> std::ops::$trait<Tensor<R, D, O>> for &'a Tensor<R, D, B>
         where
             &'a CpuTensor<R, B>: std::ops::$trait<CpuTensor<R, O>, Output = CpuTensor<R, B2>>,
             &'a GpuTensor<R, D>: std::ops::$trait<GpuTensor<R, D>, Output = GpuTensor<R, D>>,
@@ -315,19 +315,19 @@ macro_rules! impl_gpuor_pairwise_op {
             O: TensorBacking<R, Elem = D>,
             B2: TensorBacking<R, Elem = D>,
         {
-            type Output = GpuOr<R, D, B2>;
+            type Output = Tensor<R, D, B2>;
 
-            fn $method(self, rhs: GpuOr<R, D, O>) -> Self::Output {
+            fn $method(self, rhs: Tensor<R, D, O>) -> Self::Output {
                 match (self, rhs) {
-                    (GpuOr::Cpu(lhs), GpuOr::Cpu(rhs)) => GpuOr::Cpu(lhs $op rhs),
-                    (GpuOr::Gpu(lhs), GpuOr::Gpu(rhs)) => GpuOr::Gpu(lhs $op rhs),
+                    (Tensor::Cpu(lhs), Tensor::Cpu(rhs)) => Tensor::Cpu(lhs $op rhs),
+                    (Tensor::Gpu(lhs), Tensor::Gpu(rhs)) => Tensor::Gpu(lhs $op rhs),
                     _ => panic!($panic_msg),
                 }
             }
         }
 
         // Owned + Ref
-        impl<'a, const R: usize, D, B, B2, O> std::ops::$trait<&'a GpuOr<R, D, O>> for GpuOr<R, D, B>
+        impl<'a, const R: usize, D, B, B2, O> std::ops::$trait<&'a Tensor<R, D, O>> for Tensor<R, D, B>
         where
             CpuTensor<R, B>: std::ops::$trait<&'a CpuTensor<R, O>, Output = CpuTensor<R, B2>>,
             GpuTensor<R, D>: std::ops::$trait<&'a GpuTensor<R, D>, Output = GpuTensor<R, D>>,
@@ -335,12 +335,12 @@ macro_rules! impl_gpuor_pairwise_op {
             O: TensorBacking<R, Elem = D>,
             B2: TensorBacking<R, Elem = D>,
         {
-            type Output = GpuOr<R, D, B2>;
+            type Output = Tensor<R, D, B2>;
 
-            fn $method(self, rhs: &'a GpuOr<R, D, O>) -> Self::Output {
+            fn $method(self, rhs: &'a Tensor<R, D, O>) -> Self::Output {
                 match (self, rhs) {
-                    (GpuOr::Cpu(lhs), GpuOr::Cpu(rhs)) => GpuOr::Cpu(lhs $op rhs),
-                    (GpuOr::Gpu(lhs), GpuOr::Gpu(rhs)) => GpuOr::Gpu(lhs $op rhs),
+                    (Tensor::Cpu(lhs), Tensor::Cpu(rhs)) => Tensor::Cpu(lhs $op rhs),
+                    (Tensor::Gpu(lhs), Tensor::Gpu(rhs)) => Tensor::Gpu(lhs $op rhs),
                     _ => panic!($panic_msg),
                 }
             }
@@ -348,65 +348,65 @@ macro_rules! impl_gpuor_pairwise_op {
     };
 }
 
-impl_gpuor_pairwise_op!(Add, add, +, "Cannot add CPU tensor to GPU tensor");
-impl_gpuor_pairwise_op!(Sub, sub, -, "Cannot subtract CPU tensor from GPU tensor");
-impl_gpuor_pairwise_op!(Mul, mul, *, "Cannot multiply CPU tensor with GPU tensor");
-impl_gpuor_pairwise_op!(Div, div, /, "Cannot divide CPU tensor by GPU tensor");
-impl_gpuor_pairwise_op!(Rem, rem, %, "Cannot perform remainder on CPU tensor with GPU tensor");
+impl_tensor_pairwise_op!(Add, add, +, "Cannot add CPU tensor to GPU tensor");
+impl_tensor_pairwise_op!(Sub, sub, -, "Cannot subtract CPU tensor from GPU tensor");
+impl_tensor_pairwise_op!(Mul, mul, *, "Cannot multiply CPU tensor with GPU tensor");
+impl_tensor_pairwise_op!(Div, div, /, "Cannot divide CPU tensor by GPU tensor");
+impl_tensor_pairwise_op!(Rem, rem, %, "Cannot perform remainder on CPU tensor with GPU tensor");
 
-// Neg trait implementation for GpuOr
-impl<const R: usize, D, B, B2> std::ops::Neg for GpuOr<R, D, B>
+// Neg trait implementation for Tensor
+impl<const R: usize, D, B, B2> std::ops::Neg for Tensor<R, D, B>
 where
     CpuTensor<R, B>: std::ops::Neg<Output = CpuTensor<R, B2>>,
     GpuTensor<R, D>: std::ops::Neg<Output = GpuTensor<R, D>>,
     B: TensorBacking<R, Elem = D>,
     B2: TensorBacking<R, Elem = D>,
 {
-    type Output = GpuOr<R, D, B2>;
+    type Output = Tensor<R, D, B2>;
 
     fn neg(self) -> Self::Output {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(-t),
-            GpuOr::Gpu(t) => GpuOr::Gpu(-t),
+            Tensor::Cpu(t) => Tensor::Cpu(-t),
+            Tensor::Gpu(t) => Tensor::Gpu(-t),
         }
     }
 }
 
-impl<'a, const R: usize, D, B, B2> std::ops::Neg for &'a GpuOr<R, D, B>
+impl<'a, const R: usize, D, B, B2> std::ops::Neg for &'a Tensor<R, D, B>
 where
     &'a CpuTensor<R, B>: std::ops::Neg<Output = CpuTensor<R, B2>>,
     &'a GpuTensor<R, D>: std::ops::Neg<Output = GpuTensor<R, D>>,
     B: TensorBacking<R, Elem = D>,
     B2: TensorBacking<R, Elem = D>,
 {
-    type Output = GpuOr<R, D, B2>;
+    type Output = Tensor<R, D, B2>;
 
     fn neg(self) -> Self::Output {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(-t),
-            GpuOr::Gpu(t) => GpuOr::Gpu(-t),
+            Tensor::Cpu(t) => Tensor::Cpu(-t),
+            Tensor::Gpu(t) => Tensor::Gpu(-t),
         }
     }
 }
 
 // Broadcasting binary operations that can work with tensors of different ranks
-impl<const R: usize, D> GpuOr<R, D>
+impl<const R: usize, D> Tensor<R, D>
 where
     D: SimdElement + DataType + Default,
 {
     /// Broadcasting add: broadcasts both tensors to a common shape and adds them.
     pub fn add_<const R2: usize, const R3: usize>(
         &self,
-        second: &GpuOr<R2, D>,
-    ) -> GpuOr<R3, D, ConcreteTensor<D, R3>>
+        second: &Tensor<R2, D>,
+    ) -> Tensor<R3, D, ConcreteTensor<D, R3>>
     where
         (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
         D: std::ops::Add<Output = D>,
         AddOp: SimdBinaryOp<D>,
     {
         self.broadcast_binary_op(second, |a, b| match (a, b) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((&a + &b).eval()),
-            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(&a + &b),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((&a + &b).eval()),
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(&a + &b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         })
     }
@@ -414,16 +414,16 @@ where
     /// Broadcasting subtract: broadcasts both tensors to a common shape and subtracts them.
     pub fn sub_<const R2: usize, const R3: usize>(
         &self,
-        second: &GpuOr<R2, D>,
-    ) -> GpuOr<R3, D, ConcreteTensor<D, R3>>
+        second: &Tensor<R2, D>,
+    ) -> Tensor<R3, D, ConcreteTensor<D, R3>>
     where
         (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
         D: std::ops::Sub<Output = D>,
         SubOp: SimdBinaryOp<D>,
     {
         self.broadcast_binary_op(second, |a, b| match (a, b) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((&a - &b).eval()),
-            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(&a - &b),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((&a - &b).eval()),
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(&a - &b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         })
     }
@@ -431,16 +431,16 @@ where
     /// Broadcasting multiply: broadcasts both tensors to a common shape and multiplies them.
     pub fn mul_<const R2: usize, const R3: usize>(
         &self,
-        second: &GpuOr<R2, D>,
-    ) -> GpuOr<R3, D, ConcreteTensor<D, R3>>
+        second: &Tensor<R2, D>,
+    ) -> Tensor<R3, D, ConcreteTensor<D, R3>>
     where
         (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
         D: std::ops::Mul<Output = D>,
         MulOp: SimdBinaryOp<D>,
     {
         self.broadcast_binary_op(second, |a, b| match (a, b) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((&a * &b).eval()),
-            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(&a * &b),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((&a * &b).eval()),
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(&a * &b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         })
     }
@@ -448,16 +448,16 @@ where
     /// Broadcasting divide: broadcasts both tensors to a common shape and divides them.
     pub fn div_<const R2: usize, const R3: usize>(
         &self,
-        second: &GpuOr<R2, D>,
-    ) -> GpuOr<R3, D, ConcreteTensor<D, R3>>
+        second: &Tensor<R2, D>,
+    ) -> Tensor<R3, D, ConcreteTensor<D, R3>>
     where
         (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
         D: std::ops::Div<Output = D>,
         DivOp: SimdBinaryOp<D>,
     {
         self.broadcast_binary_op(second, |a, b| match (a, b) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((&a / &b).eval()),
-            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(&a / &b),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((&a / &b).eval()),
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(&a / &b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         })
     }
@@ -465,18 +465,18 @@ where
     /// Broadcasting power: broadcasts both tensors to a common shape and computes power.
     pub fn pow_<const R2: usize, const R3: usize>(
         &self,
-        second: &GpuOr<R2, D>,
-    ) -> GpuOr<R3, D, ConcreteTensor<D, R3>>
+        second: &Tensor<R2, D>,
+    ) -> Tensor<R3, D, ConcreteTensor<D, R3>>
     where
         (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
         D: FloatDataType + FloatOps,
     {
         self.broadcast_binary_op(second, |a, b| match (&a, &b) {
-            (GpuOr::Cpu(_), GpuOr::Cpu(_)) => {
+            (Tensor::Cpu(_), Tensor::Cpu(_)) => {
                 // Use the pow method from math module
                 a.to_concrete().pow(&b.to_concrete())
             }
-            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a.pow(b)),
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a.pow(b)),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         })
     }
@@ -484,9 +484,9 @@ where
     /// Helper function for broadcasting binary operations.
     fn broadcast_binary_op<const R2: usize, const R3: usize>(
         &self,
-        second: &GpuOr<R2, D>,
-        op: impl Fn(GpuOr<R3, D>, GpuOr<R3, D>) -> GpuOr<R3, D>,
-    ) -> GpuOr<R3, D, ConcreteTensor<D, R3>>
+        second: &Tensor<R2, D>,
+        op: impl Fn(Tensor<R3, D>, Tensor<R3, D>) -> Tensor<R3, D>,
+    ) -> Tensor<R3, D, ConcreteTensor<D, R3>>
     where
         (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
     {
@@ -496,8 +496,8 @@ where
         let out_shape = broadcast_shapes::<R, R2, R3>(&shape1, &shape2);
 
         // Broadcast both tensors to the output shape
-        let b1: GpuOr<R3, D, ConcreteTensor<D, R3>> = self.broadcast_as(out_shape);
-        let b2: GpuOr<R3, D, ConcreteTensor<D, R3>> = second.broadcast_as(out_shape);
+        let b1: Tensor<R3, D, ConcreteTensor<D, R3>> = self.broadcast_as(out_shape);
+        let b2: Tensor<R3, D, ConcreteTensor<D, R3>> = second.broadcast_as(out_shape);
 
         // Apply the operation
         op(b1, b2).to_concrete()
@@ -531,134 +531,134 @@ fn broadcast_shapes<const R1: usize, const R2: usize, const R3: usize>(
     result
 }
 
-/// Macro to implement unary element-wise operations for GpuOr.
-macro_rules! impl_gpuor_unary_op {
+/// Macro to implement unary element-wise operations for Tensor.
+macro_rules! impl_tensor_unary_op {
     ($method:ident, $op:ident) => {
-        impl<const R: usize, D> GpuOr<R, D>
+        impl<const R: usize, D> Tensor<R, D>
         where
             D: SimdElement + DataType + FloatDataType + Default,
             fusor_cpu::$op: fusor_cpu::SimdUnaryOp<D>,
         {
             #[doc = concat!("Element-wise ", stringify!($method), " operation.")]
-            pub fn $method(&self) -> GpuOr<R, D> {
+            pub fn $method(&self) -> Tensor<R, D> {
                 match self {
-                    GpuOr::Cpu(t) => GpuOr::Cpu(t.$method()),
-                    GpuOr::Gpu(t) => GpuOr::Gpu(t.$method()),
+                    Tensor::Cpu(t) => Tensor::Cpu(t.$method()),
+                    Tensor::Gpu(t) => Tensor::Gpu(t.$method()),
                 }
             }
         }
     };
 }
 
-impl_gpuor_unary_op!(abs, AbsOp);
-impl_gpuor_unary_op!(sqrt, SqrtOp);
-impl_gpuor_unary_op!(exp, ExpOp);
-impl_gpuor_unary_op!(exp2, Exp2Op);
-impl_gpuor_unary_op!(log, LogOp);
-impl_gpuor_unary_op!(log2, Log2Op);
-impl_gpuor_unary_op!(sin, SinOp);
-impl_gpuor_unary_op!(cos, CosOp);
-impl_gpuor_unary_op!(tan, TanOp);
-impl_gpuor_unary_op!(tanh, TanhOp);
-impl_gpuor_unary_op!(asin, AsinOp);
-impl_gpuor_unary_op!(acos, AcosOp);
-impl_gpuor_unary_op!(atan, AtanOp);
-impl_gpuor_unary_op!(sinh, SinhOp);
-impl_gpuor_unary_op!(cosh, CoshOp);
-impl_gpuor_unary_op!(asinh, AsinhOp);
-impl_gpuor_unary_op!(acosh, AcoshOp);
-impl_gpuor_unary_op!(atanh, AtanhOp);
+impl_tensor_unary_op!(abs, AbsOp);
+impl_tensor_unary_op!(sqrt, SqrtOp);
+impl_tensor_unary_op!(exp, ExpOp);
+impl_tensor_unary_op!(exp2, Exp2Op);
+impl_tensor_unary_op!(log, LogOp);
+impl_tensor_unary_op!(log2, Log2Op);
+impl_tensor_unary_op!(sin, SinOp);
+impl_tensor_unary_op!(cos, CosOp);
+impl_tensor_unary_op!(tan, TanOp);
+impl_tensor_unary_op!(tanh, TanhOp);
+impl_tensor_unary_op!(asin, AsinOp);
+impl_tensor_unary_op!(acos, AcosOp);
+impl_tensor_unary_op!(atan, AtanOp);
+impl_tensor_unary_op!(sinh, SinhOp);
+impl_tensor_unary_op!(cosh, CoshOp);
+impl_tensor_unary_op!(asinh, AsinhOp);
+impl_tensor_unary_op!(acosh, AcoshOp);
+impl_tensor_unary_op!(atanh, AtanhOp);
 
 // Approximate exp operations (GPU-optimized, CPU falls back to standard exp)
-impl<const R: usize, D> GpuOr<R, D>
+impl<const R: usize, D> Tensor<R, D>
 where
     D: SimdElement + DataType + FloatDataType + Default,
     fusor_cpu::ExpOp: fusor_cpu::SimdUnaryOp<D>,
 {
     /// Approximate exp function (faster but less accurate on GPU, exact on CPU).
     /// Uses a polynomial approximation on GPU for better performance.
-    pub fn approximate_exp(&self) -> GpuOr<R, D> {
+    pub fn approximate_exp(&self) -> Tensor<R, D> {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.exp()),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.appoximate_exp()),
+            Tensor::Cpu(t) => Tensor::Cpu(t.exp()),
+            Tensor::Gpu(t) => Tensor::Gpu(t.appoximate_exp()),
         }
     }
 
     /// Less approximate exp function (medium accuracy/speed tradeoff on GPU, exact on CPU).
-    pub fn less_approximate_exp(&self) -> GpuOr<R, D> {
+    pub fn less_approximate_exp(&self) -> Tensor<R, D> {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.exp()),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.less_appoximate_exp()),
+            Tensor::Cpu(t) => Tensor::Cpu(t.exp()),
+            Tensor::Gpu(t) => Tensor::Gpu(t.less_appoximate_exp()),
         }
     }
 }
 
 // Exact tanh operation
-impl<const R: usize, D> GpuOr<R, D>
+impl<const R: usize, D> Tensor<R, D>
 where
     D: SimdElement + DataType + FloatDataType + Default,
     fusor_cpu::TanhOp: fusor_cpu::SimdUnaryOp<D>,
 {
     /// Exact tanh using (e^x - e^-x) / (e^x + e^-x).
     /// More accurate but potentially slower than built-in tanh on some platforms.
-    pub fn tanh_exact(&self) -> GpuOr<R, D> {
+    pub fn tanh_exact(&self) -> Tensor<R, D> {
         match self {
             // CPU tanh is already exact
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.tanh()),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.tanh_exact()),
+            Tensor::Cpu(t) => Tensor::Cpu(t.tanh()),
+            Tensor::Gpu(t) => Tensor::Gpu(t.tanh_exact()),
         }
     }
 }
 
 // Conditional operation (where_cond)
-impl<const R: usize, D> GpuOr<R, D>
+impl<const R: usize, D> Tensor<R, D>
 where
     D: SimdElement + DataType + Default + IsNonZero,
 {
     /// Conditional selection: where self != 0, select on_true, else on_false.
     pub fn where_cond(&self, on_true: &Self, on_false: &Self) -> Self {
         match (self, on_true, on_false) {
-            (GpuOr::Cpu(c), GpuOr::Cpu(t), GpuOr::Cpu(f)) => GpuOr::Cpu(c.where_cond(t, f)),
-            (GpuOr::Gpu(c), GpuOr::Gpu(t), GpuOr::Gpu(f)) => GpuOr::Gpu(c.clone().where_cond(t, f)),
+            (Tensor::Cpu(c), Tensor::Cpu(t), Tensor::Cpu(f)) => Tensor::Cpu(c.where_cond(t, f)),
+            (Tensor::Gpu(c), Tensor::Gpu(t), Tensor::Gpu(f)) => Tensor::Gpu(c.clone().where_cond(t, f)),
             _ => panic!("Cannot mix CPU and GPU tensors in where_cond"),
         }
     }
 }
 
 // Float operations (pow_scalar, max_scalar, min_scalar, clamp)
-impl<const R: usize, D> GpuOr<R, D>
+impl<const R: usize, D> Tensor<R, D>
 where
     D: SimdElement + DataType + FloatDataType + FloatOps + Default,
 {
     /// Raise each element to a power.
     pub fn pow_scalar(&self, exponent: D) -> Self {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.pow_scalar(exponent)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.pow_elementwise(exponent)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.pow_scalar(exponent)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.pow_elementwise(exponent)),
         }
     }
 
     /// Element-wise maximum with a scalar.
     pub fn max_scalar(&self, scalar: D) -> Self {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.max_scalar(scalar)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.max_elementwise(scalar)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.max_scalar(scalar)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.max_elementwise(scalar)),
         }
     }
 
     /// Element-wise minimum with a scalar.
     pub fn min_scalar(&self, scalar: D) -> Self {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.min_scalar(scalar)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.min_elementwise(scalar)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.min_scalar(scalar)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.min_elementwise(scalar)),
         }
     }
 
     /// Clamp each element to a range [min, max].
     pub fn clamp(&self, min: D, max: D) -> Self {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.clamp(min, max)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.max_elementwise(min).min_elementwise(max)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.clamp(min, max)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.max_elementwise(min).min_elementwise(max)),
         }
     }
 
@@ -684,8 +684,8 @@ where
         AddOp: SimdBinaryOp<D>,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.add_scalar(scalar).eval()),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.clone() + scalar),
+            Tensor::Cpu(t) => Tensor::Cpu(t.add_scalar(scalar).eval()),
+            Tensor::Gpu(t) => Tensor::Gpu(t.clone() + scalar),
         }
     }
 
@@ -696,8 +696,8 @@ where
         SubOp: SimdBinaryOp<D>,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.sub_scalar(scalar).eval()),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.clone() - scalar),
+            Tensor::Cpu(t) => Tensor::Cpu(t.sub_scalar(scalar).eval()),
+            Tensor::Gpu(t) => Tensor::Gpu(t.clone() - scalar),
         }
     }
 
@@ -708,8 +708,8 @@ where
         MulOp: SimdBinaryOp<D>,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.mul_scalar(scalar).eval()),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.clone() * scalar),
+            Tensor::Cpu(t) => Tensor::Cpu(t.mul_scalar(scalar).eval()),
+            Tensor::Gpu(t) => Tensor::Gpu(t.clone() * scalar),
         }
     }
 
@@ -720,32 +720,32 @@ where
         DivOp: SimdBinaryOp<D>,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.div_scalar(scalar).eval()),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.clone() / scalar),
+            Tensor::Cpu(t) => Tensor::Cpu(t.div_scalar(scalar).eval()),
+            Tensor::Gpu(t) => Tensor::Gpu(t.clone() / scalar),
         }
     }
 }
 
 // Cast operation
-impl<const R: usize, D> GpuOr<R, D>
+impl<const R: usize, D> Tensor<R, D>
 where
     D: SimdElement + DataType + Default,
 {
     /// Cast tensor to another element type.
-    pub fn cast<D2>(&self) -> GpuOr<R, D2, ConcreteTensor<D2, R>>
+    pub fn cast<D2>(&self) -> Tensor<R, D2, ConcreteTensor<D2, R>>
     where
         D: CastTo<D2> + fusor_core::CastTensor<D2>,
         D2: SimdElement + DataType + Default,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.cast()),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.cast()),
+            Tensor::Cpu(t) => Tensor::Cpu(t.cast()),
+            Tensor::Gpu(t) => Tensor::Gpu(t.cast()),
         }
     }
 }
 
 // Index select operation
-impl<const R: usize, D> GpuOr<R, D>
+impl<const R: usize, D> Tensor<R, D>
 where
     D: SimdElement + DataType + Default,
 {
@@ -753,33 +753,33 @@ where
     pub fn index_select(
         &self,
         dimension: usize,
-        indices: &GpuOr<1, u32, ConcreteTensor<u32, 1>>,
+        indices: &Tensor<1, u32, ConcreteTensor<u32, 1>>,
     ) -> Self {
         match (self, indices) {
-            (GpuOr::Cpu(t), GpuOr::Cpu(idx)) => GpuOr::Cpu(t.index_select(dimension, idx)),
-            (GpuOr::Gpu(t), GpuOr::Gpu(idx)) => GpuOr::Gpu(t.index_select(dimension, idx)),
+            (Tensor::Cpu(t), Tensor::Cpu(idx)) => Tensor::Cpu(t.index_select(dimension, idx)),
+            (Tensor::Gpu(t), Tensor::Gpu(idx)) => Tensor::Gpu(t.index_select(dimension, idx)),
             _ => panic!("Cannot mix CPU and GPU tensors in index_select"),
         }
     }
 }
 
 // Slice assign operation
-impl<const R: usize, D> GpuOr<R, D>
+impl<const R: usize, D> Tensor<R, D>
 where
     D: SimdElement + DataType + Default,
 {
     /// Returns a new tensor with the slice region replaced by values from the value tensor.
     pub fn slice_assign(&self, slices: [Range<usize>; R], value: &Self) -> Self {
         match (self, value) {
-            (GpuOr::Cpu(t), GpuOr::Cpu(v)) => GpuOr::Cpu(t.slice_assign(slices, v)),
-            (GpuOr::Gpu(t), GpuOr::Gpu(v)) => GpuOr::Gpu(t.slice_assign(slices, v)),
+            (Tensor::Cpu(t), Tensor::Cpu(v)) => Tensor::Cpu(t.slice_assign(slices, v)),
+            (Tensor::Gpu(t), Tensor::Gpu(v)) => Tensor::Gpu(t.slice_assign(slices, v)),
             _ => panic!("Cannot mix CPU and GPU tensors in slice_assign"),
         }
     }
 }
 
 // Matrix multiplication for N-dimensional tensors (N >= 2)
-impl<const R: usize, D> GpuOr<R, D>
+impl<const R: usize, D> Tensor<R, D>
 where
     D: SimdElement + DataType + FloatDataType + Default + MatmulImpl,
 {
@@ -789,8 +789,8 @@ where
     /// Panics if R < 2
     pub fn matmul(&self, rhs: &Self) -> Self {
         match (self, rhs) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu(a.matmul(b)),
-            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a.mat_mul(b)),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu(a.matmul(b)),
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a.mat_mul(b)),
             _ => panic!("Cannot multiply CPU tensor with GPU tensor"),
         }
     }
@@ -801,8 +801,8 @@ where
     }
 }
 
-// Quantized matrix multiplication for GpuOr<R, f32>
-impl<const R: usize, B> GpuOr<R, f32, B>
+// Quantized matrix multiplication for Tensor<R, f32>
+impl<const R: usize, B> Tensor<R, f32, B>
 where
     B: TensorBacking<R, Elem = f32> + ResolveTensor<R>,
 {
@@ -818,30 +818,30 @@ where
     /// # Panics
     /// * If attempting to mix CPU and GPU tensors (self on CPU, weights on GPU or vice versa)
     /// * If R < 2 (matrix multiplication requires at least 2 dimensions)
-    pub fn q_mat_mul(&self, weights: &crate::QGpuOr<2>) -> GpuOr<R, f32> {
-        use crate::QGpuOr;
+    pub fn q_mat_mul(&self, weights: &crate::QMatrix<2>) -> Tensor<R, f32> {
+        use crate::QMatrix;
 
         match (self, weights) {
             // CPU path - dispatch based on block type
             // eval() returns Tensor<R, ConcreteTensor>, so we need .inner() to get ConcreteTensor
-            (GpuOr::Cpu(lhs), QGpuOr::CpuQ4_0(rhs)) => {
-                GpuOr::Cpu(fusor_cpu::Tensor::new(lhs.eval().inner().q_mat_mul(rhs)))
+            (Tensor::Cpu(lhs), QMatrix::CpuQ4_0(rhs)) => {
+                Tensor::Cpu(fusor_cpu::Tensor::new(lhs.eval().inner().q_mat_mul(rhs)))
             }
-            (GpuOr::Cpu(lhs), QGpuOr::CpuQ5_0(rhs)) => {
-                GpuOr::Cpu(fusor_cpu::Tensor::new(lhs.eval().inner().q_mat_mul(rhs)))
+            (Tensor::Cpu(lhs), QMatrix::CpuQ5_0(rhs)) => {
+                Tensor::Cpu(fusor_cpu::Tensor::new(lhs.eval().inner().q_mat_mul(rhs)))
             }
-            (GpuOr::Cpu(lhs), QGpuOr::CpuQ8_0(rhs)) => {
-                GpuOr::Cpu(fusor_cpu::Tensor::new(lhs.eval().inner().q_mat_mul(rhs)))
+            (Tensor::Cpu(lhs), QMatrix::CpuQ8_0(rhs)) => {
+                Tensor::Cpu(fusor_cpu::Tensor::new(lhs.eval().inner().q_mat_mul(rhs)))
             }
-            (GpuOr::Cpu(lhs), QGpuOr::CpuQ4K(rhs)) => {
-                GpuOr::Cpu(fusor_cpu::Tensor::new(lhs.eval().inner().q_mat_mul(rhs)))
+            (Tensor::Cpu(lhs), QMatrix::CpuQ4K(rhs)) => {
+                Tensor::Cpu(fusor_cpu::Tensor::new(lhs.eval().inner().q_mat_mul(rhs)))
             }
-            (GpuOr::Cpu(lhs), QGpuOr::CpuQ6K(rhs)) => {
-                GpuOr::Cpu(fusor_cpu::Tensor::new(lhs.eval().inner().q_mat_mul(rhs)))
+            (Tensor::Cpu(lhs), QMatrix::CpuQ6K(rhs)) => {
+                Tensor::Cpu(fusor_cpu::Tensor::new(lhs.eval().inner().q_mat_mul(rhs)))
             }
 
             // GPU path
-            (GpuOr::Gpu(lhs), QGpuOr::Gpu(rhs)) => GpuOr::Gpu(lhs.q_mat_mul(rhs)),
+            (Tensor::Gpu(lhs), QMatrix::Gpu(rhs)) => Tensor::Gpu(lhs.q_mat_mul(rhs)),
 
             // Mixed - panic
             _ => panic!("Cannot mix CPU and GPU tensors in q_mat_mul"),
@@ -850,7 +850,7 @@ where
 }
 
 // Flatten operations
-impl<const R: usize, D> GpuOr<R, D>
+impl<const R: usize, D> Tensor<R, D>
 where
     D: SimdElement + DataType + Default,
 {
@@ -864,12 +864,12 @@ where
     /// Output rank R2 = R - FROM_END.
     pub fn flatten_last_n<const FROM_END: usize, const R2: usize>(
         &self,
-    ) -> GpuOr<R2, D, ConcreteTensor<D, R2>>
+    ) -> Tensor<R2, D, ConcreteTensor<D, R2>>
     where
         fusor_core::Tensor<R, D>: fusor_core::SmallerRank<FROM_END, R2, D>,
     {
         match self {
-            GpuOr::Cpu(t) => {
+            Tensor::Cpu(t) => {
                 // CPU flatten_last_n takes N where output = input - N + 1
                 // So we need CPU_N = FROM_END + 1 to match GPU semantics
                 // Calculate new shape manually since we can't do const arithmetic
@@ -883,9 +883,9 @@ where
                         1
                     }
                 });
-                GpuOr::Cpu(t.reshape(new_shape))
+                Tensor::Cpu(t.reshape(new_shape))
             }
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.flatten_last_n::<FROM_END, R2>()),
+            Tensor::Gpu(t) => Tensor::Gpu(t.flatten_last_n::<FROM_END, R2>()),
         }
     }
 
@@ -899,12 +899,12 @@ where
     /// Output rank R2 = R - FROM_START.
     pub fn flatten_first_n<const FROM_START: usize, const R2: usize>(
         &self,
-    ) -> GpuOr<R2, D, ConcreteTensor<D, R2>>
+    ) -> Tensor<R2, D, ConcreteTensor<D, R2>>
     where
         fusor_core::Tensor<R, D>: fusor_core::SmallerRank<FROM_START, R2, D>,
     {
         match self {
-            GpuOr::Cpu(t) => {
+            Tensor::Cpu(t) => {
                 // Calculate new shape: first element is product of first FROM_START+1 dims
                 // remaining elements are the rest of the dimensions
                 let shape = t.shape();
@@ -915,23 +915,23 @@ where
                         shape[i + FROM_START]
                     }
                 });
-                GpuOr::Cpu(t.reshape(new_shape))
+                Tensor::Cpu(t.reshape(new_shape))
             }
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.flatten_first_n::<FROM_START, R2>()),
+            Tensor::Gpu(t) => Tensor::Gpu(t.flatten_first_n::<FROM_START, R2>()),
         }
     }
 }
 
 // Device accessor
-impl<const R: usize, D, B: TensorBacking<R, Elem = D>> GpuOr<R, D, B>
+impl<const R: usize, D, B: TensorBacking<R, Elem = D>> Tensor<R, D, B>
 where
     D: SimdElement + DataType,
 {
     /// Get the device this tensor is on.
     pub fn device(&self) -> Device {
         match self {
-            GpuOr::Cpu(_) => Device::Cpu,
-            GpuOr::Gpu(t) => Device::Gpu(t.device().clone()),
+            Tensor::Cpu(_) => Device::Cpu,
+            Tensor::Gpu(t) => Device::Gpu(t.device().clone()),
         }
     }
 }
@@ -947,10 +947,10 @@ async fn test_gpu_or_add() {
     let a_gpu: GpuTensor<1, f32> = GpuTensor::new(&device, &[1.0, 2.0, 3.0]);
     let b_gpu: GpuTensor<1, f32> = GpuTensor::new(&device, &[4.0, 5.0, 6.0]);
 
-    let a_cpu_or: GpuOr<1, f32> = GpuOr::Cpu(a_cpu);
-    let b_cpu_or: GpuOr<1, f32> = GpuOr::Cpu(b_cpu);
-    let a_gpu_or: GpuOr<1, f32> = GpuOr::Gpu(a_gpu);
-    let b_gpu_or: GpuOr<1, f32> = GpuOr::Gpu(b_gpu);
+    let a_cpu_or: Tensor<1, f32> = Tensor::Cpu(a_cpu);
+    let b_cpu_or: Tensor<1, f32> = Tensor::Cpu(b_cpu);
+    let a_gpu_or: Tensor<1, f32> = Tensor::Gpu(a_gpu);
+    let b_gpu_or: Tensor<1, f32> = Tensor::Gpu(b_gpu);
 
     let c_cpu_or = (&a_cpu_or + &b_cpu_or) * &b_cpu_or;
     println!("c_cpu_or: {:?}", c_cpu_or.as_slice().await.unwrap());

@@ -1,9 +1,9 @@
 //! Math operations that work on both CPU and GPU backends.
 
-use crate::{ConcreteTensor, FloatOps, GpuOr, MulOp, ResolvedTensor, SimdBinaryOp, SimdElement};
+use crate::{ConcreteTensor, FloatOps, Tensor, MulOp, ResolvedTensor, SimdBinaryOp, SimdElement};
 use fusor_core::{DataType, FloatDataType};
 
-impl<const R: usize, D> GpuOr<R, D>
+impl<const R: usize, D> Tensor<R, D>
 where
     D: SimdElement + DataType + FloatDataType + FloatOps + Default,
 {
@@ -14,20 +14,20 @@ where
         MulOp: SimdBinaryOp<D>,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu((t * t).eval()),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t * t),
+            Tensor::Cpu(t) => Tensor::Cpu((t * t).eval()),
+            Tensor::Gpu(t) => Tensor::Gpu(t * t),
         }
     }
 }
 
-impl<const R: usize, D> GpuOr<R, D, ConcreteTensor<D, R>>
+impl<const R: usize, D> Tensor<R, D, ConcreteTensor<D, R>>
 where
     D: SimdElement + DataType + FloatDataType + FloatOps + Default,
 {
     /// Element-wise power: pow(self, other) computes self^other for each element.
     pub fn pow(&self, other: &Self) -> Self {
         match (self, other) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => {
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => {
                 // Use element-wise powf via iterating
                 let shape = self.shape();
                 let a_data = ResolvedTensor::data(a.inner());
@@ -37,9 +37,9 @@ where
                     .zip(b_data.iter())
                     .map(|(x, y)| x.powf(*y))
                     .collect();
-                GpuOr::Cpu(fusor_cpu::Tensor::new(fusor_cpu::ConcreteTensor::from_slice(shape, &result)))
+                Tensor::Cpu(fusor_cpu::Tensor::new(fusor_cpu::ConcreteTensor::from_slice(shape, &result)))
             }
-            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a.pow(b)),
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a.pow(b)),
             _ => panic!("Cannot mix CPU and GPU tensors in pow"),
         }
     }
@@ -47,7 +47,7 @@ where
     /// Resize tensor to new shape with padding/truncation.
     pub fn resize(&self, new_shape: [usize; R]) -> Self {
         match self {
-            GpuOr::Cpu(t) => {
+            Tensor::Cpu(t) => {
                 // CPU resize: create new tensor and copy elements
                 let old_shape = self.shape();
                 let src_data = ResolvedTensor::data(t.inner());
@@ -98,9 +98,9 @@ where
                     0,
                 );
 
-                GpuOr::Cpu(fusor_cpu::Tensor::new(fusor_cpu::ConcreteTensor::from_slice(new_shape, &result)))
+                Tensor::Cpu(fusor_cpu::Tensor::new(fusor_cpu::ConcreteTensor::from_slice(new_shape, &result)))
             }
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.resize(new_shape)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.resize(new_shape)),
         }
     }
 }
@@ -112,7 +112,7 @@ mod tests {
     #[tokio::test]
     async fn test_sqr_cpu() {
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([6], &data));
+        let t: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([6], &data));
         let result = t.sqr();
         let slice = result.as_slice().await.unwrap();
 

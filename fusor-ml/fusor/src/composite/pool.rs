@@ -1,6 +1,6 @@
 //! Pooling operations that work on both CPU and GPU backends.
 
-use crate::{ConcreteTensor, FloatOps, GpuOr, SimdElement};
+use crate::{ConcreteTensor, FloatOps, Tensor, SimdElement};
 use fusor_core::{DataType, FloatDataType};
 use fusor_types::SlidingWindow;
 
@@ -35,7 +35,7 @@ impl PoolSize {
     }
 }
 
-impl<const R: usize, D> GpuOr<R, D>
+impl<const R: usize, D> Tensor<R, D>
 where
     D: SimdElement + DataType + FloatDataType + FloatOps + Default,
 {
@@ -53,7 +53,7 @@ where
     pub fn pool<const DIFF: usize, const R2: usize, const R3: usize, const O: usize>(
         &self,
         pools: [impl Into<PoolSize>; DIFF],
-        with: fn(&GpuOr<O, D, ConcreteTensor<D, O>>, usize) -> Self,
+        with: fn(&Tensor<O, D, ConcreteTensor<D, O>>, usize) -> Self,
     ) -> Self
     where
         ConcreteTensor<D, R>: fusor_cpu::LargerRank<R2, DIFF, D>,
@@ -73,10 +73,10 @@ where
             SlidingWindow::new(axis_start + i, window, stride)
         });
 
-        let tiled: GpuOr<R2, D, _> = self.sliding_window_view(windows);
+        let tiled: Tensor<R2, D, _> = self.sliding_window_view(windows);
 
-        let unsqueezed: GpuOr<R3, D, _> = tiled.unsqueeze(R2);
-        let flattened: GpuOr<O, D, _> = unsqueezed.flatten_last_n::<DIFF, O>();
+        let unsqueezed: Tensor<R3, D, _> = tiled.unsqueeze(R2);
+        let flattened: Tensor<O, D, _> = unsqueezed.flatten_last_n::<DIFF, O>();
 
         with(&flattened, O - 1)
     }
@@ -98,7 +98,7 @@ where
         fusor_core::Tensor<O, D>: fusor_core::LastRank<R, D>,
         fusor_cpu::MaxOp: fusor_cpu::SimdReduceOp<D>,
     {
-        self.pool(pools, GpuOr::max)
+        self.pool(pools, Tensor::max)
     }
 
     /// Min pooling operation.
@@ -118,7 +118,7 @@ where
         fusor_core::Tensor<O, D>: fusor_core::LastRank<R, D>,
         fusor_cpu::MinOp: fusor_cpu::SimdReduceOp<D>,
     {
-        self.pool(pools, GpuOr::min)
+        self.pool(pools, Tensor::min)
     }
 }
 
@@ -131,7 +131,7 @@ mod tests {
         // Test 1D pooling with batch and channel dimensions (3D input like fusor-core)
         // Input: (1, 1, 12) - batch=1, channels=1, length=12
         let input_data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 3.0, 12.0, 3.0, 5.0, 39.0, 29.0, 1.0];
-        let input: GpuOr<3, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 12], &input_data));
+        let input: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 12], &input_data));
 
         for (pool_size, stride) in [(2, 2), (3, 1), (4, 2)] {
             let output = input.pool_max([(pool_size, stride)]);
@@ -174,8 +174,8 @@ mod tests {
             }
         }
 
-        let input: GpuOr<3, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 4, 16], &input_data));
+        let input: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 4, 16], &input_data));
 
         let output = input.pool_max([(pool_size, stride)]);
         let output_data = output.as_slice().await.unwrap();
@@ -218,7 +218,7 @@ mod tests {
     async fn test_pool_min_cpu() {
         // Input: (1, 1, 6) - batch=1, channels=1, length=6
         let input_data = [5.0f32, 2.0, 8.0, 1.0, 9.0, 3.0];
-        let input: GpuOr<3, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 6], &input_data));
+        let input: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 6], &input_data));
 
         let output = input.pool_min([(2, 2)]);
         let output_data = output.as_slice().await.unwrap();

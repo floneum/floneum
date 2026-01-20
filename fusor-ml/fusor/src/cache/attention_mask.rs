@@ -1,6 +1,6 @@
 //! Attention mask implementation.
 
-use crate::{ConcreteTensor, Device, GpuOr, SimdElement};
+use crate::{ConcreteTensor, Device, Tensor, SimdElement};
 use fusor_core::FloatDataType;
 
 /// Attention mask for causal (decoder) attention
@@ -8,7 +8,7 @@ use fusor_core::FloatDataType;
 /// Prevents attending to future positions
 #[derive(Clone)]
 pub struct AttentionMask<D: SimdElement> {
-    mask: GpuOr<2, D, ConcreteTensor<D, 2>>,
+    mask: Tensor<2, D, ConcreteTensor<D, 2>>,
 }
 
 impl<D: SimdElement + FloatDataType + Default> AttentionMask<D>
@@ -16,7 +16,7 @@ where
     crate::AddOp: fusor_cpu::SimdBinaryOp<D>,
 {
     /// Create a new attention mask
-    pub fn new(mask: GpuOr<2, D, ConcreteTensor<D, 2>>) -> Self {
+    pub fn new(mask: Tensor<2, D, ConcreteTensor<D, 2>>) -> Self {
         Self { mask }
     }
 
@@ -32,11 +32,11 @@ where
             }
         }
 
-        let mask: GpuOr<2, D> = match device {
-            Device::Cpu => GpuOr::Cpu(fusor_cpu::Tensor::from_slice([seq_len, seq_len], &mask_data)),
+        let mask: Tensor<2, D> = match device {
+            Device::Cpu => Tensor::Cpu(fusor_cpu::Tensor::from_slice([seq_len, seq_len], &mask_data)),
             Device::Gpu(gpu) => {
                 let data_chunks: Vec<&[D]> = mask_data.chunks(seq_len).collect();
-                GpuOr::Gpu(fusor_core::Tensor::new(gpu, data_chunks))
+                Tensor::Gpu(fusor_core::Tensor::new(gpu, data_chunks))
             }
         };
         Self::new(mask)
@@ -50,24 +50,24 @@ where
     /// The mask will be broadcast to match the attention scores shape
     pub fn apply<const R: usize>(
         &self,
-        attention_scores: &GpuOr<R, D>,
-    ) -> GpuOr<R, D>
+        attention_scores: &Tensor<R, D>,
+    ) -> Tensor<R, D>
     where
         D: std::ops::Add<Output = D>,
         (fusor_core::Tensor<2, D>, fusor_core::Tensor<R, D>): fusor_core::MaxRank<R, D>,
     {
         // Broadcast the mask to match the attention scores shape
-        let mask_broadcast: GpuOr<R, D, _> = self.mask.broadcast_as(attention_scores.shape());
+        let mask_broadcast: Tensor<R, D, _> = self.mask.broadcast_as(attention_scores.shape());
         match (&mask_broadcast, attention_scores) {
-            (GpuOr::Cpu(m), GpuOr::Cpu(a)) => GpuOr::Cpu((m + a).eval()),
-            (GpuOr::Gpu(m), GpuOr::Gpu(a)) => GpuOr::Gpu(m.add_(a)),
+            (Tensor::Cpu(m), Tensor::Cpu(a)) => Tensor::Cpu((m + a).eval()),
+            (Tensor::Gpu(m), Tensor::Gpu(a)) => Tensor::Gpu(m.add_(a)),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         }
     }
 
     pub fn forward<const R: usize>(
         &self,
-        attention_scores: &mut GpuOr<R, D>,
+        attention_scores: &mut Tensor<R, D>,
     ) where
         D: std::ops::Add<Output = D>,
         (fusor_core::Tensor<2, D>, fusor_core::Tensor<R, D>): fusor_core::MaxRank<R, D>,
@@ -75,7 +75,7 @@ where
         *attention_scores = self.apply(attention_scores);
     }
 
-    pub fn mask(&self) -> &GpuOr<2, D, ConcreteTensor<D, 2>> {
+    pub fn mask(&self) -> &Tensor<2, D, ConcreteTensor<D, 2>> {
         &self.mask
     }
 }
@@ -117,8 +117,8 @@ mod tests {
 
         // Create attention scores: (1, 1, 2, 2)
         let scores_data = [1.0f32, 2.0, 3.0, 4.0];
-        let scores: GpuOr<4, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2, 2], &scores_data));
+        let scores: Tensor<4, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2, 2], &scores_data));
 
         let masked = mask.apply(&scores);
 
@@ -142,8 +142,8 @@ mod tests {
 
         // Create attention scores: (1, 2, 2)
         let scores_data = [1.0f32, 2.0, 3.0, 4.0];
-        let scores: GpuOr<3, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 2, 2], &scores_data));
+        let scores: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 2, 2], &scores_data));
 
         let masked = mask.apply(&scores);
 

@@ -1,10 +1,10 @@
 //! Unified CPU/GPU quantized tensor abstraction
 //!
-//! This module provides `QGpuOr`, a runtime dispatch enum that holds either CPU
+//! This module provides `QMatrix`, a runtime dispatch enum that holds either CPU
 //! quantized tensors (`QuantizedTensor`) or GPU quantized matrices (`QMatrix`).
 
-use crate::{Device, GpuOr};
-use fusor_core::QMatrix;
+use crate::{Device, Tensor};
+use fusor_core::QMatrix as GpuQMatrix;
 use fusor_cpu::{BlockQ4K, BlockQ4_0, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, QuantizedTensor};
 
 /// Unified quantized tensor type that holds either CPU or GPU quantized data.
@@ -15,7 +15,7 @@ use fusor_cpu::{BlockQ4K, BlockQ4_0, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, Q
 /// The CPU variants are parameterized by block type at compile time, while
 /// the GPU variant uses runtime type information via `GgmlType`.
 #[derive(Clone)]
-pub enum QGpuOr<const R: usize> {
+pub enum QMatrix<const R: usize> {
     /// CPU quantized tensor with Q4_0 quantization (4-bit, block size 32)
     CpuQ4_0(QuantizedTensor<BlockQ4_0, R>),
     /// CPU quantized tensor with Q5_0 quantization (5-bit, block size 32)
@@ -27,55 +27,55 @@ pub enum QGpuOr<const R: usize> {
     /// CPU quantized tensor with Q6K quantization (6-bit, block size 256)
     CpuQ6K(QuantizedTensor<BlockQ6K, R>),
     /// GPU quantized matrix (type-erased, uses runtime GgmlType)
-    Gpu(QMatrix),
+    Gpu(GpuQMatrix),
 }
 
-impl<const R: usize> QGpuOr<R> {
+impl<const R: usize> QMatrix<R> {
     /// Returns the quantization type (e.g., Q4_0, Q8_0, Q4K, etc.)
     pub fn ggml_type(&self) -> GgmlType {
         match self {
-            QGpuOr::CpuQ4_0(_) => GgmlType::Q4_0,
-            QGpuOr::CpuQ5_0(_) => GgmlType::Q5_0,
-            QGpuOr::CpuQ8_0(_) => GgmlType::Q8_0,
-            QGpuOr::CpuQ4K(_) => GgmlType::Q4K,
-            QGpuOr::CpuQ6K(_) => GgmlType::Q6K,
-            QGpuOr::Gpu(m) => m.datatype(),
+            QMatrix::CpuQ4_0(_) => GgmlType::Q4_0,
+            QMatrix::CpuQ5_0(_) => GgmlType::Q5_0,
+            QMatrix::CpuQ8_0(_) => GgmlType::Q8_0,
+            QMatrix::CpuQ4K(_) => GgmlType::Q4K,
+            QMatrix::CpuQ6K(_) => GgmlType::Q6K,
+            QMatrix::Gpu(m) => m.datatype(),
         }
     }
 
     /// Returns true if this is the CPU variant.
     #[inline]
     pub fn is_cpu(&self) -> bool {
-        !matches!(self, QGpuOr::Gpu(_))
+        !matches!(self, QMatrix::Gpu(_))
     }
 
     /// Returns true if this is the GPU variant.
     #[inline]
     pub fn is_gpu(&self) -> bool {
-        matches!(self, QGpuOr::Gpu(_))
+        matches!(self, QMatrix::Gpu(_))
     }
 
     /// Returns the shape of the quantized tensor.
     pub fn shape(&self) -> &[usize] {
         match self {
-            QGpuOr::CpuQ4_0(t) => t.element_shape(),
-            QGpuOr::CpuQ5_0(t) => t.element_shape(),
-            QGpuOr::CpuQ8_0(t) => t.element_shape(),
-            QGpuOr::CpuQ4K(t) => t.element_shape(),
-            QGpuOr::CpuQ6K(t) => t.element_shape(),
-            QGpuOr::Gpu(m) => m.shape(),
+            QMatrix::CpuQ4_0(t) => t.element_shape(),
+            QMatrix::CpuQ5_0(t) => t.element_shape(),
+            QMatrix::CpuQ8_0(t) => t.element_shape(),
+            QMatrix::CpuQ4K(t) => t.element_shape(),
+            QMatrix::CpuQ6K(t) => t.element_shape(),
+            QMatrix::Gpu(m) => m.shape(),
         }
     }
 
     /// Returns the device this tensor is on.
     pub fn device(&self) -> Device {
         match self {
-            QGpuOr::CpuQ4_0(_)
-            | QGpuOr::CpuQ5_0(_)
-            | QGpuOr::CpuQ8_0(_)
-            | QGpuOr::CpuQ4K(_)
-            | QGpuOr::CpuQ6K(_) => Device::Cpu,
-            QGpuOr::Gpu(m) => Device::Gpu(m.device().clone()),
+            QMatrix::CpuQ4_0(_)
+            | QMatrix::CpuQ5_0(_)
+            | QMatrix::CpuQ8_0(_)
+            | QMatrix::CpuQ4K(_)
+            | QMatrix::CpuQ6K(_) => Device::Cpu,
+            QMatrix::Gpu(m) => Device::Gpu(m.device().clone()),
         }
     }
 
@@ -100,26 +100,26 @@ impl<const R: usize> QGpuOr<R> {
         match device {
             Device::Cpu => Ok(match ty {
                 GgmlType::Q4_0 => {
-                    QGpuOr::CpuQ4_0(QuantizedTensor::from_raw_bytes(shape, bytes))
+                    QMatrix::CpuQ4_0(QuantizedTensor::from_raw_bytes(shape, bytes))
                 }
                 GgmlType::Q5_0 => {
-                    QGpuOr::CpuQ5_0(QuantizedTensor::from_raw_bytes(shape, bytes))
+                    QMatrix::CpuQ5_0(QuantizedTensor::from_raw_bytes(shape, bytes))
                 }
                 GgmlType::Q8_0 => {
-                    QGpuOr::CpuQ8_0(QuantizedTensor::from_raw_bytes(shape, bytes))
+                    QMatrix::CpuQ8_0(QuantizedTensor::from_raw_bytes(shape, bytes))
                 }
                 GgmlType::Q4K => {
-                    QGpuOr::CpuQ4K(QuantizedTensor::from_raw_bytes(shape, bytes))
+                    QMatrix::CpuQ4K(QuantizedTensor::from_raw_bytes(shape, bytes))
                 }
                 GgmlType::Q6K => {
-                    QGpuOr::CpuQ6K(QuantizedTensor::from_raw_bytes(shape, bytes))
+                    QMatrix::CpuQ6K(QuantizedTensor::from_raw_bytes(shape, bytes))
                 }
                 _ => panic!("Unsupported quantization type for CPU: {:?}", ty),
             }),
             Device::Gpu(gpu_device) => {
                 let boxed_shape: Box<[usize]> = shape.into();
-                let q_matrix = QMatrix::from_parts(gpu_device, bytes, boxed_shape, ty)?;
-                Ok(QGpuOr::Gpu(q_matrix))
+                let q_matrix = GpuQMatrix::from_parts(gpu_device, bytes, boxed_shape, ty)?;
+                Ok(QMatrix::Gpu(q_matrix))
             }
         }
     }
@@ -127,14 +127,14 @@ impl<const R: usize> QGpuOr<R> {
     /// Dequantize to an f32 tensor.
     ///
     /// This converts the quantized tensor to full-precision f32.
-    pub fn dequantize(&self) -> GpuOr<R, f32> {
+    pub fn dequantize(&self) -> Tensor<R, f32> {
         match self {
-            QGpuOr::CpuQ4_0(t) => GpuOr::Cpu(fusor_cpu::Tensor::new(t.dequantize())),
-            QGpuOr::CpuQ5_0(t) => GpuOr::Cpu(fusor_cpu::Tensor::new(t.dequantize())),
-            QGpuOr::CpuQ8_0(t) => GpuOr::Cpu(fusor_cpu::Tensor::new(t.dequantize())),
-            QGpuOr::CpuQ4K(t) => GpuOr::Cpu(fusor_cpu::Tensor::new(t.dequantize())),
-            QGpuOr::CpuQ6K(t) => GpuOr::Cpu(fusor_cpu::Tensor::new(t.dequantize())),
-            QGpuOr::Gpu(m) => GpuOr::Gpu(m.dequantize()),
+            QMatrix::CpuQ4_0(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize())),
+            QMatrix::CpuQ5_0(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize())),
+            QMatrix::CpuQ8_0(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize())),
+            QMatrix::CpuQ4K(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize())),
+            QMatrix::CpuQ6K(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize())),
+            QMatrix::Gpu(m) => Tensor::Gpu(m.dequantize()),
         }
     }
 }
@@ -164,8 +164,8 @@ mod tests {
             }
         }
 
-        let qgpuor: QGpuOr<2> =
-            QGpuOr::from_raw_bytes(&Device::Cpu, shape, &raw_bytes, GgmlType::Q8_0).unwrap();
+        let qgpuor: QMatrix<2> =
+            QMatrix::from_raw_bytes(&Device::Cpu, shape, &raw_bytes, GgmlType::Q8_0).unwrap();
 
         assert!(qgpuor.is_cpu());
         assert!(!qgpuor.is_gpu());
@@ -190,8 +190,8 @@ mod tests {
             raw_bytes[2 + i] = i as u8;
         }
 
-        let qgpuor: QGpuOr<2> =
-            QGpuOr::from_raw_bytes(&Device::Cpu, shape, &raw_bytes, GgmlType::Q8_0).unwrap();
+        let qgpuor: QMatrix<2> =
+            QMatrix::from_raw_bytes(&Device::Cpu, shape, &raw_bytes, GgmlType::Q8_0).unwrap();
 
         let dequantized = qgpuor.dequantize();
         assert!(dequantized.is_cpu());

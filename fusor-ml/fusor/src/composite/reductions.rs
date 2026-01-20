@@ -1,10 +1,10 @@
 //! Axis reduction operations that work on both CPU and GPU backends.
 
-use crate::{AddOp, ConcreteTensor, DivOp, Expr, FloatOps, GpuOr, SimdBinaryOp, SimdElement};
+use crate::{AddOp, ConcreteTensor, DivOp, Expr, FloatOps, Tensor, SimdBinaryOp, SimdElement};
 use fusor_core::{DataType, FloatDataType, LastRank as GpuLastRank, NextRankInner as GpuNextRankInner};
 use fusor_cpu::{LastRank as CpuLastRank, MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp};
 
-impl<const R: usize, D> GpuOr<R, D>
+impl<const R: usize, D> Tensor<R, D>
 where
     D: SimdElement + DataType + FloatDataType + FloatOps + Default,
 {
@@ -18,15 +18,15 @@ where
     pub fn sum<const OUT_RANK: usize>(
         &self,
         axis: usize,
-    ) -> GpuOr<OUT_RANK, D, ConcreteTensor<D, OUT_RANK>>
+    ) -> Tensor<OUT_RANK, D, ConcreteTensor<D, OUT_RANK>>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
         SumOp: SimdReduceOp<D>,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.sum_axis::<OUT_RANK>(axis)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.sum(axis)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.sum_axis::<OUT_RANK>(axis)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.sum(axis)),
         }
     }
 
@@ -34,15 +34,15 @@ where
     pub fn max<const OUT_RANK: usize>(
         &self,
         axis: usize,
-    ) -> GpuOr<OUT_RANK, D, ConcreteTensor<D, OUT_RANK>>
+    ) -> Tensor<OUT_RANK, D, ConcreteTensor<D, OUT_RANK>>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
         MaxOp: SimdReduceOp<D>,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.max_axis::<OUT_RANK>(axis)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.max(axis)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.max_axis::<OUT_RANK>(axis)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.max(axis)),
         }
     }
 
@@ -50,15 +50,15 @@ where
     pub fn min<const OUT_RANK: usize>(
         &self,
         axis: usize,
-    ) -> GpuOr<OUT_RANK, D, ConcreteTensor<D, OUT_RANK>>
+    ) -> Tensor<OUT_RANK, D, ConcreteTensor<D, OUT_RANK>>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
         MinOp: SimdReduceOp<D>,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.min_axis::<OUT_RANK>(axis)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.min(axis)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.min_axis::<OUT_RANK>(axis)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.min(axis)),
         }
     }
 
@@ -66,15 +66,15 @@ where
     pub fn product<const OUT_RANK: usize>(
         &self,
         axis: usize,
-    ) -> GpuOr<OUT_RANK, D, ConcreteTensor<D, OUT_RANK>>
+    ) -> Tensor<OUT_RANK, D, ConcreteTensor<D, OUT_RANK>>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
         ProdOp: SimdReduceOp<D>,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.prod_axis::<OUT_RANK>(axis)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.product(axis)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.prod_axis::<OUT_RANK>(axis)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.product(axis)),
         }
     }
 
@@ -88,16 +88,16 @@ where
         ProdOp: SimdReduceOp<D>,
     {
         match self {
-            GpuOr::Cpu(t) => {
+            Tensor::Cpu(t) => {
                 let reduced = t.prod_axis::<OUT_RANK>(axis);
                 let original_shape: [usize; R] = Expr::shape(t).try_into().expect("Shape mismatch");
-                GpuOr::Cpu(Self::broadcast_reduced_to_original::<OUT_RANK>(
+                Tensor::Cpu(Self::broadcast_reduced_to_original::<OUT_RANK>(
                     &reduced,
                     original_shape,
                     axis,
                 ))
             }
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.product_keepdim(axis)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.product_keepdim(axis)),
         }
     }
 
@@ -116,17 +116,17 @@ where
         SumOp: SimdReduceOp<D>,
     {
         match self {
-            GpuOr::Cpu(t) => {
+            Tensor::Cpu(t) => {
                 // CPU: reduce, then broadcast back to original shape
                 let reduced = t.sum_axis::<OUT_RANK>(axis);
                 let original_shape: [usize; R] = Expr::shape(t).try_into().expect("Shape mismatch");
-                GpuOr::Cpu(Self::broadcast_reduced_to_original::<OUT_RANK>(
+                Tensor::Cpu(Self::broadcast_reduced_to_original::<OUT_RANK>(
                     &reduced,
                     original_shape,
                     axis,
                 ))
             }
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.sum_keepdim(axis)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.sum_keepdim(axis)),
         }
     }
 
@@ -140,16 +140,16 @@ where
         MaxOp: SimdReduceOp<D>,
     {
         match self {
-            GpuOr::Cpu(t) => {
+            Tensor::Cpu(t) => {
                 let reduced = t.max_axis::<OUT_RANK>(axis);
                 let original_shape: [usize; R] = Expr::shape(t).try_into().expect("Shape mismatch");
-                GpuOr::Cpu(Self::broadcast_reduced_to_original::<OUT_RANK>(
+                Tensor::Cpu(Self::broadcast_reduced_to_original::<OUT_RANK>(
                     &reduced,
                     original_shape,
                     axis,
                 ))
             }
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.max_keepdim(axis)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.max_keepdim(axis)),
         }
     }
 
@@ -163,16 +163,16 @@ where
         MinOp: SimdReduceOp<D>,
     {
         match self {
-            GpuOr::Cpu(t) => {
+            Tensor::Cpu(t) => {
                 let reduced = t.min_axis::<OUT_RANK>(axis);
                 let original_shape: [usize; R] = Expr::shape(t).try_into().expect("Shape mismatch");
-                GpuOr::Cpu(Self::broadcast_reduced_to_original::<OUT_RANK>(
+                Tensor::Cpu(Self::broadcast_reduced_to_original::<OUT_RANK>(
                     &reduced,
                     original_shape,
                     axis,
                 ))
             }
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.min_keepdim(axis)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.min_keepdim(axis)),
         }
     }
 
@@ -217,7 +217,7 @@ where
     pub fn mean<const OUT_RANK: usize>(
         &self,
         axis: usize,
-    ) -> GpuOr<OUT_RANK, D, ConcreteTensor<D, OUT_RANK>>
+    ) -> Tensor<OUT_RANK, D, ConcreteTensor<D, OUT_RANK>>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
@@ -255,7 +255,7 @@ where
     pub fn var<const OUT_RANK: usize>(
         &self,
         axis: usize,
-    ) -> GpuOr<OUT_RANK, D, ConcreteTensor<D, OUT_RANK>>
+    ) -> Tensor<OUT_RANK, D, ConcreteTensor<D, OUT_RANK>>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
@@ -272,8 +272,8 @@ where
         let mean_x2 = x_sq.mean::<OUT_RANK>(axis);
         // mean(x^2) - mean(x)^2
         match (&mean_x2, &mean_x_sq) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a - b).eval()),
-            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a - b),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a - b).eval()),
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a - b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         }
     }
@@ -302,8 +302,8 @@ where
         let mean_x2 = x_sq.mean_keepdim::<OUT_RANK>(axis);
         // mean(x^2) - mean(x)^2
         match (&mean_x2, &mean_x_sq) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a - b).eval()),
-            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a - b),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a - b).eval()),
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a - b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         }
     }
@@ -317,17 +317,17 @@ mod tests {
     async fn test_sum_cpu() {
         // 2x3 tensor
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
+        let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
 
         // Sum along axis 0: [1+4, 2+5, 3+6] = [5, 7, 9]
-        let result: GpuOr<1, f32, _> = t.sum::<1>(0);
+        let result: Tensor<1, f32, _> = t.sum::<1>(0);
         let slice = result.as_slice().await.unwrap();
         assert!((slice[[0]] - 5.0).abs() < 0.001);
         assert!((slice[[1]] - 7.0).abs() < 0.001);
         assert!((slice[[2]] - 9.0).abs() < 0.001);
 
         // Sum along axis 1: [1+2+3, 4+5+6] = [6, 15]
-        let result: GpuOr<1, f32, _> = t.sum::<1>(1);
+        let result: Tensor<1, f32, _> = t.sum::<1>(1);
         let slice = result.as_slice().await.unwrap();
         assert!((slice[[0]] - 6.0).abs() < 0.001);
         assert!((slice[[1]] - 15.0).abs() < 0.001);
@@ -336,17 +336,17 @@ mod tests {
     #[tokio::test]
     async fn test_max_cpu() {
         let data = [1.0f32, 5.0, 3.0, 4.0, 2.0, 6.0];
-        let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
+        let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
 
         // Max along axis 0: [max(1,4), max(5,2), max(3,6)] = [4, 5, 6]
-        let result: GpuOr<1, f32, _> = t.max::<1>(0);
+        let result: Tensor<1, f32, _> = t.max::<1>(0);
         let slice = result.as_slice().await.unwrap();
         assert!((slice[[0]] - 4.0).abs() < 0.001);
         assert!((slice[[1]] - 5.0).abs() < 0.001);
         assert!((slice[[2]] - 6.0).abs() < 0.001);
 
         // Max along axis 1: [max(1,5,3), max(4,2,6)] = [5, 6]
-        let result: GpuOr<1, f32, _> = t.max::<1>(1);
+        let result: Tensor<1, f32, _> = t.max::<1>(1);
         let slice = result.as_slice().await.unwrap();
         assert!((slice[[0]] - 5.0).abs() < 0.001);
         assert!((slice[[1]] - 6.0).abs() < 0.001);
@@ -355,10 +355,10 @@ mod tests {
     #[tokio::test]
     async fn test_min_cpu() {
         let data = [1.0f32, 5.0, 3.0, 4.0, 2.0, 6.0];
-        let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
+        let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
 
         // Min along axis 0: [min(1,4), min(5,2), min(3,6)] = [1, 2, 3]
-        let result: GpuOr<1, f32, _> = t.min::<1>(0);
+        let result: Tensor<1, f32, _> = t.min::<1>(0);
         let slice = result.as_slice().await.unwrap();
         assert!((slice[[0]] - 1.0).abs() < 0.001);
         assert!((slice[[1]] - 2.0).abs() < 0.001);
@@ -369,7 +369,7 @@ mod tests {
     async fn test_sum_keepdim_cpu() {
         // 2x3 tensor
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
+        let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
 
         // Sum along axis 1, broadcast back to original shape
         // Row 0 sum: 1+2+3 = 6, Row 1 sum: 4+5+6 = 15
@@ -391,10 +391,10 @@ mod tests {
     async fn test_mean_cpu() {
         // 2x3 tensor
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
+        let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
 
         // Mean along axis 1: [(1+2+3)/3, (4+5+6)/3] = [2, 5]
-        let result: GpuOr<1, f32, _> = t.mean::<1>(1);
+        let result: Tensor<1, f32, _> = t.mean::<1>(1);
         let slice = result.as_slice().await.unwrap();
         assert!((slice[[0]] - 2.0).abs() < 0.001);
         assert!((slice[[1]] - 5.0).abs() < 0.001);
@@ -404,7 +404,7 @@ mod tests {
     async fn test_mean_keepdim_cpu() {
         // 2x3 tensor
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
+        let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
 
         // Mean along axis 1, broadcast back: [[2, 2, 2], [5, 5, 5]]
         let result = t.mean_keepdim::<1>(1);
@@ -425,9 +425,9 @@ mod tests {
         // Test variance: var([1, 2, 3]) = mean([1, 4, 9]) - mean([1, 2, 3])^2
         //                              = 14/3 - 4 = 2/3 ≈ 0.6667
         let data = [1.0f32, 2.0, 3.0];
-        let t: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([3], &data));
+        let t: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([3], &data));
 
-        let result: GpuOr<0, f32, _> = t.var::<0>(0);
+        let result: Tensor<0, f32, _> = t.var::<0>(0);
         let slice = result.as_slice().await.unwrap();
         let expected = 2.0 / 3.0; // population variance
         assert!(
@@ -442,12 +442,12 @@ mod tests {
     async fn test_var_2d_cpu() {
         // 2x3 tensor
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
+        let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
 
         // Variance along axis 1
         // Row 0: [1, 2, 3] -> mean=2, var = (1+4+9)/3 - 4 = 14/3 - 4 = 2/3
         // Row 1: [4, 5, 6] -> mean=5, var = (16+25+36)/3 - 25 = 77/3 - 25 = 2/3
-        let result: GpuOr<1, f32, _> = t.var::<1>(1);
+        let result: Tensor<1, f32, _> = t.var::<1>(1);
         let slice = result.as_slice().await.unwrap();
         let expected = 2.0 / 3.0;
         assert!((slice[[0]] - expected).abs() < 0.001);
@@ -458,7 +458,7 @@ mod tests {
     async fn test_var_keepdim_cpu() {
         // 2x3 tensor
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
+        let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
 
         let result = t.var_keepdim::<1>(1);
         assert_eq!(result.shape(), [2, 3]); // Original shape, broadcast

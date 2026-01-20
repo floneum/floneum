@@ -1,13 +1,13 @@
 //! Growable tensor cache implementation.
 
-use crate::{cat, Device, GpuOr, SimdElement};
+use crate::{cat, Device, Tensor, SimdElement};
 use fusor_core::DataType;
 
 /// A growable tensor cache.
 /// This cache manages tensor data with exponentially larger allocations as the sequence length increases.
 #[derive(Clone)]
 pub struct TensorCache<const R: usize, D: SimdElement> {
-    all_data: Option<GpuOr<R, D>>,
+    all_data: Option<Tensor<R, D>>,
     current_seq_len: usize,
     allocated_seq_len: usize,
     concat_dim: usize,
@@ -31,7 +31,7 @@ where
     }
 
     /// Get the current data in the cache
-    pub fn current_data(&self) -> Option<&GpuOr<R, D>> {
+    pub fn current_data(&self) -> Option<&Tensor<R, D>> {
         self.all_data.as_ref()
     }
 
@@ -48,8 +48,8 @@ where
     pub fn append(
         &mut self,
         device: &Device,
-        v: &GpuOr<R, D>,
-    ) -> GpuOr<R, D> {
+        v: &Tensor<R, D>,
+    ) -> Tensor<R, D> {
         let v_shape = v.shape();
         let seq_len = v_shape[self.concat_dim];
         // First find the required new sequence length
@@ -92,7 +92,7 @@ where
                     }
                 });
                 // Allocate new tensor with larger size
-                let new_data = GpuOr::zeros(device, new_data_shape);
+                let new_data = Tensor::zeros(device, new_data_shape);
                 *cached = cat([cached.clone(), new_data], self.concat_dim);
             }
             // Assign the new data into the cached tensor
@@ -132,8 +132,8 @@ mod tests {
         let mut cache: TensorCache<3, f32> = TensorCache::new(1, 2);
 
         let data = [1.0f32, 2.0, 3.0, 4.0];
-        let tensor: GpuOr<3, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 1, 2], &data));
+        let tensor: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 1, 2], &data));
 
         let result = cache.append(&device, &tensor);
 
@@ -154,10 +154,10 @@ mod tests {
 
         let data1 = [1.0f32, 2.0];
         let data2 = [3.0f32, 4.0];
-        let tensor1: GpuOr<3, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2], &data1));
-        let tensor2: GpuOr<3, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2], &data2));
+        let tensor1: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2], &data1));
+        let tensor2: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2], &data2));
 
         cache.append(&device, &tensor1);
         let result = cache.append(&device, &tensor2);
@@ -178,8 +178,8 @@ mod tests {
         let mut cache: TensorCache<3, f32> = TensorCache::new(1, 3);
 
         let data = [1.0f32, 2.0];
-        let tensor: GpuOr<3, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2], &data));
+        let tensor: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2], &data));
         cache.append(&device, &tensor);
 
         cache.reset();

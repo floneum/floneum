@@ -2,11 +2,11 @@
 
 use std::ops::Range;
 
-use crate::{ConcreteTensor, Device, Expr, GpuOr, SimdElement};
+use crate::{ConcreteTensor, Device, Expr, Tensor, SimdElement};
 use fusor_core::{DataType, ShapeWithOneHole};
 use fusor_types::SlidingWindow;
 
-impl<const R: usize, D> GpuOr<R, D>
+impl<const R: usize, D> Tensor<R, D>
 where
     D: SimdElement + DataType + Default,
 {
@@ -16,13 +16,13 @@ where
     pub fn reshape<const R2: usize>(
         &self,
         new_shape: impl ShapeWithOneHole<R2>,
-    ) -> GpuOr<R2, D, ConcreteTensor<D, R2>> {
+    ) -> Tensor<R2, D, ConcreteTensor<D, R2>> {
         match self {
-            GpuOr::Cpu(t) => {
+            Tensor::Cpu(t) => {
                 let resolved_shape = new_shape.resolve_shape(Expr::shape(t));
-                GpuOr::Cpu(t.reshape(resolved_shape))
+                Tensor::Cpu(t.reshape(resolved_shape))
             }
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.reshape(new_shape)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.reshape(new_shape)),
         }
     }
 
@@ -33,8 +33,8 @@ where
     /// * `dim1` - Second dimension to swap
     pub fn transpose(&self, dim0: usize, dim1: usize) -> Self {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.transpose(dim0, dim1)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.transpose(dim0, dim1)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.transpose(dim0, dim1)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.transpose(dim0, dim1)),
         }
     }
 
@@ -43,8 +43,8 @@ where
     /// Returns a view into the tensor's data with updated layout.
     pub fn slice(&self, slices: [Range<usize>; R]) -> Self {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.slice(slices.clone())),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.slice(slices)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.slice(slices.clone())),
+            Tensor::Gpu(t) => Tensor::Gpu(t.slice(slices)),
         }
     }
 
@@ -54,8 +54,8 @@ where
     /// * `axes` - A permutation of [0, 1, ..., R-1] specifying the new order
     pub fn permute(&self, axes: [usize; R]) -> Self {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.permute(axes)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.permute(axes)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.permute(axes)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.permute(axes)),
         }
     }
 
@@ -68,10 +68,10 @@ where
     pub fn broadcast_as<const R2: usize>(
         &self,
         out_shape: [usize; R2],
-    ) -> GpuOr<R2, D, ConcreteTensor<D, R2>> {
+    ) -> Tensor<R2, D, ConcreteTensor<D, R2>> {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.broadcast_as(out_shape)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.broadcast_as(out_shape)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.broadcast_as(out_shape)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.broadcast_as(out_shape)),
         }
     }
 
@@ -79,15 +79,15 @@ where
     pub fn expand<const R2: usize>(
         &self,
         out_shape: [usize; R2],
-    ) -> GpuOr<R2, D, ConcreteTensor<D, R2>> {
+    ) -> Tensor<R2, D, ConcreteTensor<D, R2>> {
         self.broadcast_as(out_shape)
     }
 
     /// Flatten the tensor to 1D.
-    pub fn flatten_all(&self) -> GpuOr<1, D, ConcreteTensor<D, 1>> {
+    pub fn flatten_all(&self) -> Tensor<1, D, ConcreteTensor<D, 1>> {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.flatten_all()),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.flatten_all()),
+            Tensor::Cpu(t) => Tensor::Cpu(t.flatten_all()),
+            Tensor::Gpu(t) => Tensor::Gpu(t.flatten_all()),
         }
     }
 
@@ -99,13 +99,13 @@ where
     /// * `length` - The length of the slice
     pub fn narrow(&self, dim: usize, start: usize, length: usize) -> Self {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.narrow(dim, start, length)),
-            GpuOr::Gpu(t) => {
+            Tensor::Cpu(t) => Tensor::Cpu(t.narrow(dim, start, length)),
+            Tensor::Gpu(t) => {
                 // GPU narrow is implemented via slice
                 let shape = self.shape();
                 let mut slices: [Range<usize>; R] = std::array::from_fn(|i| 0..shape[i]);
                 slices[dim] = start..start + length;
-                GpuOr::Gpu(t.slice(slices))
+                Tensor::Gpu(t.slice(slices))
             }
         }
     }
@@ -138,8 +138,8 @@ where
     /// * `repeats` - Number of times to repeat along each dimension
     pub fn repeat(&self, repeats: [usize; R]) -> Self {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.repeat(repeats)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.repeat(repeats)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.repeat(repeats)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.repeat(repeats)),
         }
     }
 
@@ -147,14 +147,14 @@ where
     ///
     /// # Arguments
     /// * `dim` - The dimension to squeeze (must have size 1)
-    pub fn squeeze<const R2: usize>(&self, dim: usize) -> GpuOr<R2, D, ConcreteTensor<D, R2>>
+    pub fn squeeze<const R2: usize>(&self, dim: usize) -> Tensor<R2, D, ConcreteTensor<D, R2>>
     where
         ConcreteTensor<D, R>: fusor_cpu::LastRank<R2, D>,
         fusor_core::Tensor<R, D>: fusor_core::LastRank<R2, D>,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.squeeze(dim)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.squeeze(dim)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.squeeze(dim)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.squeeze(dim)),
         }
     }
 
@@ -162,14 +162,14 @@ where
     ///
     /// # Arguments
     /// * `dim` - Where to insert the new dimension
-    pub fn unsqueeze<const R2: usize>(&self, dim: usize) -> GpuOr<R2, D, ConcreteTensor<D, R2>>
+    pub fn unsqueeze<const R2: usize>(&self, dim: usize) -> Tensor<R2, D, ConcreteTensor<D, R2>>
     where
         ConcreteTensor<D, R>: fusor_cpu::NextRank<R2, D>,
         fusor_core::Tensor<R, D>: fusor_core::NextRank<R2, D>,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.unsqueeze(dim)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.unsqueeze(dim)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.unsqueeze(dim)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.unsqueeze(dim)),
         }
     }
 
@@ -184,14 +184,14 @@ where
     pub fn squeeze_dims<const DIFF: usize, const R2: usize>(
         &self,
         axes: [usize; DIFF],
-    ) -> GpuOr<R2, D, ConcreteTensor<D, R2>>
+    ) -> Tensor<R2, D, ConcreteTensor<D, R2>>
     where
         ConcreteTensor<D, R>: fusor_cpu::SmallerRank<R2, DIFF, D>,
         fusor_core::Tensor<R, D>: fusor_core::SmallerRank<DIFF, R2, D>,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.squeeze_dims(axes)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.squeeze_dims(axes)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.squeeze_dims(axes)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.squeeze_dims(axes)),
         }
     }
 
@@ -206,14 +206,14 @@ where
     pub fn unsqueeze_dims<const DIFF: usize, const R2: usize>(
         &self,
         axes: [usize; DIFF],
-    ) -> GpuOr<R2, D, ConcreteTensor<D, R2>>
+    ) -> Tensor<R2, D, ConcreteTensor<D, R2>>
     where
         ConcreteTensor<D, R>: fusor_cpu::LargerRank<R2, DIFF, D>,
         fusor_core::Tensor<R, D>: fusor_core::LargerRank<DIFF, R2, D>,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.unsqueeze_dims(axes)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.unsqueeze_dims(axes)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.unsqueeze_dims(axes)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.unsqueeze_dims(axes)),
         }
     }
 
@@ -230,20 +230,20 @@ where
     pub fn sliding_window_view<const DIFF: usize, const R2: usize>(
         &self,
         windows: [SlidingWindow; DIFF],
-    ) -> GpuOr<R2, D, ConcreteTensor<D, R2>>
+    ) -> Tensor<R2, D, ConcreteTensor<D, R2>>
     where
         ConcreteTensor<D, R>: fusor_cpu::LargerRank<R2, DIFF, D>,
         fusor_core::Tensor<R, D>: fusor_core::LargerRank<DIFF, R2, D>,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.sliding_window_view(windows)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.sliding_window_view(windows)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.sliding_window_view(windows)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.sliding_window_view(windows)),
         }
     }
 }
 
 // Transpose for 2D tensors (convenience method)
-impl<D> GpuOr<2, D, ConcreteTensor<D, 2>>
+impl<D> Tensor<2, D, ConcreteTensor<D, 2>>
 where
     D: SimdElement + DataType + Default,
 {
@@ -254,7 +254,7 @@ where
 }
 
 // Transpose for 3D tensors (convenience method)
-impl<D> GpuOr<3, D, ConcreteTensor<D, 3>>
+impl<D> Tensor<3, D, ConcreteTensor<D, 3>>
 where
     D: SimdElement + DataType + Default,
 {
@@ -265,7 +265,7 @@ where
 }
 
 // Transpose for 4D tensors (convenience method)
-impl<D> GpuOr<4, D, ConcreteTensor<D, 4>>
+impl<D> Tensor<4, D, ConcreteTensor<D, 4>>
 where
     D: SimdElement + DataType + Default,
 {
@@ -281,9 +281,9 @@ where
 /// * `tensors` - Iterator of tensors to concatenate
 /// * `dim` - The dimension to concatenate along
 pub fn cat<const R: usize, D>(
-    tensors: impl IntoIterator<Item = GpuOr<R, D>>,
+    tensors: impl IntoIterator<Item = Tensor<R, D>>,
     dim: usize,
-) -> GpuOr<R, D>
+) -> Tensor<R, D>
 where
     D: SimdElement + DataType + Default,
 {
@@ -302,10 +302,10 @@ where
             .into_iter()
             .map(|t| t.unwrap_cpu().eval())
             .collect();
-        GpuOr::Cpu(fusor_cpu::Tensor::cat(cpu_tensors, dim))
+        Tensor::Cpu(fusor_cpu::Tensor::cat(cpu_tensors, dim))
     } else {
         let gpu_tensors: Vec<_> = tensors.into_iter().map(|t| t.unwrap_gpu()).collect();
-        GpuOr::Gpu(fusor_core::Tensor::cat(gpu_tensors, dim))
+        Tensor::Gpu(fusor_core::Tensor::cat(gpu_tensors, dim))
     }
 }
 
@@ -315,9 +315,9 @@ where
 /// * `tensors` - Iterator of tensors to stack
 /// * `dim` - Where to insert the new stacking dimension
 pub fn stack<const R: usize, const R2: usize, D>(
-    tensors: impl IntoIterator<Item = GpuOr<R, D>>,
+    tensors: impl IntoIterator<Item = Tensor<R, D>>,
     dim: usize,
-) -> GpuOr<R2, D, ConcreteTensor<D, R2>>
+) -> Tensor<R2, D, ConcreteTensor<D, R2>>
 where
     D: SimdElement + DataType + Default,
     ConcreteTensor<D, R>: fusor_cpu::NextRank<R2, D>,
@@ -338,15 +338,15 @@ where
             .into_iter()
             .map(|t| t.unwrap_cpu().eval())
             .collect();
-        GpuOr::Cpu(fusor_cpu::Tensor::stack(cpu_tensors, dim))
+        Tensor::Cpu(fusor_cpu::Tensor::stack(cpu_tensors, dim))
     } else {
         let gpu_tensors: Vec<_> = tensors.into_iter().map(|t| t.unwrap_gpu()).collect();
-        GpuOr::Gpu(fusor_core::Tensor::stack(gpu_tensors, dim))
+        Tensor::Gpu(fusor_core::Tensor::stack(gpu_tensors, dim))
     }
 }
 
 /// Create a range tensor from start (inclusive) to end (exclusive).
-pub fn arange<D>(device: &Device, start: D, end: D) -> GpuOr<1, D, ConcreteTensor<D, 1>>
+pub fn arange<D>(device: &Device, start: D, end: D) -> Tensor<1, D, ConcreteTensor<D, 1>>
 where
     D: SimdElement + DataType + Default + std::ops::Add<Output = D> + PartialOrd + From<u8>,
 {
@@ -359,13 +359,13 @@ pub fn arange_step<D>(
     start: D,
     end: D,
     step: D,
-) -> GpuOr<1, D, ConcreteTensor<D, 1>>
+) -> Tensor<1, D, ConcreteTensor<D, 1>>
 where
     D: SimdElement + DataType + Default + std::ops::Add<Output = D> + PartialOrd,
 {
     match device {
-        Device::Cpu => GpuOr::Cpu(fusor_cpu::Tensor::arange_step(start, end, step)),
-        Device::Gpu(gpu_device) => GpuOr::Gpu(fusor_core::Tensor::arange_step(gpu_device, start, end, step)),
+        Device::Cpu => Tensor::Cpu(fusor_cpu::Tensor::arange_step(start, end, step)),
+        Device::Gpu(gpu_device) => Tensor::Gpu(fusor_core::Tensor::arange_step(gpu_device, start, end, step)),
     }
 }
 
@@ -376,9 +376,9 @@ mod tests {
     #[tokio::test]
     async fn test_reshape_cpu() {
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([6], &data));
+        let t: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([6], &data));
 
-        let reshaped: GpuOr<2, f32, _> = t.reshape([2, 3]);
+        let reshaped: Tensor<2, f32, _> = t.reshape([2, 3]);
         let slice = reshaped.as_slice().await.unwrap();
 
         assert_eq!(slice[[0, 0]], 1.0);
@@ -392,7 +392,7 @@ mod tests {
     #[tokio::test]
     async fn test_transpose_cpu() {
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
+        let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
 
         let transposed = t.transpose(0, 1);
         let slice = transposed.as_slice().await.unwrap();
@@ -408,7 +408,7 @@ mod tests {
     #[tokio::test]
     async fn test_slice_cpu() {
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
-        let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([3, 3], &data));
+        let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([3, 3], &data));
 
         let sliced = t.slice([1..3, 1..3]);
         let slice = sliced.as_slice().await.unwrap();
@@ -422,7 +422,7 @@ mod tests {
     #[tokio::test]
     async fn test_permute_cpu() {
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
+        let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
 
         let permuted = t.permute([1, 0]);
         assert_eq!(permuted.shape(), [3, 2]);
@@ -431,9 +431,9 @@ mod tests {
     #[tokio::test]
     async fn test_broadcast_as_cpu() {
         let data = [1.0f32, 2.0, 3.0];
-        let t: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([3], &data));
+        let t: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([3], &data));
 
-        let broadcasted: GpuOr<2, f32, _> = t.broadcast_as([2, 3]);
+        let broadcasted: Tensor<2, f32, _> = t.broadcast_as([2, 3]);
         let slice = broadcasted.as_slice().await.unwrap();
 
         assert_eq!(slice[[0, 0]], 1.0);
@@ -445,7 +445,7 @@ mod tests {
     #[tokio::test]
     async fn test_flatten_all_cpu() {
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
+        let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
 
         let flattened = t.flatten_all();
         assert_eq!(flattened.shape(), [6]);
@@ -454,7 +454,7 @@ mod tests {
     #[tokio::test]
     async fn test_narrow_cpu() {
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
+        let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
 
         let narrowed = t.narrow(1, 1, 2);
         let slice = narrowed.as_slice().await.unwrap();
@@ -468,7 +468,7 @@ mod tests {
     #[tokio::test]
     async fn test_chunk_cpu() {
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([6], &data));
+        let t: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([6], &data));
 
         let chunks = t.chunk(3, 0);
         assert_eq!(chunks.len(), 3);
@@ -489,7 +489,7 @@ mod tests {
     #[tokio::test]
     async fn test_repeat_cpu() {
         let data = [1.0f32, 2.0, 3.0, 4.0];
-        let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 2], &data));
+        let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 2], &data));
 
         let repeated = t.repeat([2, 3]);
         assert_eq!(repeated.shape(), [4, 6]);
@@ -504,7 +504,7 @@ mod tests {
     #[tokio::test]
     async fn test_t_2d_cpu() {
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
+        let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
 
         let transposed = t.t();
         assert_eq!(transposed.shape(), [3, 2]);
@@ -512,8 +512,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_cat_cpu() {
-        let a: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
-        let b: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &[7.0, 8.0, 9.0, 10.0, 11.0, 12.0]));
+        let a: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
+        let b: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &[7.0, 8.0, 9.0, 10.0, 11.0, 12.0]));
 
         let catted = cat([a, b], 0);
         assert_eq!(catted.shape(), [4, 3]);

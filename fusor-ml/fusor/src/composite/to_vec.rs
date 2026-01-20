@@ -87,12 +87,12 @@ impl<D: NoUninit + AnyBitPattern + Copy, Bytes: Deref<Target = [u8]>> ToVec3<D>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::GpuOr;
+    use crate::Tensor;
 
     #[tokio::test]
     async fn test_to_vec1_cpu() {
         let data = [1.0f32, 2.0, 3.0, 4.0];
-        let t: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &data));
+        let t: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &data));
 
         let slice = t.as_slice().await.unwrap();
         let vec1 = slice.to_vec1();
@@ -106,7 +106,7 @@ mod tests {
     #[tokio::test]
     async fn test_to_vec2_cpu() {
         let data = [1.0f32, 2.0, 3.0, 4.0];
-        let t: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 2], &data));
+        let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 2], &data));
 
         let slice = t.as_slice().await.unwrap();
         let vec2 = slice.to_vec2();
@@ -121,7 +121,7 @@ mod tests {
     #[tokio::test]
     async fn test_to_vec3_cpu() {
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-        let t: GpuOr<3, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 2, 2], &data));
+        let t: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 2, 2], &data));
 
         let slice = t.as_slice().await.unwrap();
         let vec3 = slice.to_vec3();

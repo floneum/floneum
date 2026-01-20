@@ -1,12 +1,12 @@
 //! Rotary Position Embeddings (RoPE) that work on both CPU and GPU backends.
 
-use crate::{AddOp, ConcreteTensor, GpuOr, MulOp, NegOp, SimdBinaryOp, SimdElement, SimdUnaryOp, SubOp};
+use crate::{AddOp, ConcreteTensor, Tensor, MulOp, NegOp, SimdBinaryOp, SimdElement, SimdUnaryOp, SubOp};
 use fusor_core::{DataType, FloatDataType};
 use fusor_cpu::FloatOps;
 
 fn rotate_half<D>(
-    xs: &GpuOr<4, D, ConcreteTensor<D, 4>>,
-) -> GpuOr<4, D, ConcreteTensor<D, 4>>
+    xs: &Tensor<4, D, ConcreteTensor<D, 4>>,
+) -> Tensor<4, D, ConcreteTensor<D, 4>>
 where
     D: SimdElement + DataType + FloatDataType + FloatOps + Default + std::ops::Neg<Output = D>,
     NegOp: SimdUnaryOp<D>,
@@ -16,13 +16,13 @@ where
     let xs1 = xs.narrow(3, 0, last_dim / 2);
     let xs2 = xs.narrow(3, last_dim / 2, last_dim - last_dim / 2);
     let neg_xs2 = match xs2 {
-        GpuOr::Cpu(t) => GpuOr::Cpu((-t).eval()),
-        GpuOr::Gpu(t) => GpuOr::Gpu(-t),
+        Tensor::Cpu(t) => Tensor::Cpu((-t).eval()),
+        Tensor::Gpu(t) => Tensor::Gpu(-t),
     };
     crate::cat([neg_xs2, xs1], 3)
 }
 
-impl<D> GpuOr<4, D, ConcreteTensor<D, 4>>
+impl<D> Tensor<4, D, ConcreteTensor<D, 4>>
 where
     D: SimdElement
         + DataType
@@ -47,8 +47,8 @@ where
     /// * `sin` - Sine positional embeddings, shape (seq_len, head_dim/2)
     pub fn rope(
         &self,
-        cos: &GpuOr<2, D, ConcreteTensor<D, 2>>,
-        sin: &GpuOr<2, D, ConcreteTensor<D, 2>>,
+        cos: &Tensor<2, D, ConcreteTensor<D, 2>>,
+        sin: &Tensor<2, D, ConcreteTensor<D, 2>>,
     ) -> Self {
         let [_, _, sequence_length, _] = self.shape();
 
@@ -58,16 +58,16 @@ where
         let cos = cos.narrow(0, 0, sequence_length);
         let sin = sin.narrow(0, 0, sequence_length);
 
-        let cos: GpuOr<4, D, _> = cos.unsqueeze(0).unsqueeze(0);
-        let sin: GpuOr<4, D, _> = sin.unsqueeze(0).unsqueeze(0);
+        let cos: Tensor<4, D, _> = cos.unsqueeze(0).unsqueeze(0);
+        let sin: Tensor<4, D, _> = sin.unsqueeze(0).unsqueeze(0);
 
         let rotated = rotate_half(self);
         match (self, &cos, &sin, &rotated) {
-            (GpuOr::Cpu(s), GpuOr::Cpu(c), GpuOr::Cpu(sn), GpuOr::Cpu(r)) => {
-                GpuOr::Cpu((s * c + r * sn).eval())
+            (Tensor::Cpu(s), Tensor::Cpu(c), Tensor::Cpu(sn), Tensor::Cpu(r)) => {
+                Tensor::Cpu((s * c + r * sn).eval())
             }
-            (GpuOr::Gpu(s), GpuOr::Gpu(c), GpuOr::Gpu(sn), GpuOr::Gpu(r)) => {
-                GpuOr::Gpu(s.mul_(c) + r.mul_(sn))
+            (Tensor::Gpu(s), Tensor::Gpu(c), Tensor::Gpu(sn), Tensor::Gpu(r)) => {
+                Tensor::Gpu(s.mul_(c) + r.mul_(sn))
             }
             _ => panic!("Cannot mix CPU and GPU tensors in rope"),
         }
@@ -82,43 +82,43 @@ where
     /// * `sin` - Sine positional embeddings, shape (seq_len, head_dim/2)
     pub fn rope_interleaved(
         &self,
-        cos: &GpuOr<2, D, ConcreteTensor<D, 2>>,
-        sin: &GpuOr<2, D, ConcreteTensor<D, 2>>,
+        cos: &Tensor<2, D, ConcreteTensor<D, 2>>,
+        sin: &Tensor<2, D, ConcreteTensor<D, 2>>,
     ) -> Self {
         let [bz, n_head, sequence_length, embed] = self.shape();
 
-        let cos: GpuOr<5, D, _> = cos
+        let cos: Tensor<5, D, _> = cos
             .narrow(0, 0, sequence_length)
             .reshape([sequence_length, embed / 2, 1])
             .broadcast_as([bz, 1, sequence_length, embed / 2, 1]);
-        let sin: GpuOr<5, D, _> = sin
+        let sin: Tensor<5, D, _> = sin
             .narrow(0, 0, sequence_length)
             .reshape([sequence_length, embed / 2, 1])
             .broadcast_as([bz, 1, sequence_length, embed / 2, 1]);
-        let x: GpuOr<5, D, _> = self.reshape([bz, n_head, sequence_length, embed / 2, 2]);
+        let x: Tensor<5, D, _> = self.reshape([bz, n_head, sequence_length, embed / 2, 2]);
 
         let x0 = x.narrow(4, 0, 1);
         let x1 = x.narrow(4, 1, 1);
 
         let y0 = match (&x0, &cos, &x1, &sin) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(c), GpuOr::Cpu(b), GpuOr::Cpu(s)) => {
+            (Tensor::Cpu(a), Tensor::Cpu(c), Tensor::Cpu(b), Tensor::Cpu(s)) => {
                 let ac = (a * c).eval();
                 let bs = (b * s).eval();
-                GpuOr::Cpu((&ac - &bs).eval())
+                Tensor::Cpu((&ac - &bs).eval())
             }
-            (GpuOr::Gpu(a), GpuOr::Gpu(c), GpuOr::Gpu(b), GpuOr::Gpu(s)) => {
-                GpuOr::Gpu(&a.mul_(c) - &b.mul_(s))
+            (Tensor::Gpu(a), Tensor::Gpu(c), Tensor::Gpu(b), Tensor::Gpu(s)) => {
+                Tensor::Gpu(&a.mul_(c) - &b.mul_(s))
             }
             _ => panic!("Cannot mix CPU and GPU tensors"),
         };
         let y1 = match (&x0, &sin, &x1, &cos) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(s), GpuOr::Cpu(b), GpuOr::Cpu(c)) => {
+            (Tensor::Cpu(a), Tensor::Cpu(s), Tensor::Cpu(b), Tensor::Cpu(c)) => {
                 let as_ = (a * s).eval();
                 let bc = (b * c).eval();
-                GpuOr::Cpu((&as_ + &bc).eval())
+                Tensor::Cpu((&as_ + &bc).eval())
             }
-            (GpuOr::Gpu(a), GpuOr::Gpu(s), GpuOr::Gpu(b), GpuOr::Gpu(c)) => {
-                GpuOr::Gpu(&a.mul_(s) + &b.mul_(c))
+            (Tensor::Gpu(a), Tensor::Gpu(s), Tensor::Gpu(b), Tensor::Gpu(c)) => {
+                Tensor::Gpu(&a.mul_(s) + &b.mul_(c))
             }
             _ => panic!("Cannot mix CPU and GPU tensors"),
         };
@@ -132,16 +132,16 @@ where
     /// On GPU, this uses an optimized fused kernel. On CPU, it delegates to `rope_interleaved`.
     pub fn rope_fused(
         &self,
-        cos: &GpuOr<2, D, ConcreteTensor<D, 2>>,
-        sin: &GpuOr<2, D, ConcreteTensor<D, 2>>,
+        cos: &Tensor<2, D, ConcreteTensor<D, 2>>,
+        sin: &Tensor<2, D, ConcreteTensor<D, 2>>,
     ) -> Self {
         match (self, cos, sin) {
             // GPU path - use the optimized fused kernel
-            (GpuOr::Gpu(x), GpuOr::Gpu(cos), GpuOr::Gpu(sin)) => {
-                GpuOr::Gpu(x.rope_fused(cos, sin))
+            (Tensor::Gpu(x), Tensor::Gpu(cos), Tensor::Gpu(sin)) => {
+                Tensor::Gpu(x.rope_fused(cos, sin))
             }
             // CPU path - use composite operations
-            (GpuOr::Cpu(_), GpuOr::Cpu(_), GpuOr::Cpu(_)) => {
+            (Tensor::Cpu(_), Tensor::Cpu(_), Tensor::Cpu(_)) => {
                 self.rope_interleaved(cos, sin)
             }
             _ => panic!("All tensors must be on the same device"),
@@ -154,16 +154,16 @@ where
     /// On GPU, this uses an optimized fused kernel. On CPU, it delegates to `rope`.
     pub fn rope_normal_fused(
         &self,
-        cos: &GpuOr<2, D, ConcreteTensor<D, 2>>,
-        sin: &GpuOr<2, D, ConcreteTensor<D, 2>>,
+        cos: &Tensor<2, D, ConcreteTensor<D, 2>>,
+        sin: &Tensor<2, D, ConcreteTensor<D, 2>>,
     ) -> Self {
         match (self, cos, sin) {
             // GPU path - use the optimized fused kernel
-            (GpuOr::Gpu(x), GpuOr::Gpu(cos), GpuOr::Gpu(sin)) => {
-                GpuOr::Gpu(x.rope_normal_fused(cos, sin))
+            (Tensor::Gpu(x), Tensor::Gpu(cos), Tensor::Gpu(sin)) => {
+                Tensor::Gpu(x.rope_normal_fused(cos, sin))
             }
             // CPU path - use composite operations
-            (GpuOr::Cpu(_), GpuOr::Cpu(_), GpuOr::Cpu(_)) => {
+            (Tensor::Cpu(_), Tensor::Cpu(_), Tensor::Cpu(_)) => {
                 self.rope(cos, sin)
             }
             _ => panic!("All tensors must be on the same device"),
@@ -201,11 +201,11 @@ mod tests {
 
         let cos_flat: Vec<f32> = cos_data.iter().flatten().copied().collect();
         let sin_flat: Vec<f32> = sin_data.iter().flatten().copied().collect();
-        let cos: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice(
+        let cos: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice(
             [pos_shape[0], pos_shape[1]],
             &cos_flat,
         ));
-        let sin: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice(
+        let sin: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice(
             [pos_shape[0], pos_shape[1]],
             &sin_flat,
         ));
@@ -216,7 +216,7 @@ mod tests {
             .map(|k| ((k % 64) as f32).sin())
             .collect();
 
-        let x: GpuOr<4, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice(shape, &data));
+        let x: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice(shape, &data));
 
         let rope_result = x.rope(&cos, &sin);
         let output = rope_result.as_slice().await.unwrap();
@@ -271,11 +271,11 @@ mod tests {
 
         let cos_flat: Vec<f32> = cos_data.iter().flatten().copied().collect();
         let sin_flat: Vec<f32> = sin_data.iter().flatten().copied().collect();
-        let cos: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice(
+        let cos: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice(
             [pos_shape[0], pos_shape[1]],
             &cos_flat,
         ));
-        let sin: GpuOr<2, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice(
+        let sin: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice(
             [pos_shape[0], pos_shape[1]],
             &sin_flat,
         ));
@@ -286,7 +286,7 @@ mod tests {
             .map(|k| ((k % 64) as f32).sin())
             .collect();
 
-        let x: GpuOr<4, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice(shape, &data));
+        let x: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice(shape, &data));
 
         let rope_result = x.rope_interleaved(&cos, &sin);
         let output = rope_result.as_slice().await.unwrap();

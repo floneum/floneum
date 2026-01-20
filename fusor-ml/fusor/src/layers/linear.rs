@@ -1,6 +1,6 @@
 //! Linear layer implementation.
 
-use crate::{ConcreteTensor, Device, GpuOr, MatmulImpl, SimdElement};
+use crate::{ConcreteTensor, Device, Tensor, MatmulImpl, SimdElement};
 use fusor_core::{DataType, FloatDataType};
 use fusor_cpu::FloatOps;
 
@@ -8,8 +8,8 @@ use fusor_cpu::FloatOps;
 ///
 /// Computes `output = input @ weight.T + bias`
 pub struct Linear<D: SimdElement> {
-    weight: GpuOr<2, D, ConcreteTensor<D, 2>>,
-    bias: Option<GpuOr<1, D, ConcreteTensor<D, 1>>>,
+    weight: Tensor<2, D, ConcreteTensor<D, 2>>,
+    bias: Option<Tensor<1, D, ConcreteTensor<D, 1>>>,
 }
 
 impl<D> Linear<D>
@@ -28,16 +28,16 @@ where
     /// Weight shape: (out_features, in_features)
     /// Bias shape: (out_features,)
     pub fn new(
-        weight: GpuOr<2, D, ConcreteTensor<D, 2>>,
-        bias: Option<GpuOr<1, D, ConcreteTensor<D, 1>>>,
+        weight: Tensor<2, D, ConcreteTensor<D, 2>>,
+        bias: Option<Tensor<1, D, ConcreteTensor<D, 1>>>,
     ) -> Self {
         Self { weight, bias }
     }
 
     /// Create a new Linear layer with random weights for testing.
     pub fn zeros(device: &Device, in_features: usize, out_features: usize) -> Self {
-        let weight = GpuOr::zeros(device, [out_features, in_features]);
-        let bias = Some(GpuOr::zeros(device, [out_features]));
+        let weight = Tensor::zeros(device, [out_features, in_features]);
+        let bias = Some(Tensor::zeros(device, [out_features]));
         Self { weight, bias }
     }
 
@@ -47,8 +47,8 @@ where
     /// Output shape: (batch, out_features)
     pub fn forward_2d(
         &self,
-        input: &GpuOr<2, D, ConcreteTensor<D, 2>>,
-    ) -> GpuOr<2, D, ConcreteTensor<D, 2>>
+        input: &Tensor<2, D, ConcreteTensor<D, 2>>,
+    ) -> Tensor<2, D, ConcreteTensor<D, 2>>
     where
         crate::AddOp: fusor_cpu::SimdBinaryOp<D>,
     {
@@ -59,10 +59,10 @@ where
 
         if let Some(bias) = &self.bias {
             // Broadcast bias (out_features,) to (batch, out_features) and add
-            let bias_broadcast: GpuOr<2, D, _> = bias.broadcast_as(output.shape());
+            let bias_broadcast: Tensor<2, D, _> = bias.broadcast_as(output.shape());
             match (&output, &bias_broadcast) {
-                (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a + b).eval()),
-                (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a.add_(b)),
+                (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a + b).eval()),
+                (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a.add_(b)),
                 _ => panic!("Cannot mix CPU and GPU tensors"),
             }
         } else {
@@ -76,8 +76,8 @@ where
     /// Output shape: (batch, seq_len, out_features)
     pub fn forward(
         &self,
-        input: &GpuOr<3, D, ConcreteTensor<D, 3>>,
-    ) -> GpuOr<3, D, ConcreteTensor<D, 3>>
+        input: &Tensor<3, D, ConcreteTensor<D, 3>>,
+    ) -> Tensor<3, D, ConcreteTensor<D, 3>>
     where
         crate::AddOp: fusor_cpu::SimdBinaryOp<D>,
     {
@@ -85,7 +85,7 @@ where
         let out_features = self.weight.shape()[0];
 
         // Reshape to 2D: (batch * seq_len, in_features)
-        let input_2d: GpuOr<2, D, _> = input.reshape([batch * seq_len, in_features]);
+        let input_2d: Tensor<2, D, _> = input.reshape([batch * seq_len, in_features]);
 
         // Forward through 2D
         let output_2d = self.forward_2d(&input_2d);
@@ -95,12 +95,12 @@ where
     }
 
     /// Get the weight tensor.
-    pub fn weight(&self) -> &GpuOr<2, D, ConcreteTensor<D, 2>> {
+    pub fn weight(&self) -> &Tensor<2, D, ConcreteTensor<D, 2>> {
         &self.weight
     }
 
     /// Get the bias tensor if present.
-    pub fn bias(&self) -> Option<&GpuOr<1, D, ConcreteTensor<D, 1>>> {
+    pub fn bias(&self) -> Option<&Tensor<1, D, ConcreteTensor<D, 1>>> {
         self.bias.as_ref()
     }
 
@@ -125,19 +125,19 @@ mod tests {
 
         // Weight: (3, 2) - 3 out features, 2 in features
         let weight_data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let weight: GpuOr<2, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([3, 2], &weight_data));
+        let weight: Tensor<2, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([3, 2], &weight_data));
 
         // Bias: (3,)
         let bias_data = [0.1f32, 0.2, 0.3];
-        let bias: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([3], &bias_data));
+        let bias: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([3], &bias_data));
 
         let linear = Linear::new(weight, Some(bias));
 
         // Input: (2, 2) - batch=2, in_features=2
         let input_data = [1.0f32, 2.0, 3.0, 4.0];
-        let input: GpuOr<2, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([2, 2], &input_data));
+        let input: Tensor<2, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 2], &input_data));
 
         let output = linear.forward_2d(&input);
         let result = output.as_slice().await.unwrap();
@@ -156,15 +156,15 @@ mod tests {
 
         // Weight: (3, 2) - 3 out features, 2 in features
         let weight_data = [1.0f32, 0.0, 0.0, 1.0, 1.0, 1.0];
-        let weight: GpuOr<2, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([3, 2], &weight_data));
+        let weight: Tensor<2, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([3, 2], &weight_data));
 
         let linear = Linear::new(weight, None);
 
         // Input: (1, 2, 2) - batch=1, seq_len=2, in_features=2
         let input_data = [1.0f32, 2.0, 3.0, 4.0];
-        let input: GpuOr<3, f32> =
-            GpuOr::Cpu(fusor_cpu::Tensor::from_slice([1, 2, 2], &input_data));
+        let input: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 2, 2], &input_data));
 
         let output = linear.forward(&input);
         let result = output.as_slice().await.unwrap();

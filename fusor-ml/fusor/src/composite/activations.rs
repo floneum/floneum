@@ -1,12 +1,12 @@
 //! Activation functions that work on both CPU and GPU backends.
 
 use crate::{
-    AddOp, DivOp, ExpOp, FloatOps, GpuOr, MulOp, NegOp, SimdBinaryOp, SimdElement,
+    AddOp, DivOp, ExpOp, FloatOps, Tensor, MulOp, NegOp, SimdBinaryOp, SimdElement,
     SimdUnaryOp, TanhOp,
 };
 use fusor_core::{DataType, FloatDataType};
 
-impl<const R: usize, D> GpuOr<R, D>
+impl<const R: usize, D> Tensor<R, D>
 where
     D: SimdElement + DataType + FloatDataType + FloatOps + Default,
 {
@@ -31,15 +31,15 @@ where
         // silu(x) = x / (1 + exp(-x))
         // = x * sigmoid(x)
         let neg_self = match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu((-t).eval()),
-            GpuOr::Gpu(t) => GpuOr::Gpu(-t.clone()),
+            Tensor::Cpu(t) => Tensor::Cpu((-t).eval()),
+            Tensor::Gpu(t) => Tensor::Gpu(-t.clone()),
         };
         let exp_neg = neg_self.exp();
         let one_plus_exp = exp_neg.add_scalar(D::from_f32(1.0));
         // self / (1 + exp(-self))
         match (self, &one_plus_exp) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a / b).eval()),
-            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a / b),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).eval()),
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a / b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         }
     }
@@ -62,8 +62,8 @@ where
 
         // x^2
         let x_squared = match &clamped {
-            GpuOr::Cpu(t) => GpuOr::Cpu((t * t).eval()),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t * t),
+            Tensor::Cpu(t) => Tensor::Cpu((t * t).eval()),
+            Tensor::Gpu(t) => Tensor::Gpu(t * t),
         };
 
         // 1 + 0.044715 * x^2
@@ -71,8 +71,8 @@ where
 
         // x * (1 + 0.044715 * x^2)
         let inner = match (&clamped, &inner_factor) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a * b).eval()),
-            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a * b),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a * b).eval()),
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a * b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         };
 
@@ -87,8 +87,8 @@ where
 
         // x * (1 + tanh(...))
         let product = match (self, &one_plus_tanh) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu((a * b).eval()),
-            (GpuOr::Gpu(a), GpuOr::Gpu(b)) => GpuOr::Gpu(a * b),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a * b).eval()),
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a * b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         };
 
@@ -103,7 +103,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_relu_cpu() {
-        let t: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([6], &[1.0, -2.0, -3.0, 4.0, 5.0, -6.0]));
+        let t: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([6], &[1.0, -2.0, -3.0, 4.0, 5.0, -6.0]));
         let result = t.relu();
         let slice = result.as_slice().await.unwrap();
 
@@ -122,7 +122,7 @@ mod tests {
     #[tokio::test]
     async fn test_silu_cpu() {
         let data = [1.0f32, -2.0, -3.0, 4.0, 5.0, -6.0];
-        let t: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([6], &data));
+        let t: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([6], &data));
         let result = t.silu();
         let slice = result.as_slice().await.unwrap();
 
@@ -138,7 +138,7 @@ mod tests {
     #[tokio::test]
     async fn test_gelu_cpu() {
         let data = [1.0f32, -2.0, -3.0, 4.0, 5.0, -5.0];
-        let t: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([6], &data));
+        let t: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([6], &data));
         let result = t.gelu();
         let slice = result.as_slice().await.unwrap();
 

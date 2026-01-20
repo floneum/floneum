@@ -2,11 +2,11 @@
 //!
 //! These operations return tensors with 1.0 for true and 0.0 for false.
 
-use crate::{GpuOr, SimdElement};
+use crate::{Tensor, SimdElement};
 use fusor_core::DataType;
 use fusor_cpu::{EqOp, GtOp, GteOp, LtOp, LteOp, SimdComparisonOp};
 
-impl<const R: usize, D> GpuOr<R, D>
+impl<const R: usize, D> Tensor<R, D>
 where
     D: SimdElement + DataType + Default,
 {
@@ -19,7 +19,7 @@ where
         EqOp: SimdComparisonOp<D>,
     {
         match (self, rhs) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu(a.eq(b)),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu(a.eq(b)),
             _ => panic!("Tensor-to-tensor comparison is only supported on CPU tensors"),
         }
     }
@@ -33,7 +33,7 @@ where
         LtOp: SimdComparisonOp<D>,
     {
         match (self, rhs) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu(a.lt(b)),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu(a.lt(b)),
             _ => panic!("Tensor-to-tensor comparison is only supported on CPU tensors"),
         }
     }
@@ -47,7 +47,7 @@ where
         LteOp: SimdComparisonOp<D>,
     {
         match (self, rhs) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu(a.lte(b)),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu(a.lte(b)),
             _ => panic!("Tensor-to-tensor comparison is only supported on CPU tensors"),
         }
     }
@@ -61,7 +61,7 @@ where
         GtOp: SimdComparisonOp<D>,
     {
         match (self, rhs) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu(a.gt(b)),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu(a.gt(b)),
             _ => panic!("Tensor-to-tensor comparison is only supported on CPU tensors"),
         }
     }
@@ -75,7 +75,7 @@ where
         GteOp: SimdComparisonOp<D>,
     {
         match (self, rhs) {
-            (GpuOr::Cpu(a), GpuOr::Cpu(b)) => GpuOr::Cpu(a.gte(b)),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu(a.gte(b)),
             _ => panic!("Tensor-to-tensor comparison is only supported on CPU tensors"),
         }
     }
@@ -88,8 +88,8 @@ where
         EqOp: SimdComparisonOp<D>,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.eq_scalar(scalar)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.eq(scalar)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.eq_scalar(scalar)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.eq(scalar)),
         }
     }
 
@@ -101,8 +101,8 @@ where
         LtOp: SimdComparisonOp<D>,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.lt_scalar(scalar)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.lt(scalar)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.lt_scalar(scalar)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.lt(scalar)),
         }
     }
 
@@ -114,8 +114,8 @@ where
         LteOp: SimdComparisonOp<D>,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.lte_scalar(scalar)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.lte(scalar)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.lte_scalar(scalar)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.lte(scalar)),
         }
     }
 
@@ -127,8 +127,8 @@ where
         GtOp: SimdComparisonOp<D>,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.gt_scalar(scalar)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.mt(scalar)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.gt_scalar(scalar)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.mt(scalar)),
         }
     }
 
@@ -140,8 +140,8 @@ where
         GteOp: SimdComparisonOp<D>,
     {
         match self {
-            GpuOr::Cpu(t) => GpuOr::Cpu(t.gte_scalar(scalar)),
-            GpuOr::Gpu(t) => GpuOr::Gpu(t.mte(scalar)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.gte_scalar(scalar)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.mte(scalar)),
         }
     }
 
@@ -209,8 +209,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_eq_tensor_cpu() {
-        let a: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
-        let b: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 3.0, 3.0, 5.0]));
+        let a: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
+        let b: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 3.0, 3.0, 5.0]));
 
         let result = a.eq_tensor(&b);
         let slice = result.as_slice().await.unwrap();
@@ -223,8 +223,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_lt_tensor_cpu() {
-        let a: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
-        let b: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]));
+        let a: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
+        let b: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]));
 
         let result = a.lt_tensor(&b);
         let slice = result.as_slice().await.unwrap();
@@ -237,8 +237,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_gt_tensor_cpu() {
-        let a: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
-        let b: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]));
+        let a: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
+        let b: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]));
 
         let result = a.gt_tensor(&b);
         let slice = result.as_slice().await.unwrap();
@@ -251,8 +251,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_lte_tensor_cpu() {
-        let a: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
-        let b: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]));
+        let a: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
+        let b: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]));
 
         let result = a.lte_tensor(&b);
         let slice = result.as_slice().await.unwrap();
@@ -265,8 +265,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_gte_tensor_cpu() {
-        let a: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
-        let b: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]));
+        let a: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
+        let b: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]));
 
         let result = a.gte_tensor(&b);
         let slice = result.as_slice().await.unwrap();
@@ -279,7 +279,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_eq_scalar_cpu() {
-        let a: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 2.0, 4.0]));
+        let a: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 2.0, 4.0]));
 
         let result = a.eq_scalar(2.0);
         let slice = result.as_slice().await.unwrap();
@@ -292,7 +292,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_lt_scalar_cpu() {
-        let a: GpuOr<1, f32> = GpuOr::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
+        let a: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
 
         let result = a.lt_scalar(2.5);
         let slice = result.as_slice().await.unwrap();

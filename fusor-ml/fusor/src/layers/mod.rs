@@ -1,6 +1,6 @@
 //! Neural network layer implementations that work on both CPU and GPU backends.
 //!
-//! These layers wrap the GpuOr tensor operations into convenient layer abstractions.
+//! These layers wrap the Tensor tensor operations into convenient layer abstractions.
 
 mod conv1d;
 mod embedding;
