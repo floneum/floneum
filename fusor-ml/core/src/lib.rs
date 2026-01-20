@@ -4,6 +4,7 @@
 
 pub use device::*;
 pub use element_wise::CastTensor;
+pub use fusor_gguf::GgufReadError;
 pub use fusor_types::{Layout, SlidingWindow, TILE_SIZE, TensorSlice, slice_shape, slice_strides};
 pub use quantized::*;
 pub use rank::*;

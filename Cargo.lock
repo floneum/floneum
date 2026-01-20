@@ -2910,6 +2910,7 @@ dependencies = [
  "fusor-core",
  "fusor-cpu",
  "fusor-types",
+ "half 2.7.1",
  "paste",
  "pollster",
  "tokio",

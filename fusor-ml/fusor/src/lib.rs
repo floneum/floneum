@@ -13,6 +13,9 @@ mod composite;
 mod device;
 mod error;
 pub mod layers;
+pub mod quantized;
+
+pub use quantized::QGpuOr;
 
 use std::ops::{Deref, Range};
 
@@ -795,6 +798,54 @@ where
     /// Alias for matmul (for API compatibility with fusor-core)
     pub fn mat_mul(&self, rhs: &Self) -> Self {
         self.matmul(rhs)
+    }
+}
+
+// Quantized matrix multiplication for GpuOr<R, f32>
+impl<const R: usize, B> GpuOr<R, f32, B>
+where
+    B: TensorBacking<R, Elem = f32> + ResolveTensor<R>,
+{
+    /// Quantized matrix multiplication: self @ weights where weights is quantized.
+    ///
+    /// Computes `self @ weights` where `self` is an f32 tensor and `weights` is a
+    /// quantized 2D tensor. This is optimized for the case where weights are stored
+    /// in quantized format (e.g., from GGUF model files).
+    ///
+    /// # Arguments
+    /// * `weights` - A quantized 2D weight matrix
+    ///
+    /// # Panics
+    /// * If attempting to mix CPU and GPU tensors (self on CPU, weights on GPU or vice versa)
+    /// * If R < 2 (matrix multiplication requires at least 2 dimensions)
+    pub fn q_mat_mul(&self, weights: &crate::QGpuOr<2>) -> GpuOr<R, f32> {
+        use crate::QGpuOr;
+
+        match (self, weights) {
+            // CPU path - dispatch based on block type
+            // eval() returns Tensor<R, ConcreteTensor>, so we need .inner() to get ConcreteTensor
+            (GpuOr::Cpu(lhs), QGpuOr::CpuQ4_0(rhs)) => {
+                GpuOr::Cpu(fusor_cpu::Tensor::new(lhs.eval().inner().q_mat_mul(rhs)))
+            }
+            (GpuOr::Cpu(lhs), QGpuOr::CpuQ5_0(rhs)) => {
+                GpuOr::Cpu(fusor_cpu::Tensor::new(lhs.eval().inner().q_mat_mul(rhs)))
+            }
+            (GpuOr::Cpu(lhs), QGpuOr::CpuQ8_0(rhs)) => {
+                GpuOr::Cpu(fusor_cpu::Tensor::new(lhs.eval().inner().q_mat_mul(rhs)))
+            }
+            (GpuOr::Cpu(lhs), QGpuOr::CpuQ4K(rhs)) => {
+                GpuOr::Cpu(fusor_cpu::Tensor::new(lhs.eval().inner().q_mat_mul(rhs)))
+            }
+            (GpuOr::Cpu(lhs), QGpuOr::CpuQ6K(rhs)) => {
+                GpuOr::Cpu(fusor_cpu::Tensor::new(lhs.eval().inner().q_mat_mul(rhs)))
+            }
+
+            // GPU path
+            (GpuOr::Gpu(lhs), QGpuOr::Gpu(rhs)) => GpuOr::Gpu(lhs.q_mat_mul(rhs)),
+
+            // Mixed - panic
+            _ => panic!("Cannot mix CPU and GPU tensors in q_mat_mul"),
+        }
     }
 }
 

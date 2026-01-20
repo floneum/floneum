@@ -16,3 +16,4 @@ bytemuck = { version = "1.14", features = ["derive"] }
 
 [dev-dependencies]
 tokio = { version = "1.43.0", features = ["full"] }
+half = "2.4"
