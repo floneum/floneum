@@ -9,6 +9,7 @@ description = "Unified CPU/GPU tensor abstraction over fusor-cpu and fusor-core"
 [dependencies]
 fusor-cpu = { path = "../cpu" }
 fusor-core = { path = "../core" }
+fusor-gguf = { path = "../gguf" }
 fusor-types = { path = "../types" }
 pollster = "0.4.0"
 paste = "1.0"

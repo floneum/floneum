@@ -242,6 +242,42 @@ where
     }
 }
 
+impl<const R: usize, D> Tensor<R, D>
+where
+    D: SimdElement + DataType + Default,
+{
+    /// Stack tensors along a new dimension.
+    ///
+    /// This is an associated function version of the free `stack` function,
+    /// matching fusor-core's API.
+    ///
+    /// # Arguments
+    /// * `tensors` - Iterator of tensors to stack
+    /// * `dim` - Where to insert the new stacking dimension
+    pub fn stack<const R2: usize>(
+        tensors: impl IntoIterator<Item = Self>,
+        dim: usize,
+    ) -> Tensor<R2, D, ConcreteTensor<D, R2>>
+    where
+        ConcreteTensor<D, R>: fusor_cpu::NextRank<R2, D>,
+        fusor_core::Tensor<R, D>: fusor_core::NextRank<R2, D>,
+    {
+        stack(tensors, dim)
+    }
+
+    /// Concatenate tensors along a given dimension.
+    ///
+    /// This is an associated function version of the free `cat` function,
+    /// matching fusor-core's API.
+    ///
+    /// # Arguments
+    /// * `tensors` - Iterator of tensors to concatenate
+    /// * `dim` - The dimension to concatenate along
+    pub fn cat(tensors: impl IntoIterator<Item = Self>, dim: usize) -> Self {
+        cat(tensors, dim)
+    }
+}
+
 // Transpose for 2D tensors (convenience method)
 impl<D> Tensor<2, D, ConcreteTensor<D, 2>>
 where

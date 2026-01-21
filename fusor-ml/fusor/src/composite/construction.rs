@@ -4,10 +4,48 @@ use crate::{Device, Tensor, SimdElement};
 use fusor_core::DataType;
 use fusor_cpu::Expr;
 
+impl<D> Tensor<1, D>
+where
+    D: SimdElement + DataType + Default,
+{
+    /// Create a 1D tensor from a slice of data on the specified device.
+    ///
+    /// This is a compatibility method to match fusor-core's API.
+    pub fn new<'a, I>(device: &Device, data: I) -> Self
+    where
+        I: IntoIterator<Item = &'a D>,
+        I::IntoIter: ExactSizeIterator,
+        D: 'a,
+    {
+        let data_vec: Vec<D> = data.into_iter().copied().collect();
+        let len = data_vec.len();
+        match device {
+            Device::Cpu => Tensor::Cpu(fusor_cpu::Tensor::from_slice([len], &data_vec)),
+            Device::Gpu(gpu_device) => Tensor::Gpu(fusor_core::Tensor::new(gpu_device, &data_vec)),
+        }
+    }
+}
+
 impl<const R: usize, D> Tensor<R, D>
 where
     D: SimdElement + DataType + Default,
 {
+    /// Create a tensor from a slice of data with the given shape.
+    ///
+    /// The data must have exactly as many elements as the shape specifies.
+    pub fn from_slice(device: &Device, shape: [usize; R], data: &[D]) -> Self {
+        let total_elements: usize = shape.iter().product();
+        assert_eq!(data.len(), total_elements, "Data length must match shape");
+        match device {
+            Device::Cpu => Tensor::Cpu(fusor_cpu::Tensor::from_slice(shape, data)),
+            Device::Gpu(gpu_device) => {
+                // Create 1D tensor then reshape to desired shape
+                let t1d: fusor_core::Tensor<1, D> = fusor_core::Tensor::new(gpu_device, data);
+                Tensor::Gpu(t1d.reshape(shape))
+            }
+        }
+    }
+
     /// Create a tensor filled with zeros.
     pub fn zeros(device: &Device, shape: [usize; R]) -> Self {
         match device {

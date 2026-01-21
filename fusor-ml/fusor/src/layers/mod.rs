@@ -1,6 +1,8 @@
 //! Neural network layer implementations that work on both CPU and GPU backends.
 //!
 //! These layers wrap the Tensor tensor operations into convenient layer abstractions.
+//!
+//! All layers support loading from GGUF files via `VarBuilder` for f32 types.
 
 mod conv1d;
 mod embedding;

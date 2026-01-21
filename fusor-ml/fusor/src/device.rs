@@ -18,6 +18,13 @@ impl Device {
     }
 
     /// Create a new GPU device asynchronously.
+    ///
+    /// This is an alias for `gpu()` to match the fusor-core API.
+    pub async fn new() -> Result<Self, Error> {
+        Self::gpu().await
+    }
+
+    /// Create a new GPU device asynchronously.
     pub async fn gpu() -> Result<Self, Error> {
         let device = fusor_core::Device::new().await?;
         Ok(Device::Gpu(device))

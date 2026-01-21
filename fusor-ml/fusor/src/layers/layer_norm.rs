@@ -1,6 +1,6 @@
 //! Layer normalization implementation.
 
-use crate::{ConcreteTensor, Tensor, SimdElement};
+use crate::{ConcreteTensor, Device, Tensor, SimdElement, VarBuilder};
 use fusor_core::{DataType, FloatDataType};
 use fusor_cpu::FloatOps;
 
@@ -8,13 +8,13 @@ use fusor_cpu::FloatOps;
 ///
 /// Normalizes the input over the last dimension.
 /// Formula: output = (input - mean) / sqrt(variance + eps) * weight + bias
-pub struct LayerNorm<D: SimdElement> {
-    weight: Tensor<1, D, ConcreteTensor<D, 1>>,
-    bias: Option<Tensor<1, D, ConcreteTensor<D, 1>>>,
-    eps: D,
+pub struct LayerNorm<const N: usize, D: SimdElement> {
+    weight: Tensor<N, D, ConcreteTensor<D, N>>,
+    bias: Option<Tensor<N, D, ConcreteTensor<D, N>>>,
+    eps: f32,
 }
 
-impl<D> LayerNorm<D>
+impl<const N: usize, D> LayerNorm<N, D>
 where
     D: SimdElement + DataType + FloatDataType + FloatOps + Default,
 {
@@ -22,28 +22,33 @@ where
     ///
     /// Weight and bias should have shape (normalized_dim,).
     pub fn new(
-        weight: Tensor<1, D, ConcreteTensor<D, 1>>,
-        bias: Option<Tensor<1, D, ConcreteTensor<D, 1>>>,
-        eps: D,
+        weight: Tensor<N, D, ConcreteTensor<D, N>>,
+        bias: Option<Tensor<N, D, ConcreteTensor<D, N>>>,
+        eps: f32,
     ) -> Self {
         Self { weight, bias, eps }
     }
 
     /// Get the weight tensor.
-    pub fn weight(&self) -> &Tensor<1, D, ConcreteTensor<D, 1>> {
+    pub fn weight(&self) -> &Tensor<N, D, ConcreteTensor<D, N>> {
         &self.weight
     }
 
     /// Get the bias tensor if present.
-    pub fn bias(&self) -> Option<&Tensor<1, D, ConcreteTensor<D, 1>>> {
+    pub fn bias(&self) -> Option<&Tensor<N, D, ConcreteTensor<D, N>>> {
         self.bias.as_ref()
     }
 
     /// Get the epsilon value.
-    pub fn eps(&self) -> D {
+    pub fn eps(&self) -> f32 {
         self.eps
     }
+}
 
+impl<D> LayerNorm<1, D>
+where
+    D: SimdElement + DataType + FloatDataType + FloatOps + Default,
+{
     /// Forward pass for 2D input (batch, features).
     ///
     /// Normalizes over the last dimension (features).
@@ -67,7 +72,7 @@ where
         let weight_broadcast: Tensor<2, D, _> = self.weight.broadcast_as(input.shape());
         let bias_broadcast: Option<Tensor<2, D, _>> =
             self.bias.as_ref().map(|b| b.broadcast_as(input.shape()));
-        input.layer_norm(&weight_broadcast, bias_broadcast.as_ref(), self.eps, true)
+        input.layer_norm(&weight_broadcast, bias_broadcast.as_ref(), D::from_f32(self.eps), true)
     }
 
     /// Forward pass for 3D input (batch, seq_len, features).
@@ -93,7 +98,36 @@ where
         let weight_broadcast: Tensor<3, D, _> = self.weight.broadcast_as(input.shape());
         let bias_broadcast: Option<Tensor<3, D, _>> =
             self.bias.as_ref().map(|b| b.broadcast_as(input.shape()));
-        input.layer_norm(&weight_broadcast, bias_broadcast.as_ref(), self.eps, true)
+        input.layer_norm(&weight_broadcast, bias_broadcast.as_ref(), D::from_f32(self.eps), true)
+    }
+}
+
+impl LayerNorm<1, f32> {
+    /// Load LayerNorm from VarBuilder.
+    ///
+    /// Expects:
+    /// - weight: Tensor with shape matching the normalized dimension
+    /// - bias (optional): Tensor with same shape as weight
+    pub fn load(device: &Device, vb: &mut VarBuilder, eps: f32) -> crate::Result<Self> {
+        let weight_q = vb.get("weight", device)?;
+        let weight_2d: Tensor<2, f32> = weight_q.dequantize();
+        // Squeeze to 1D
+        let weight: Tensor<1, f32> = if weight_2d.shape()[0] == 1 {
+            weight_2d.squeeze(0)
+        } else {
+            weight_2d.squeeze(1)
+        };
+
+        let bias: Option<Tensor<1, f32>> = vb.get("bias", device).ok().map(|b| {
+            let bias_2d: Tensor<2, f32> = b.dequantize();
+            if bias_2d.shape()[0] == 1 {
+                bias_2d.squeeze(0)
+            } else {
+                bias_2d.squeeze(1)
+            }
+        });
+
+        Ok(Self::new(weight, bias, eps))
     }
 }
 

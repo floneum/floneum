@@ -222,7 +222,8 @@ where
             let mean = self.mean_keepdim::<OUT_RANK>(axis);
             match (self, &mean) {
                 (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a - b).eval()),
-                (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a - b),
+                // Use sub_ for broadcasting (mean has shape with last dim=1)
+                (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a.sub_::<R, R>(&b)),
                 _ => panic!("Cannot mix CPU and GPU tensors"),
             }
         } else {
@@ -239,14 +240,16 @@ where
         // centered / std
         let normalized = match (&centered, &std) {
             (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).eval()),
-            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a / b),
+            // Use div_ for broadcasting (std has shape with last dim=1)
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a.div_::<R, R>(&b)),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         };
 
         // normalized * weight
         let scaled = match (&normalized, weight) {
             (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a * b).eval()),
-            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a * b),
+            // Use mul_ for broadcasting (weight may be 1D broadcast to R)
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a.mul_::<R, R>(&b)),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         };
 
@@ -254,7 +257,8 @@ where
         if let Some(b) = bias {
             match (&scaled, b) {
                 (Tensor::Cpu(a), Tensor::Cpu(c)) => Tensor::Cpu((a + c).eval()),
-                (Tensor::Gpu(a), Tensor::Gpu(c)) => Tensor::Gpu(a + c),
+                // Use add_ for broadcasting (bias may be 1D broadcast to R)
+                (Tensor::Gpu(a), Tensor::Gpu(c)) => Tensor::Gpu(a.add_::<R, R>(&c)),
                 _ => panic!("Cannot mix CPU and GPU tensors"),
             }
         } else {

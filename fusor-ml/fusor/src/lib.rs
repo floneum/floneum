@@ -14,6 +14,9 @@ mod device;
 mod error;
 pub mod layers;
 pub mod quantized;
+mod varbuilder;
+
+pub use varbuilder::{ShardedVarBuilder, VarBuilder};
 
 pub use quantized::QMatrix;
 
@@ -22,6 +25,9 @@ use std::ops::{Deref, Range};
 pub use composite::{arange, arange_step, cat, stack, ToVec1, ToVec2, ToVec3};
 pub use device::Device;
 pub use error::Error;
+
+/// Result type for fusor operations.
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 use fusor_core::TensorSlice;
 use fusor_cpu::TensorBacking;
 
@@ -100,7 +106,7 @@ pub use fusor_cpu::{
 pub use fusor_core::Tensor as GpuTensor;
 
 // Re-export from fusor-core for GPU types
-pub use fusor_core::{DataType, FloatDataType};
+pub use fusor_core::{DataType, FloatDataType, GgufReadError};
 
 /// Runtime dispatch wrapper - holds either CPU or GPU version of an operation/tensor type.
 ///
@@ -932,6 +938,37 @@ where
         match self {
             Tensor::Cpu(_) => Device::Cpu,
             Tensor::Gpu(t) => Device::Gpu(t.device().clone()),
+        }
+    }
+
+    /// Returns the rank (number of dimensions) of the tensor.
+    ///
+    /// This is a const function that returns the compile-time rank R.
+    #[inline]
+    pub const fn rank(&self) -> usize {
+        R
+    }
+}
+
+// Scalar conversion
+impl<const R: usize, D, B: TensorBacking<R, Elem = D>> Tensor<R, D, B>
+where
+    D: SimdElement + DataType + Default + Copy,
+    B: ResolveTensor<R>,
+{
+    /// Convert a scalar tensor (or get the first element) to a scalar value.
+    ///
+    /// This is an async operation because GPU tensors need to be mapped to CPU memory.
+    pub async fn to_scalar(&self) -> Result<D, Error> {
+        match self {
+            Tensor::Cpu(t) => {
+                let slice = t.as_slice();
+                Ok(slice.as_scalar())
+            }
+            Tensor::Gpu(t) => {
+                let result = t.to_scalar().await.map_err(|e| Error::Gpu(e.into()))?;
+                Ok(result)
+            }
         }
     }
 }

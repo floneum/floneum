@@ -1,13 +1,15 @@
 //! Embedding layer implementation.
 
-use crate::{ConcreteTensor, Tensor, SimdElement};
+use crate::{ConcreteTensor, Device, QMatrix, Tensor, SimdElement, VarBuilder};
 use fusor_core::DataType;
 
 /// Embedding layer for token/position embeddings.
 ///
 /// Maps integer indices to dense vectors.
 /// Embedding table shape: (num_embeddings, embedding_dim)
+#[derive(Clone)]
 pub struct Embedding<D: SimdElement> {
+    embeddings_quantized: Option<QMatrix<2>>,
     embeddings: Tensor<2, D, ConcreteTensor<D, 2>>,
     num_embeddings: usize,
     embedding_dim: usize,
@@ -17,15 +19,14 @@ impl<D> Embedding<D>
 where
     D: SimdElement + DataType + Default,
 {
-    /// Create a new embedding layer with the given embedding table.
-    ///
-    /// Embedding table shape: (num_embeddings, embedding_dim)
-    pub fn new(embeddings: Tensor<2, D, ConcreteTensor<D, 2>>) -> Self {
+    /// Create a new embedding layer with the given embedding table (no quantization).
+    pub fn new_from_tensor(embeddings: Tensor<2, D, ConcreteTensor<D, 2>>) -> Self {
         let shape = embeddings.shape();
         let num_embeddings = shape[0];
         let embedding_dim = shape[1];
 
         Self {
+            embeddings_quantized: None,
             embeddings,
             num_embeddings,
             embedding_dim,
@@ -66,7 +67,7 @@ where
         values.reshape([batch, seq_len, self.embedding_dim])
     }
 
-    /// Get the embedding table.
+    /// Get the dequantized embedding table.
     pub fn embeddings(&self) -> &Tensor<2, D, ConcreteTensor<D, 2>> {
         &self.embeddings
     }
@@ -82,6 +83,60 @@ where
     }
 }
 
+impl Embedding<f32> {
+    /// Create a new embedding layer from a quantized matrix.
+    ///
+    /// The quantized matrix is dequantized to f32 for efficient lookup.
+    pub fn new(embeddings_quantized: QMatrix<2>) -> Self {
+        let embeddings: Tensor<2, f32> = embeddings_quantized.dequantize();
+        let shape = embeddings.shape();
+        let num_embeddings = shape[0];
+        let embedding_dim = shape[1];
+
+        Self {
+            embeddings_quantized: Some(embeddings_quantized),
+            embeddings,
+            num_embeddings,
+            embedding_dim,
+        }
+    }
+
+    /// Load an embedding layer from a VarBuilder.
+    ///
+    /// Expects weight tensor with shape: (num_embeddings, embedding_dim)
+    pub fn load(device: &Device, vb: &mut VarBuilder) -> crate::Result<Self> {
+        let embeddings = vb.get("weight", device)?;
+        Ok(Self::new(embeddings))
+    }
+
+    /// Load an embedding layer with explicit shape verification.
+    pub fn load_with_shape(
+        device: &Device,
+        vb: &mut VarBuilder,
+        num_embeddings: usize,
+        embedding_dim: usize,
+    ) -> crate::Result<Self> {
+        let embeddings = vb.get("weight", device)?;
+        let shape = embeddings.shape();
+        assert_eq!(
+            shape[0], num_embeddings,
+            "Embedding num_embeddings mismatch: expected {}, got {}",
+            num_embeddings, shape[0]
+        );
+        assert_eq!(
+            shape[1], embedding_dim,
+            "Embedding embedding_dim mismatch: expected {}, got {}",
+            embedding_dim, shape[1]
+        );
+        Ok(Self::new(embeddings))
+    }
+
+    /// Get the quantized embedding table if available.
+    pub fn embeddings_quantized(&self) -> &QMatrix<2> {
+        self.embeddings_quantized.as_ref().expect("No quantized embeddings available")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -93,7 +148,7 @@ mod tests {
         let embeddings: Tensor<2, f32> =
             Tensor::Cpu(fusor_cpu::Tensor::from_slice([3, 2], &emb_data));
 
-        let embedding_layer = Embedding::new(embeddings);
+        let embedding_layer = Embedding::new_from_tensor(embeddings);
 
         // Input: indices [0, 2, 1]
         let indices_data = [0u32, 2, 1];
@@ -124,7 +179,7 @@ mod tests {
         let embeddings: Tensor<2, f32> =
             Tensor::Cpu(fusor_cpu::Tensor::from_slice([3, 2], &emb_data));
 
-        let embedding_layer = Embedding::new(embeddings);
+        let embedding_layer = Embedding::new_from_tensor(embeddings);
 
         // Input: 2D indices [[0, 1], [2, 0]]
         let indices_data = [0u32, 1, 2, 0];
@@ -157,7 +212,7 @@ mod tests {
         let embeddings: Tensor<2, f32> =
             Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &emb_data));
 
-        let embedding_layer = Embedding::new(embeddings);
+        let embedding_layer = Embedding::new_from_tensor(embeddings);
 
         assert_eq!(embedding_layer.num_embeddings(), 2);
         assert_eq!(embedding_layer.embedding_dim(), 3);

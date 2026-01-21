@@ -1,5 +1,5 @@
 use flate2::{write::ZlibEncoder, Compression};
-use fusor_core::{cache::TensorCache, Device, Error, Tensor};
+use fusor::{cache::TensorCache, Device, Error, Tensor};
 use futures_channel::mpsc::UnboundedSender;
 use rand::{
     distr::{weighted::WeightedIndex, Distribution},
@@ -25,9 +25,9 @@ enum ModelType {
 }
 
 impl ModelType {
-    fn load(weights: &[u8], device: &Device, config: Config) -> fusor_core::Result<Self> {
+    fn load(weights: &[u8], device: &Device, config: Config) -> fusor::Result<Self> {
         let mut reader = std::io::Cursor::new(weights);
-        let mut vb = fusor_core::VarBuilder::from_gguf(&mut reader)?;
+        let mut vb = fusor::VarBuilder::from_gguf(&mut reader)?;
         Ok(Self::Quantized(crate::quantized::Whisper::load(
             device, &mut vb, config,
         )?))
@@ -48,7 +48,7 @@ pub enum WhisperLoadingError {
     DownloadingError(#[from] CacheError),
     /// An error that can occur when trying to load a [`Whisper`](crate::Whisper) model.
     #[error("Failed to load model into device: {0}")]
-    LoadModel(#[from] fusor_core::Error),
+    LoadModel(#[from] fusor::Error),
     /// An error that can occur when trying to load the whisper tokenizer.
     #[error("Failed to load tokenizer: {0}")]
     LoadTokenizer(tokenizers::Error),
@@ -68,7 +68,7 @@ pub enum WhisperLoadingError {
 pub enum WhisperError {
     /// An error that can occur when trying to run a [`Whisper`] model.
     #[error("Fusor error: {0}")]
-    Fusor(#[from] fusor_core::Error),
+    Fusor(#[from] fusor::Error),
     /// An error that can occur when encoding or decoding for a [`Whisper`] model.
     #[error("Tokenizer error: {0}")]
     Tokenizer(tokenizers::Error),
@@ -91,7 +91,7 @@ impl WhisperInner {
         tokenizer: &[u8],
         config: &[u8],
     ) -> Result<Self, WhisperLoadingError> {
-        let device = Device::new().await?;
+        let device = Device::cpu();
         let tokenizer =
             Tokenizer::from_bytes(tokenizer).map_err(WhisperLoadingError::LoadTokenizer)?;
         let config: Config =
@@ -201,7 +201,7 @@ impl Decoder {
         device: &Device,
         language_token: Option<u32>,
         attention_heads: Option<&'static [[usize; 2]]>,
-    ) -> fusor_core::Result<Self> {
+    ) -> fusor::Result<Self> {
         let no_timestamps_token = token_id(&tokenizer, NO_TIMESTAMPS_TOKEN)?;
         // Suppress the notimestamps token when in timestamps mode.
         // https://github.com/openai/whisper/blob/e8622f9afc4eba139bf796c210f5c01081000472/whisper/decoding.py#L452
@@ -222,10 +222,10 @@ impl Decoder {
         let no_speech_token = NO_SPEECH_TOKENS
             .iter()
             .find_map(|token| token_id(&tokenizer, token).ok())
-            .ok_or_else(|| fusor_core::Error::msg("no_speech_token not found"))?;
+            .ok_or_else(|| fusor::Error::msg("no_speech_token not found"))?;
         let timestamp_tokens = (0..=1500)
             .map(|i| token_id(&tokenizer, &format!("<|{:.2}|>", i as f32 * 0.02)))
-            .collect::<fusor_core::Result<Vec<_>>>()?;
+            .collect::<fusor::Result<Vec<_>>>()?;
         let timestamp_token_range =
             *timestamp_tokens.first().unwrap()..=*timestamp_tokens.last().unwrap();
         debug_assert!(timestamp_tokens
@@ -281,7 +281,7 @@ impl Decoder {
     fn encode(
         &mut self,
         mel: &Tensor<3, crate::WhisperDType>,
-    ) -> fusor_core::Result<Tensor<3, crate::WhisperDType>> {
+    ) -> fusor::Result<Tensor<3, crate::WhisperDType>> {
         let tensor = match &mut self.model {
             ModelType::Quantized(model) => model.encoder.forward(mel)?,
         };
@@ -383,7 +383,7 @@ impl Decoder {
                     .into();
             }
 
-            let [_, seq_len, _] = *ys.shape();
+            let [_, seq_len, _] = ys.shape();
             let logits = match &mut self.model {
                 ModelType::Quantized(model) => {
                     let ys_slice = ys.narrow(0, 0, 1).narrow(1, seq_len - 1, 1);
@@ -399,16 +399,16 @@ impl Decoder {
             // - If the sum of the probabilities of timestamps is higher than any other tokens,
             //   only consider timestamps when sampling.
             // https://github.com/openai/whisper/blob/e8622f9afc4eba139bf796c210f5c01081000472/whisper/decoding.py#L439
-            let logits = &logits_1d + &self.suppress_tokens;
+            let logits = (&logits_1d + &self.suppress_tokens).to_concrete();
             let next_token = if temperature > 0f64 {
-                let prs = logits.clone() / crate::WhisperDType::from(temperature as f32);
+                let prs = logits.clone().div_scalar(crate::WhisperDType::from(temperature as f32));
                 let prs = prs.softmax(0);
                 let logits_v = self
                     .apply_timestamp_rules(prs, &tokens, task.without_timestamps)
                     .await?;
                 // Weights may be NaN if decoding fails
                 let distr = WeightedIndex::new(&logits_v)
-                    .map_err(|_| fusor_core::Error::msg("Weights were invalid distribution"))?;
+                    .map_err(|_| fusor::Error::msg("Weights were invalid distribution"))?;
                 distr.sample(&mut self.rng) as u32
             } else {
                 let logits_sm = logits.softmax(0);
@@ -595,7 +595,7 @@ impl Decoder {
         // TODO: This should be dynamic based on how much memory the model uses and how much memory is available
         const MAX_CHUNKS: usize = 1;
 
-        let [_, content_frames] = *mel.shape();
+        let [_, content_frames] = mel.shape();
         let mut seek = 0;
         let start_time = cfg!(not(target_arch = "wasm32")).then(Instant::now);
         let mut chunk_indices = Vec::new();
@@ -622,7 +622,7 @@ impl Decoder {
             let batched_mel_segment: Tensor<3, crate::WhisperDType> =
                 Tensor::stack(chunked.iter().cloned(), 0);
             let batched_audio_features = self.encode(&batched_mel_segment)?;
-            let split = batched_audio_features.chunk(chunk_indices.len(), 0)?;
+            let split = batched_audio_features.chunk(chunk_indices.len(), 0);
 
             // Tokens that are remaining in the last chunk's sentence fragment
             let mut tokens_in_sentence_fragment = Vec::new();
@@ -704,7 +704,7 @@ impl Decoder {
     }
 }
 
-pub fn token_id(tokenizer: &Tokenizer, token: &str) -> fusor_core::Result<u32> {
+pub fn token_id(tokenizer: &Tokenizer, token: &str) -> fusor::Result<u32> {
     match tokenizer.token_to_id(token) {
         None => Err(Error::msg(format!("no token-id for {token}"))),
         Some(id) => Ok(id),
@@ -717,7 +717,7 @@ impl Decoder {
         logits: Tensor<1, crate::WhisperDType>,
         tokens: &[u32],
         no_timestamps: bool,
-    ) -> fusor_core::Result<Vec<crate::WhisperDType>> {
+    ) -> fusor::Result<Vec<crate::WhisperDType>> {
         let logits_slice = logits.as_slice().await?;
         let len = logits_slice.shape()[0];
         let mut logits = (0..len).map(|i| logits_slice[[i]]).collect::<Vec<_>>();
