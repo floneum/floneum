@@ -12,6 +12,7 @@ use fusor_gguf::GgufBlock;
 use pulp::Simd;
 
 use crate::expr::Expr;
+use crate::reduce::{SimdReduceOp, SumOp};
 use crate::{ConcreteTensor, MAX_SIMD_LANES, ResolvedTensor, SimdElement};
 
 /// A tensor storing quantized blocks.
@@ -216,12 +217,13 @@ impl<const R: usize> ConcreteTensor<f32, R> {
         let m = lhs_shape[R - 2];
         let k = lhs_shape[R - 1];
         let rhs_shape = rhs.element_shape();
-        let k2 = rhs_shape[0];
-        let n = rhs_shape[1];
+        // Weight is stored as [out_features, in_features] to match GPU convention
+        let n = rhs_shape[0];  // out_features
+        let k2 = rhs_shape[1]; // in_features
 
         assert_eq!(
             k, k2,
-            "Matrix dimension mismatch: lhs columns ({}) != rhs rows ({})",
+            "Matrix dimension mismatch: lhs columns ({}) != weight in_features ({})",
             k, k2
         );
 
@@ -242,8 +244,8 @@ impl<const R: usize> ConcreteTensor<f32, R> {
         let lhs_matrix_size = m * k;
         let out_matrix_size = m * n;
 
-        // Number of blocks per row in the RHS
-        let blocks_per_row = n / B::BLOCK_SIZE;
+        // Weight is [N, K], so blocks per row of weight = K / BLOCK_SIZE
+        let blocks_per_weight_row = k / B::BLOCK_SIZE;
 
         let lhs_contiguous = self.layout().is_contiguous();
 
@@ -263,7 +265,7 @@ impl<const R: usize> ConcreteTensor<f32, R> {
                     m,
                     k,
                     n,
-                    blocks_per_row,
+                    blocks_per_weight_row,
                     _phantom: std::marker::PhantomData::<B>,
                 });
             }
@@ -298,7 +300,7 @@ impl<const R: usize> ConcreteTensor<f32, R> {
                     m,
                     k,
                     n,
-                    blocks_per_row,
+                    blocks_per_weight_row,
                     _phantom: std::marker::PhantomData::<B>,
                 });
 
@@ -325,7 +327,8 @@ struct QMatmulSimd<'a, B: GgufBlock> {
     m: usize,
     k: usize,
     n: usize,
-    blocks_per_row: usize,
+    /// Number of blocks per row of the weight matrix [N, K]
+    blocks_per_weight_row: usize,
     _phantom: std::marker::PhantomData<B>,
 }
 
@@ -344,7 +347,7 @@ where
             m,
             k,
             n,
-            blocks_per_row,
+            blocks_per_weight_row,
             ..
         } = self;
 
@@ -359,65 +362,71 @@ where
                 .enumerate()
                 .for_each(|(i, out_row)| {
                     let lhs_row = &lhs_data[i * k..(i + 1) * k];
-                    process_row_simd::<B, S>(simd, lhs_row, rhs_blocks, out_row, k, blocks_per_row);
+                    process_row_simd::<B, S>(simd, lhs_row, rhs_blocks, out_row, n, blocks_per_weight_row);
                 });
         } else {
             // Sequential processing for small matrices
             for i in 0..m {
                 let lhs_row = &lhs_data[i * k..(i + 1) * k];
                 let out_row = &mut out_data[i * n..(i + 1) * n];
-                process_row_simd::<B, S>(simd, lhs_row, rhs_blocks, out_row, k, blocks_per_row);
+                process_row_simd::<B, S>(simd, lhs_row, rhs_blocks, out_row, n, blocks_per_weight_row);
             }
         }
     }
 }
 
 /// Process a single output row with SIMD
+///
+/// Computes out_row = lhs_row @ weight.T where weight is [N, K] stored in rhs_blocks.
+/// Each output element out_row[n_out] = sum_k lhs_row[k] * weight[n_out, k]
 #[inline(always)]
 fn process_row_simd<B: GgufBlock, S: Simd>(
     simd: S,
     lhs_row: &[f32],
     rhs_blocks: &[B],
     out_row: &mut [f32],
-    k: usize,
-    blocks_per_row: usize,
+    n: usize,
+    blocks_per_weight_row: usize,
 ) where
     B::Dequantized: AsRef<[f32]>,
 {
-    // For each block column in the output
-    for block_col in 0..blocks_per_row {
-        let out_col_start = block_col * B::BLOCK_SIZE;
-        let out_block = &mut out_row[out_col_start..out_col_start + B::BLOCK_SIZE];
+    // For each output column (each row of the weight matrix)
+    for n_out in 0..n {
+        let mut acc = simd.splat_f32s(0.0);
+        let mut scalar_acc = 0.0f32;
 
-        // Split output block into SIMD-aligned parts
-        let (out_simd, out_tail) = S::as_mut_simd_f32s(out_block);
+        // Sum over all input blocks (weight row n_out has blocks_per_weight_row blocks)
+        for block_idx in 0..blocks_per_weight_row {
+            let weight_block_idx = n_out * blocks_per_weight_row + block_idx;
+            let input_block_start = block_idx * B::BLOCK_SIZE;
 
-        // Accumulate contributions from all k rows
-        for rhs_row in 0..k {
-            let lhs_val = lhs_row[rhs_row];
-            let lhs_splat = simd.splat_f32s(lhs_val);
-
-            let block_idx = rhs_row * blocks_per_row + block_col;
-            let dequantized = rhs_blocks[block_idx].dequantize();
+            let dequantized = rhs_blocks[weight_block_idx].dequantize();
             let dequantized_slice = dequantized.as_ref();
+            let input_block = &lhs_row[input_block_start..input_block_start + B::BLOCK_SIZE];
 
-            // SIMD part
+            // SIMD dot product
+            let (inp_simd, inp_tail) = S::as_simd_f32s(input_block);
             let (deq_simd, deq_tail) = S::as_simd_f32s(dequantized_slice);
-            for (out_vec, &deq_vec) in out_simd.iter_mut().zip(deq_simd.iter()) {
-                *out_vec = simd.mul_add_f32s(lhs_splat, deq_vec, *out_vec);
+
+            for (&inp_vec, &deq_vec) in inp_simd.iter().zip(deq_simd.iter()) {
+                acc = simd.mul_add_f32s(inp_vec, deq_vec, acc);
             }
 
             // Scalar tail
-            for (out_val, &deq_val) in out_tail.iter_mut().zip(deq_tail.iter()) {
-                *out_val += lhs_val * deq_val;
+            for (&inp_val, &deq_val) in inp_tail.iter().zip(deq_tail.iter()) {
+                scalar_acc += inp_val * deq_val;
             }
         }
+
+        // Reduce SIMD accumulator to scalar
+        out_row[n_out] = <SumOp as SimdReduceOp<f32>>::reduce_simd_vec(simd, acc) + scalar_acc;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ResolveTensor;
     use fusor_gguf::BlockQ8_0;
     use pulp::bytemuck;
 
@@ -559,12 +568,15 @@ mod tests {
     #[test]
     fn test_matmul_quantized_vs_dequantize() {
         // Compare matmul_quantized with dequantize + regular matmul
+        // qmatmul computes: C = A @ W.T where W is [N, K] (out_features, in_features)
+        // So to compare with regular matmul, we need: C = A @ W_dequant.T
         let lhs = ConcreteTensor::<f32, 2>::from_slice(
             [3, 64],
             &(0..192).map(|x| x as f32 * 0.1).collect::<Vec<_>>(),
         );
 
-        // Create a quantized tensor
+        // Create a quantized tensor with shape [N, K] = [out_features, in_features]
+        // N = 64 (out_features), K = 64 (in_features)
         let shape = [64, 64];
         let num_blocks = 64 * 64 / 32; // 128 blocks
 
@@ -583,8 +595,12 @@ mod tests {
         let result_quantized = lhs.q_mat_mul(&rhs);
 
         // Compute using dequantize + regular matmul
+        // Since qmatmul does A @ W.T and W is [N, K], we need A @ W.T
+        // Regular matmul expects [K, N], so we transpose dequantized weight
         let rhs_dequantized = rhs.dequantize();
-        let result_dequantized = lhs.matmul_ref(&rhs_dequantized);
+        let rhs_tensor = crate::Tensor::new(rhs_dequantized);
+        let rhs_transposed = rhs_tensor.transpose(0, 1).to_concrete();
+        let result_dequantized = lhs.matmul_ref(&rhs_transposed);
 
         // Results should match
         assert_eq!(
@@ -663,7 +679,8 @@ mod tests {
 
     #[test]
     fn test_batched_q_mat_mul_3d() {
-        // Test batched q_mat_mul with 3D input: [batch, M, K] @ [K, N] -> [batch, M, N]
+        // Test batched q_mat_mul with 3D input: [batch, M, K] @ [N, K].T -> [batch, M, N]
+        // Weight W has shape [N, K] (out_features, in_features), matching GPU convention
         let batch = 2;
         let m = 3;
         let k = 64;
@@ -675,9 +692,9 @@ mod tests {
             .collect();
         let lhs = ConcreteTensor::<f32, 3>::from_slice([batch, m, k], &lhs_data);
 
-        // Create quantized RHS: [64, 32]
-        let rhs_shape = [k, n];
-        let num_blocks = k * n / 32;
+        // Create quantized RHS: [N, K] = [32, 64] (out_features, in_features)
+        let rhs_shape = [n, k];
+        let num_blocks = n * k / 32;
         let mut blocks_vec: AVec<BlockQ8_0> = AVec::with_capacity(64, num_blocks);
         for i in 0..num_blocks {
             let mut data = [0i8; 32];
@@ -696,14 +713,15 @@ mod tests {
         assert_eq!(<ConcreteTensor<f32, 3> as Expr>::shape(&result), &[batch, m, n]);
 
         // Compare with dequantize + regular batched matmul for each batch
+        // qmatmul computes: C = A @ W.T where W is [N, K]
         let rhs_dequantized = rhs.dequantize();
         for b in 0..batch {
             for i in 0..m {
                 for j in 0..n {
-                    // Compute expected value manually
+                    // Compute expected value: C[i, j] = sum_l A[i, l] * W[j, l]
                     let mut expected = 0.0f32;
                     for l in 0..k {
-                        expected += lhs.get([b, i, l]) * rhs_dequantized.get([l, j]);
+                        expected += lhs.get([b, i, l]) * rhs_dequantized.get([j, l]);
                     }
                     let actual = result.get([b, i, j]);
                     assert!(
@@ -718,7 +736,8 @@ mod tests {
 
     #[test]
     fn test_batched_q_mat_mul_4d() {
-        // Test batched q_mat_mul with 4D input: [b1, b2, M, K] @ [K, N] -> [b1, b2, M, N]
+        // Test batched q_mat_mul with 4D input: [b1, b2, M, K] @ [N, K].T -> [b1, b2, M, N]
+        // Weight W has shape [N, K] (out_features, in_features), matching GPU convention
         let b1 = 2;
         let b2 = 3;
         let m = 2;
@@ -731,9 +750,9 @@ mod tests {
             .collect();
         let lhs = ConcreteTensor::<f32, 4>::from_slice([b1, b2, m, k], &lhs_data);
 
-        // Create quantized RHS: [32, 32]
-        let rhs_shape = [k, n];
-        let num_blocks = k * n / 32;
+        // Create quantized RHS: [N, K] = [32, 32] (out_features, in_features)
+        let rhs_shape = [n, k];
+        let num_blocks = n * k / 32;
         let mut blocks_vec: AVec<BlockQ8_0> = AVec::with_capacity(64, num_blocks);
         for i in 0..num_blocks {
             let mut data = [0i8; 32];
@@ -752,14 +771,16 @@ mod tests {
         assert_eq!(<ConcreteTensor<f32, 4> as Expr>::shape(&result), &[b1, b2, m, n]);
 
         // Compare with dequantize for spot checks
+        // qmatmul computes: C = A @ W.T where W is [N, K]
         let rhs_dequantized = rhs.dequantize();
         for bi in 0..b1 {
             for bj in 0..b2 {
                 for i in 0..m {
                     for j in 0..n {
+                        // Compute expected value: C[i, j] = sum_l A[i, l] * W[j, l]
                         let mut expected = 0.0f32;
                         for l in 0..k {
-                            expected += lhs.get([bi, bj, i, l]) * rhs_dequantized.get([l, j]);
+                            expected += lhs.get([bi, bj, i, l]) * rhs_dequantized.get([j, l]);
                         }
                         let actual = result.get([bi, bj, i, j]);
                         assert!(
@@ -774,8 +795,140 @@ mod tests {
     }
 
     #[test]
+    fn test_q4_0_matmul() {
+        // Test Q4_0 quantization specifically, since that's what the whisper model uses
+        // Weight W has shape [N, K] (out_features, in_features), matching GPU convention
+        use fusor_gguf::BlockQ4_0;
+
+        let m = 2;
+        let k = 64;
+        let n = 32;
+
+        // Create LHS: [2, 64]
+        let lhs_data: Vec<f32> = (0..(m * k))
+            .map(|x| (x as f32) * 0.01 - 0.5)
+            .collect();
+        let lhs = ConcreteTensor::<f32, 2>::from_slice([m, k], &lhs_data);
+
+        // Create quantized RHS using Q4_0: [N, K] = [32, 64]
+        // Q4_0 block: 2 bytes (f16 scale) + 16 bytes (32 4-bit values packed) = 18 bytes
+        let rhs_shape = [n, k];
+        let num_blocks = n * k / 32;
+
+        // Manually create Q4_0 blocks with known patterns
+        let mut raw_bytes = Vec::with_capacity(num_blocks * std::mem::size_of::<BlockQ4_0>());
+        for block_idx in 0..num_blocks {
+            // Set scale to 0.1
+            let scale_f16 = half::f16::from_f32(0.1);
+            raw_bytes.extend_from_slice(&scale_f16.to_le_bytes());
+
+            // Pack 32 4-bit values: low nibble (indices 0-15), high nibble (indices 16-31)
+            // Create a simple pattern where values are (block_idx + i) % 16 centered at 8
+            for i in 0..16 {
+                let low_val = ((block_idx + i) % 16) as u8;   // indices 0-15
+                let high_val = ((block_idx + i + 8) % 16) as u8; // indices 16-31
+                let packed = low_val | (high_val << 4);
+                raw_bytes.push(packed);
+            }
+        }
+
+        let rhs = QuantizedTensor::<BlockQ4_0, 2>::from_raw_bytes(rhs_shape, &raw_bytes);
+
+        // Compute using q_mat_mul
+        let result = lhs.q_mat_mul(&rhs);
+
+        // Verify output shape
+        assert_eq!(<ConcreteTensor<f32, 2> as Expr>::shape(&result), &[m, n]);
+
+        // Compare with dequantize + manual matmul
+        let rhs_dequantized = rhs.dequantize();
+        for i in 0..m {
+            for j in 0..n {
+                // qmatmul computes: C[i, j] = sum_l A[i, l] * W[j, l]
+                let mut expected = 0.0f32;
+                for l in 0..k {
+                    expected += lhs.get([i, l]) * rhs_dequantized.get([j, l]);
+                }
+                let actual = result.get([i, j]);
+                assert!(
+                    (actual - expected).abs() < 1e-3,
+                    "Q4_0 mismatch at [{}, {}]: expected={}, actual={}",
+                    i, j, expected, actual
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_q4_0_matmul_realistic_size() {
+        // Test Q4_0 with whisper model-like dimensions
+        // Linear layer: input [1, seq, 384] @ weight [384, 384].T + bias
+        use fusor_gguf::BlockQ4_0;
+
+        let batch = 1;
+        let seq_len = 4;
+        let in_features = 384;
+        let out_features = 384;
+
+        // Create LHS: [1, 4, 384] with random-ish values
+        let lhs_data: Vec<f32> = (0..(batch * seq_len * in_features))
+            .map(|x| ((x as f32 * 0.1).sin() * 2.0))
+            .collect();
+        let lhs = ConcreteTensor::<f32, 3>::from_slice([batch, seq_len, in_features], &lhs_data);
+
+        // Create quantized weights: [out_features, in_features] = [384, 384]
+        let weight_shape = [out_features, in_features];
+        let num_blocks = out_features * in_features / 32;
+
+        // Create realistic Q4_0 weights with varied scales and data
+        let mut raw_bytes = Vec::with_capacity(num_blocks * std::mem::size_of::<BlockQ4_0>());
+        for block_idx in 0..num_blocks {
+            // Vary scale based on block position
+            let scale = 0.05 + (block_idx as f32 * 0.0001);
+            let scale_f16 = half::f16::from_f32(scale);
+            raw_bytes.extend_from_slice(&scale_f16.to_le_bytes());
+
+            // Create varied data pattern
+            for i in 0..16 {
+                let low_val = ((block_idx * 3 + i * 7) % 16) as u8;
+                let high_val = ((block_idx * 5 + i * 11 + 4) % 16) as u8;
+                let packed = low_val | (high_val << 4);
+                raw_bytes.push(packed);
+            }
+        }
+
+        let weights = QuantizedTensor::<BlockQ4_0, 2>::from_raw_bytes(weight_shape, &raw_bytes);
+
+        // Compute using q_mat_mul
+        let result = lhs.q_mat_mul(&weights);
+
+        // Verify output shape
+        assert_eq!(<ConcreteTensor<f32, 3> as Expr>::shape(&result), &[batch, seq_len, out_features]);
+
+        // Compare with dequantize + manual matmul for the first few positions
+        let weights_dequantized = weights.dequantize();
+        for b in 0..batch {
+            for s in 0..seq_len.min(2) {
+                for o in 0..out_features.min(10) {
+                    let mut expected = 0.0f32;
+                    for i in 0..in_features {
+                        expected += lhs.get([b, s, i]) * weights_dequantized.get([o, i]);
+                    }
+                    let actual = result.get([b, s, o]);
+                    assert!(
+                        (actual - expected).abs() < 0.1,
+                        "Realistic Q4_0 mismatch at [{}, {}, {}]: expected={}, actual={}, diff={}",
+                        b, s, o, expected, actual, (actual - expected).abs()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn test_batched_q_mat_mul_matches_unbatched() {
         // Verify that batched results match unbatched when run individually
+        // Weight W has shape [N, K] (out_features, in_features), matching GPU convention
         let m = 2;
         let k = 64;
         let n = 32;
@@ -792,9 +945,9 @@ mod tests {
         batched_data.extend(&lhs2_data);
         let lhs_batched = ConcreteTensor::<f32, 3>::from_slice([2, m, k], &batched_data);
 
-        // Create quantized RHS
-        let rhs_shape = [k, n];
-        let num_blocks = k * n / 32;
+        // Create quantized RHS: [N, K] = [32, 64] (out_features, in_features)
+        let rhs_shape = [n, k];
+        let num_blocks = n * k / 32;
         let mut blocks_vec: AVec<BlockQ8_0> = AVec::with_capacity(64, num_blocks);
         for i in 0..num_blocks {
             let mut data = [0i8; 32];

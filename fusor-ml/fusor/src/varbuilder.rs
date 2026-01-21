@@ -124,6 +124,7 @@ impl<'a> VarBuilder<'a> {
             .map_err(|e| crate::Error::VarBuilder(format!("Failed to read tensor data: {}", e)))?;
 
         // Use QMatrix::from_raw_bytes which dispatches to CPU or GPU
+        eprintln!("DEBUG: Loading tensor '{}' with type {:?} shape {:?}", full_path, ggml_type, shape);
         QMatrix::from_raw_bytes(device, shape, &bytes, ggml_type)
             .map_err(|e| crate::Error::VarBuilder(format!("Failed to create QMatrix: {}", e)))
     }

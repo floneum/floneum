@@ -566,4 +566,105 @@ mod tests {
             );
         }
     }
+
+    #[tokio::test]
+    async fn test_softmax_cpu_vs_gpu() {
+        use crate::Device;
+
+        // Create random-ish data similar to attention scores
+        let data: Vec<f32> = (0..1*8*100*100).map(|i| ((i as f32 * 0.001).sin() * 10.0)).collect();
+
+        // CPU version
+        let cpu_tensor: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 8, 100, 100], &data));
+        let cpu_result = cpu_tensor.softmax::<3>(3);
+        let cpu_slice = cpu_result.as_slice().await.unwrap();
+
+        // GPU version
+        let gpu_device = Device::new().await.expect("GPU required for this test");
+        let gpu_tensor: Tensor<4, f32> = Tensor::from_slice(&gpu_device, [1, 8, 100, 100], &data);
+        let gpu_result = gpu_tensor.softmax::<3>(3);
+        let gpu_slice = gpu_result.as_slice().await.unwrap();
+
+        // Compare
+        assert_eq!(cpu_slice.shape(), gpu_slice.shape());
+
+        let mut max_diff = 0.0f32;
+        let mut sum_diff = 0.0f32;
+        let mut count = 0;
+        for i in 0..cpu_slice.shape()[0] {
+            for j in 0..cpu_slice.shape()[1] {
+                for k in 0..cpu_slice.shape()[2].min(50) {
+                    for l in 0..cpu_slice.shape()[3].min(50) {
+                        let cpu_val: f32 = cpu_slice[[i, j, k, l]].into();
+                        let gpu_val: f32 = gpu_slice[[i, j, k, l]].into();
+                        let diff = (cpu_val - gpu_val).abs();
+                        max_diff = max_diff.max(diff);
+                        sum_diff += diff;
+                        count += 1;
+                    }
+                }
+            }
+        }
+
+        eprintln!("Softmax CPU vs GPU: max_diff={}, mean_diff={}", max_diff, sum_diff / count as f32);
+        eprintln!("CPU[0,0,0,0..5]: {:?}", (0..5).map(|i| cpu_slice[[0, 0, 0, i]]).collect::<Vec<f32>>());
+        eprintln!("GPU[0,0,0,0..5]: {:?}", (0..5).map(|i| gpu_slice[[0, 0, 0, i]]).collect::<Vec<f32>>());
+
+        assert!(max_diff < 0.001, "Softmax CPU and GPU outputs differ too much: max_diff={}", max_diff);
+    }
+
+    #[tokio::test]
+    async fn test_layer_norm_cpu_vs_gpu() {
+        use crate::Device;
+
+        // Create random-ish data similar to hidden states
+        let data: Vec<f32> = (0..1*100*384).map(|i| ((i as f32 * 0.001).sin() * 2.0)).collect();
+        let weight_data: Vec<f32> = (0..384).map(|i| 0.9 + (i as f32 * 0.001).cos() * 0.2).collect();
+        let bias_data: Vec<f32> = (0..384).map(|i| (i as f32 * 0.0001).sin() * 0.1).collect();
+
+        // CPU version
+        let cpu_tensor: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 100, 384], &data));
+        let cpu_weight: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 100, 384], &data.iter().map(|_| 1.0).collect::<Vec<f32>>()));
+        let cpu_weight_1d: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([384], &weight_data));
+        let cpu_weight_broadcast: Tensor<3, f32> = cpu_weight_1d.broadcast_as([1, 100, 384]);
+        let cpu_bias: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([384], &bias_data));
+        let cpu_bias_broadcast: Tensor<3, f32> = cpu_bias.broadcast_as([1, 100, 384]);
+        let cpu_result = cpu_tensor.layer_norm::<2>(&cpu_weight_broadcast, Some(&cpu_bias_broadcast), 1e-5, true);
+        let cpu_slice = cpu_result.as_slice().await.unwrap();
+
+        // GPU version
+        let gpu_device = Device::new().await.expect("GPU required for this test");
+        let gpu_tensor: Tensor<3, f32> = Tensor::from_slice(&gpu_device, [1, 100, 384], &data);
+        let gpu_weight_1d: Tensor<1, f32> = Tensor::from_slice(&gpu_device, [384], &weight_data);
+        let gpu_weight_broadcast: Tensor<3, f32> = gpu_weight_1d.broadcast_as([1, 100, 384]);
+        let gpu_bias: Tensor<1, f32> = Tensor::from_slice(&gpu_device, [384], &bias_data);
+        let gpu_bias_broadcast: Tensor<3, f32> = gpu_bias.broadcast_as([1, 100, 384]);
+        let gpu_result = gpu_tensor.layer_norm::<2>(&gpu_weight_broadcast, Some(&gpu_bias_broadcast), 1e-5, true);
+        let gpu_slice = gpu_result.as_slice().await.unwrap();
+
+        // Compare
+        assert_eq!(cpu_slice.shape(), gpu_slice.shape());
+
+        let mut max_diff = 0.0f32;
+        let mut sum_diff = 0.0f32;
+        let mut count = 0;
+        for i in 0..cpu_slice.shape()[0] {
+            for j in 0..cpu_slice.shape()[1].min(50) {
+                for k in 0..cpu_slice.shape()[2].min(100) {
+                    let cpu_val: f32 = cpu_slice[[i, j, k]].into();
+                    let gpu_val: f32 = gpu_slice[[i, j, k]].into();
+                    let diff = (cpu_val - gpu_val).abs();
+                    max_diff = max_diff.max(diff);
+                    sum_diff += diff;
+                    count += 1;
+                }
+            }
+        }
+
+        eprintln!("LayerNorm CPU vs GPU: max_diff={}, mean_diff={}", max_diff, sum_diff / count as f32);
+        eprintln!("CPU[0,0,0..5]: {:?}", (0..5).map(|i| cpu_slice[[0, 0, i]]).collect::<Vec<f32>>());
+        eprintln!("GPU[0,0,0..5]: {:?}", (0..5).map(|i| gpu_slice[[0, 0, i]]).collect::<Vec<f32>>());
+
+        assert!(max_diff < 0.01, "LayerNorm CPU and GPU outputs differ too much: max_diff={}", max_diff);
+    }
 }

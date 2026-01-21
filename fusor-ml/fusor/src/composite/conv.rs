@@ -111,6 +111,7 @@ where
         });
         let windows_tensor: Tensor<R2, D, _> = padded.sliding_window_view(windows);
 
+
         // Step 3: Prepare for matmul by reshaping and transposing
         let kernel_size: usize = weight_shape[spatial_start..].iter().product();
 
@@ -149,11 +150,8 @@ where
         if let Some(bias) = bias {
             // Bias shape: (out_channels,)
             // Need to broadcast to (batch, out_channels, ...spatial...)
-            // Create bias shape for broadcasting: [1, out_channels, 1, 1, ...]
-            let mut bias_shape = [1; R];
-            bias_shape[in_channels_axis] = out_channels;
-            // Use broadcast_as to properly broadcast the bias to output shape
-            let bias_broadcast: Tensor<R, D, _> = bias.broadcast_as(bias_shape);
+            // Broadcast bias to the FULL output shape for correct addition
+            let bias_broadcast: Tensor<R, D, _> = bias.broadcast_as(output_shape);
             match (&output_final, &bias_broadcast) {
                 (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a + b).eval()),
                 (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a.add_(b)),

@@ -5,7 +5,7 @@
 
 use crate::{Device, Tensor};
 use fusor_core::QMatrix as GpuQMatrix;
-use fusor_cpu::{BlockQ4K, BlockQ4_0, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, QuantizedTensor};
+use fusor_cpu::{BlockQ4K, BlockQ4_0, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, QuantizedTensor, ResolvedTensor};
 
 /// Unified quantized tensor type that holds either CPU or GPU quantized data.
 ///
@@ -26,6 +26,8 @@ pub enum QMatrix<const R: usize> {
     CpuQ4K(QuantizedTensor<BlockQ4K, R>),
     /// CPU quantized tensor with Q6K quantization (6-bit, block size 256)
     CpuQ6K(QuantizedTensor<BlockQ6K, R>),
+    /// CPU tensor with F32 data (not quantized)
+    CpuF32(fusor_cpu::ConcreteTensor<f32, R>),
     /// GPU quantized matrix (type-erased, uses runtime GgmlType)
     Gpu(GpuQMatrix),
 }
@@ -39,6 +41,7 @@ impl<const R: usize> QMatrix<R> {
             QMatrix::CpuQ8_0(_) => GgmlType::Q8_0,
             QMatrix::CpuQ4K(_) => GgmlType::Q4K,
             QMatrix::CpuQ6K(_) => GgmlType::Q6K,
+            QMatrix::CpuF32(_) => GgmlType::F32,
             QMatrix::Gpu(m) => m.datatype(),
         }
     }
@@ -63,6 +66,7 @@ impl<const R: usize> QMatrix<R> {
             QMatrix::CpuQ8_0(t) => t.element_shape(),
             QMatrix::CpuQ4K(t) => t.element_shape(),
             QMatrix::CpuQ6K(t) => t.element_shape(),
+            QMatrix::CpuF32(t) => t.shape(),
             QMatrix::Gpu(m) => m.shape(),
         }
     }
@@ -74,7 +78,8 @@ impl<const R: usize> QMatrix<R> {
             | QMatrix::CpuQ5_0(_)
             | QMatrix::CpuQ8_0(_)
             | QMatrix::CpuQ4K(_)
-            | QMatrix::CpuQ6K(_) => Device::Cpu,
+            | QMatrix::CpuQ6K(_)
+            | QMatrix::CpuF32(_) => Device::Cpu,
             QMatrix::Gpu(m) => Device::Gpu(m.device().clone()),
         }
     }
@@ -114,6 +119,14 @@ impl<const R: usize> QMatrix<R> {
                 GgmlType::Q6K => {
                     QMatrix::CpuQ6K(QuantizedTensor::from_raw_bytes(shape, bytes))
                 }
+                GgmlType::F32 => {
+                    // F32 is not quantized, load directly as f32 tensor
+                    let f32_data: Vec<f32> = bytes
+                        .chunks_exact(4)
+                        .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
+                        .collect();
+                    QMatrix::CpuF32(fusor_cpu::ConcreteTensor::from_slice(shape, &f32_data))
+                }
                 _ => panic!("Unsupported quantization type for CPU: {:?}", ty),
             }),
             Device::Gpu(gpu_device) => {
@@ -134,6 +147,7 @@ impl<const R: usize> QMatrix<R> {
             QMatrix::CpuQ8_0(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize())),
             QMatrix::CpuQ4K(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize())),
             QMatrix::CpuQ6K(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize())),
+            QMatrix::CpuF32(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.clone())),
             QMatrix::Gpu(m) => Tensor::Gpu(m.dequantize()),
         }
     }
@@ -209,5 +223,113 @@ mod tests {
                 actual
             );
         }
+    }
+
+    #[test]
+    fn test_cpu_qmatmul_simple() {
+        // Test CPU qmatmul with a simple known input
+        // Weight matrix [N, K] = [2, 32] (2 output features, 32 input features)
+        // Input [M, K] = [1, 32] (1 sample, 32 features)
+        // Output should be [M, N] = [1, 2]
+        //
+        // Weight row 0: all 1s -> dot product with input = sum(input)
+        // Weight row 1: all 2s -> dot product with input = 2 * sum(input)
+
+        let shape = [2, 32]; // [N, K] = [out_features, in_features]
+        let block_size_bytes = 34; // Q8_0 block size
+
+        // Create 2 blocks (one per row since K=32=BLOCK_SIZE)
+        let mut raw_bytes = vec![0u8; 2 * block_size_bytes];
+
+        // Block 0 (row 0): scale=1.0, data=all 1s
+        let scale_f16 = half::f16::from_f32(1.0);
+        raw_bytes[0..2].copy_from_slice(&scale_f16.to_le_bytes());
+        for i in 0..32 {
+            raw_bytes[2 + i] = 1i8 as u8; // all 1s
+        }
+
+        // Block 1 (row 1): scale=1.0, data=all 2s
+        raw_bytes[block_size_bytes..block_size_bytes + 2].copy_from_slice(&scale_f16.to_le_bytes());
+        for i in 0..32 {
+            raw_bytes[block_size_bytes + 2 + i] = 2i8 as u8; // all 2s
+        }
+
+        let qmatrix: QMatrix<2> =
+            QMatrix::from_raw_bytes(&Device::Cpu, shape, &raw_bytes, GgmlType::Q8_0).unwrap();
+
+        // Create input tensor [1, 32] with values 0.5 for each element
+        let input_data: Vec<f32> = vec![0.5; 32];
+        let input: Tensor<2, f32> = Tensor::from_slice(&Device::Cpu, [1, 32], &input_data);
+
+        // Perform qmatmul
+        let output = input.q_mat_mul(&qmatrix);
+
+        // Expected:
+        // output[0, 0] = dot(input, weight_row_0) = sum(0.5 * 1.0) for 32 elements = 16.0
+        // output[0, 1] = dot(input, weight_row_1) = sum(0.5 * 2.0) for 32 elements = 32.0
+        let cpu_result = output.unwrap_cpu();
+        let result_0 = cpu_result.get([0, 0]);
+        let result_1 = cpu_result.get([0, 1]);
+
+        println!("result[0, 0] = {} (expected 16.0)", result_0);
+        println!("result[0, 1] = {} (expected 32.0)", result_1);
+
+        assert!(
+            (result_0 - 16.0).abs() < 0.1,
+            "result[0, 0] = {}, expected 16.0",
+            result_0
+        );
+        assert!(
+            (result_1 - 32.0).abs() < 0.1,
+            "result[0, 1] = {}, expected 32.0",
+            result_1
+        );
+    }
+
+    #[test]
+    fn test_cpu_f32_qmatmul() {
+        // Test F32 (non-quantized) qmatmul
+        // Weight matrix [N, K] = [2, 4] (2 output features, 4 input features)
+        // Input [M, K] = [1, 4] (1 sample, 4 features)
+        // Output should be [M, N] = [1, 2]
+
+        let shape = [2, 4]; // [N, K] = [out_features, in_features]
+
+        // Create F32 weight data:
+        // Row 0: [1, 2, 3, 4]
+        // Row 1: [5, 6, 7, 8]
+        let weight_data: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let weight_bytes: Vec<u8> = weight_data.iter().flat_map(|f| f.to_le_bytes()).collect();
+
+        let qmatrix: QMatrix<2> =
+            QMatrix::from_raw_bytes(&Device::Cpu, shape, &weight_bytes, GgmlType::F32).unwrap();
+
+        // Create input tensor [1, 4] with values [1, 1, 1, 1]
+        let input_data: Vec<f32> = vec![1.0, 1.0, 1.0, 1.0];
+        let input: Tensor<2, f32> = Tensor::from_slice(&Device::Cpu, [1, 4], &input_data);
+
+        // Perform qmatmul
+        let output = input.q_mat_mul(&qmatrix);
+
+        // Expected:
+        // output[0, 0] = dot([1,1,1,1], [1,2,3,4]) = 1+2+3+4 = 10
+        // output[0, 1] = dot([1,1,1,1], [5,6,7,8]) = 5+6+7+8 = 26
+        let cpu_result = output.unwrap_cpu();
+        let result_0 = cpu_result.get([0, 0]);
+        let result_1 = cpu_result.get([0, 1]);
+
+        println!("F32 qmatmul result[0, 0] = {} (expected 10.0)", result_0);
+        println!("F32 qmatmul result[0, 1] = {} (expected 26.0)", result_1);
+
+        assert!(
+            (result_0 - 10.0).abs() < 0.1,
+            "result[0, 0] = {}, expected 10.0",
+            result_0
+        );
+        assert!(
+            (result_1 - 26.0).abs() < 0.1,
+            "result[0, 1] = {}, expected 26.0",
+            result_1
+        );
     }
 }

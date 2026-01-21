@@ -146,4 +146,48 @@ mod tests {
             assert!((slice[[i]] - gelu_ref(data[i])).abs() < 0.01, "Mismatch at index {}: got {}, expected {}", i, slice[[i]], gelu_ref(data[i]));
         }
     }
+
+    #[tokio::test]
+    async fn test_gelu_cpu_vs_gpu() {
+        use crate::Device;
+
+        // Create random-ish data similar to FFN activations
+        let data: Vec<f32> = (0..1*100*1536).map(|i| (i as f32 * 0.001).sin() * 5.0).collect();
+
+        // CPU version
+        let cpu_tensor: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 100, 1536], &data));
+        let cpu_result = cpu_tensor.gelu();
+        let cpu_slice = cpu_result.as_slice().await.unwrap();
+
+        // GPU version
+        let gpu_device = Device::new().await.expect("GPU required for this test");
+        let gpu_tensor: Tensor<3, f32> = Tensor::from_slice(&gpu_device, [1, 100, 1536], &data);
+        let gpu_result = gpu_tensor.gelu();
+        let gpu_slice = gpu_result.as_slice().await.unwrap();
+
+        // Compare
+        assert_eq!(cpu_slice.shape(), gpu_slice.shape());
+
+        let mut max_diff = 0.0f32;
+        let mut sum_diff = 0.0f32;
+        let mut count = 0;
+        for i in 0..cpu_slice.shape()[0] {
+            for j in 0..cpu_slice.shape()[1].min(50) {
+                for k in 0..cpu_slice.shape()[2].min(100) {
+                    let cpu_val: f32 = cpu_slice[[i, j, k]].into();
+                    let gpu_val: f32 = gpu_slice[[i, j, k]].into();
+                    let diff = (cpu_val - gpu_val).abs();
+                    max_diff = max_diff.max(diff);
+                    sum_diff += diff;
+                    count += 1;
+                }
+            }
+        }
+
+        eprintln!("GELU CPU vs GPU: max_diff={}, mean_diff={}", max_diff, sum_diff / count as f32);
+        eprintln!("CPU[0,0,0..5]: {:?}", (0..5).map(|i| cpu_slice[[0, 0, i]]).collect::<Vec<f32>>());
+        eprintln!("GPU[0,0,0..5]: {:?}", (0..5).map(|i| gpu_slice[[0, 0, i]]).collect::<Vec<f32>>());
+
+        assert!(max_diff < 0.01, "GELU CPU and GPU outputs differ too much: max_diff={}", max_diff);
+    }
 }

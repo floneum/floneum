@@ -845,6 +845,35 @@ where
             (Tensor::Cpu(lhs), QMatrix::CpuQ6K(rhs)) => {
                 Tensor::Cpu(fusor_cpu::Tensor::new(lhs.eval().inner().q_mat_mul(rhs)))
             }
+            // F32 is not quantized, use regular matmul with transpose
+            // Weight is [N, K] (out_features, in_features), we need input @ weight.T
+            (Tensor::Cpu(lhs), QMatrix::CpuF32(rhs)) => {
+                use fusor_cpu::ResolvedTensor;
+                let rhs_shape = ResolvedTensor::shape(rhs);
+                let n = rhs_shape[0]; // out_features
+                let k = rhs_shape[1]; // in_features
+
+                // Transpose weight from [N, K] to [K, N]
+                let rhs_tensor = fusor_cpu::Tensor::new(rhs.clone());
+                let rhs_transposed = rhs_tensor.transpose(0, 1);
+
+                // Reshape to R dimensions: [1, 1, ..., K, N]
+                let weight_shape: [usize; R] = std::array::from_fn(|i| {
+                    if i < R - 2 {
+                        1 // Broadcast batch dimensions
+                    } else if i == R - 2 {
+                        k // K dimension
+                    } else {
+                        n // N dimension
+                    }
+                });
+                let rhs_broadcast = rhs_transposed.reshape(weight_shape);
+
+                // Do regular matmul
+                let lhs_eval = lhs.eval();
+                let result = lhs_eval.matmul(&rhs_broadcast);
+                Tensor::Cpu(result)
+            }
 
             // GPU path
             (Tensor::Gpu(lhs), QMatrix::Gpu(rhs)) => Tensor::Gpu(lhs.q_mat_mul(rhs)),
@@ -993,4 +1022,54 @@ async fn test_gpu_or_add() {
     println!("c_cpu_or: {:?}", c_cpu_or.as_slice().await.unwrap());
     let c_gpu_or = (&a_gpu_or + &b_gpu_or) * &b_gpu_or;
     println!("c_gpu_or: {:?}", c_gpu_or.as_slice().await.unwrap());
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_matmul_cpu_vs_gpu() {
+    // Create random-ish data for matmul test
+    // Simulating attention: Q @ K^T with shape [batch, heads, seq_len, head_dim]
+    let a_data: Vec<f32> = (0..1*8*100*64).map(|i| (i as f32 * 0.001).sin()).collect();
+    let b_data: Vec<f32> = (0..1*8*64*100).map(|i| (i as f32 * 0.001).cos()).collect();
+
+    // CPU version: [1, 8, 100, 64] @ [1, 8, 64, 100] -> [1, 8, 100, 100]
+    let cpu_a: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 8, 100, 64], &a_data));
+    let cpu_b: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 8, 64, 100], &b_data));
+    let cpu_result = cpu_a.matmul(&cpu_b);
+    let cpu_slice = cpu_result.as_slice().await.unwrap();
+
+    // GPU version
+    let gpu_device = Device::new().await.expect("GPU required for this test");
+    let gpu_a: Tensor<4, f32> = Tensor::from_slice(&gpu_device, [1, 8, 100, 64], &a_data);
+    let gpu_b: Tensor<4, f32> = Tensor::from_slice(&gpu_device, [1, 8, 64, 100], &b_data);
+    let gpu_result = gpu_a.matmul(&gpu_b);
+    let gpu_slice = gpu_result.as_slice().await.unwrap();
+
+    // Compare
+    assert_eq!(cpu_slice.shape(), gpu_slice.shape());
+    assert_eq!(cpu_slice.shape(), &[1, 8, 100, 100]);
+
+    let mut max_diff = 0.0f32;
+    let mut sum_diff = 0.0f32;
+    let mut count = 0;
+    for i in 0..cpu_slice.shape()[0] {
+        for j in 0..cpu_slice.shape()[1] {
+            for k in 0..cpu_slice.shape()[2].min(50) {
+                for l in 0..cpu_slice.shape()[3].min(50) {
+                    let cpu_val: f32 = cpu_slice[[i, j, k, l]].into();
+                    let gpu_val: f32 = gpu_slice[[i, j, k, l]].into();
+                    let diff = (cpu_val - gpu_val).abs();
+                    max_diff = max_diff.max(diff);
+                    sum_diff += diff;
+                    count += 1;
+                }
+            }
+        }
+    }
+
+    eprintln!("Matmul CPU vs GPU: max_diff={}, mean_diff={}", max_diff, sum_diff / count as f32);
+    eprintln!("CPU[0,0,0,0..5]: {:?}", (0..5).map(|i| cpu_slice[[0, 0, 0, i]]).collect::<Vec<f32>>());
+    eprintln!("GPU[0,0,0,0..5]: {:?}", (0..5).map(|i| gpu_slice[[0, 0, 0, i]]).collect::<Vec<f32>>());
+
+    assert!(max_diff < 0.001, "Matmul CPU and GPU outputs differ too much: max_diff={}", max_diff);
 }
