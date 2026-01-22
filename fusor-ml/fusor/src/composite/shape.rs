@@ -2,13 +2,14 @@
 
 use std::ops::Range;
 
-use crate::{ConcreteTensor, Device, Expr, Tensor, SimdElement};
+use crate::{ConcreteTensor, Device, Expr, ResolveTensor, Tensor, SimdElement, TensorBacking};
 use fusor_core::{DataType, ShapeWithOneHole};
 use fusor_types::SlidingWindow;
 
-impl<const R: usize, D> Tensor<R, D>
+impl<const R: usize, D, B> Tensor<R, D, B>
 where
     D: SimdElement + DataType + Default,
+    B: TensorBacking<R, Elem = D> + ResolveTensor<R> + Expr<Elem = D>,
 {
     /// Reshape the tensor to a new shape.
     ///
@@ -31,7 +32,7 @@ where
     /// # Arguments
     /// * `dim0` - First dimension to swap
     /// * `dim1` - Second dimension to swap
-    pub fn transpose(&self, dim0: usize, dim1: usize) -> Self {
+    pub fn transpose(&self, dim0: usize, dim1: usize) -> Tensor<R, D> {
         match self {
             Tensor::Cpu(t) => Tensor::Cpu(t.transpose(dim0, dim1)),
             Tensor::Gpu(t) => Tensor::Gpu(t.transpose(dim0, dim1)),
@@ -41,7 +42,7 @@ where
     /// Slice the tensor along all dimensions.
     ///
     /// Returns a view into the tensor's data with updated layout.
-    pub fn slice(&self, slices: [Range<usize>; R]) -> Self {
+    pub fn slice(&self, slices: [Range<usize>; R]) -> Tensor<R, D> {
         match self {
             Tensor::Cpu(t) => Tensor::Cpu(t.slice(slices.clone())),
             Tensor::Gpu(t) => Tensor::Gpu(t.slice(slices)),
@@ -52,7 +53,7 @@ where
     ///
     /// # Arguments
     /// * `axes` - A permutation of [0, 1, ..., R-1] specifying the new order
-    pub fn permute(&self, axes: [usize; R]) -> Self {
+    pub fn permute(&self, axes: [usize; R]) -> Tensor<R, D> {
         match self {
             Tensor::Cpu(t) => Tensor::Cpu(t.permute(axes)),
             Tensor::Gpu(t) => Tensor::Gpu(t.permute(axes)),
@@ -97,7 +98,7 @@ where
     /// * `dim` - The dimension to narrow
     /// * `start` - The starting index
     /// * `length` - The length of the slice
-    pub fn narrow(&self, dim: usize, start: usize, length: usize) -> Self {
+    pub fn narrow(&self, dim: usize, start: usize, length: usize) -> Tensor<R, D> {
         match self {
             Tensor::Cpu(t) => Tensor::Cpu(t.narrow(dim, start, length)),
             Tensor::Gpu(t) => {
@@ -115,7 +116,7 @@ where
     /// # Arguments
     /// * `chunks` - Number of chunks to split into
     /// * `dim` - The dimension to split along
-    pub fn chunk(&self, chunks: usize, dim: usize) -> Vec<Self> {
+    pub fn chunk(&self, chunks: usize, dim: usize) -> Vec<Tensor<R, D>> {
         let shape = self.shape();
         let dim_size = shape[dim];
         let chunk_size = (dim_size + chunks - 1) / chunks;
@@ -136,7 +137,7 @@ where
     ///
     /// # Arguments
     /// * `repeats` - Number of times to repeat along each dimension
-    pub fn repeat(&self, repeats: [usize; R]) -> Self {
+    pub fn repeat(&self, repeats: [usize; R]) -> Tensor<R, D> {
         match self {
             Tensor::Cpu(t) => Tensor::Cpu(t.repeat(repeats)),
             Tensor::Gpu(t) => Tensor::Gpu(t.repeat(repeats)),
@@ -279,34 +280,37 @@ where
 }
 
 // Transpose for 2D tensors (convenience method)
-impl<D> Tensor<2, D, ConcreteTensor<D, 2>>
+impl<D, B> Tensor<2, D, B>
 where
     D: SimdElement + DataType + Default,
+    B: TensorBacking<2, Elem = D> + ResolveTensor<2> + Expr<Elem = D>,
 {
     /// Transpose a 2D matrix (swap dimensions 0 and 1).
-    pub fn t(&self) -> Self {
+    pub fn t(&self) -> Tensor<2, D, ConcreteTensor<D, 2>> {
         self.transpose(0, 1)
     }
 }
 
 // Transpose for 3D tensors (convenience method)
-impl<D> Tensor<3, D, ConcreteTensor<D, 3>>
+impl<D, B> Tensor<3, D, B>
 where
     D: SimdElement + DataType + Default,
+    B: TensorBacking<3, Elem = D> + ResolveTensor<3> + Expr<Elem = D>,
 {
     /// Transpose last two dimensions.
-    pub fn t(&self) -> Self {
+    pub fn t(&self) -> Tensor<3, D, ConcreteTensor<D, 3>> {
         self.transpose(1, 2)
     }
 }
 
 // Transpose for 4D tensors (convenience method)
-impl<D> Tensor<4, D, ConcreteTensor<D, 4>>
+impl<D, B> Tensor<4, D, B>
 where
     D: SimdElement + DataType + Default,
+    B: TensorBacking<4, Elem = D> + ResolveTensor<4> + Expr<Elem = D>,
 {
     /// Transpose last two dimensions.
-    pub fn t(&self) -> Self {
+    pub fn t(&self) -> Tensor<4, D, ConcreteTensor<D, 4>> {
         self.transpose(2, 3)
     }
 }
