@@ -86,6 +86,20 @@ macro_rules! define_scalar_tensor_op {
                 materialize_expr(self, shape)
             }
         }
+
+        impl<'a, E, const R: usize, T> ResolveTensor<R> for &'a $name<E, R, T>
+        where
+            E: SimdElement + $std_trait<Output = E> + Default,
+            $simd_op: SimdBinaryOp<E>,
+            T: Expr<Elem = E> + ResolveTensor<R, Elem = E>,
+        {
+            fn to_concrete(&self) -> ConcreteTensor<E, R> {
+                let shape: [usize; R] = Expr::shape(&self.tensor)
+                    .try_into()
+                    .expect("Shape length mismatch");
+                materialize_expr(*self, shape)
+            }
+        }
     };
 }
 

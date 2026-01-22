@@ -38,6 +38,7 @@ where
     /// Softmax along the last dimension.
     ///
     /// This is a convenience method equivalent to `softmax(R - 1)`.
+    /// For f32 CPU tensors, this uses an optimized fused implementation.
     pub fn softmax_last_dim<const OUT_RANK: usize>(&self) -> Self
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
@@ -120,8 +121,8 @@ where
             _ => panic!("Cannot mix CPU and GPU tensors"),
         };
 
-        // exp(x - max(x))
-        let exp_val = shifted.exp();
+        // exp(x - max(x)) - materialize since sum_keepdim is a reduction
+        let exp_val = shifted.exp().eval();
 
         // sum(exp(...)) with keepdim
         let sum_exp = exp_val.sum_keepdim::<OUT_RANK>(axis);
@@ -235,7 +236,8 @@ where
         let var = centered_sq.mean_keepdim::<OUT_RANK>(axis);
 
         // sqrt(var + eps)
-        let std = var.add_scalar(eps).sqrt();
+        let var_plus_eps = var.add_scalar(eps);
+        let std = var_plus_eps.sqrt();
 
         // centered / std
         let normalized = match (&centered, &std) {
@@ -405,6 +407,34 @@ where
             }
         } else {
             scaled
+        }
+    }
+}
+
+// Specialized f32 implementation with fused softmax
+impl<const R: usize> Tensor<R, f32>
+where
+    fusor_core::Tensor<R, f32>: fusor_core::LastRankInner,
+{
+    /// Optimized fused softmax along the last dimension for f32.
+    ///
+    /// This performs the entire softmax (max, exp, sum, normalize) in a single
+    /// pass through memory, which is significantly faster for large tensors.
+    pub fn softmax_last_dim_fused<const OUT_RANK: usize>(&self) -> Self
+    where
+        fusor_core::Tensor<R, f32>: fusor_core::LastRank<OUT_RANK, f32>,
+    {
+        match self {
+            Tensor::Cpu(t) => {
+                // Make contiguous if needed, then use fused kernel
+                let contiguous = t.eval();
+                let result = fusor_cpu::softmax_last_dim_fused(contiguous.inner());
+                Tensor::Cpu(fusor_cpu::Tensor::new(result))
+            }
+            Tensor::Gpu(t) => {
+                // GPU uses its own optimized softmax kernel
+                Tensor::Gpu(t.softmax_last_dim::<OUT_RANK>())
+            }
         }
     }
 }

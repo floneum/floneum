@@ -351,8 +351,31 @@ where
             ..
         } = self;
 
-        // Use parallel processing for larger matrices (threshold chosen to balance parallelism overhead)
-        if m >= 8 {
+        // Special fast path for m=1 (common inference case): parallelize over output columns
+        if m == 1 {
+            use rayon::prelude::*;
+
+            // For small n, don't parallelize
+            if n < 64 {
+                process_row_simd_tiled::<B, S>(simd, lhs_data, rhs_blocks, out_data, n, blocks_per_weight_row);
+            } else {
+                // Parallelize over output column chunks
+                const CHUNK_SIZE: usize = 32;
+                let chunks: Vec<(usize, &mut [f32])> = out_data
+                    .chunks_mut(CHUNK_SIZE)
+                    .enumerate()
+                    .collect();
+
+                chunks.into_par_iter().for_each(|(chunk_idx, out_chunk)| {
+                    let start_n = chunk_idx * CHUNK_SIZE;
+                    let chunk_n = out_chunk.len();
+                    process_row_simd_range::<B, S>(
+                        simd, lhs_data, rhs_blocks, out_chunk,
+                        start_n, chunk_n, blocks_per_weight_row
+                    );
+                });
+            }
+        } else if m >= 4 {
             use rayon::prelude::*;
 
             // Process rows in parallel
@@ -362,25 +385,41 @@ where
                 .enumerate()
                 .for_each(|(i, out_row)| {
                     let lhs_row = &lhs_data[i * k..(i + 1) * k];
-                    process_row_simd::<B, S>(simd, lhs_row, rhs_blocks, out_row, n, blocks_per_weight_row);
+                    process_row_simd_tiled::<B, S>(simd, lhs_row, rhs_blocks, out_row, n, blocks_per_weight_row);
                 });
         } else {
-            // Sequential processing for small matrices
+            // Sequential processing for small matrices (m=2,3)
             for i in 0..m {
                 let lhs_row = &lhs_data[i * k..(i + 1) * k];
                 let out_row = &mut out_data[i * n..(i + 1) * n];
-                process_row_simd::<B, S>(simd, lhs_row, rhs_blocks, out_row, n, blocks_per_weight_row);
+                process_row_simd_tiled::<B, S>(simd, lhs_row, rhs_blocks, out_row, n, blocks_per_weight_row);
             }
         }
     }
 }
 
-/// Process a single output row with SIMD
-///
-/// Computes out_row = lhs_row @ weight.T where weight is [N, K] stored in rhs_blocks.
-/// Each output element out_row[n_out] = sum_k lhs_row[k] * weight[n_out, k]
+/// Process a range of output columns for m=1 parallelization
 #[inline(always)]
-fn process_row_simd<B: GgufBlock, S: Simd>(
+fn process_row_simd_range<B: GgufBlock, S: Simd>(
+    simd: S,
+    lhs_row: &[f32],
+    rhs_blocks: &[B],
+    out_chunk: &mut [f32],
+    start_n: usize,
+    chunk_n: usize,
+    blocks_per_weight_row: usize,
+) where
+    B::Dequantized: AsRef<[f32]>,
+{
+    for i in 0..chunk_n {
+        let n_out = start_n + i;
+        out_chunk[i] = compute_dot_product::<B, S>(simd, lhs_row, rhs_blocks, n_out, blocks_per_weight_row);
+    }
+}
+
+/// Process a single output row with SIMD using 4-way tiling for better ILP
+#[inline(always)]
+fn process_row_simd_tiled<B: GgufBlock, S: Simd>(
     simd: S,
     lhs_row: &[f32],
     rhs_blocks: &[B],
@@ -390,37 +429,105 @@ fn process_row_simd<B: GgufBlock, S: Simd>(
 ) where
     B::Dequantized: AsRef<[f32]>,
 {
-    // For each output column (each row of the weight matrix)
-    for n_out in 0..n {
-        let mut acc = simd.splat_f32s(0.0);
-        let mut scalar_acc = 0.0f32;
+    // Process 4 output columns at a time for better instruction-level parallelism
+    const TILE: usize = 4;
+    let n_tiles = n / TILE;
+    let n_remainder = n % TILE;
 
-        // Sum over all input blocks (weight row n_out has blocks_per_weight_row blocks)
+    for tile in 0..n_tiles {
+        let base = tile * TILE;
+
+        // Initialize 4 accumulators
+        let mut acc0 = simd.splat_f32s(0.0);
+        let mut acc1 = simd.splat_f32s(0.0);
+        let mut acc2 = simd.splat_f32s(0.0);
+        let mut acc3 = simd.splat_f32s(0.0);
+        let mut scalar_acc = [0.0f32; TILE];
+
+        // Process all blocks, accumulating into all 4 outputs
         for block_idx in 0..blocks_per_weight_row {
-            let weight_block_idx = n_out * blocks_per_weight_row + block_idx;
             let input_block_start = block_idx * B::BLOCK_SIZE;
-
-            let dequantized = rhs_blocks[weight_block_idx].dequantize();
-            let dequantized_slice = dequantized.as_ref();
             let input_block = &lhs_row[input_block_start..input_block_start + B::BLOCK_SIZE];
-
-            // SIMD dot product
             let (inp_simd, inp_tail) = S::as_simd_f32s(input_block);
-            let (deq_simd, deq_tail) = S::as_simd_f32s(dequantized_slice);
 
-            for (&inp_vec, &deq_vec) in inp_simd.iter().zip(deq_simd.iter()) {
-                acc = simd.mul_add_f32s(inp_vec, deq_vec, acc);
+            // Dequantize and accumulate for each of the 4 output columns
+            let deq0 = rhs_blocks[(base + 0) * blocks_per_weight_row + block_idx].dequantize();
+            let deq1 = rhs_blocks[(base + 1) * blocks_per_weight_row + block_idx].dequantize();
+            let deq2 = rhs_blocks[(base + 2) * blocks_per_weight_row + block_idx].dequantize();
+            let deq3 = rhs_blocks[(base + 3) * blocks_per_weight_row + block_idx].dequantize();
+
+            let (deq0_simd, deq0_tail) = S::as_simd_f32s(deq0.as_ref());
+            let (deq1_simd, deq1_tail) = S::as_simd_f32s(deq1.as_ref());
+            let (deq2_simd, deq2_tail) = S::as_simd_f32s(deq2.as_ref());
+            let (deq3_simd, deq3_tail) = S::as_simd_f32s(deq3.as_ref());
+
+            // SIMD accumulation for all 4 outputs
+            for (i, &inp_vec) in inp_simd.iter().enumerate() {
+                acc0 = simd.mul_add_f32s(inp_vec, deq0_simd[i], acc0);
+                acc1 = simd.mul_add_f32s(inp_vec, deq1_simd[i], acc1);
+                acc2 = simd.mul_add_f32s(inp_vec, deq2_simd[i], acc2);
+                acc3 = simd.mul_add_f32s(inp_vec, deq3_simd[i], acc3);
             }
 
             // Scalar tail
-            for (&inp_val, &deq_val) in inp_tail.iter().zip(deq_tail.iter()) {
-                scalar_acc += inp_val * deq_val;
+            for (i, &inp_val) in inp_tail.iter().enumerate() {
+                scalar_acc[0] += inp_val * deq0_tail[i];
+                scalar_acc[1] += inp_val * deq1_tail[i];
+                scalar_acc[2] += inp_val * deq2_tail[i];
+                scalar_acc[3] += inp_val * deq3_tail[i];
             }
         }
 
-        // Reduce SIMD accumulator to scalar
-        out_row[n_out] = <SumOp as SimdReduceOp<f32>>::reduce_simd_vec(simd, acc) + scalar_acc;
+        // Reduce and store results
+        out_row[base + 0] = <SumOp as SimdReduceOp<f32>>::reduce_simd_vec(simd, acc0) + scalar_acc[0];
+        out_row[base + 1] = <SumOp as SimdReduceOp<f32>>::reduce_simd_vec(simd, acc1) + scalar_acc[1];
+        out_row[base + 2] = <SumOp as SimdReduceOp<f32>>::reduce_simd_vec(simd, acc2) + scalar_acc[2];
+        out_row[base + 3] = <SumOp as SimdReduceOp<f32>>::reduce_simd_vec(simd, acc3) + scalar_acc[3];
     }
+
+    // Handle remainder
+    for i in 0..n_remainder {
+        let n_out = n_tiles * TILE + i;
+        out_row[n_out] = compute_dot_product::<B, S>(simd, lhs_row, rhs_blocks, n_out, blocks_per_weight_row);
+    }
+}
+
+/// Compute a single dot product for one output column
+#[inline(always)]
+fn compute_dot_product<B: GgufBlock, S: Simd>(
+    simd: S,
+    lhs_row: &[f32],
+    rhs_blocks: &[B],
+    n_out: usize,
+    blocks_per_weight_row: usize,
+) -> f32
+where
+    B::Dequantized: AsRef<[f32]>,
+{
+    let mut acc = simd.splat_f32s(0.0);
+    let mut scalar_acc = 0.0f32;
+
+    for block_idx in 0..blocks_per_weight_row {
+        let weight_block_idx = n_out * blocks_per_weight_row + block_idx;
+        let input_block_start = block_idx * B::BLOCK_SIZE;
+
+        let dequantized = rhs_blocks[weight_block_idx].dequantize();
+        let dequantized_slice = dequantized.as_ref();
+        let input_block = &lhs_row[input_block_start..input_block_start + B::BLOCK_SIZE];
+
+        let (inp_simd, inp_tail) = S::as_simd_f32s(input_block);
+        let (deq_simd, deq_tail) = S::as_simd_f32s(dequantized_slice);
+
+        for (&inp_vec, &deq_vec) in inp_simd.iter().zip(deq_simd.iter()) {
+            acc = simd.mul_add_f32s(inp_vec, deq_vec, acc);
+        }
+
+        for (&inp_val, &deq_val) in inp_tail.iter().zip(deq_tail.iter()) {
+            scalar_acc += inp_val * deq_val;
+        }
+    }
+
+    <SumOp as SimdReduceOp<f32>>::reduce_simd_vec(simd, acc) + scalar_acc
 }
 
 #[cfg(test)]

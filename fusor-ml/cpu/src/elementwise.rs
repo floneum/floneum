@@ -2,11 +2,10 @@
 
 use std::ops::Neg as StdNeg;
 
-use pulp::{Arch, Simd, WithSimd};
+use pulp::Simd;
 
 use crate::{
-    ConcreteTensor, Expr, IndexIterator, ResolveTensor, ResolvedTensor, SimdElement, TensorBacking,
-    materialize_expr,
+    ConcreteTensor, Expr, ResolveTensor, SimdElement, TensorBacking, materialize_expr,
 };
 
 /// Trait for unary operations that have SIMD support
@@ -195,73 +194,6 @@ impl_scalar_unary_op!(AsinhOp, |x: f64| x.asinh(), f64);
 impl_scalar_unary_op!(AcoshOp, |x: f64| x.acosh(), f64);
 impl_scalar_unary_op!(AtanhOp, |x: f64| x.atanh(), f64);
 
-/// Helper struct for dispatching unary operations via Arch::dispatch
-struct UnaryOpDispatch<'a, E: SimdElement, Op: SimdUnaryOp<E>> {
-    input: &'a [E],
-    out: &'a mut [E],
-    _op: std::marker::PhantomData<Op>,
-}
-
-impl<E: SimdElement, Op: SimdUnaryOp<E>> WithSimd for UnaryOpDispatch<'_, E, Op> {
-    type Output = ();
-
-    #[inline(always)]
-    fn with_simd<S: Simd>(self, simd: S) -> Self::Output {
-        let (in_simd, in_tail) = E::as_simd::<S>(self.input);
-        let (out_simd, out_tail) = E::as_mut_simd::<S>(self.out);
-
-        for (a, c) in in_simd.iter().zip(out_simd.iter_mut()) {
-            *c = Op::apply_simd_vec(simd, *a);
-        }
-
-        for (a, c) in in_tail.iter().zip(out_tail.iter_mut()) {
-            *c = Op::apply_scalar(*a);
-        }
-    }
-}
-
-/// Perform a unary operation on contiguous slices using SIMD dispatch
-#[inline(always)]
-pub(crate) fn unary_op_contiguous<E: SimdElement, Op: SimdUnaryOp<E>>(input: &[E], out: &mut [E]) {
-    Arch::new().dispatch(UnaryOpDispatch::<E, Op> {
-        input,
-        out,
-        _op: std::marker::PhantomData,
-    });
-}
-
-/// Optimized unary tensor operation that works directly with ConcreteTensor references
-#[inline(always)]
-pub(crate) fn unary_tensor_op_ref<E, const R: usize, Op>(
-    input: &ConcreteTensor<E, R>,
-) -> ConcreteTensor<E, R>
-where
-    E: SimdElement,
-    Op: SimdUnaryOp<E>,
-{
-    let shape: [usize; R] = ResolvedTensor::shape(input)
-        .try_into()
-        .expect("Shape length mismatch");
-    // SAFETY: We write to all elements before returning
-    let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
-
-    // Output is always contiguous since we just created it
-    let all_contiguous = input.layout().is_contiguous();
-
-    if all_contiguous {
-        unary_op_contiguous::<E, Op>(input.data(), output.data_mut());
-    } else {
-        let tensor_shape = ResolvedTensor::shape(input);
-        for indices in IndexIterator::new(tensor_shape) {
-            let in_idx = input.layout().linear_index(&indices);
-            let out_idx = output.layout().linear_index(&indices);
-            output.data_mut()[out_idx] = Op::apply_scalar(input.data()[in_idx]);
-        }
-    }
-
-    output
-}
-
 /// Macro to define unary tensor operations (Neg, Abs, Sqrt)
 macro_rules! define_unary_tensor_op {
     ($name:ident, $simd_op:ty) => {
@@ -336,6 +268,20 @@ macro_rules! define_unary_tensor_op {
                 materialize_expr(self, shape)
             }
         }
+
+        impl<'a, E, const R: usize, T> ResolveTensor<R> for &'a $name<E, R, T>
+        where
+            E: SimdElement + Default,
+            $simd_op: SimdUnaryOp<E>,
+            T: Expr<Elem = E> + ResolveTensor<R, Elem = E>,
+        {
+            fn to_concrete(&self) -> ConcreteTensor<E, R> {
+                let shape: [usize; R] = Expr::shape(&self.input)
+                    .try_into()
+                    .expect("Shape length mismatch");
+                materialize_expr(*self, shape)
+            }
+        }
     };
     ($name:ident, $simd_op:ty, $std_trait:ident) => {
         pub struct $name<E: SimdElement, const R: usize, T: TensorBacking<R, Elem = E>> {
@@ -407,6 +353,20 @@ macro_rules! define_unary_tensor_op {
                     .try_into()
                     .expect("Shape length mismatch");
                 materialize_expr(self, shape)
+            }
+        }
+
+        impl<'a, E, const R: usize, T> ResolveTensor<R> for &'a $name<E, R, T>
+        where
+            E: SimdElement + $std_trait<Output = E> + Default,
+            $simd_op: SimdUnaryOp<E>,
+            T: Expr<Elem = E> + ResolveTensor<R, Elem = E>,
+        {
+            fn to_concrete(&self) -> ConcreteTensor<E, R> {
+                let shape: [usize; R] = Expr::shape(&self.input)
+                    .try_into()
+                    .expect("Shape length mismatch");
+                materialize_expr(*self, shape)
             }
         }
     };

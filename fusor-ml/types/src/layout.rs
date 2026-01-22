@@ -89,6 +89,21 @@ pub struct Layout {
     offset: usize,
     shape: Box<[usize]>,
     strides: Box<[usize]>,
+    contiguous: bool,
+}
+
+fn check_contiguous(offset: usize, shape: &[usize], strides: &[usize]) -> bool {
+    if offset != 0 {
+        return false;
+    }
+    let mut expected_stride = 1;
+    for i in (0..shape.len()).rev() {
+        if strides[i] != expected_stride {
+            return false;
+        }
+        expected_stride *= shape[i];
+    }
+    true
 }
 
 impl Layout {
@@ -98,29 +113,34 @@ impl Layout {
             offset: 0,
             shape: shape.into(),
             strides,
+            contiguous: true,
         }
     }
 
     pub fn from_parts(offset: usize, shape: Box<[usize]>, strides: Box<[usize]>) -> Self {
+        let contiguous = check_contiguous(offset, &shape, &strides);
         Self {
             offset,
             shape,
             strides,
+            contiguous,
         }
     }
 
     pub fn is_contiguous(&self) -> bool {
-        self.offset == 0 && self.strides == Self::continuous_strides(&self.shape)
+        self.contiguous
     }
 
     pub fn slice(&self, slices: &[Range<usize>]) -> Self {
         let (offset, strides) = slice_strides(slices, self.offset, &self.strides);
         let shape = slice_shape(slices, &self.strides);
+        let contiguous = check_contiguous(offset, &shape, &strides);
 
         Self {
             offset,
             shape,
             strides,
+            contiguous,
         }
     }
 
@@ -197,10 +217,12 @@ impl Layout {
             new_strides[new_idx] = self.strides[old_idx];
         }
 
+        let contiguous = check_contiguous(self.offset, &new_shape, &new_strides);
         Self {
             offset: self.offset,
             shape: new_shape.into_boxed_slice(),
             strides: new_strides.into_boxed_slice(),
+            contiguous,
         }
     }
 
@@ -223,10 +245,12 @@ impl Layout {
         new_shape.swap(dim0, dim1);
         new_strides.swap(dim0, dim1);
 
+        let contiguous = check_contiguous(self.offset, &new_shape, &new_strides);
         Self {
             offset: self.offset,
             shape: new_shape.into_boxed_slice(),
             strides: new_strides.into_boxed_slice(),
+            contiguous,
         }
     }
 
@@ -281,10 +305,12 @@ impl Layout {
             target_shape
         );
 
+        let contiguous = check_contiguous(self.offset, target_shape, &new_strides);
         Self {
             offset: self.offset,
             shape: target_shape.into(),
             strides: new_strides.into_boxed_slice(),
+            contiguous,
         }
     }
 
@@ -316,10 +342,12 @@ impl Layout {
             }
         }
 
+        let contiguous = check_contiguous(self.offset, &new_shape, &new_strides);
         Self {
             offset: self.offset,
             shape: new_shape.into_boxed_slice(),
             strides: new_strides.into_boxed_slice(),
+            contiguous,
         }
     }
 
@@ -350,10 +378,12 @@ impl Layout {
             }
         }
 
+        let contiguous = check_contiguous(self.offset, &new_shape, &new_strides);
         Self {
             offset: self.offset,
             shape: new_shape.into_boxed_slice(),
             strides: new_strides.into_boxed_slice(),
+            contiguous,
         }
     }
 
@@ -524,10 +554,12 @@ impl Layout {
             }
         }
 
+        let contiguous = check_contiguous(self.offset, &new_shape, &new_strides);
         Self {
             offset: self.offset,
             shape: new_shape.into_boxed_slice(),
             strides: new_strides.into_boxed_slice(),
+            contiguous,
         }
     }
 
@@ -569,10 +601,12 @@ impl Layout {
             }
         }
 
+        let contiguous = check_contiguous(self.offset, &new_shape, &new_strides);
         Self {
             offset: self.offset,
             shape: new_shape.into_boxed_slice(),
             strides: new_strides.into_boxed_slice(),
+            contiguous,
         }
     }
 
@@ -648,10 +682,12 @@ impl Layout {
             })
             .collect();
 
+        let contiguous = check_contiguous(self.offset, &new_shape, &new_strides);
         Self {
             offset: self.offset,
             shape: new_shape.into_boxed_slice(),
             strides: new_strides.into_boxed_slice(),
+            contiguous,
         }
     }
 }

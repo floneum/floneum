@@ -37,7 +37,7 @@ pub use expr::{Expr, materialize_expr};
 pub use pairwise::{Add, Div, Mul, Rem, Sub};
 pub use scalar::{AddScalar, DivScalar, MulScalar, SubScalar};
 pub use quantized::{Dequantize, QuantizedTensor};
-pub use tensor::{FloatOps, Tensor};
+pub use tensor::{FloatOps, Scalar, Tensor};
 
 // Re-export SlidingWindow from fusor-types
 pub use fusor_types::SlidingWindow;
@@ -82,7 +82,7 @@ pub use elementwise::{
 };
 pub use matmul::MatmulImpl;
 pub use pairwise::{AddOp, DivOp, MulOp, RemOp, SimdBinaryOp, SubOp};
-pub use reduce::{MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp};
+pub use reduce::{MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp, softmax_last_dim_fused, layer_norm_last_dim_fused, gelu_fused};
 
 // Re-export internal types used by other modules
 pub(crate) use concrete_tensor::IndexIterator;

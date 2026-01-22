@@ -1,8 +1,8 @@
 //! Activation functions that work on both CPU and GPU backends.
 
 use crate::{
-    AddOp, DivOp, ExpOp, FloatOps, Tensor, MulOp, NegOp, SimdBinaryOp, SimdElement,
-    SimdUnaryOp, TanhOp,
+    AddOp, DivOp, ExpOp, FloatOps, MulOp, NegOp, SimdBinaryOp, SimdElement, SimdUnaryOp, TanhOp,
+    Tensor,
 };
 use fusor_core::{DataType, FloatDataType};
 
@@ -21,7 +21,8 @@ where
         D: std::ops::Neg<Output = D>
             + std::ops::Add<Output = D>
             + std::ops::Div<Output = D>
-            + std::ops::Mul<Output = D>,
+            + std::ops::Mul<Output = D>
+            + fusor_cpu::Scalar,
         AddOp: SimdBinaryOp<D>,
         DivOp: SimdBinaryOp<D>,
         MulOp: SimdBinaryOp<D>,
@@ -35,7 +36,7 @@ where
             Tensor::Gpu(t) => Tensor::Gpu(-t.clone()),
         };
         let exp_neg = neg_self.exp();
-        let one_plus_exp = exp_neg.add_scalar(D::from_f32(1.0));
+        let one_plus_exp = exp_neg + D::from_f32(1.0);
         // self / (1 + exp(-self))
         match (self, &one_plus_exp) {
             (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).eval()),
@@ -50,10 +51,10 @@ where
     /// gelu(x) = 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
     pub fn gelu(&self) -> Self
     where
-        D: std::ops::Add<Output = D> + std::ops::Mul<Output = D>,
         AddOp: SimdBinaryOp<D>,
         MulOp: SimdBinaryOp<D>,
         TanhOp: SimdUnaryOp<D>,
+        D: fusor_cpu::Scalar,
     {
         // Clamp for numerical stability (tanh is unstable for large inputs)
         let clamped = self.clamp(D::from_f32(-5.5), D::from_f32(5.5));
@@ -61,39 +62,48 @@ where
         let coeff = D::from_f32((2.0 / std::f32::consts::PI).sqrt());
 
         // x^2
-        let x_squared = match &clamped {
-            Tensor::Cpu(t) => Tensor::Cpu((t * t).eval()),
-            Tensor::Gpu(t) => Tensor::Gpu(t * t),
-        };
+        let x_squared = &clamped * &clamped;
 
-        // 1 + 0.044715 * x^2
-        let inner_factor = x_squared.mul_scalar(D::from_f32(0.044715)).add_scalar(D::from_f32(1.0));
+        // 0.044715 * x^2 + 1.0
+        let inner_factor = x_squared * D::from_f32(0.044715) + D::from_f32(1.0);
 
         // x * (1 + 0.044715 * x^2)
-        let inner = match (&clamped, &inner_factor) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a * b).eval()),
-            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a * b),
-            _ => panic!("Cannot mix CPU and GPU tensors"),
-        };
+        let inner = &clamped * &inner_factor;
 
         // sqrt(2/pi) * (x * (1 + 0.044715 * x^2))
-        let tanh_input = inner.mul_scalar(coeff);
+        let tanh_input = inner * coeff;
 
         // tanh(...)
         let tanh_result = tanh_input.tanh();
 
         // 1 + tanh(...)
-        let one_plus_tanh = tanh_result.add_scalar(D::from_f32(1.0));
+        let one_plus_tanh = &tanh_result + D::from_f32(1.0);
 
         // x * (1 + tanh(...))
-        let product = match (self, &one_plus_tanh) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a * b).eval()),
-            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a * b),
-            _ => panic!("Cannot mix CPU and GPU tensors"),
-        };
+        let product = self * &one_plus_tanh;
 
         // 0.5 * x * (1 + tanh(...))
-        product.mul_scalar(D::from_f32(0.5))
+        (product * D::from_f32(0.5)).to_concrete()
+    }
+}
+
+impl<const R: usize> Tensor<R, f32> {
+    /// Fused GELU activation for f32 tensors.
+    ///
+    /// This is significantly faster than the standard GELU on CPU
+    /// as it computes the entire activation in a single pass.
+    pub fn gelu_fused(&self) -> Self {
+        match self {
+            Tensor::Cpu(t) => {
+                let contiguous = t.eval();
+                let result = fusor_cpu::gelu_fused(contiguous.inner());
+                Tensor::Cpu(fusor_cpu::Tensor::new(result))
+            }
+            Tensor::Gpu(_) => {
+                // Fall back to standard gelu for GPU
+                self.gelu()
+            }
+        }
     }
 }
 
@@ -103,7 +113,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_relu_cpu() {
-        let t: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([6], &[1.0, -2.0, -3.0, 4.0, 5.0, -6.0]));
+        let t: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice(
+            [6],
+            &[1.0, -2.0, -3.0, 4.0, 5.0, -6.0],
+        ));
         let result = t.relu();
         let slice = result.as_slice().await.unwrap();
 
@@ -127,7 +140,11 @@ mod tests {
         let slice = result.as_slice().await.unwrap();
 
         for i in 0..6 {
-            assert!((slice[[i]] - silu_ref(data[i])).abs() < 0.001, "Mismatch at index {}", i);
+            assert!(
+                (slice[[i]] - silu_ref(data[i])).abs() < 0.001,
+                "Mismatch at index {}",
+                i
+            );
         }
     }
 
@@ -143,7 +160,13 @@ mod tests {
         let slice = result.as_slice().await.unwrap();
 
         for i in 0..6 {
-            assert!((slice[[i]] - gelu_ref(data[i])).abs() < 0.01, "Mismatch at index {}: got {}, expected {}", i, slice[[i]], gelu_ref(data[i]));
+            assert!(
+                (slice[[i]] - gelu_ref(data[i])).abs() < 0.01,
+                "Mismatch at index {}: got {}, expected {}",
+                i,
+                slice[[i]],
+                gelu_ref(data[i])
+            );
         }
     }
 
@@ -152,10 +175,13 @@ mod tests {
         use crate::Device;
 
         // Create random-ish data similar to FFN activations
-        let data: Vec<f32> = (0..1*100*1536).map(|i| (i as f32 * 0.001).sin() * 5.0).collect();
+        let data: Vec<f32> = (0..1 * 100 * 1536)
+            .map(|i| (i as f32 * 0.001).sin() * 5.0)
+            .collect();
 
         // CPU version
-        let cpu_tensor: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 100, 1536], &data));
+        let cpu_tensor: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 100, 1536], &data));
         let cpu_result = cpu_tensor.gelu();
         let cpu_slice = cpu_result.as_slice().await.unwrap();
 
@@ -184,10 +210,24 @@ mod tests {
             }
         }
 
-        eprintln!("GELU CPU vs GPU: max_diff={}, mean_diff={}", max_diff, sum_diff / count as f32);
-        eprintln!("CPU[0,0,0..5]: {:?}", (0..5).map(|i| cpu_slice[[0, 0, i]]).collect::<Vec<f32>>());
-        eprintln!("GPU[0,0,0..5]: {:?}", (0..5).map(|i| gpu_slice[[0, 0, i]]).collect::<Vec<f32>>());
+        eprintln!(
+            "GELU CPU vs GPU: max_diff={}, mean_diff={}",
+            max_diff,
+            sum_diff / count as f32
+        );
+        eprintln!(
+            "CPU[0,0,0..5]: {:?}",
+            (0..5).map(|i| cpu_slice[[0, 0, i]]).collect::<Vec<f32>>()
+        );
+        eprintln!(
+            "GPU[0,0,0..5]: {:?}",
+            (0..5).map(|i| gpu_slice[[0, 0, i]]).collect::<Vec<f32>>()
+        );
 
-        assert!(max_diff < 0.01, "GELU CPU and GPU outputs differ too much: max_diff={}", max_diff);
+        assert!(
+            max_diff < 0.01,
+            "GELU CPU and GPU outputs differ too much: max_diff={}",
+            max_diff
+        );
     }
 }

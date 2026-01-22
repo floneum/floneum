@@ -218,6 +218,21 @@ macro_rules! define_binary_tensor_op {
                 materialize_expr(self, shape)
             }
         }
+
+        impl<'a, E, const R: usize, T1, T2> ResolveTensor<R> for &'a $name<E, R, T1, T2>
+        where
+            E: SimdElement + $std_trait<Output = E> + Default,
+            $simd_op: SimdBinaryOp<E>,
+            T1: Expr<Elem = E> + ResolveTensor<R, Elem = E>,
+            T2: Expr<Elem = E> + ResolveTensor<R, Elem = E>,
+        {
+            fn to_concrete(&self) -> ConcreteTensor<E, R> {
+                let shape: [usize; R] = Expr::shape(&self.lhs)
+                    .try_into()
+                    .expect("Shape length mismatch");
+                materialize_expr(*self, shape)
+            }
+        }
     };
 }
 

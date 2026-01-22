@@ -103,6 +103,44 @@ where
 }
 
 impl LayerNorm<1, f32> {
+    /// Forward pass with fused CPU kernel (3D input).
+    ///
+    /// This is significantly faster than the standard forward pass on CPU
+    /// as it computes mean, variance, and normalization in fewer passes.
+    pub fn forward_fused(
+        &self,
+        input: &Tensor<3, f32, ConcreteTensor<f32, 3>>,
+    ) -> Tensor<3, f32, ConcreteTensor<f32, 3>> {
+        match input {
+            Tensor::Cpu(t) => {
+                let contiguous = t.eval();
+                // Broadcast weight to match input shape for fused kernel
+                let weight_broadcast = self.weight.broadcast_as(input.shape());
+                let bias_broadcast = self.bias.as_ref().map(|b| b.broadcast_as(input.shape()));
+
+                let (weight_inner, bias_inner) = match (&weight_broadcast, &bias_broadcast) {
+                    (Tensor::Cpu(w), Some(Tensor::Cpu(b))) => {
+                        (w.eval().inner().clone(), Some(b.eval().inner().clone()))
+                    }
+                    (Tensor::Cpu(w), None) => (w.eval().inner().clone(), None),
+                    _ => unreachable!(),
+                };
+
+                let result = fusor_cpu::layer_norm_last_dim_fused(
+                    contiguous.inner(),
+                    &weight_inner,
+                    bias_inner.as_ref(),
+                    self.eps,
+                );
+                Tensor::Cpu(fusor_cpu::Tensor::new(result))
+            }
+            Tensor::Gpu(_) => {
+                // Fall back to standard forward for GPU
+                self.forward(input)
+            }
+        }
+    }
+
     /// Load LayerNorm from VarBuilder.
     ///
     /// Expects:

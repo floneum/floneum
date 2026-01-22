@@ -234,6 +234,19 @@ where
         }
     }
 
+    /// Alias for to_concrete() - evaluates lazy expressions.
+    ///
+    /// For CPU tensors, this evaluates any lazy expressions.
+    /// For GPU tensors, this is a no-op as GPU tensors are already concrete.
+    #[inline]
+    pub fn eval(&self) -> Tensor<R, D>
+    where
+        B: ResolveTensor<R>,
+        D: SimdElement,
+    {
+        self.to_concrete()
+    }
+
     /// Returns the shape of the tensor.
     pub fn shape(&self) -> [usize; R]
     where
@@ -395,6 +408,82 @@ where
     }
 }
 
+// Tensor * scalar (owned)
+impl<const R: usize, D, B, B2> std::ops::Mul<D> for Tensor<R, D, B>
+where
+    CpuTensor<R, B>: std::ops::Mul<D, Output = CpuTensor<R, B2>>,
+    GpuTensor<R, D>: std::ops::Mul<D, Output = GpuTensor<R, D>>,
+    B: TensorBacking<R, Elem = D>,
+    B2: TensorBacking<R, Elem = D>,
+    D: fusor_cpu::Scalar,
+{
+    type Output = Tensor<R, D, B2>;
+
+    fn mul(self, rhs: D) -> Self::Output {
+        match self {
+            Tensor::Cpu(t) => Tensor::Cpu(t * rhs),
+            Tensor::Gpu(t) => Tensor::Gpu(t * rhs),
+        }
+    }
+}
+
+// &Tensor * scalar
+impl<'a, const R: usize, D, B, B2> std::ops::Mul<D> for &'a Tensor<R, D, B>
+where
+    &'a CpuTensor<R, B>: std::ops::Mul<D, Output = CpuTensor<R, B2>>,
+    &'a GpuTensor<R, D>: std::ops::Mul<D, Output = GpuTensor<R, D>>,
+    B: TensorBacking<R, Elem = D>,
+    B2: TensorBacking<R, Elem = D>,
+    D: fusor_cpu::Scalar,
+{
+    type Output = Tensor<R, D, B2>;
+
+    fn mul(self, rhs: D) -> Self::Output {
+        match self {
+            Tensor::Cpu(t) => Tensor::Cpu(t * rhs),
+            Tensor::Gpu(t) => Tensor::Gpu(t * rhs),
+        }
+    }
+}
+
+// Tensor + scalar (owned)
+impl<const R: usize, D, B, B2> std::ops::Add<D> for Tensor<R, D, B>
+where
+    CpuTensor<R, B>: std::ops::Add<D, Output = CpuTensor<R, B2>>,
+    GpuTensor<R, D>: std::ops::Add<D, Output = GpuTensor<R, D>>,
+    B: TensorBacking<R, Elem = D>,
+    B2: TensorBacking<R, Elem = D>,
+    D: fusor_cpu::Scalar,
+{
+    type Output = Tensor<R, D, B2>;
+
+    fn add(self, rhs: D) -> Self::Output {
+        match self {
+            Tensor::Cpu(t) => Tensor::Cpu(t + rhs),
+            Tensor::Gpu(t) => Tensor::Gpu(t + rhs),
+        }
+    }
+}
+
+// &Tensor + scalar
+impl<'a, const R: usize, D, B, B2> std::ops::Add<D> for &'a Tensor<R, D, B>
+where
+    &'a CpuTensor<R, B>: std::ops::Add<D, Output = CpuTensor<R, B2>>,
+    &'a GpuTensor<R, D>: std::ops::Add<D, Output = GpuTensor<R, D>>,
+    B: TensorBacking<R, Elem = D>,
+    B2: TensorBacking<R, Elem = D>,
+    D: fusor_cpu::Scalar,
+{
+    type Output = Tensor<R, D, B2>;
+
+    fn add(self, rhs: D) -> Self::Output {
+        match self {
+            Tensor::Cpu(t) => Tensor::Cpu(t + rhs),
+            Tensor::Gpu(t) => Tensor::Gpu(t + rhs),
+        }
+    }
+}
+
 // Broadcasting binary operations that can work with tensors of different ranks
 impl<const R: usize, D> Tensor<R, D>
 where
@@ -537,16 +626,17 @@ fn broadcast_shapes<const R1: usize, const R2: usize, const R3: usize>(
     result
 }
 
-/// Macro to implement unary element-wise operations for Tensor.
-macro_rules! impl_tensor_unary_op {
-    ($method:ident, $op:ident) => {
-        impl<const R: usize, D> Tensor<R, D>
+/// Macro to implement lazy unary element-wise operations for Tensor (any backing type).
+macro_rules! impl_tensor_unary_op_lazy {
+    ($method:ident, $op:ident, $expr_type:ident) => {
+        impl<const R: usize, D, B> Tensor<R, D, B>
         where
-            D: SimdElement + DataType + FloatDataType + Default,
+            D: SimdElement + DataType + FloatDataType,
+            B: TensorBacking<R, Elem = D>,
             fusor_cpu::$op: fusor_cpu::SimdUnaryOp<D>,
         {
-            #[doc = concat!("Element-wise ", stringify!($method), " operation.")]
-            pub fn $method(&self) -> Tensor<R, D> {
+            #[doc = concat!("Element-wise ", stringify!($method), " operation (lazy for CPU).")]
+            pub fn $method(&self) -> Tensor<R, D, fusor_cpu::$expr_type<D, R, &B>> {
                 match self {
                     Tensor::Cpu(t) => Tensor::Cpu(t.$method()),
                     Tensor::Gpu(t) => Tensor::Gpu(t.$method()),
@@ -556,24 +646,24 @@ macro_rules! impl_tensor_unary_op {
     };
 }
 
-impl_tensor_unary_op!(abs, AbsOp);
-impl_tensor_unary_op!(sqrt, SqrtOp);
-impl_tensor_unary_op!(exp, ExpOp);
-impl_tensor_unary_op!(exp2, Exp2Op);
-impl_tensor_unary_op!(log, LogOp);
-impl_tensor_unary_op!(log2, Log2Op);
-impl_tensor_unary_op!(sin, SinOp);
-impl_tensor_unary_op!(cos, CosOp);
-impl_tensor_unary_op!(tan, TanOp);
-impl_tensor_unary_op!(tanh, TanhOp);
-impl_tensor_unary_op!(asin, AsinOp);
-impl_tensor_unary_op!(acos, AcosOp);
-impl_tensor_unary_op!(atan, AtanOp);
-impl_tensor_unary_op!(sinh, SinhOp);
-impl_tensor_unary_op!(cosh, CoshOp);
-impl_tensor_unary_op!(asinh, AsinhOp);
-impl_tensor_unary_op!(acosh, AcoshOp);
-impl_tensor_unary_op!(atanh, AtanhOp);
+impl_tensor_unary_op_lazy!(abs, AbsOp, Abs);
+impl_tensor_unary_op_lazy!(sqrt, SqrtOp, Sqrt);
+impl_tensor_unary_op_lazy!(exp, ExpOp, Exp);
+impl_tensor_unary_op_lazy!(exp2, Exp2Op, Exp2);
+impl_tensor_unary_op_lazy!(log, LogOp, Log);
+impl_tensor_unary_op_lazy!(log2, Log2Op, Log2);
+impl_tensor_unary_op_lazy!(sin, SinOp, Sin);
+impl_tensor_unary_op_lazy!(cos, CosOp, Cos);
+impl_tensor_unary_op_lazy!(tan, TanOp, Tan);
+impl_tensor_unary_op_lazy!(tanh, TanhOp, Tanh);
+impl_tensor_unary_op_lazy!(asin, AsinOp, Asin);
+impl_tensor_unary_op_lazy!(acos, AcosOp, Acos);
+impl_tensor_unary_op_lazy!(atan, AtanOp, Atan);
+impl_tensor_unary_op_lazy!(sinh, SinhOp, Sinh);
+impl_tensor_unary_op_lazy!(cosh, CoshOp, Cosh);
+impl_tensor_unary_op_lazy!(asinh, AsinhOp, Asinh);
+impl_tensor_unary_op_lazy!(acosh, AcoshOp, Acosh);
+impl_tensor_unary_op_lazy!(atanh, AtanhOp, Atanh);
 
 // Approximate exp operations (GPU-optimized, CPU falls back to standard exp)
 impl<const R: usize, D> Tensor<R, D>
@@ -585,7 +675,7 @@ where
     /// Uses a polynomial approximation on GPU for better performance.
     pub fn approximate_exp(&self) -> Tensor<R, D> {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.exp()),
+            Tensor::Cpu(t) => Tensor::Cpu(t.exp().eval()),
             Tensor::Gpu(t) => Tensor::Gpu(t.appoximate_exp()),
         }
     }
@@ -593,7 +683,7 @@ where
     /// Less approximate exp function (medium accuracy/speed tradeoff on GPU, exact on CPU).
     pub fn less_approximate_exp(&self) -> Tensor<R, D> {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.exp()),
+            Tensor::Cpu(t) => Tensor::Cpu(t.exp().eval()),
             Tensor::Gpu(t) => Tensor::Gpu(t.less_appoximate_exp()),
         }
     }
@@ -609,8 +699,8 @@ where
     /// More accurate but potentially slower than built-in tanh on some platforms.
     pub fn tanh_exact(&self) -> Tensor<R, D> {
         match self {
-            // CPU tanh is already exact
-            Tensor::Cpu(t) => Tensor::Cpu(t.tanh()),
+            // CPU tanh is already exact - evaluate to concrete
+            Tensor::Cpu(t) => Tensor::Cpu(t.tanh().eval()),
             Tensor::Gpu(t) => Tensor::Gpu(t.tanh_exact()),
         }
     }

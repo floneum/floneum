@@ -121,6 +121,48 @@ macro_rules! impl_matmul_naive {
 
 impl_matmul_naive!(i8, i16, i32, i64, u8, u16, u32, u64);
 
+/// Extract a batch matrix from a non-contiguous tensor into a contiguous buffer
+#[inline]
+fn extract_batch_matrix<T: SimdElement + Copy, const R: usize>(
+    tensor: &ConcreteTensor<T, R>,
+    batch_indices: &[usize],
+    rows: usize,
+    cols: usize,
+    buffer: &mut [T],
+) {
+    let layout = tensor.layout();
+    let data = tensor.data();
+
+    // Pre-compute the base offset from batch indices
+    let mut base_idx = [0usize; R];
+    for (idx, &b) in batch_indices.iter().enumerate() {
+        base_idx[idx] = b;
+    }
+
+    // Check if the last two dimensions are contiguous (common case for transposed matrices)
+    let strides = layout.strides();
+    let last_two_contiguous = R >= 2 && strides[R - 1] == 1 && strides[R - 2] == cols;
+
+    if last_two_contiguous {
+        // Fast path: copy entire rows at once
+        base_idx[R - 2] = 0;
+        base_idx[R - 1] = 0;
+        let start_offset = layout.linear_index(&base_idx);
+        let src = &data[start_offset..start_offset + rows * cols];
+        buffer[..rows * cols].copy_from_slice(src);
+    } else {
+        // General path: extract element by element, but optimize inner loop
+        for i in 0..rows {
+            base_idx[R - 2] = i;
+            for j in 0..cols {
+                base_idx[R - 1] = j;
+                let idx = layout.linear_index(&base_idx);
+                buffer[i * cols + j] = data[idx];
+            }
+        }
+    }
+}
+
 /// Generic batched matrix multiplication for N-dimensional tensors (N >= 2)
 /// Shape: [...batch_dims, M, K] @ [...batch_dims, K, N] -> [...batch_dims, M, N]
 /// All batch dimensions must match between lhs and rhs.
@@ -191,49 +233,54 @@ pub fn batched_matmul<T: SimdElement + MatmulImpl, const R: usize>(
             );
         }
     } else {
-        // Slow path for non-contiguous tensors
-        // We need to iterate over batch indices
+        // Optimized path for non-contiguous tensors:
+        // Extract each batch matrix to contiguous memory, then use optimized matmul
         let batch_dims = &lhs_shape[..R - 2];
         let mut batch_indices = vec![0usize; R - 2];
 
-        for _ in 0..batch_size {
-            // Perform matmul for this batch
-            for i in 0..m {
-                for j in 0..n {
-                    let mut sum = T::default();
-                    for l in 0..k {
-                        // Build full index for lhs: [...batch_indices, i, l]
-                        let mut lhs_idx_arr = [0usize; R];
-                        let mut rhs_idx_arr = [0usize; R];
-                        let mut out_idx_arr = [0usize; R];
+        // Reusable buffers for non-contiguous extraction
+        let mut lhs_buffer = if !lhs_contiguous {
+            vec![T::default(); lhs_matrix_size]
+        } else {
+            Vec::new()
+        };
+        let mut rhs_buffer = if !rhs_contiguous {
+            vec![T::default(); rhs_matrix_size]
+        } else {
+            Vec::new()
+        };
 
-                        for (idx, &b) in batch_indices.iter().enumerate() {
-                            lhs_idx_arr[idx] = b;
-                            rhs_idx_arr[idx] = b;
-                            out_idx_arr[idx] = b;
-                        }
-                        lhs_idx_arr[R - 2] = i;
-                        lhs_idx_arr[R - 1] = l;
-                        rhs_idx_arr[R - 2] = l;
-                        rhs_idx_arr[R - 1] = j;
+        for b in 0..batch_size {
+            // Get contiguous data for this batch
+            let lhs_slice: &[T] = if lhs_contiguous {
+                let offset = b * lhs_matrix_size;
+                &lhs.data()[offset..offset + lhs_matrix_size]
+            } else {
+                // Extract non-contiguous lhs to buffer
+                extract_batch_matrix(lhs, &batch_indices, m, k, &mut lhs_buffer);
+                &lhs_buffer
+            };
 
-                        let lhs_idx = lhs.layout().linear_index(&lhs_idx_arr);
-                        let rhs_idx = rhs.layout().linear_index(&rhs_idx_arr);
-                        sum = sum + lhs.data()[lhs_idx] * rhs.data()[rhs_idx];
-                    }
+            let rhs_slice: &[T] = if rhs_contiguous {
+                let offset = b * rhs_matrix_size;
+                &rhs.data()[offset..offset + rhs_matrix_size]
+            } else {
+                // Extract non-contiguous rhs to buffer
+                extract_batch_matrix(rhs, &batch_indices, k, n, &mut rhs_buffer);
+                &rhs_buffer
+            };
 
-                    let mut out_idx_arr = [0usize; R];
-                    for (idx, &b) in batch_indices.iter().enumerate() {
-                        out_idx_arr[idx] = b;
-                    }
-                    out_idx_arr[R - 2] = i;
-                    out_idx_arr[R - 1] = j;
-                    let out_idx = output.layout().linear_index(&out_idx_arr);
-                    output.data_mut()[out_idx] = sum;
-                }
-            }
+            let out_offset = b * out_matrix_size;
+            T::matmul_contiguous(
+                lhs_slice,
+                rhs_slice,
+                &mut output.data_mut()[out_offset..out_offset + out_matrix_size],
+                m,
+                k,
+                n,
+            );
 
-            // Increment batch indices (like a multi-digit counter)
+            // Increment batch indices
             for d in (0..batch_indices.len()).rev() {
                 batch_indices[d] += 1;
                 if batch_indices[d] < batch_dims[d] {

@@ -91,7 +91,14 @@ impl WhisperInner {
         tokenizer: &[u8],
         config: &[u8],
     ) -> Result<Self, WhisperLoadingError> {
-        let device = Device::cpu();
+        // Set FUSOR_USE_GPU=1 to use GPU, otherwise CPU
+        let use_gpu = std::env::var("FUSOR_USE_GPU").map(|v| v == "1").unwrap_or(false);
+        let device = if use_gpu {
+            eprintln!("DEBUG: Creating GPU device...");
+            Device::new().await?
+        } else {
+            Device::cpu()
+        };
         eprintln!("DEBUG: Loading model with device: {:?}", device);
         let tokenizer =
             Tokenizer::from_bytes(tokenizer).map_err(WhisperLoadingError::LoadTokenizer)?;

@@ -35,11 +35,12 @@ pub(super) async fn extract_timestamps(
     let weights = weights.softmax_last_dim();
 
     // Smooth
+    let var_sqrt = weights.var_keepdim(weights.rank() - 2).sqrt().eval();
     let weights = &median_filter(
         filter_width,
         weights
             .sub_(&weights.mean_keepdim(weights.rank() - 2))
-            .div_(&weights.var_keepdim(weights.rank() - 2).sqrt()),
+            .div_(&var_sqrt),
     )?;
 
     let cost = weights.mean(1);

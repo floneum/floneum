@@ -146,7 +146,8 @@ where
             (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a - b).eval()),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         };
-        let exp_scores = scores_shifted.exp();
+        // Materialize exp_scores since sum_keepdim is a reduction that needs concrete data
+        let exp_scores = scores_shifted.exp().eval();
         let sum_exp = exp_scores.sum_keepdim::<3>(3);
         let attn_weights = match (&exp_scores, &sum_exp) {
             (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).eval()),

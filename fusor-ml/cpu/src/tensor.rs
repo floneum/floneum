@@ -12,7 +12,7 @@ use crate::concrete_tensor::IndexIterator;
 use crate::conditional::{IsNonZero, where_cond_ref};
 use crate::elementwise::{
     AbsOp, AcosOp, AcoshOp, AsinOp, AsinhOp, AtanOp, AtanhOp, CosOp, CoshOp, Exp2Op, ExpOp,
-    Log2Op, LogOp, NegOp, SimdUnaryOp, SinOp, SinhOp, SqrtOp, TanOp, TanhOp, unary_tensor_op_ref,
+    Log2Op, LogOp, NegOp, SimdUnaryOp, SinOp, SinhOp, SqrtOp, TanOp, TanhOp,
 };
 use crate::expr::Expr;
 use crate::index::index_select_ref;
@@ -394,222 +394,6 @@ where
         let concrete = self.inner.to_concrete();
         let new_layout = concrete.layout().sliding_window(&windows);
         Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
-    }
-
-    /// Absolute value element-wise
-    #[inline]
-    pub fn abs(&self) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default,
-        AbsOp: SimdUnaryOp<E>,
-    {
-        Tensor::new(unary_tensor_op_ref::<E, R, AbsOp>(
-            &self.inner.to_concrete(),
-        ))
-    }
-
-    /// Square root element-wise
-    #[inline]
-    pub fn sqrt(&self) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default,
-        SqrtOp: SimdUnaryOp<E>,
-    {
-        Tensor::new(unary_tensor_op_ref::<E, R, SqrtOp>(
-            &self.inner.to_concrete(),
-        ))
-    }
-
-    /// Exponential (e^x) element-wise
-    #[inline]
-    pub fn exp(&self) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default,
-        ExpOp: SimdUnaryOp<E>,
-    {
-        Tensor::new(unary_tensor_op_ref::<E, R, ExpOp>(
-            &self.inner.to_concrete(),
-        ))
-    }
-
-    /// Natural logarithm element-wise
-    #[inline]
-    pub fn log(&self) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default,
-        LogOp: SimdUnaryOp<E>,
-    {
-        Tensor::new(unary_tensor_op_ref::<E, R, LogOp>(
-            &self.inner.to_concrete(),
-        ))
-    }
-
-    /// Sine element-wise
-    #[inline]
-    pub fn sin(&self) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default,
-        SinOp: SimdUnaryOp<E>,
-    {
-        Tensor::new(unary_tensor_op_ref::<E, R, SinOp>(
-            &self.inner.to_concrete(),
-        ))
-    }
-
-    /// Cosine element-wise
-    #[inline]
-    pub fn cos(&self) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default,
-        CosOp: SimdUnaryOp<E>,
-    {
-        Tensor::new(unary_tensor_op_ref::<E, R, CosOp>(
-            &self.inner.to_concrete(),
-        ))
-    }
-
-    /// Hyperbolic tangent element-wise
-    #[inline]
-    pub fn tanh(&self) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default,
-        TanhOp: SimdUnaryOp<E>,
-    {
-        Tensor::new(unary_tensor_op_ref::<E, R, TanhOp>(
-            &self.inner.to_concrete(),
-        ))
-    }
-
-    /// Base-2 exponential (2^x) element-wise
-    #[inline]
-    pub fn exp2(&self) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default,
-        Exp2Op: SimdUnaryOp<E>,
-    {
-        Tensor::new(unary_tensor_op_ref::<E, R, Exp2Op>(
-            &self.inner.to_concrete(),
-        ))
-    }
-
-    /// Base-2 logarithm element-wise
-    #[inline]
-    pub fn log2(&self) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default,
-        Log2Op: SimdUnaryOp<E>,
-    {
-        Tensor::new(unary_tensor_op_ref::<E, R, Log2Op>(
-            &self.inner.to_concrete(),
-        ))
-    }
-
-    /// Tangent element-wise
-    #[inline]
-    pub fn tan(&self) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default,
-        TanOp: SimdUnaryOp<E>,
-    {
-        Tensor::new(unary_tensor_op_ref::<E, R, TanOp>(
-            &self.inner.to_concrete(),
-        ))
-    }
-
-    /// Arc sine (inverse sin) element-wise
-    #[inline]
-    pub fn asin(&self) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default,
-        AsinOp: SimdUnaryOp<E>,
-    {
-        Tensor::new(unary_tensor_op_ref::<E, R, AsinOp>(
-            &self.inner.to_concrete(),
-        ))
-    }
-
-    /// Arc cosine (inverse cos) element-wise
-    #[inline]
-    pub fn acos(&self) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default,
-        AcosOp: SimdUnaryOp<E>,
-    {
-        Tensor::new(unary_tensor_op_ref::<E, R, AcosOp>(
-            &self.inner.to_concrete(),
-        ))
-    }
-
-    /// Arc tangent (inverse tan) element-wise
-    #[inline]
-    pub fn atan(&self) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default,
-        AtanOp: SimdUnaryOp<E>,
-    {
-        Tensor::new(unary_tensor_op_ref::<E, R, AtanOp>(
-            &self.inner.to_concrete(),
-        ))
-    }
-
-    /// Hyperbolic sine element-wise
-    #[inline]
-    pub fn sinh(&self) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default,
-        SinhOp: SimdUnaryOp<E>,
-    {
-        Tensor::new(unary_tensor_op_ref::<E, R, SinhOp>(
-            &self.inner.to_concrete(),
-        ))
-    }
-
-    /// Hyperbolic cosine element-wise
-    #[inline]
-    pub fn cosh(&self) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default,
-        CoshOp: SimdUnaryOp<E>,
-    {
-        Tensor::new(unary_tensor_op_ref::<E, R, CoshOp>(
-            &self.inner.to_concrete(),
-        ))
-    }
-
-    /// Inverse hyperbolic sine element-wise
-    #[inline]
-    pub fn asinh(&self) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default,
-        AsinhOp: SimdUnaryOp<E>,
-    {
-        Tensor::new(unary_tensor_op_ref::<E, R, AsinhOp>(
-            &self.inner.to_concrete(),
-        ))
-    }
-
-    /// Inverse hyperbolic cosine element-wise
-    #[inline]
-    pub fn acosh(&self) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default,
-        AcoshOp: SimdUnaryOp<E>,
-    {
-        Tensor::new(unary_tensor_op_ref::<E, R, AcoshOp>(
-            &self.inner.to_concrete(),
-        ))
-    }
-
-    /// Inverse hyperbolic tangent element-wise
-    #[inline]
-    pub fn atanh(&self) -> Tensor<R, ConcreteTensor<E, R>>
-    where
-        E: Default,
-        AtanhOp: SimdUnaryOp<E>,
-    {
-        Tensor::new(unary_tensor_op_ref::<E, R, AtanhOp>(
-            &self.inner.to_concrete(),
-        ))
     }
 
     /// Sum all elements in the tensor
@@ -1005,6 +789,175 @@ impl FloatOps for f64 {
     }
 }
 
+// Lazy unary operations that don't require ResolveTensor
+impl<const R: usize, E, T> Tensor<R, T>
+where
+    E: SimdElement,
+    T: TensorBacking<R, Elem = E>,
+{
+    /// Absolute value element-wise (lazy)
+    #[inline]
+    pub fn abs(&self) -> Tensor<R, elementwise::Abs<E, R, &T>>
+    where
+        AbsOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(elementwise::Abs::new(&self.inner))
+    }
+
+    /// Square root element-wise (lazy)
+    #[inline]
+    pub fn sqrt(&self) -> Tensor<R, elementwise::Sqrt<E, R, &T>>
+    where
+        SqrtOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(elementwise::Sqrt::new(&self.inner))
+    }
+
+    /// Exponential (e^x) element-wise (lazy)
+    #[inline]
+    pub fn exp(&self) -> Tensor<R, elementwise::Exp<E, R, &T>>
+    where
+        ExpOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(elementwise::Exp::new(&self.inner))
+    }
+
+    /// Natural logarithm element-wise (lazy)
+    #[inline]
+    pub fn log(&self) -> Tensor<R, elementwise::Log<E, R, &T>>
+    where
+        LogOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(elementwise::Log::new(&self.inner))
+    }
+
+    /// Sine element-wise (lazy)
+    #[inline]
+    pub fn sin(&self) -> Tensor<R, elementwise::Sin<E, R, &T>>
+    where
+        SinOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(elementwise::Sin::new(&self.inner))
+    }
+
+    /// Cosine element-wise (lazy)
+    #[inline]
+    pub fn cos(&self) -> Tensor<R, elementwise::Cos<E, R, &T>>
+    where
+        CosOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(elementwise::Cos::new(&self.inner))
+    }
+
+    /// Tangent element-wise (lazy)
+    #[inline]
+    pub fn tan(&self) -> Tensor<R, elementwise::Tan<E, R, &T>>
+    where
+        TanOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(elementwise::Tan::new(&self.inner))
+    }
+
+    /// Base-2 exponential (2^x) element-wise (lazy)
+    #[inline]
+    pub fn exp2(&self) -> Tensor<R, elementwise::Exp2<E, R, &T>>
+    where
+        Exp2Op: SimdUnaryOp<E>,
+    {
+        Tensor::new(elementwise::Exp2::new(&self.inner))
+    }
+
+    /// Base-2 logarithm element-wise (lazy)
+    #[inline]
+    pub fn log2(&self) -> Tensor<R, elementwise::Log2<E, R, &T>>
+    where
+        Log2Op: SimdUnaryOp<E>,
+    {
+        Tensor::new(elementwise::Log2::new(&self.inner))
+    }
+
+    /// Arc sine (inverse sin) element-wise (lazy)
+    #[inline]
+    pub fn asin(&self) -> Tensor<R, elementwise::Asin<E, R, &T>>
+    where
+        AsinOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(elementwise::Asin::new(&self.inner))
+    }
+
+    /// Arc cosine (inverse cos) element-wise (lazy)
+    #[inline]
+    pub fn acos(&self) -> Tensor<R, elementwise::Acos<E, R, &T>>
+    where
+        AcosOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(elementwise::Acos::new(&self.inner))
+    }
+
+    /// Arc tangent (inverse tan) element-wise (lazy)
+    #[inline]
+    pub fn atan(&self) -> Tensor<R, elementwise::Atan<E, R, &T>>
+    where
+        AtanOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(elementwise::Atan::new(&self.inner))
+    }
+
+    /// Hyperbolic sine element-wise (lazy)
+    #[inline]
+    pub fn sinh(&self) -> Tensor<R, elementwise::Sinh<E, R, &T>>
+    where
+        SinhOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(elementwise::Sinh::new(&self.inner))
+    }
+
+    /// Hyperbolic cosine element-wise (lazy)
+    #[inline]
+    pub fn cosh(&self) -> Tensor<R, elementwise::Cosh<E, R, &T>>
+    where
+        CoshOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(elementwise::Cosh::new(&self.inner))
+    }
+
+    /// Hyperbolic tangent element-wise (lazy)
+    #[inline]
+    pub fn tanh(&self) -> Tensor<R, elementwise::Tanh<E, R, &T>>
+    where
+        TanhOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(elementwise::Tanh::new(&self.inner))
+    }
+
+    /// Inverse hyperbolic sine element-wise (lazy)
+    #[inline]
+    pub fn asinh(&self) -> Tensor<R, elementwise::Asinh<E, R, &T>>
+    where
+        AsinhOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(elementwise::Asinh::new(&self.inner))
+    }
+
+    /// Inverse hyperbolic cosine element-wise (lazy)
+    #[inline]
+    pub fn acosh(&self) -> Tensor<R, elementwise::Acosh<E, R, &T>>
+    where
+        AcoshOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(elementwise::Acosh::new(&self.inner))
+    }
+
+    /// Inverse hyperbolic tangent element-wise (lazy)
+    #[inline]
+    pub fn atanh(&self) -> Tensor<R, elementwise::Atanh<E, R, &T>>
+    where
+        AtanhOp: SimdUnaryOp<E>,
+    {
+        Tensor::new(elementwise::Atanh::new(&self.inner))
+    }
+}
+
 // Specialized methods for float tensors (f32 and f64)
 impl<const R: usize, E, T> Tensor<R, T>
 where
@@ -1196,6 +1149,75 @@ where
 
     fn neg(self) -> Self::Output {
         Tensor::new(elementwise::Neg::new(&self.inner))
+    }
+}
+
+/// Marker trait for scalar types (not tensors).
+/// This is used to disambiguate `Tensor * scalar` from `Tensor * Tensor`.
+pub trait Scalar: Copy {}
+
+impl Scalar for f32 {}
+impl Scalar for f64 {}
+impl Scalar for i8 {}
+impl Scalar for i16 {}
+impl Scalar for i32 {}
+impl Scalar for i64 {}
+impl Scalar for u8 {}
+impl Scalar for u16 {}
+impl Scalar for u32 {}
+impl Scalar for u64 {}
+
+// Scalar multiplication: Tensor * scalar
+impl<const R: usize, T, E> StdMul<E> for Tensor<R, T>
+where
+    T: TensorBacking<R, Elem = E>,
+    E: SimdElement + StdMul<Output = E> + Default + Scalar,
+    MulOp: SimdBinaryOp<E>,
+{
+    type Output = Tensor<R, scalar::MulScalar<E, R, T>>;
+
+    fn mul(self, rhs: E) -> Self::Output {
+        Tensor::new(scalar::MulScalar::new(self.inner, rhs))
+    }
+}
+
+impl<'a, const R: usize, T, E> StdMul<E> for &'a Tensor<R, T>
+where
+    T: TensorBacking<R, Elem = E>,
+    E: SimdElement + StdMul<Output = E> + Default + Scalar,
+    MulOp: SimdBinaryOp<E>,
+{
+    type Output = Tensor<R, scalar::MulScalar<E, R, &'a T>>;
+
+    fn mul(self, rhs: E) -> Self::Output {
+        Tensor::new(scalar::MulScalar::new(&self.inner, rhs))
+    }
+}
+
+// Scalar addition: Tensor + scalar
+impl<const R: usize, T, E> StdAdd<E> for Tensor<R, T>
+where
+    T: TensorBacking<R, Elem = E>,
+    E: SimdElement + StdAdd<Output = E> + Default + Scalar,
+    AddOp: SimdBinaryOp<E>,
+{
+    type Output = Tensor<R, scalar::AddScalar<E, R, T>>;
+
+    fn add(self, rhs: E) -> Self::Output {
+        Tensor::new(scalar::AddScalar::new(self.inner, rhs))
+    }
+}
+
+impl<'a, const R: usize, T, E> StdAdd<E> for &'a Tensor<R, T>
+where
+    T: TensorBacking<R, Elem = E>,
+    E: SimdElement + StdAdd<Output = E> + Default + Scalar,
+    AddOp: SimdBinaryOp<E>,
+{
+    type Output = Tensor<R, scalar::AddScalar<E, R, &'a T>>;
+
+    fn add(self, rhs: E) -> Self::Output {
+        Tensor::new(scalar::AddScalar::new(&self.inner, rhs))
     }
 }
 

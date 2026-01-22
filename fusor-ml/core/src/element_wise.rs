@@ -156,6 +156,14 @@ impl<const R: usize, T: DataType> Add<T> for Tensor<R, T> {
     }
 }
 
+impl<const R: usize, T: DataType> Add<T> for &Tensor<R, T> {
+    type Output = Tensor<R, T>;
+
+    fn add(self, rhs: T) -> Self::Output {
+        self.clone() + rhs
+    }
+}
+
 impl<const R: usize, T: DataType> Sum for Tensor<R, T> {
     fn sum<I: Iterator<Item = Self>>(mut iter: I) -> Self {
         let first = iter.next().expect("Cannot sum over empty iterator");
@@ -496,6 +504,14 @@ impl<const R: usize, T: DataType> Mul<T> for Tensor<R, T> {
                 .with_name("multiply_const"),
             self.shape().as_slice(),
         ))
+    }
+}
+
+impl<const R: usize, T: DataType> Mul<T> for &Tensor<R, T> {
+    type Output = Tensor<R, T>;
+
+    fn mul(self, rhs: T) -> Self::Output {
+        self.clone() * rhs
     }
 }
 
