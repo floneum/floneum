@@ -1,10 +1,12 @@
 //! Normalization operations that work on both CPU and GPU backends.
 
 use crate::{
-    AddOp, ConcreteTensor, DivOp, ExpOp, FloatOps, Tensor, MulOp, SimdBinaryOp, SimdElement,
-    SimdUnaryOp, SqrtOp, SubOp,
+    AddOp, ConcreteTensor, DivOp, ExpOp, FloatOps, MulOp, SimdBinaryOp, SimdElement, SimdUnaryOp,
+    SqrtOp, SubOp, Tensor,
 };
-use fusor_core::{DataType, FloatDataType, LastRank as GpuLastRank, NextRankInner as GpuNextRankInner};
+use fusor_core::{
+    DataType, FloatDataType, LastRank as GpuLastRank, NextRankInner as GpuNextRankInner,
+};
 use fusor_cpu::{LastRank as CpuLastRank, MaxOp, SimdReduceOp, SumOp};
 
 impl<const R: usize, D> Tensor<R, D>
@@ -148,9 +150,7 @@ where
         <fusor_core::Tensor<R, D> as fusor_core::LastRankInner>::LastRank:
             GpuNextRankInner<NextRank = fusor_core::Tensor<R, D>>,
         SumOp: SimdReduceOp<D>,
-        D: std::ops::Mul<Output = D>
-            + std::ops::Div<Output = D>
-            + std::ops::Add<Output = D>,
+        D: std::ops::Mul<Output = D> + std::ops::Div<Output = D> + std::ops::Add<Output = D>,
         MulOp: SimdBinaryOp<D>,
         DivOp: SimdBinaryOp<D>,
         AddOp: SimdBinaryOp<D>,
@@ -171,18 +171,10 @@ where
         let rms = mean_sq_eps.sqrt();
 
         // x / rms
-        let normalized = match (self, &rms) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).to_concrete()),
-            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a / b),
-            _ => panic!("Cannot mix CPU and GPU tensors"),
-        };
+        let normalized = self / &rms;
 
         // normalized * weight
-        match (&normalized, weight) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a * b).to_concrete()),
-            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a * b),
-            _ => panic!("Cannot mix CPU and GPU tensors"),
-        }
+        (&normalized * weight).to_concrete()
     }
 
     /// Layer Normalization along the last axis.
@@ -361,9 +353,7 @@ where
         <fusor_core::Tensor<R, D> as fusor_core::LastRankInner>::LastRank:
             GpuNextRankInner<NextRank = fusor_core::Tensor<R, D>>,
         SumOp: SimdReduceOp<D>,
-        D: std::ops::Mul<Output = D>
-            + std::ops::Div<Output = D>
-            + std::ops::Add<Output = D>,
+        D: std::ops::Mul<Output = D> + std::ops::Div<Output = D> + std::ops::Add<Output = D>,
         MulOp: SimdBinaryOp<D>,
         DivOp: SimdBinaryOp<D>,
         AddOp: SimdBinaryOp<D>,
@@ -519,8 +509,10 @@ mod tests {
         // 2x3 tensor
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
         let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
-        let weight: Tensor<2, f32> =
-            Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &[1.0, 1.0, 1.0, 1.0, 1.0, 1.0]));
+        let weight: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice(
+            [2, 3],
+            &[1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        ));
 
         let result = t.rms_norm::<1>(&weight, 1e-5);
         let slice = result.as_slice().await.unwrap();
@@ -580,11 +572,7 @@ mod tests {
         // std = sqrt(2/3 + eps)
         let var: f32 = 2.0 / 3.0;
         let std = (var + 1e-5).sqrt();
-        let expected: Vec<f32> = vec![
-            (-1.0) / std,
-            0.0 / std,
-            1.0 / std,
-        ];
+        let expected: Vec<f32> = vec![(-1.0) / std, 0.0 / std, 1.0 / std];
 
         for i in 0..3 {
             assert!(
@@ -602,10 +590,13 @@ mod tests {
         use crate::Device;
 
         // Create random-ish data similar to attention scores
-        let data: Vec<f32> = (0..1*8*100*100).map(|i| (i as f32 * 0.001).sin() * 10.0).collect();
+        let data: Vec<f32> = (0..1 * 8 * 100 * 100)
+            .map(|i| (i as f32 * 0.001).sin() * 10.0)
+            .collect();
 
         // CPU version
-        let cpu_tensor: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 8, 100, 100], &data));
+        let cpu_tensor: Tensor<4, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 8, 100, 100], &data));
         let cpu_result = cpu_tensor.softmax::<3>(3);
         let cpu_slice = cpu_result.as_slice().await.unwrap();
 
@@ -636,11 +627,29 @@ mod tests {
             }
         }
 
-        eprintln!("Softmax CPU vs GPU: max_diff={}, mean_diff={}", max_diff, sum_diff / count as f32);
-        eprintln!("CPU[0,0,0,0..5]: {:?}", (0..5).map(|i| cpu_slice[[0, 0, 0, i]]).collect::<Vec<f32>>());
-        eprintln!("GPU[0,0,0,0..5]: {:?}", (0..5).map(|i| gpu_slice[[0, 0, 0, i]]).collect::<Vec<f32>>());
+        eprintln!(
+            "Softmax CPU vs GPU: max_diff={}, mean_diff={}",
+            max_diff,
+            sum_diff / count as f32
+        );
+        eprintln!(
+            "CPU[0,0,0,0..5]: {:?}",
+            (0..5)
+                .map(|i| cpu_slice[[0, 0, 0, i]])
+                .collect::<Vec<f32>>()
+        );
+        eprintln!(
+            "GPU[0,0,0,0..5]: {:?}",
+            (0..5)
+                .map(|i| gpu_slice[[0, 0, 0, i]])
+                .collect::<Vec<f32>>()
+        );
 
-        assert!(max_diff < 0.001, "Softmax CPU and GPU outputs differ too much: max_diff={}", max_diff);
+        assert!(
+            max_diff < 0.001,
+            "Softmax CPU and GPU outputs differ too much: max_diff={}",
+            max_diff
+        );
     }
 
     #[tokio::test]
@@ -648,17 +657,29 @@ mod tests {
         use crate::Device;
 
         // Create random-ish data similar to hidden states
-        let data: Vec<f32> = (0..1*100*384).map(|i| ((i as f32 * 0.001).sin() * 2.0)).collect();
-        let weight_data: Vec<f32> = (0..384).map(|i| 0.9 + (i as f32 * 0.001).cos() * 0.2).collect();
+        let data: Vec<f32> = (0..1 * 100 * 384)
+            .map(|i| ((i as f32 * 0.001).sin() * 2.0))
+            .collect();
+        let weight_data: Vec<f32> = (0..384)
+            .map(|i| 0.9 + (i as f32 * 0.001).cos() * 0.2)
+            .collect();
         let bias_data: Vec<f32> = (0..384).map(|i| (i as f32 * 0.0001).sin() * 0.1).collect();
 
         // CPU version
-        let cpu_tensor: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 100, 384], &data));
-        let cpu_weight_1d: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([384], &weight_data));
+        let cpu_tensor: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 100, 384], &data));
+        let cpu_weight_1d: Tensor<1, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([384], &weight_data));
         let cpu_weight_broadcast: Tensor<3, f32> = cpu_weight_1d.broadcast_as([1, 100, 384]);
-        let cpu_bias: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([384], &bias_data));
+        let cpu_bias: Tensor<1, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([384], &bias_data));
         let cpu_bias_broadcast: Tensor<3, f32> = cpu_bias.broadcast_as([1, 100, 384]);
-        let cpu_result = cpu_tensor.layer_norm::<2>(&cpu_weight_broadcast, Some(&cpu_bias_broadcast), 1e-5, true);
+        let cpu_result = cpu_tensor.layer_norm::<2>(
+            &cpu_weight_broadcast,
+            Some(&cpu_bias_broadcast),
+            1e-5,
+            true,
+        );
         let cpu_slice = cpu_result.as_slice().await.unwrap();
 
         // GPU version
@@ -668,7 +689,12 @@ mod tests {
         let gpu_weight_broadcast: Tensor<3, f32> = gpu_weight_1d.broadcast_as([1, 100, 384]);
         let gpu_bias: Tensor<1, f32> = Tensor::from_slice(&gpu_device, [384], &bias_data);
         let gpu_bias_broadcast: Tensor<3, f32> = gpu_bias.broadcast_as([1, 100, 384]);
-        let gpu_result = gpu_tensor.layer_norm::<2>(&gpu_weight_broadcast, Some(&gpu_bias_broadcast), 1e-5, true);
+        let gpu_result = gpu_tensor.layer_norm::<2>(
+            &gpu_weight_broadcast,
+            Some(&gpu_bias_broadcast),
+            1e-5,
+            true,
+        );
         let gpu_slice = gpu_result.as_slice().await.unwrap();
 
         // Compare
@@ -690,10 +716,24 @@ mod tests {
             }
         }
 
-        eprintln!("LayerNorm CPU vs GPU: max_diff={}, mean_diff={}", max_diff, sum_diff / count as f32);
-        eprintln!("CPU[0,0,0..5]: {:?}", (0..5).map(|i| cpu_slice[[0, 0, i]]).collect::<Vec<f32>>());
-        eprintln!("GPU[0,0,0..5]: {:?}", (0..5).map(|i| gpu_slice[[0, 0, i]]).collect::<Vec<f32>>());
+        eprintln!(
+            "LayerNorm CPU vs GPU: max_diff={}, mean_diff={}",
+            max_diff,
+            sum_diff / count as f32
+        );
+        eprintln!(
+            "CPU[0,0,0..5]: {:?}",
+            (0..5).map(|i| cpu_slice[[0, 0, i]]).collect::<Vec<f32>>()
+        );
+        eprintln!(
+            "GPU[0,0,0..5]: {:?}",
+            (0..5).map(|i| gpu_slice[[0, 0, i]]).collect::<Vec<f32>>()
+        );
 
-        assert!(max_diff < 0.01, "LayerNorm CPU and GPU outputs differ too much: max_diff={}", max_diff);
+        assert!(
+            max_diff < 0.01,
+            "LayerNorm CPU and GPU outputs differ too much: max_diff={}",
+            max_diff
+        );
     }
 }

@@ -245,7 +245,7 @@ impl ResidualAttentionBlock {
         }
         let mlp = self
             .mlp_linear2
-            .forward(&self.mlp_linear1.forward(&self.mlp_ln.forward_fused(&x)).gelu_fused());
+            .forward(&self.mlp_linear1.forward(&self.mlp_ln.forward_fused(&x)).gelu());
         let result = (x + mlp).to_concrete();
 
         Ok(result)
@@ -335,11 +335,11 @@ impl AudioEncoder {
 
         let x = {
             let _enter = self.conv1_span.enter();
-            self.conv1.forward(x).gelu_fused()
+            self.conv1.forward(x).gelu()
         };
         let x = {
             let _enter = self.conv2_span.enter();
-            self.conv2.forward(&x).gelu_fused()
+            self.conv2.forward(&x).gelu()
         };
         let x = x.transpose(1, 2);
         let [_bsize, seq_len, _hidden] = x.shape();

@@ -4,7 +4,7 @@ use std::ops::Range;
 
 use crate::{ConcreteTensor, Device, Expr, SimdElement, Tensor};
 use fusor_core::{DataType, ShapeWithOneHole};
-use fusor_cpu::TensorBacking;
+use fusor_cpu::{ResolveTensor, TensorBacking};
 use fusor_types::SlidingWindow;
 
 impl<const R: usize, D> Tensor<R, D>
@@ -243,9 +243,10 @@ where
     }
 }
 
-impl<const R: usize, D> Tensor<R, D>
+impl<const R: usize, D, B> Tensor<R, D, B>
 where
     D: SimdElement + DataType + Default,
+    B: ResolveTensor<R, Elem = D>,
 {
     /// Stack tensors along a new dimension.
     ///
@@ -258,7 +259,7 @@ where
     pub fn stack<const R2: usize>(
         tensors: impl IntoIterator<Item = Self>,
         dim: usize,
-    ) -> Tensor<R2, D, ConcreteTensor<D, R2>>
+    ) -> Tensor<R2, D>
     where
         ConcreteTensor<D, R>: fusor_cpu::NextRank<R2, D>,
         fusor_core::Tensor<R, D>: fusor_core::NextRank<R2, D>,
@@ -274,7 +275,7 @@ where
     /// # Arguments
     /// * `tensors` - Iterator of tensors to concatenate
     /// * `dim` - The dimension to concatenate along
-    pub fn cat(tensors: impl IntoIterator<Item = Self>, dim: usize) -> Self {
+    pub fn cat(tensors: impl IntoIterator<Item = Self>, dim: usize) -> Tensor<R, D> {
         cat(tensors, dim)
     }
 }
@@ -341,12 +342,13 @@ where
 /// # Arguments
 /// * `tensors` - Iterator of tensors to concatenate
 /// * `dim` - The dimension to concatenate along
-pub fn cat<const R: usize, D>(
-    tensors: impl IntoIterator<Item = Tensor<R, D>>,
+pub fn cat<const R: usize, D, B>(
+    tensors: impl IntoIterator<Item = Tensor<R, D, B>>,
     dim: usize,
 ) -> Tensor<R, D>
 where
     D: SimdElement + DataType + Default,
+    B: ResolveTensor<R, Elem = D>,
 {
     dispatch_vec(
         tensors,
@@ -360,14 +362,15 @@ where
 /// # Arguments
 /// * `tensors` - Iterator of tensors to stack
 /// * `dim` - Where to insert the new stacking dimension
-pub fn stack<const R: usize, const R2: usize, D>(
-    tensors: impl IntoIterator<Item = Tensor<R, D>>,
+pub fn stack<const R: usize, const R2: usize, D, B>(
+    tensors: impl IntoIterator<Item = Tensor<R, D, B>>,
     dim: usize,
 ) -> Tensor<R2, D, ConcreteTensor<D, R2>>
 where
     D: SimdElement + DataType + Default,
     ConcreteTensor<D, R>: fusor_cpu::NextRank<R2, D>,
     fusor_core::Tensor<R, D>: fusor_core::NextRank<R2, D>,
+    B: ResolveTensor<R, Elem = D>,
 {
     dispatch_vec(
         tensors,

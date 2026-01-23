@@ -23,7 +23,7 @@ use crate::reduce::{
 };
 use crate::slice_assign::slice_assign_ref;
 use crate::{
-    ConcreteTensor, CpuMappedBuffer, LastRank, ResolveTensor, ResolvedTensor, SimdElement,
+    ConcreteTensor, CpuMappedBuffer, LastRank, MapLayout, ResolveTensor, ResolvedTensor, SimdElement,
     TensorBacking, TensorSlice, elementwise, pairwise, scalar,
 };
 
@@ -81,6 +81,14 @@ impl<const R: usize, E: SimdElement> Tensor<R, ConcreteTensor<E, R>> {
     }
 }
 
+// Methods for Tensor with MapLayout backing
+impl<const R: usize, E: SimdElement> Tensor<R, MapLayout<E, R>> {
+    /// Get element at logical indices
+    pub fn get(&self, indices: [usize; R]) -> E {
+        self.inner.get(indices)
+    }
+}
+
 // Methods available on any Tensor with ResolveTensor inner
 impl<const R: usize, E, T> Tensor<R, T>
 where
@@ -98,20 +106,20 @@ where
     pub fn slice(
         &self,
         slices: [Range<usize>; R],
-    ) -> Tensor<R, ConcreteTensor<E, R>> {
+    ) -> Tensor<R, MapLayout<E, R>> {
         let concrete = self.inner.to_concrete();
         let new_layout = concrete.layout().slice(&slices);
-        Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+        Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
     }
 
     /// Permute the tensor dimensions according to the given axes order
     ///
     /// # Arguments
     /// * `axes` - A permutation of [0, 1, ..., R-1] specifying the new order
-    pub fn permute(&self, axes: [usize; R]) -> Tensor<R, ConcreteTensor<E, R>> {
+    pub fn permute(&self, axes: [usize; R]) -> Tensor<R, MapLayout<E, R>> {
         let concrete = self.inner.to_concrete();
         let new_layout = concrete.layout().permute(&axes);
-        Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+        Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
     }
 
     /// Transpose two dimensions of the tensor
@@ -119,10 +127,10 @@ where
     /// # Arguments
     /// * `dim0` - First dimension to swap
     /// * `dim1` - Second dimension to swap
-    pub fn transpose(&self, dim0: usize, dim1: usize) -> Tensor<R, ConcreteTensor<E, R>> {
+    pub fn transpose(&self, dim0: usize, dim1: usize) -> Tensor<R, MapLayout<E, R>> {
         let concrete = self.inner.to_concrete();
         let new_layout = concrete.layout().transpose(dim0, dim1);
-        Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+        Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
     }
 
     /// Broadcast the tensor to a larger shape
@@ -134,10 +142,10 @@ where
     pub fn broadcast_as<const R2: usize>(
         &self,
         out_shape: [usize; R2],
-    ) -> Tensor<R2, ConcreteTensor<E, R2>> {
+    ) -> Tensor<R2, MapLayout<E, R2>> {
         let concrete = self.inner.to_concrete();
         let new_layout = concrete.layout().broadcast_to(&out_shape);
-        Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+        Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
     }
 
     /// Reshape the tensor to a new shape
@@ -146,22 +154,22 @@ where
     pub fn reshape<const R2: usize>(
         &self,
         new_shape: [usize; R2],
-    ) -> Tensor<R2, ConcreteTensor<E, R2>> {
+    ) -> Tensor<R2, MapLayout<E, R2>> {
         let concrete = self.inner.to_concrete();
 
         if concrete.layout().is_contiguous() {
             let new_layout = concrete.layout().reshape(&new_shape);
-            Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+            Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
         } else {
             // Make contiguous first, then reshape
             let contiguous = self.make_contiguous();
             let new_layout = contiguous.inner.layout().reshape(&new_shape);
-            Tensor::new(ConcreteTensor::from_parts(new_layout, contiguous.inner.backing().clone()))
+            Tensor::new(MapLayout::new(contiguous.inner.into_backing(), new_layout))
         }
     }
 
     /// Flatten the tensor to 1D
-    pub fn flatten_all(&self) -> Tensor<1, ConcreteTensor<E, 1>> {
+    pub fn flatten_all(&self) -> Tensor<1, MapLayout<E, 1>> {
         let concrete = self.inner.to_concrete();
         let total: usize = concrete.layout().num_elements();
         self.reshape([total])
@@ -193,10 +201,10 @@ where
     /// * `dim` - The dimension to narrow
     /// * `start` - The starting index
     /// * `length` - The length of the slice
-    pub fn narrow(&self, dim: usize, start: usize, length: usize) -> Tensor<R, ConcreteTensor<E, R>> {
+    pub fn narrow(&self, dim: usize, start: usize, length: usize) -> Tensor<R, MapLayout<E, R>> {
         let concrete = self.inner.to_concrete();
         let new_layout = concrete.layout().narrow(dim, start, length);
-        Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+        Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
     }
 
     /// Split the tensor into chunks along a given dimension
@@ -204,7 +212,7 @@ where
     /// # Arguments
     /// * `chunks` - Number of chunks to split into
     /// * `dim` - The dimension to split along
-    pub fn chunk(&self, chunks: usize, dim: usize) -> Vec<Tensor<R, ConcreteTensor<E, R>>> {
+    pub fn chunk(&self, chunks: usize, dim: usize) -> Vec<Tensor<R, MapLayout<E, R>>> {
         let concrete = self.inner.to_concrete();
         assert!(dim < R, "Dimension {} out of range for rank {}", dim, R);
         assert!(chunks > 0, "Number of chunks must be positive");
@@ -258,22 +266,22 @@ where
     ///
     /// # Arguments
     /// * `dim` - The dimension to squeeze (must have size 1)
-    pub fn squeeze<const R2: usize>(&self, dim: usize) -> Tensor<R2, ConcreteTensor<E, R2>> {
+    pub fn squeeze<const R2: usize>(&self, dim: usize) -> Tensor<R2, MapLayout<E, R2>> {
         assert!(R2 == R - 1, "Output rank must be R - 1");
         let concrete = self.inner.to_concrete();
         let new_layout = concrete.layout().squeeze(dim);
-        Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+        Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
     }
 
     /// Unsqueeze (add a dimension of size 1)
     ///
     /// # Arguments
     /// * `dim` - Where to insert the new dimension
-    pub fn unsqueeze<const R2: usize>(&self, dim: usize) -> Tensor<R2, ConcreteTensor<E, R2>> {
+    pub fn unsqueeze<const R2: usize>(&self, dim: usize) -> Tensor<R2, MapLayout<E, R2>> {
         assert!(R2 == R + 1, "Output rank must be R + 1");
         let concrete = self.inner.to_concrete();
         let new_layout = concrete.layout().unsqueeze(dim);
-        Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+        Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
     }
 
     /// Expand the tensor to a larger shape (alias for broadcast_as)
@@ -282,7 +290,7 @@ where
     pub fn expand<const R2: usize>(
         &self,
         out_shape: [usize; R2],
-    ) -> Tensor<R2, ConcreteTensor<E, R2>> {
+    ) -> Tensor<R2, MapLayout<E, R2>> {
         self.broadcast_as(out_shape)
     }
 
@@ -296,18 +304,18 @@ where
     /// A tensor of shape [2, 3, 4] with N=2 becomes [2, 12]
     pub fn flatten_last_n<const N: usize, const R2: usize>(
         &self,
-    ) -> Tensor<R2, ConcreteTensor<E, R2>> {
+    ) -> Tensor<R2, MapLayout<E, R2>> {
         assert!(R2 == R - N + 1, "Output rank must be R - N + 1");
         let concrete = self.inner.to_concrete();
 
         if concrete.layout().is_contiguous() {
             let new_layout = concrete.layout().flatten_last_n(N);
-            Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+            Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
         } else {
             // Make contiguous first
             let contiguous = self.make_contiguous();
             let new_layout = contiguous.inner.layout().flatten_last_n(N);
-            Tensor::new(ConcreteTensor::from_parts(new_layout, contiguous.inner.backing().clone()))
+            Tensor::new(MapLayout::new(contiguous.inner.into_backing(), new_layout))
         }
     }
 
@@ -321,18 +329,18 @@ where
     /// A tensor of shape [2, 3, 4] with N=1 becomes [6, 4]
     pub fn flatten_first_n<const N: usize, const R2: usize>(
         &self,
-    ) -> Tensor<R2, ConcreteTensor<E, R2>> {
+    ) -> Tensor<R2, MapLayout<E, R2>> {
         assert!(R2 == R - N, "Output rank must be R - N");
         let concrete = self.inner.to_concrete();
 
         if concrete.layout().is_contiguous() {
             let new_layout = concrete.layout().flatten_first_n(N);
-            Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+            Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
         } else {
             // Make contiguous first
             let contiguous = self.make_contiguous();
             let new_layout = contiguous.inner.layout().flatten_first_n(N);
-            Tensor::new(ConcreteTensor::from_parts(new_layout, contiguous.inner.backing().clone()))
+            Tensor::new(MapLayout::new(contiguous.inner.into_backing(), new_layout))
         }
     }
 
@@ -347,11 +355,11 @@ where
     pub fn squeeze_dims<const DIFF: usize, const R2: usize>(
         &self,
         axes: [usize; DIFF],
-    ) -> Tensor<R2, ConcreteTensor<E, R2>> {
+    ) -> Tensor<R2, MapLayout<E, R2>> {
         assert!(R2 == R - DIFF, "Output rank must be R - DIFF");
         let concrete = self.inner.to_concrete();
         let new_layout = concrete.layout().squeeze_dims(&axes);
-        Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+        Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
     }
 
     /// Unsqueeze (add) multiple dimensions of size 1 at specified positions
@@ -365,11 +373,11 @@ where
     pub fn unsqueeze_dims<const DIFF: usize, const R2: usize>(
         &self,
         axes: [usize; DIFF],
-    ) -> Tensor<R2, ConcreteTensor<E, R2>> {
+    ) -> Tensor<R2, MapLayout<E, R2>> {
         assert!(R2 == R + DIFF, "Output rank must be R + DIFF");
         let concrete = self.inner.to_concrete();
         let new_layout = concrete.layout().unsqueeze_dims(&axes);
-        Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+        Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
     }
 
     /// Create a sliding window view of the tensor (zero-copy)
@@ -389,11 +397,11 @@ where
     pub fn sliding_window_view<const DIFF: usize, const R2: usize>(
         &self,
         windows: [SlidingWindow; DIFF],
-    ) -> Tensor<R2, ConcreteTensor<E, R2>> {
+    ) -> Tensor<R2, MapLayout<E, R2>> {
         assert!(R2 == R + DIFF, "Output rank must be R + DIFF");
         let concrete = self.inner.to_concrete();
         let new_layout = concrete.layout().sliding_window(&windows);
-        Tensor::new(ConcreteTensor::from_parts(new_layout, concrete.backing().clone()))
+        Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
     }
 
     /// Sum all elements in the tensor
@@ -1329,7 +1337,7 @@ where
     T: TensorBacking<2, Elem = E> + ResolveTensor<2, Elem = E>,
 {
     /// Transpose a 2D matrix (swap dimensions 0 and 1)
-    pub fn t(&self) -> Tensor<2, ConcreteTensor<E, 2>> {
+    pub fn t(&self) -> Tensor<2, MapLayout<E, 2>> {
         self.transpose(0, 1)
     }
 }
@@ -1341,7 +1349,7 @@ where
     T: TensorBacking<3, Elem = E> + ResolveTensor<3, Elem = E>,
 {
     /// Transpose last two dimensions
-    pub fn t(&self) -> Tensor<3, ConcreteTensor<E, 3>> {
+    pub fn t(&self) -> Tensor<3, MapLayout<E, 3>> {
         self.transpose(1, 2)
     }
 }
@@ -1353,23 +1361,21 @@ where
     T: TensorBacking<4, Elem = E> + ResolveTensor<4, Elem = E>,
 {
     /// Transpose last two dimensions
-    pub fn t(&self) -> Tensor<4, ConcreteTensor<E, 4>> {
+    pub fn t(&self) -> Tensor<4, MapLayout<E, 4>> {
         self.transpose(2, 3)
     }
 }
 
 // Static methods for concatenation and stacking
-impl<const R: usize, E: SimdElement> Tensor<R, ConcreteTensor<E, R>> {
+impl<const R: usize, T: ResolveTensor<R>> Tensor<R, T> {
     /// Concatenate multiple tensors along a given dimension
     ///
     /// # Arguments
     /// * `tensors` - Iterator of tensors to concatenate
     /// * `dim` - The dimension to concatenate along
-    pub fn cat(tensors: impl IntoIterator<Item = Self>, dim: usize) -> Self
-    where
-        E: Default,
+    pub fn cat(tensors: impl IntoIterator<Item = Self>, dim: usize) -> Tensor<R, ConcreteTensor<T::Elem, R>>
     {
-        let tensors: Vec<_> = tensors.into_iter().collect();
+        let tensors: Vec<_> = tensors.into_iter().map(|t| t.to_concrete()).collect();
         assert!(!tensors.is_empty(), "Cannot concatenate empty list of tensors");
         assert!(dim < R, "Dimension {} out of range for rank {}", dim, R);
 
@@ -1394,7 +1400,7 @@ impl<const R: usize, E: SimdElement> Tensor<R, ConcreteTensor<E, R>> {
             out_shape[i] = if i == dim { cat_dim_size } else { s };
         }
 
-        let mut output = ConcreteTensor::<E, R>::zeros(out_shape);
+        let mut output = ConcreteTensor::<T::Elem, R>::zeros(out_shape);
         let mut offset_in_dim = 0;
 
         for tensor in tensors {
@@ -1426,14 +1432,12 @@ impl<const R: usize, E: SimdElement> Tensor<R, ConcreteTensor<E, R>> {
     pub fn stack<const R2: usize>(
         tensors: impl IntoIterator<Item = Self>,
         dim: usize,
-    ) -> Tensor<R2, ConcreteTensor<E, R2>>
-    where
-        E: Default,
+    ) -> Tensor<R2, ConcreteTensor<T::Elem, R2>>
     {
         assert!(R2 == R + 1, "Output rank must be R + 1");
         assert!(dim <= R, "Stack dimension {} out of range for rank {}", dim, R);
 
-        let tensors: Vec<_> = tensors.into_iter().collect();
+        let tensors: Vec<_> = tensors.into_iter().map(|t| t.to_concrete()).collect();
         assert!(!tensors.is_empty(), "Cannot stack empty list of tensors");
 
         let first_shape = tensors[0].inner.layout().shape();
@@ -1447,9 +1451,9 @@ impl<const R: usize, E: SimdElement> Tensor<R, ConcreteTensor<E, R>> {
         }
 
         // Unsqueeze each tensor and concatenate
-        let unsqueezed: Vec<Tensor<R2, ConcreteTensor<E, R2>>> = tensors
+        let unsqueezed: Vec<Tensor<R2, ConcreteTensor<T::Elem, R2>>> = tensors
             .into_iter()
-            .map(|t| t.unsqueeze(dim))
+            .map(|t| t.unsqueeze(dim).to_concrete())
             .collect();
 
         Tensor::cat(unsqueezed, dim)

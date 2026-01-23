@@ -237,4 +237,12 @@ impl<T: SimdElement, const R: usize> ConcreteTensor<T, R> {
     pub(crate) fn backing_mut(&mut self) -> &mut ABox<[T]> {
         &mut self.backing
     }
+
+    /// Consume the tensor and return the backing data.
+    ///
+    /// This is used by layout operations to move ownership of the backing data
+    /// into a `MapLayout` without cloning.
+    pub(crate) fn into_backing(self) -> ABox<[T]> {
+        self.backing
+    }
 }

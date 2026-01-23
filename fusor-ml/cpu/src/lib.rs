@@ -14,6 +14,7 @@ mod conditional;
 mod elementwise;
 mod expr;
 mod index;
+mod map_layout;
 mod matmul;
 mod pairwise;
 mod quantized;
@@ -29,6 +30,7 @@ pub(crate) const MAX_SIMD_LANES: usize = 64;
 
 // Re-export public types
 pub use concrete_tensor::ConcreteTensor;
+pub use map_layout::MapLayout;
 pub use elementwise::{
     Abs, Acos, Acosh, Asin, Asinh, Atan, Atanh, Cos, Cosh, Exp, Exp2, Log, Log2, Neg, Sin, Sinh,
     Sqrt, Tan, Tanh,
@@ -82,7 +84,7 @@ pub use elementwise::{
 };
 pub use matmul::MatmulImpl;
 pub use pairwise::{AddOp, DivOp, MulOp, RemOp, SimdBinaryOp, SubOp};
-pub use reduce::{MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp, softmax_last_dim_fused, layer_norm_last_dim_fused, gelu_fused};
+pub use reduce::{MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp, softmax_last_dim_fused, layer_norm_last_dim_fused};
 
 // Re-export internal types used by other modules
 pub(crate) use concrete_tensor::IndexIterator;
@@ -473,7 +475,7 @@ mod tests {
             Tensor::from_slice([3], &[1.0, 2.0, 3.0]);
 
         // Broadcast to 2x3
-        let broadcasted: Tensor<2, ConcreteTensor<f32, 2>> = t.broadcast_as([2, 3]);
+        let broadcasted = t.broadcast_as([2, 3]);
         assert_eq!(broadcasted.inner().layout().shape(), &[2, 3]);
         assert_eq!(broadcasted.get([0, 0]), 1.0);
         assert_eq!(broadcasted.get([0, 2]), 3.0);
@@ -487,7 +489,7 @@ mod tests {
             Tensor::from_slice([6], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 
         // Reshape to 2x3
-        let reshaped: Tensor<2, ConcreteTensor<f32, 2>> = t.reshape([2, 3]);
+        let reshaped = t.reshape([2, 3]);
         assert_eq!(reshaped.inner().layout().shape(), &[2, 3]);
         assert_eq!(reshaped.get([0, 0]), 1.0);
         assert_eq!(reshaped.get([0, 2]), 3.0);
@@ -555,13 +557,13 @@ mod tests {
             Tensor::from_slice([2, 1, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 
         // Squeeze dimension 1 to get 2x3
-        let squeezed: Tensor<2, ConcreteTensor<f32, 2>> = t.squeeze(1);
+        let squeezed: Tensor<2, MapLayout<f32, 2>> = t.squeeze(1);
         assert_eq!(squeezed.inner().layout().shape(), &[2, 3]);
         assert_eq!(squeezed.get([0, 0]), 1.0);
         assert_eq!(squeezed.get([1, 2]), 6.0);
 
         // Unsqueeze back to get 2x1x3
-        let unsqueezed: Tensor<3, ConcreteTensor<f32, 3>> = squeezed.unsqueeze(1);
+        let unsqueezed: Tensor<3, MapLayout<f32, 3>> = squeezed.unsqueeze(1);
         assert_eq!(unsqueezed.inner().layout().shape(), &[2, 1, 3]);
         assert_eq!(unsqueezed.get([0, 0, 0]), 1.0);
         assert_eq!(unsqueezed.get([1, 0, 2]), 6.0);
@@ -657,7 +659,7 @@ mod tests {
         let transposed = t.t();
 
         // Reshape to 6
-        let reshaped: Tensor<1, ConcreteTensor<f32, 1>> = transposed.reshape([6]);
+        let reshaped = transposed.reshape([6]);
         assert_eq!(reshaped.inner().layout().shape(), &[6]);
         // After transpose, data should be: [1, 4, 2, 5, 3, 6]
         assert_eq!(reshaped.get([0]), 1.0);
@@ -693,7 +695,7 @@ mod tests {
         let t: Tensor<1, ConcreteTensor<f32, 1>> =
             Tensor::from_slice([3], &[1.0, 2.0, 3.0]);
 
-        let expanded: Tensor<2, ConcreteTensor<f32, 2>> = t.expand([2, 3]);
+        let expanded = t.expand([2, 3]);
         assert_eq!(expanded.inner().layout().shape(), &[2, 3]);
         assert_eq!(expanded.get([0, 0]), 1.0);
         assert_eq!(expanded.get([1, 2]), 3.0);
@@ -705,7 +707,7 @@ mod tests {
         let t: Tensor<3, ConcreteTensor<f32, 3>> =
             Tensor::from_slice([2, 3, 4], &(0..24).map(|i| i as f32).collect::<Vec<_>>());
 
-        let flattened: Tensor<2, ConcreteTensor<f32, 2>> = t.flatten_last_n::<2, 2>();
+        let flattened = t.flatten_last_n::<2, 2>();
         assert_eq!(flattened.inner().layout().shape(), &[2, 12]);
         assert_eq!(flattened.get([0, 0]), 0.0);
         assert_eq!(flattened.get([0, 11]), 11.0);
@@ -718,7 +720,7 @@ mod tests {
         let t: Tensor<3, ConcreteTensor<f32, 3>> =
             Tensor::from_slice([2, 3, 4], &(0..24).map(|i| i as f32).collect::<Vec<_>>());
 
-        let flattened: Tensor<2, ConcreteTensor<f32, 2>> = t.flatten_first_n::<1, 2>();
+        let flattened = t.flatten_first_n::<1, 2>();
         assert_eq!(flattened.inner().layout().shape(), &[6, 4]);
         assert_eq!(flattened.get([0, 0]), 0.0);
         assert_eq!(flattened.get([0, 3]), 3.0);
@@ -731,7 +733,7 @@ mod tests {
         let t: Tensor<4, ConcreteTensor<f32, 4>> =
             Tensor::from_slice([1, 3, 1, 4], &(0..12).map(|i| i as f32).collect::<Vec<_>>());
 
-        let squeezed: Tensor<2, ConcreteTensor<f32, 2>> = t.squeeze_dims::<2, 2>([0, 2]);
+        let squeezed = t.squeeze_dims::<2, 2>([0, 2]);
         assert_eq!(squeezed.inner().layout().shape(), &[3, 4]);
         assert_eq!(squeezed.get([0, 0]), 0.0);
         assert_eq!(squeezed.get([2, 3]), 11.0);
@@ -743,7 +745,7 @@ mod tests {
         let t: Tensor<2, ConcreteTensor<f32, 2>> =
             Tensor::from_slice([3, 4], &(0..12).map(|i| i as f32).collect::<Vec<_>>());
 
-        let unsqueezed: Tensor<4, ConcreteTensor<f32, 4>> = t.unsqueeze_dims::<2, 4>([0, 2]);
+        let unsqueezed = t.unsqueeze_dims::<2, 4>([0, 2]);
         assert_eq!(unsqueezed.inner().layout().shape(), &[1, 3, 1, 4]);
         assert_eq!(unsqueezed.get([0, 0, 0, 0]), 0.0);
         assert_eq!(unsqueezed.get([0, 2, 0, 3]), 11.0);
@@ -755,8 +757,7 @@ mod tests {
         let t: Tensor<1, ConcreteTensor<f32, 1>> =
             Tensor::from_slice([7], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
 
-        let windows: Tensor<2, ConcreteTensor<f32, 2>> =
-            t.sliding_window_view::<1, 2>([SlidingWindow::new(0, 3, 2)]);
+        let windows = t.sliding_window_view::<1, 2>([SlidingWindow::new(0, 3, 2)]);
 
         // (7 - 3) / 2 + 1 = 3 positions, window size 3
         assert_eq!(windows.inner().layout().shape(), &[3, 3]);
@@ -784,11 +785,10 @@ mod tests {
         let t: Tensor<2, ConcreteTensor<f32, 2>> =
             Tensor::from_slice([6, 6], &data);
 
-        let windows: Tensor<4, ConcreteTensor<f32, 4>> =
-            t.sliding_window_view::<2, 4>([
-                SlidingWindow::new(0, 3, 3),
-                SlidingWindow::new(1, 3, 3)
-            ]);
+        let windows = t.sliding_window_view::<2, 4>([
+            SlidingWindow::new(0, 3, 3),
+            SlidingWindow::new(1, 3, 3)
+        ]);
 
         // (6 - 3) / 3 + 1 = 2 positions in each dimension
         assert_eq!(windows.inner().layout().shape(), &[2, 2, 3, 3]);

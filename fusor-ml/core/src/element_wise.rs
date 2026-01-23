@@ -1605,6 +1605,15 @@ impl<const R: usize, D: DataType> Neg for Tensor<R, D> {
     }
 }
 
+
+impl<'a, const R: usize, D: DataType> Neg for &'a Tensor<R, D> {
+    type Output = Tensor<R, D>;
+
+    fn neg(self) -> Self::Output {
+        -self.clone()
+    }
+}
+
 #[cfg(test)]
 #[tokio::test]
 async fn test_neg() {
