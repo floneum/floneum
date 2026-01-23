@@ -21,7 +21,7 @@ where
         match self {
             Tensor::Cpu(t) => {
                 let resolved_shape = new_shape.resolve_shape(Expr::shape(t));
-                Tensor::Cpu(t.reshape(resolved_shape))
+                Tensor::Cpu(t.reshape(resolved_shape).to_concrete())
             }
             Tensor::Gpu(t) => Tensor::Gpu(t.reshape(new_shape)),
         }
@@ -34,7 +34,7 @@ where
     /// * `dim1` - Second dimension to swap
     pub fn transpose(&self, dim0: usize, dim1: usize) -> Self {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.transpose(dim0, dim1)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.transpose(dim0, dim1).to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t.transpose(dim0, dim1)),
         }
     }
@@ -44,7 +44,7 @@ where
     /// Returns a view into the tensor's data with updated layout.
     pub fn slice(&self, slices: [Range<usize>; R]) -> Self {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.slice(slices.clone())),
+            Tensor::Cpu(t) => Tensor::Cpu(t.slice(slices.clone()).to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t.slice(slices)),
         }
     }
@@ -55,7 +55,7 @@ where
     /// * `axes` - A permutation of [0, 1, ..., R-1] specifying the new order
     pub fn permute(&self, axes: [usize; R]) -> Self {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.permute(axes)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.permute(axes).to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t.permute(axes)),
         }
     }
@@ -71,7 +71,7 @@ where
         out_shape: [usize; R2],
     ) -> Tensor<R2, D, ConcreteTensor<D, R2>> {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.broadcast_as(out_shape)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.broadcast_as(out_shape).to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t.broadcast_as(out_shape)),
         }
     }
@@ -87,7 +87,7 @@ where
     /// Flatten the tensor to 1D.
     pub fn flatten_all(&self) -> Tensor<1, D, ConcreteTensor<D, 1>> {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.flatten_all()),
+            Tensor::Cpu(t) => Tensor::Cpu(t.flatten_all().to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t.flatten_all()),
         }
     }
@@ -100,7 +100,7 @@ where
     /// * `length` - The length of the slice
     pub fn narrow(&self, dim: usize, start: usize, length: usize) -> Self {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.narrow(dim, start, length)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.narrow(dim, start, length).to_concrete()),
             Tensor::Gpu(t) => {
                 // GPU narrow is implemented via slice
                 let shape = self.shape();
@@ -154,7 +154,7 @@ where
         fusor_core::Tensor<R, D>: fusor_core::LastRank<R2, D>,
     {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.squeeze(dim)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.squeeze(dim).to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t.squeeze(dim)),
         }
     }
@@ -169,7 +169,7 @@ where
         fusor_core::Tensor<R, D>: fusor_core::NextRank<R2, D>,
     {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.unsqueeze(dim)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.unsqueeze(dim).to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t.unsqueeze(dim)),
         }
     }
@@ -191,7 +191,7 @@ where
         fusor_core::Tensor<R, D>: fusor_core::SmallerRank<DIFF, R2, D>,
     {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.squeeze_dims(axes)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.squeeze_dims(axes).to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t.squeeze_dims(axes)),
         }
     }
@@ -213,7 +213,7 @@ where
         fusor_core::Tensor<R, D>: fusor_core::LargerRank<DIFF, R2, D>,
     {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.unsqueeze_dims(axes)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.unsqueeze_dims(axes).to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t.unsqueeze_dims(axes)),
         }
     }
@@ -237,7 +237,7 @@ where
         fusor_core::Tensor<R, D>: fusor_core::LargerRank<DIFF, R2, D>,
     {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.sliding_window_view(windows)),
+            Tensor::Cpu(t) => Tensor::Cpu(t.sliding_window_view(windows).to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t.sliding_window_view(windows)),
         }
     }

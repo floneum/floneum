@@ -1288,6 +1288,138 @@ where
     }
 }
 
+/// Calculate the broadcasted shape for two tensors.
+/// Returns the output shape where each dimension is the max of the corresponding input dimensions.
+/// Dimensions are aligned from the right.
+fn broadcast_shapes<const R1: usize, const R2: usize, const R3: usize>(
+    shape1: &[usize; R1],
+    shape2: &[usize; R2],
+) -> [usize; R3] {
+    let mut result = [1usize; R3];
+
+    // Align shapes from the right
+    for i in 0..R1 {
+        let idx = R3 - R1 + i;
+        result[idx] = shape1[i];
+    }
+
+    for i in 0..R2 {
+        let idx = R3 - R2 + i;
+        let d2 = shape2[i];
+        let d1 = result[idx];
+        if d1 == 1 {
+            result[idx] = d2;
+        } else if d2 != 1 && d1 != d2 {
+            panic!(
+                "Cannot broadcast shapes {:?} and {:?}: incompatible dimensions {} and {} at index {}",
+                shape1, shape2, d1, d2, idx
+            );
+        }
+    }
+
+    result
+}
+
+// Broadcasting binary operations for same-rank tensors
+// These methods handle broadcasting when both tensors have the same rank.
+impl<const R: usize, E, T> Tensor<R, T>
+where
+    E: SimdElement + Default,
+    T: TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E> + Expr<Elem = E>,
+{
+    /// Multiply with broadcasting support (same-rank tensors).
+    ///
+    /// Both tensors are broadcast to a common shape before multiplication.
+    /// Use this when both operands have the same rank.
+    pub fn mul_<T2>(
+        &self,
+        other: &Tensor<R, T2>,
+    ) -> Tensor<R, ConcreteTensor<E, R>>
+    where
+        E: StdMul<Output = E>,
+        MulOp: SimdBinaryOp<E>,
+        T2: TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E> + Expr<Elem = E>,
+    {
+        let shape1: [usize; R] = Expr::shape(self).try_into().unwrap();
+        let shape2: [usize; R] = Expr::shape(other).try_into().unwrap();
+        let out_shape: [usize; R] = broadcast_shapes(&shape1, &shape2);
+
+        let a: Tensor<R, MapLayout<E, R>> = self.to_concrete().broadcast_as(out_shape);
+        let b: Tensor<R, MapLayout<E, R>> = other.to_concrete().broadcast_as(out_shape);
+
+        (&a * &b).to_concrete()
+    }
+
+    /// Add with broadcasting support (same-rank tensors).
+    ///
+    /// Both tensors are broadcast to a common shape before addition.
+    /// Use this when both operands have the same rank.
+    pub fn add_<T2>(
+        &self,
+        other: &Tensor<R, T2>,
+    ) -> Tensor<R, ConcreteTensor<E, R>>
+    where
+        E: StdAdd<Output = E>,
+        AddOp: SimdBinaryOp<E>,
+        T2: TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E> + Expr<Elem = E>,
+    {
+        let shape1: [usize; R] = Expr::shape(self).try_into().unwrap();
+        let shape2: [usize; R] = Expr::shape(other).try_into().unwrap();
+        let out_shape: [usize; R] = broadcast_shapes(&shape1, &shape2);
+
+        let a: Tensor<R, MapLayout<E, R>> = self.to_concrete().broadcast_as(out_shape);
+        let b: Tensor<R, MapLayout<E, R>> = other.to_concrete().broadcast_as(out_shape);
+
+        (&a + &b).to_concrete()
+    }
+
+    /// Subtract with broadcasting support (same-rank tensors).
+    ///
+    /// Both tensors are broadcast to a common shape before subtraction.
+    /// Use this when both operands have the same rank.
+    pub fn sub_<T2>(
+        &self,
+        other: &Tensor<R, T2>,
+    ) -> Tensor<R, ConcreteTensor<E, R>>
+    where
+        E: StdSub<Output = E>,
+        SubOp: SimdBinaryOp<E>,
+        T2: TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E> + Expr<Elem = E>,
+    {
+        let shape1: [usize; R] = Expr::shape(self).try_into().unwrap();
+        let shape2: [usize; R] = Expr::shape(other).try_into().unwrap();
+        let out_shape: [usize; R] = broadcast_shapes(&shape1, &shape2);
+
+        let a: Tensor<R, MapLayout<E, R>> = self.to_concrete().broadcast_as(out_shape);
+        let b: Tensor<R, MapLayout<E, R>> = other.to_concrete().broadcast_as(out_shape);
+
+        (&a - &b).to_concrete()
+    }
+
+    /// Divide with broadcasting support (same-rank tensors).
+    ///
+    /// Both tensors are broadcast to a common shape before division.
+    /// Use this when both operands have the same rank.
+    pub fn div_<T2>(
+        &self,
+        other: &Tensor<R, T2>,
+    ) -> Tensor<R, ConcreteTensor<E, R>>
+    where
+        E: StdDiv<Output = E>,
+        DivOp: SimdBinaryOp<E>,
+        T2: TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E> + Expr<Elem = E>,
+    {
+        let shape1: [usize; R] = Expr::shape(self).try_into().unwrap();
+        let shape2: [usize; R] = Expr::shape(other).try_into().unwrap();
+        let out_shape: [usize; R] = broadcast_shapes(&shape1, &shape2);
+
+        let a: Tensor<R, MapLayout<E, R>> = self.to_concrete().broadcast_as(out_shape);
+        let b: Tensor<R, MapLayout<E, R>> = other.to_concrete().broadcast_as(out_shape);
+
+        (&a / &b).to_concrete()
+    }
+}
+
 // Implement Expr for Tensor to enable evaluation
 impl<const R: usize, E, T> Expr for Tensor<R, T>
 where

@@ -64,7 +64,10 @@ where
         let rotated = rotate_half(self);
         match (self, &cos, &sin, &rotated) {
             (Tensor::Cpu(s), Tensor::Cpu(c), Tensor::Cpu(sn), Tensor::Cpu(r)) => {
-                Tensor::Cpu((s * c + r * sn).to_concrete())
+                // Use broadcasting mul_ and add_
+                let sc = s.mul_(c);
+                let rsn = r.mul_(sn);
+                Tensor::Cpu(sc.add_(&rsn))
             }
             (Tensor::Gpu(s), Tensor::Gpu(c), Tensor::Gpu(sn), Tensor::Gpu(r)) => {
                 Tensor::Gpu(s.mul_(c) + r.mul_(sn))
@@ -102,9 +105,10 @@ where
 
         let y0 = match (&x0, &cos, &x1, &sin) {
             (Tensor::Cpu(a), Tensor::Cpu(c), Tensor::Cpu(b), Tensor::Cpu(s)) => {
-                let ac = (a * c).to_concrete();
-                let bs = (b * s).to_concrete();
-                Tensor::Cpu((&ac - &bs).to_concrete())
+                // Use broadcasting mul_ and sub_
+                let ac = a.mul_(c);
+                let bs = b.mul_(s);
+                Tensor::Cpu(ac.sub_(&bs))
             }
             (Tensor::Gpu(a), Tensor::Gpu(c), Tensor::Gpu(b), Tensor::Gpu(s)) => {
                 Tensor::Gpu(&a.mul_(c) - &b.mul_(s))
@@ -113,9 +117,10 @@ where
         };
         let y1 = match (&x0, &sin, &x1, &cos) {
             (Tensor::Cpu(a), Tensor::Cpu(s), Tensor::Cpu(b), Tensor::Cpu(c)) => {
-                let as_ = (a * s).to_concrete();
-                let bc = (b * c).to_concrete();
-                Tensor::Cpu((&as_ + &bc).to_concrete())
+                // Use broadcasting mul_ and add_
+                let as_ = a.mul_(s);
+                let bc = b.mul_(c);
+                Tensor::Cpu(as_.add_(&bc))
             }
             (Tensor::Gpu(a), Tensor::Gpu(s), Tensor::Gpu(b), Tensor::Gpu(c)) => {
                 Tensor::Gpu(&a.mul_(s) + &b.mul_(c))

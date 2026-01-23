@@ -94,12 +94,12 @@ impl WhisperInner {
         // Set FUSOR_USE_GPU=1 to use GPU, otherwise CPU
         let use_gpu = std::env::var("FUSOR_USE_GPU").map(|v| v == "1").unwrap_or(false);
         let device = if use_gpu {
-            eprintln!("DEBUG: Creating GPU device...");
+            
             Device::new().await?
         } else {
             Device::cpu()
         };
-        eprintln!("DEBUG: Loading model with device: {:?}", device);
+        
         let tokenizer =
             Tokenizer::from_bytes(tokenizer).map_err(WhisperLoadingError::LoadTokenizer)?;
         let config: Config =
@@ -401,23 +401,6 @@ impl Decoder {
             let logits_2d = logits.i((.., 0, ..));
             let logits_1d = logits_2d.narrow(0, 0, 1).squeeze(0);
 
-            // Debug: Print first few logit values
-            if i == 0 {
-                let logits_check = logits_1d.clone().as_slice().await.unwrap();
-                let logits_shape = logits_check.shape();
-                eprintln!("DEBUG: Logits shape: {:?}", logits_shape);
-                let mut min_v = f32::INFINITY;
-                let mut max_v = f32::NEG_INFINITY;
-                let mut sum_v = 0.0f32;
-                for j in 0..logits_shape[0].min(100) {
-                    let v: f32 = logits_check[[j]].into();
-                    min_v = min_v.min(v);
-                    max_v = max_v.max(v);
-                    sum_v += v;
-                }
-                eprintln!("DEBUG: Logits first 100: min={}, max={}, mean={}", min_v, max_v, sum_v / 100.0);
-            }
-
             // TODO: Besides suppress tokens, we should apply the heuristics from
             // ApplyTimestampRules, i.e.:
             // - Timestamps come in pairs, except before EOT.
@@ -454,16 +437,9 @@ impl Decoder {
                 let logits_sm = logits.softmax(0);
                 let logits_slice = logits_sm.as_slice().await.unwrap();
                 let logits_data = logits_slice.as_slice();
-                eprintln!("DEBUG TOKEN PREDICTION[{}]: next_token={}, logits len={}", i, next_token, logits_data.len());
+                
                 let mut indexed: Vec<(usize, f32)> = logits_data.iter().enumerate().map(|(i, v)| (i, (*v).into())).collect();
                 indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-                for (idx, prob) in indexed.iter().take(5) {
-                    eprintln!("  TOP: token {} (prob {:.6})", idx, prob);
-                }
-                // Also print what the EOT token probability is
-                if let Some((_, eot_prob)) = indexed.iter().find(|(idx, _)| *idx == 50256) {
-                    eprintln!("  EOT(50256) prob: {:.6}", eot_prob);
-                }
             }
             // After the final pass if word level timestamps are requested, we stop decoding
             if task.word_level_time_stamps && tokens.last() == Some(&self.eot_token) {
@@ -471,11 +447,6 @@ impl Decoder {
             }
             tokens.push(next_token);
             queued_tokens.push(next_token);
-            // Debug: print the token and its decoded text
-            if i < 10 {
-                let decoded = self.tokenizer.decode(&[next_token], false).unwrap_or_else(|_| "<error>".to_string());
-                eprintln!("DEBUG TOKEN[{}]: {} -> '{}'", i, next_token, decoded);
-            }
             let prob_tensor = logits
                 .softmax_last_dim()
                 .narrow(0, next_token as usize, 1)
@@ -668,9 +639,9 @@ impl Decoder {
             // Encode all of the chunks
             let batched_mel_segment: Tensor<3, crate::WhisperDType> =
                 Tensor::stack(chunked.iter().cloned(), 0);
-            eprintln!("DEBUG: Encoding mel segment with shape: {:?}", batched_mel_segment.shape());
+            
             let batched_audio_features = self.encode(&batched_mel_segment)?;
-            eprintln!("DEBUG: Encoder output shape: {:?}", batched_audio_features.shape());
+            
             let split = batched_audio_features.chunk(chunk_indices.len(), 0);
 
             // Tokens that are remaining in the last chunk's sentence fragment
@@ -688,26 +659,6 @@ impl Decoder {
                 // Squeeze the batch dimension since decode_with_fallback expects 2D tensor
                 let audio_features_2d = audio_features.squeeze(0);
 
-                // Debug: Check audio features stats
-                eprintln!("DEBUG: Audio features shape: {:?}", audio_features_2d.shape());
-                // Print some statistics of the audio features
-                let features_slice = audio_features_2d.clone().as_slice().await.unwrap();
-                let features_shape = features_slice.shape();
-                let mut min_val = f32::INFINITY;
-                let mut max_val = f32::NEG_INFINITY;
-                let mut sum = 0.0f32;
-                let mut count = 0;
-                for i in 0..features_shape[0].min(10) {
-                    for j in 0..features_shape[1].min(10) {
-                        let v: f32 = features_slice[[i, j]].into();
-                        min_val = min_val.min(v);
-                        max_val = max_val.max(v);
-                        sum += v;
-                        count += 1;
-                    }
-                }
-                eprintln!("DEBUG: Audio features sample stats (first 10x10): min={}, max={}, mean={}", min_val, max_val, sum / count as f32);
-
                 let mut dr = self
                     .decode_with_fallback(
                         &audio_features_2d,
@@ -716,9 +667,6 @@ impl Decoder {
                         segment_size,
                     )
                     .await?;
-
-                eprintln!("DEBUG: DecodingResult - text: '{}', no_speech_prob: {}, avg_logprob: {}, compression_ratio: {}",
-                    dr.text, dr.no_speech_prob, dr.avg_logprob, dr.compression_ratio);
 
                 for chunk in dr.chunks.iter_mut() {
                     // Change to iter_mut() to allow mutable access

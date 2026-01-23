@@ -128,7 +128,7 @@ fn test_exp_f32() {
 #[test]
 fn test_exp_ref_method() {
     let tensor = Tensor::from_slice([3], &[0.0f32, 1.0, 2.0]);
-    let result = tensor.exp();
+    let result = tensor.exp().to_concrete();
 
     assert!((result.get([0]) - 1.0).abs() < 1e-6);
     assert!((result.get([1]) - std::f32::consts::E).abs() < 1e-6);
@@ -199,7 +199,7 @@ fn test_tanh_f32() {
 #[test]
 fn test_tanh_ref_method() {
     let tensor = Tensor::from_slice([3], &[0.0f32, 1.0, -1.0]);
-    let result = tensor.tanh();
+    let result = tensor.tanh().to_concrete();
 
     assert!((result.get([0]) - 0.0).abs() < 1e-6);
 }
@@ -229,7 +229,7 @@ fn test_fused_transcendental_chain() {
     // Test softmax-like: exp(x) / sum(exp(x))
     let tensor = Tensor::from_slice([3], &[0.0f32, 1.0, 2.0]);
 
-    let exp_result = tensor.exp();
+    let exp_result = tensor.exp().to_concrete();
     // e^0 = 1, e^1 ≈ 2.718, e^2 ≈ 7.389
     assert!((exp_result.get([0]) - 1.0).abs() < 1e-5);
     assert!((exp_result.get([1]) - std::f32::consts::E).abs() < 1e-5);

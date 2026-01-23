@@ -1016,7 +1016,7 @@ where
                         1
                     }
                 });
-                Tensor::Cpu(t.reshape(new_shape))
+                Tensor::Cpu(t.reshape(new_shape).to_concrete())
             }
             Tensor::Gpu(t) => Tensor::Gpu(t.flatten_last_n::<FROM_END, R2>()),
         }
@@ -1048,7 +1048,7 @@ where
                         shape[i + FROM_START]
                     }
                 });
-                Tensor::Cpu(t.reshape(new_shape))
+                Tensor::Cpu(t.reshape(new_shape).to_concrete())
             }
             Tensor::Gpu(t) => Tensor::Gpu(t.flatten_first_n::<FROM_START, R2>()),
         }
