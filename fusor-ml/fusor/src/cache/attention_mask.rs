@@ -48,19 +48,19 @@ where
     /// Returns: masked attention scores
     ///
     /// The mask will be broadcast to match the attention scores shape
-    pub fn apply<const R: usize>(
-        &self,
-        attention_scores: &Tensor<R, D>,
-    ) -> Tensor<R, D>
+    pub fn apply<'a, const R: usize>(
+        &'a self,
+        attention_scores: &'a Tensor<R, D>,
+    ) -> Tensor<R, D, fusor_cpu::Add<D, R, ConcreteTensor<D, R>, &'a ConcreteTensor<D, R>>>
     where
         D: std::ops::Add<Output = D>,
         (fusor_core::Tensor<2, D>, fusor_core::Tensor<R, D>): fusor_core::MaxRank<R, D>,
     {
         // Broadcast the mask to match the attention scores shape
         let mask_broadcast: Tensor<R, D, _> = self.mask.broadcast_as(attention_scores.shape());
-        match (&mask_broadcast, attention_scores) {
-            (Tensor::Cpu(m), Tensor::Cpu(a)) => Tensor::Cpu((m + a).eval()),
-            (Tensor::Gpu(m), Tensor::Gpu(a)) => Tensor::Gpu(m.add_(a)),
+        match (mask_broadcast, attention_scores) {
+            (Tensor::Cpu(m), Tensor::Cpu(a)) => Tensor::Cpu(m + a),
+            (Tensor::Gpu(m), Tensor::Gpu(a)) => Tensor::Gpu(m + a),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         }
     }
@@ -72,7 +72,7 @@ where
         D: std::ops::Add<Output = D>,
         (fusor_core::Tensor<2, D>, fusor_core::Tensor<R, D>): fusor_core::MaxRank<R, D>,
     {
-        *attention_scores = self.apply(attention_scores);
+        *attention_scores = self.apply(attention_scores).to_concrete();
     }
 
     pub fn mask(&self) -> &Tensor<2, D, ConcreteTensor<D, 2>> {

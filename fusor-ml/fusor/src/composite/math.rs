@@ -14,7 +14,7 @@ where
         MulOp: SimdBinaryOp<D>,
     {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu((t * t).eval()),
+            Tensor::Cpu(t) => Tensor::Cpu((t * t).to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t * t),
         }
     }

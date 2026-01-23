@@ -116,20 +116,20 @@ where
 
         // x - max(x) (broadcasts automatically since max has size 1 in reduced dim)
         let shifted = match (self, &max_val) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a - b).eval()),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a - b).to_concrete()),
             (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a - b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         };
 
         // exp(x - max(x)) - materialize since sum_keepdim is a reduction
-        let exp_val = shifted.exp().eval();
+        let exp_val = shifted.exp().to_concrete();
 
         // sum(exp(...)) with keepdim
         let sum_exp = exp_val.sum_keepdim::<OUT_RANK>(axis);
 
         // exp / sum (broadcasts)
         match (&exp_val, &sum_exp) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).eval()),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).to_concrete()),
             (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a / b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         }
@@ -172,14 +172,14 @@ where
 
         // x / rms
         let normalized = match (self, &rms) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).eval()),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).to_concrete()),
             (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a / b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         };
 
         // normalized * weight
         match (&normalized, weight) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a * b).eval()),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a * b).to_concrete()),
             (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a * b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         }
@@ -222,7 +222,7 @@ where
         let centered = if remove_mean {
             let mean = self.mean_keepdim::<OUT_RANK>(axis);
             match (self, &mean) {
-                (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a - b).eval()),
+                (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a - b).to_concrete()),
                 // Use sub_ for broadcasting (mean has shape with last dim=1)
                 (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a.sub_::<R, R>(&b)),
                 _ => panic!("Cannot mix CPU and GPU tensors"),
@@ -241,7 +241,7 @@ where
 
         // centered / std
         let normalized = match (&centered, &std) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).eval()),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).to_concrete()),
             // Use div_ for broadcasting (std has shape with last dim=1)
             (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a.div_::<R, R>(&b)),
             _ => panic!("Cannot mix CPU and GPU tensors"),
@@ -249,7 +249,7 @@ where
 
         // normalized * weight
         let scaled = match (&normalized, weight) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a * b).eval()),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a * b).to_concrete()),
             // Use mul_ for broadcasting (weight may be 1D broadcast to R)
             (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a.mul_::<R, R>(&b)),
             _ => panic!("Cannot mix CPU and GPU tensors"),
@@ -258,7 +258,7 @@ where
         // + bias if present
         if let Some(b) = bias {
             match (&scaled, b) {
-                (Tensor::Cpu(a), Tensor::Cpu(c)) => Tensor::Cpu((a + c).eval()),
+                (Tensor::Cpu(a), Tensor::Cpu(c)) => Tensor::Cpu((a + c).to_concrete()),
                 // Use add_ for broadcasting (bias may be 1D broadcast to R)
                 (Tensor::Gpu(a), Tensor::Gpu(c)) => Tensor::Gpu(a.add_::<R, R>(&c)),
                 _ => panic!("Cannot mix CPU and GPU tensors"),
@@ -386,7 +386,7 @@ where
 
         // x / rms
         let normalized = match (self, &rms) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).eval()),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).to_concrete()),
             _ => unreachable!(),
         };
 
@@ -394,7 +394,7 @@ where
         let input_shape = self.shape();
         let weight_broadcast = weight.broadcast_as(input_shape);
         let scaled = match (&normalized, &weight_broadcast) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a * b).eval()),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a * b).to_concrete()),
             _ => unreachable!(),
         };
 
@@ -402,7 +402,7 @@ where
         if let Some(b) = bias {
             let bias_broadcast = b.broadcast_as(input_shape);
             match (&scaled, &bias_broadcast) {
-                (Tensor::Cpu(a), Tensor::Cpu(c)) => Tensor::Cpu((a + c).eval()),
+                (Tensor::Cpu(a), Tensor::Cpu(c)) => Tensor::Cpu((a + c).to_concrete()),
                 _ => unreachable!(),
             }
         } else {
@@ -427,7 +427,7 @@ where
         match self {
             Tensor::Cpu(t) => {
                 // Make contiguous if needed, then use fused kernel
-                let contiguous = t.eval();
+                let contiguous = t.to_concrete();
                 let result = fusor_cpu::softmax_last_dim_fused(contiguous.inner());
                 Tensor::Cpu(fusor_cpu::Tensor::new(result))
             }
@@ -602,7 +602,7 @@ mod tests {
         use crate::Device;
 
         // Create random-ish data similar to attention scores
-        let data: Vec<f32> = (0..1*8*100*100).map(|i| ((i as f32 * 0.001).sin() * 10.0)).collect();
+        let data: Vec<f32> = (0..1*8*100*100).map(|i| (i as f32 * 0.001).sin() * 10.0).collect();
 
         // CPU version
         let cpu_tensor: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 8, 100, 100], &data));
@@ -654,7 +654,6 @@ mod tests {
 
         // CPU version
         let cpu_tensor: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 100, 384], &data));
-        let cpu_weight: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 100, 384], &data.iter().map(|_| 1.0).collect::<Vec<f32>>()));
         let cpu_weight_1d: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([384], &weight_data));
         let cpu_weight_broadcast: Tensor<3, f32> = cpu_weight_1d.broadcast_as([1, 100, 384]);
         let cpu_bias: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([384], &bias_data));

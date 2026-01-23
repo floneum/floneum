@@ -113,16 +113,16 @@ impl LayerNorm<1, f32> {
     ) -> Tensor<3, f32, ConcreteTensor<f32, 3>> {
         match input {
             Tensor::Cpu(t) => {
-                let contiguous = t.eval();
+                let contiguous = t.to_concrete();
                 // Broadcast weight to match input shape for fused kernel
                 let weight_broadcast = self.weight.broadcast_as(input.shape());
                 let bias_broadcast = self.bias.as_ref().map(|b| b.broadcast_as(input.shape()));
 
                 let (weight_inner, bias_inner) = match (&weight_broadcast, &bias_broadcast) {
                     (Tensor::Cpu(w), Some(Tensor::Cpu(b))) => {
-                        (w.eval().inner().clone(), Some(b.eval().inner().clone()))
+                        (w.to_concrete().inner().clone(), Some(b.to_concrete().inner().clone()))
                     }
-                    (Tensor::Cpu(w), None) => (w.eval().inner().clone(), None),
+                    (Tensor::Cpu(w), None) => (w.to_concrete().inner().clone(), None),
                     _ => unreachable!(),
                 };
 

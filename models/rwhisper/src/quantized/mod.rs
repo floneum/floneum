@@ -265,7 +265,7 @@ fn sinusoids(length: usize, channels: usize, device: &Device) -> Tensor<2, crate
         .unsqueeze(1);
     let sh = [length, channels / 2];
     let scaled_time = (&arange.broadcast_as(sh) * &inv_timescales.broadcast_as(sh)).to_concrete();
-    Tensor::cat([scaled_time.sin().eval(), scaled_time.cos().eval()], 1)
+    Tensor::cat([scaled_time.sin().to_concrete(), scaled_time.cos().to_concrete()], 1)
 }
 
 // https://github.com/openai/whisper/blob/f572f2161ba831bae131364c3bffdead7af6d210/whisper/model.py#L143

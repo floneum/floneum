@@ -22,7 +22,7 @@ pub use quantized::QMatrix;
 
 use std::ops::{Deref, Range};
 
-pub use composite::{arange, arange_step, cat, stack, ToVec1, ToVec2, ToVec3};
+pub use composite::{ToVec1, ToVec2, ToVec3, arange, arange_step, cat, stack};
 pub use device::Device;
 pub use error::Error;
 
@@ -115,7 +115,8 @@ pub use fusor_core::{DataType, FloatDataType, GgufReadError};
 /// - CPU: Expression types stay lazy and fuse at resolve time
 /// - GPU: Operations build a compute graph that batches at resolve time
 #[derive(Clone)]
-pub enum Tensor<const R: usize, D, B: TensorBacking<R, Elem = D> = fusor_cpu::ConcreteTensor<D, R>> {
+pub enum Tensor<const R: usize, D, B: TensorBacking<R, Elem = D> = fusor_cpu::ConcreteTensor<D, R>>
+{
     Cpu(CpuTensor<R, B>),
     Gpu(GpuTensor<R, D>),
 }
@@ -166,6 +167,24 @@ where
     /// Returns a mutable reference to the GPU tensor if this is the GPU variant.
     #[inline]
     pub fn as_gpu_mut(&mut self) -> Option<&mut GpuTensor<R, D>> {
+        match self {
+            Tensor::Gpu(t) => Some(t),
+            _ => None,
+        }
+    }
+
+    /// Returns a mutable reference to the CPU tensor if this is the CPU variant.
+    #[inline]
+    pub fn to_cpu(self) -> Option<CpuTensor<R, B>> {
+        match self {
+            Tensor::Cpu(t) => Some(t),
+            _ => None,
+        }
+    }
+
+    /// Returns a mutable reference to the GPU tensor if this is the GPU variant.
+    #[inline]
+    pub fn to_gpu(self) -> Option<GpuTensor<R, D>> {
         match self {
             Tensor::Gpu(t) => Some(t),
             _ => None,
@@ -229,22 +248,9 @@ where
         D: SimdElement,
     {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.eval()),
+            Tensor::Cpu(t) => Tensor::Cpu(t.to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t.clone()),
         }
-    }
-
-    /// Alias for to_concrete() - evaluates lazy expressions.
-    ///
-    /// For CPU tensors, this evaluates any lazy expressions.
-    /// For GPU tensors, this is a no-op as GPU tensors are already concrete.
-    #[inline]
-    pub fn eval(&self) -> Tensor<R, D>
-    where
-        B: ResolveTensor<R>,
-        D: SimdElement,
-    {
-        self.to_concrete()
     }
 
     /// Returns the shape of the tensor.
@@ -500,7 +506,7 @@ where
         AddOp: SimdBinaryOp<D>,
     {
         self.broadcast_binary_op(second, |a, b| match (a, b) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((&a + &b).eval()),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((&a + &b).to_concrete()),
             (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(&a + &b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         })
@@ -517,7 +523,7 @@ where
         SubOp: SimdBinaryOp<D>,
     {
         self.broadcast_binary_op(second, |a, b| match (a, b) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((&a - &b).eval()),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((&a - &b).to_concrete()),
             (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(&a - &b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         })
@@ -534,7 +540,7 @@ where
         MulOp: SimdBinaryOp<D>,
     {
         self.broadcast_binary_op(second, |a, b| match (a, b) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((&a * &b).eval()),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((&a * &b).to_concrete()),
             (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(&a * &b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         })
@@ -551,7 +557,7 @@ where
         DivOp: SimdBinaryOp<D>,
     {
         self.broadcast_binary_op(second, |a, b| match (a, b) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((&a / &b).eval()),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((&a / &b).to_concrete()),
             (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(&a / &b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         })
@@ -675,7 +681,7 @@ where
     /// Uses a polynomial approximation on GPU for better performance.
     pub fn approximate_exp(&self) -> Tensor<R, D> {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.exp().eval()),
+            Tensor::Cpu(t) => Tensor::Cpu(t.exp().to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t.appoximate_exp()),
         }
     }
@@ -683,7 +689,7 @@ where
     /// Less approximate exp function (medium accuracy/speed tradeoff on GPU, exact on CPU).
     pub fn less_approximate_exp(&self) -> Tensor<R, D> {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.exp().eval()),
+            Tensor::Cpu(t) => Tensor::Cpu(t.exp().to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t.less_appoximate_exp()),
         }
     }
@@ -700,7 +706,7 @@ where
     pub fn tanh_exact(&self) -> Tensor<R, D> {
         match self {
             // CPU tanh is already exact - evaluate to concrete
-            Tensor::Cpu(t) => Tensor::Cpu(t.tanh().eval()),
+            Tensor::Cpu(t) => Tensor::Cpu(t.tanh().to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t.tanh_exact()),
         }
     }
@@ -715,7 +721,9 @@ where
     pub fn where_cond(&self, on_true: &Self, on_false: &Self) -> Self {
         match (self, on_true, on_false) {
             (Tensor::Cpu(c), Tensor::Cpu(t), Tensor::Cpu(f)) => Tensor::Cpu(c.where_cond(t, f)),
-            (Tensor::Gpu(c), Tensor::Gpu(t), Tensor::Gpu(f)) => Tensor::Gpu(c.clone().where_cond(t, f)),
+            (Tensor::Gpu(c), Tensor::Gpu(t), Tensor::Gpu(f)) => {
+                Tensor::Gpu(c.clone().where_cond(t, f))
+            }
             _ => panic!("Cannot mix CPU and GPU tensors in where_cond"),
         }
     }
@@ -780,7 +788,7 @@ where
         AddOp: SimdBinaryOp<D>,
     {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.add_scalar(scalar).eval()),
+            Tensor::Cpu(t) => Tensor::Cpu(t.add_scalar(scalar).to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t.clone() + scalar),
         }
     }
@@ -792,7 +800,7 @@ where
         SubOp: SimdBinaryOp<D>,
     {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.sub_scalar(scalar).eval()),
+            Tensor::Cpu(t) => Tensor::Cpu(t.sub_scalar(scalar).to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t.clone() - scalar),
         }
     }
@@ -804,7 +812,7 @@ where
         MulOp: SimdBinaryOp<D>,
     {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.mul_scalar(scalar).eval()),
+            Tensor::Cpu(t) => Tensor::Cpu(t.mul_scalar(scalar).to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t.clone() * scalar),
         }
     }
@@ -816,7 +824,7 @@ where
         DivOp: SimdBinaryOp<D>,
     {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.div_scalar(scalar).eval()),
+            Tensor::Cpu(t) => Tensor::Cpu(t.div_scalar(scalar).to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t.clone() / scalar),
         }
     }
@@ -920,21 +928,21 @@ where
         match (self, weights) {
             // CPU path - dispatch based on block type
             // eval() returns Tensor<R, ConcreteTensor>, so we need .inner() to get ConcreteTensor
-            (Tensor::Cpu(lhs), QMatrix::CpuQ4_0(rhs)) => {
-                Tensor::Cpu(fusor_cpu::Tensor::new(lhs.eval().inner().q_mat_mul(rhs)))
-            }
-            (Tensor::Cpu(lhs), QMatrix::CpuQ5_0(rhs)) => {
-                Tensor::Cpu(fusor_cpu::Tensor::new(lhs.eval().inner().q_mat_mul(rhs)))
-            }
-            (Tensor::Cpu(lhs), QMatrix::CpuQ8_0(rhs)) => {
-                Tensor::Cpu(fusor_cpu::Tensor::new(lhs.eval().inner().q_mat_mul(rhs)))
-            }
-            (Tensor::Cpu(lhs), QMatrix::CpuQ4K(rhs)) => {
-                Tensor::Cpu(fusor_cpu::Tensor::new(lhs.eval().inner().q_mat_mul(rhs)))
-            }
-            (Tensor::Cpu(lhs), QMatrix::CpuQ6K(rhs)) => {
-                Tensor::Cpu(fusor_cpu::Tensor::new(lhs.eval().inner().q_mat_mul(rhs)))
-            }
+            (Tensor::Cpu(lhs), QMatrix::CpuQ4_0(rhs)) => Tensor::Cpu(fusor_cpu::Tensor::new(
+                lhs.to_concrete().inner().q_mat_mul(rhs),
+            )),
+            (Tensor::Cpu(lhs), QMatrix::CpuQ5_0(rhs)) => Tensor::Cpu(fusor_cpu::Tensor::new(
+                lhs.to_concrete().inner().q_mat_mul(rhs),
+            )),
+            (Tensor::Cpu(lhs), QMatrix::CpuQ8_0(rhs)) => Tensor::Cpu(fusor_cpu::Tensor::new(
+                lhs.to_concrete().inner().q_mat_mul(rhs),
+            )),
+            (Tensor::Cpu(lhs), QMatrix::CpuQ4K(rhs)) => Tensor::Cpu(fusor_cpu::Tensor::new(
+                lhs.to_concrete().inner().q_mat_mul(rhs),
+            )),
+            (Tensor::Cpu(lhs), QMatrix::CpuQ6K(rhs)) => Tensor::Cpu(fusor_cpu::Tensor::new(
+                lhs.to_concrete().inner().q_mat_mul(rhs),
+            )),
             // F32 is not quantized, use regular matmul with transpose
             // Weight is [N, K] (out_features, in_features), we need input @ weight.T
             (Tensor::Cpu(lhs), QMatrix::CpuF32(rhs)) => {
@@ -960,7 +968,7 @@ where
                 let rhs_broadcast = rhs_transposed.reshape(weight_shape);
 
                 // Do regular matmul
-                let lhs_eval = lhs.eval();
+                let lhs_eval = lhs.to_concrete();
                 let result = lhs_eval.matmul(&rhs_broadcast);
                 Tensor::Cpu(result)
             }
@@ -1119,12 +1127,18 @@ async fn test_gpu_or_add() {
 async fn test_matmul_cpu_vs_gpu() {
     // Create random-ish data for matmul test
     // Simulating attention: Q @ K^T with shape [batch, heads, seq_len, head_dim]
-    let a_data: Vec<f32> = (0..1*8*100*64).map(|i| (i as f32 * 0.001).sin()).collect();
-    let b_data: Vec<f32> = (0..1*8*64*100).map(|i| (i as f32 * 0.001).cos()).collect();
+    let a_data: Vec<f32> = (0..1 * 8 * 100 * 64)
+        .map(|i| (i as f32 * 0.001).sin())
+        .collect();
+    let b_data: Vec<f32> = (0..1 * 8 * 64 * 100)
+        .map(|i| (i as f32 * 0.001).cos())
+        .collect();
 
     // CPU version: [1, 8, 100, 64] @ [1, 8, 64, 100] -> [1, 8, 100, 100]
-    let cpu_a: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 8, 100, 64], &a_data));
-    let cpu_b: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 8, 64, 100], &b_data));
+    let cpu_a: Tensor<4, f32> =
+        Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 8, 100, 64], &a_data));
+    let cpu_b: Tensor<4, f32> =
+        Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 8, 64, 100], &b_data));
     let cpu_result = cpu_a.matmul(&cpu_b);
     let cpu_slice = cpu_result.as_slice().await.unwrap();
 
@@ -1157,9 +1171,27 @@ async fn test_matmul_cpu_vs_gpu() {
         }
     }
 
-    eprintln!("Matmul CPU vs GPU: max_diff={}, mean_diff={}", max_diff, sum_diff / count as f32);
-    eprintln!("CPU[0,0,0,0..5]: {:?}", (0..5).map(|i| cpu_slice[[0, 0, 0, i]]).collect::<Vec<f32>>());
-    eprintln!("GPU[0,0,0,0..5]: {:?}", (0..5).map(|i| gpu_slice[[0, 0, 0, i]]).collect::<Vec<f32>>());
+    eprintln!(
+        "Matmul CPU vs GPU: max_diff={}, mean_diff={}",
+        max_diff,
+        sum_diff / count as f32
+    );
+    eprintln!(
+        "CPU[0,0,0,0..5]: {:?}",
+        (0..5)
+            .map(|i| cpu_slice[[0, 0, 0, i]])
+            .collect::<Vec<f32>>()
+    );
+    eprintln!(
+        "GPU[0,0,0,0..5]: {:?}",
+        (0..5)
+            .map(|i| gpu_slice[[0, 0, 0, i]])
+            .collect::<Vec<f32>>()
+    );
 
-    assert!(max_diff < 0.001, "Matmul CPU and GPU outputs differ too much: max_diff={}", max_diff);
+    assert!(
+        max_diff < 0.001,
+        "Matmul CPU and GPU outputs differ too much: max_diff={}",
+        max_diff
+    );
 }

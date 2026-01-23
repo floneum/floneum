@@ -188,7 +188,7 @@ where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
     {
         let total_elements: usize = original_shape.iter().product();
-        let reduced_concrete = reduced.eval();
+        let reduced_concrete = reduced.to_concrete();
         let data: Vec<D> = (0..total_elements)
             .map(|i| {
                 // Convert linear index to original shape indices
@@ -272,7 +272,7 @@ where
         let mean_x2 = x_sq.mean::<OUT_RANK>(axis);
         // mean(x^2) - mean(x)^2
         match (&mean_x2, &mean_x_sq) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a - b).eval()),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a - b).to_concrete()),
             (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a - b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         }
@@ -302,7 +302,7 @@ where
         let mean_x2 = x_sq.mean_keepdim::<OUT_RANK>(axis);
         // mean(x^2) - mean(x)^2
         match (&mean_x2, &mean_x_sq) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a - b).eval()),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a - b).to_concrete()),
             (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a - b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         }

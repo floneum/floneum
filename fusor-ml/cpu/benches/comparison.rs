@@ -15,7 +15,7 @@ fn bench_add(c: &mut Criterion) {
             let data: Vec<f32> = (0..size).map(|i| (i as f32) * 0.1).collect();
             let lhs = Tensor::from_slice([size], &data);
             let rhs = Tensor::from_slice([size], &data);
-            b.iter(|| black_box((black_box(&lhs) + black_box(&rhs)).eval()));
+            b.iter(|| black_box((black_box(&lhs) + black_box(&rhs)).to_concrete()));
         });
 
         // Candle
@@ -95,7 +95,7 @@ fn bench_add_2d(c: &mut Criterion) {
                 let data: Vec<f32> = (0..rows * cols).map(|i| (i as f32) * 0.1).collect();
                 let lhs = Tensor::from_slice([rows, cols], &data);
                 let rhs = Tensor::from_slice([rows, cols], &data);
-                b.iter(|| black_box((black_box(&lhs) + black_box(&rhs)).eval()));
+                b.iter(|| black_box((black_box(&lhs) + black_box(&rhs)).to_concrete()));
             },
         );
 

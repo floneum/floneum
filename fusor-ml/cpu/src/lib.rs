@@ -301,7 +301,7 @@ mod tests {
             Tensor::from_slice([4], &[10.0, 20.0, 30.0, 40.0]);
 
         // Use + operator and eval() to get result
-        let result = (a + b).eval();
+        let result = (a + b).to_concrete();
 
         assert_eq!(result.get([0]), 11.0);
         assert_eq!(result.get([1]), 22.0);
@@ -315,7 +315,7 @@ mod tests {
             Tensor::from_slice([4], &[10.0, 20.0, 30.0, 40.0]);
         let b: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
 
-        let result = (a - b).eval();
+        let result = (a - b).to_concrete();
 
         assert_eq!(result.get([0]), 9.0);
         assert_eq!(result.get([1]), 18.0);
@@ -328,7 +328,7 @@ mod tests {
         let a: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
         let b: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([4], &[2.0, 3.0, 4.0, 5.0]);
 
-        let result = (a * b).eval();
+        let result = (a * b).to_concrete();
 
         assert_eq!(result.get([0]), 2.0);
         assert_eq!(result.get([1]), 6.0);
@@ -342,7 +342,7 @@ mod tests {
             Tensor::from_slice([4], &[10.0, 20.0, 30.0, 40.0]);
         let b: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([4], &[2.0, 4.0, 5.0, 8.0]);
 
-        let result = (a / b).eval();
+        let result = (a / b).to_concrete();
 
         assert_eq!(result.get([0]), 5.0);
         assert_eq!(result.get([1]), 5.0);
@@ -354,7 +354,7 @@ mod tests {
     fn test_tensor_neg_operator() {
         let a: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([4], &[1.0, -2.0, 3.0, -4.0]);
 
-        let result = (-a).eval();
+        let result = (-a).to_concrete();
 
         assert_eq!(result.get([0]), -1.0);
         assert_eq!(result.get([1]), 2.0);
@@ -369,7 +369,7 @@ mod tests {
         let b: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([4], &[1.0, 1.0, 1.0, 1.0]);
         let c: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]);
 
-        let result = ((a + b) * c).eval();
+        let result = ((a + b) * c).to_concrete();
 
         // (1+1)*2=4, (2+1)*2=6, (3+1)*2=8, (4+1)*2=10
         assert_eq!(result.get([0]), 4.0);
@@ -385,7 +385,7 @@ mod tests {
         let b: Tensor<2, ConcreteTensor<f32, 2>> =
             Tensor::from_slice([2, 3], &[10.0, 20.0, 30.0, 40.0, 50.0, 60.0]);
 
-        let result = (a + b).eval();
+        let result = (a + b).to_concrete();
 
         assert_eq!(result.get([0, 0]), 11.0);
         assert_eq!(result.get([0, 2]), 33.0);
@@ -401,7 +401,7 @@ mod tests {
             Tensor::from_slice([4], &[10.0, 20.0, 30.0, 40.0]);
 
         // Test &Tensor + &Tensor operator
-        let result = (&a + &b).eval();
+        let result = (&a + &b).to_concrete();
         assert_eq!(result.get([0]), 11.0);
 
         // Test sum reduction
@@ -575,7 +575,7 @@ mod tests {
             Tensor::from_slice([2, 3], &[7.0, 8.0, 9.0, 10.0, 11.0, 12.0]);
 
         // Cat along dim 0
-        let cat_dim0 = Tensor::cat([a.eval(), b.eval()], 0);
+        let cat_dim0 = Tensor::cat([a.to_concrete(), b.to_concrete()], 0);
         assert_eq!(cat_dim0.inner().layout().shape(), &[4, 3]);
         assert_eq!(cat_dim0.get([0, 0]), 1.0);
         assert_eq!(cat_dim0.get([2, 0]), 7.0);
@@ -586,7 +586,7 @@ mod tests {
             Tensor::from_slice([2, 3], &[7.0, 8.0, 9.0, 10.0, 11.0, 12.0]);
 
         // Cat along dim 1
-        let cat_dim1 = Tensor::cat([a2.eval(), b2.eval()], 1);
+        let cat_dim1 = Tensor::cat([a2.to_concrete(), b2.to_concrete()], 1);
         assert_eq!(cat_dim1.inner().layout().shape(), &[2, 6]);
         assert_eq!(cat_dim1.get([0, 0]), 1.0);
         assert_eq!(cat_dim1.get([0, 3]), 7.0);
@@ -601,7 +601,7 @@ mod tests {
 
         // Stack along dim 0 to get 2x3
         let stacked: Tensor<2, ConcreteTensor<f32, 2>> =
-            Tensor::stack([a.eval(), b.eval()], 0);
+            Tensor::stack([a.to_concrete(), b.to_concrete()], 0);
         assert_eq!(stacked.inner().layout().shape(), &[2, 3]);
         assert_eq!(stacked.get([0, 0]), 1.0);
         assert_eq!(stacked.get([1, 0]), 4.0);
@@ -640,7 +640,7 @@ mod tests {
         let sliced = a.slice([1..3, 1..3]);
 
         // Add scalar to sliced tensor
-        let result = sliced.add_scalar(10.0).eval();
+        let result = sliced.add_scalar(10.0).to_concrete();
         assert_eq!(result.get([0, 0]), 16.0);  // 6 + 10
         assert_eq!(result.get([0, 1]), 17.0);  // 7 + 10
         assert_eq!(result.get([1, 0]), 20.0);  // 10 + 10

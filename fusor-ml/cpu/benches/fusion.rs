@@ -54,8 +54,8 @@ fn bench_fusion(c: &mut Criterion) {
 
                 // Each eval() materializes a new tensor
                 // This causes 3 separate memory traversals
-                let mul_result = (x_ref * y_ref).eval(); // Pass 1: read x,y, write temp1
-                let add_result = (&mul_result + z_ref).eval(); // Pass 2: read temp1,z, write temp2
+                let mul_result = (x_ref * y_ref).to_concrete(); // Pass 1: read x,y, write temp1
+                let add_result = (&mul_result + z_ref).to_concrete(); // Pass 2: read temp1,z, write temp2
                 let sqrt_result = add_result.sqrt(); // Pass 3: read temp2, write result
                 black_box(sqrt_result)
             })
@@ -117,10 +117,10 @@ fn bench_long_chain(c: &mut Criterion) {
                 let x_ref = black_box(&x_tensor);
                 let y_ref = black_box(&y_tensor);
 
-                let mul1 = (x_ref * y_ref).eval(); // Pass 1
-                let mul2 = (x_ref * y_ref).eval(); // Pass 2
-                let add1 = (&mul1 + &mul2).eval(); // Pass 3
-                let add2 = (&add1 + x_ref).eval(); // Pass 4
+                let mul1 = (x_ref * y_ref).to_concrete(); // Pass 1
+                let mul2 = (x_ref * y_ref).to_concrete(); // Pass 2
+                let add1 = (&mul1 + &mul2).to_concrete(); // Pass 3
+                let add2 = (&add1 + x_ref).to_concrete(); // Pass 4
                 black_box(add2)
             })
         });
@@ -177,7 +177,7 @@ fn bench_unary_chain(c: &mut Criterion) {
             b.iter(|| {
                 let x_ref = black_box(&x_tensor);
 
-                let neg_result = (-x_ref).eval(); // Pass 1
+                let neg_result = (-x_ref).to_concrete(); // Pass 1
                 let abs_result = neg_result.abs(); // Pass 2
                 let sqrt_result = abs_result.sqrt(); // Pass 3
                 black_box(sqrt_result)

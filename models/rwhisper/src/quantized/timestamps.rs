@@ -35,7 +35,7 @@ pub(super) async fn extract_timestamps(
     let weights = weights.softmax_last_dim();
 
     // Smooth
-    let var_sqrt = weights.var_keepdim(weights.rank() - 2).sqrt().eval();
+    let var_sqrt = weights.var_keepdim(weights.rank() - 2).sqrt().to_concrete();
     let weights = &median_filter(
         filter_width,
         weights

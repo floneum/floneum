@@ -16,7 +16,7 @@ where
     let xs1 = xs.narrow(3, 0, last_dim / 2);
     let xs2 = xs.narrow(3, last_dim / 2, last_dim - last_dim / 2);
     let neg_xs2 = match xs2 {
-        Tensor::Cpu(t) => Tensor::Cpu((-t).eval()),
+        Tensor::Cpu(t) => Tensor::Cpu((-t).to_concrete()),
         Tensor::Gpu(t) => Tensor::Gpu(-t),
     };
     crate::cat([neg_xs2, xs1], 3)
@@ -64,7 +64,7 @@ where
         let rotated = rotate_half(self);
         match (self, &cos, &sin, &rotated) {
             (Tensor::Cpu(s), Tensor::Cpu(c), Tensor::Cpu(sn), Tensor::Cpu(r)) => {
-                Tensor::Cpu((s * c + r * sn).eval())
+                Tensor::Cpu((s * c + r * sn).to_concrete())
             }
             (Tensor::Gpu(s), Tensor::Gpu(c), Tensor::Gpu(sn), Tensor::Gpu(r)) => {
                 Tensor::Gpu(s.mul_(c) + r.mul_(sn))
@@ -102,9 +102,9 @@ where
 
         let y0 = match (&x0, &cos, &x1, &sin) {
             (Tensor::Cpu(a), Tensor::Cpu(c), Tensor::Cpu(b), Tensor::Cpu(s)) => {
-                let ac = (a * c).eval();
-                let bs = (b * s).eval();
-                Tensor::Cpu((&ac - &bs).eval())
+                let ac = (a * c).to_concrete();
+                let bs = (b * s).to_concrete();
+                Tensor::Cpu((&ac - &bs).to_concrete())
             }
             (Tensor::Gpu(a), Tensor::Gpu(c), Tensor::Gpu(b), Tensor::Gpu(s)) => {
                 Tensor::Gpu(&a.mul_(c) - &b.mul_(s))
@@ -113,9 +113,9 @@ where
         };
         let y1 = match (&x0, &sin, &x1, &cos) {
             (Tensor::Cpu(a), Tensor::Cpu(s), Tensor::Cpu(b), Tensor::Cpu(c)) => {
-                let as_ = (a * s).eval();
-                let bc = (b * c).eval();
-                Tensor::Cpu((&as_ + &bc).eval())
+                let as_ = (a * s).to_concrete();
+                let bc = (b * c).to_concrete();
+                Tensor::Cpu((&as_ + &bc).to_concrete())
             }
             (Tensor::Gpu(a), Tensor::Gpu(s), Tensor::Gpu(b), Tensor::Gpu(c)) => {
                 Tensor::Gpu(&a.mul_(s) + &b.mul_(c))

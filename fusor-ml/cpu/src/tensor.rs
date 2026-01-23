@@ -88,7 +88,7 @@ where
     T: TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>,
 {
     /// Materialize the tensor to a ConcreteTensor
-    pub fn eval(&self) -> Tensor<R, ConcreteTensor<E, R>> {
+    pub fn to_concrete(&self) -> Tensor<R, ConcreteTensor<E, R>> {
         Tensor::new(self.inner.to_concrete())
     }
 

@@ -32,14 +32,14 @@ where
         // silu(x) = x / (1 + exp(-x))
         // = x * sigmoid(x)
         let neg_self = match self {
-            Tensor::Cpu(t) => Tensor::Cpu((-t).eval()),
+            Tensor::Cpu(t) => Tensor::Cpu((-t).to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(-t.clone()),
         };
         let exp_neg = neg_self.exp();
         let one_plus_exp = exp_neg + D::from_f32(1.0);
         // self / (1 + exp(-self))
         match (self, &one_plus_exp) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).eval()),
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).to_concrete()),
             (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a / b),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         }
@@ -95,7 +95,7 @@ impl<const R: usize> Tensor<R, f32> {
     pub fn gelu_fused(&self) -> Self {
         match self {
             Tensor::Cpu(t) => {
-                let contiguous = t.eval();
+                let contiguous = t.to_concrete();
                 let result = fusor_cpu::gelu_fused(contiguous.inner());
                 Tensor::Cpu(fusor_cpu::Tensor::new(result))
             }

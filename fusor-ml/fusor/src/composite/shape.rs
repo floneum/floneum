@@ -2,8 +2,9 @@
 
 use std::ops::Range;
 
-use crate::{ConcreteTensor, Device, Expr, Tensor, SimdElement};
+use crate::{ConcreteTensor, Device, Expr, SimdElement, Tensor};
 use fusor_core::{DataType, ShapeWithOneHole};
+use fusor_cpu::TensorBacking;
 use fusor_types::SlidingWindow;
 
 impl<const R: usize, D> Tensor<R, D>
@@ -311,6 +312,30 @@ where
     }
 }
 
+fn dispatch_vec<const R: usize, D, B, O>(
+    tensors: impl IntoIterator<Item = Tensor<R, D, B>>,
+    cpu: impl FnOnce(Vec<fusor_cpu::Tensor<R, B>>) -> O,
+    gpu: impl FnOnce(Vec<fusor_core::Tensor<R, D>>) -> O,
+) -> O
+where
+    D: SimdElement + DataType,
+    B: TensorBacking<R, Elem = D>
+{
+    let mut cpu_tensors = Vec::new();
+    let mut gpu_tensors = Vec::new();
+    for t in tensors {
+        match t {
+            Tensor::Cpu(ct) => cpu_tensors.push(ct),
+            Tensor::Gpu(gt) => gpu_tensors.push(gt),
+        }
+    }
+    if gpu_tensors.is_empty() {
+        cpu(cpu_tensors)
+    } else {
+        gpu(gpu_tensors)
+    }
+}
+
 /// Concatenate multiple tensors along a given dimension.
 ///
 /// # Arguments
@@ -323,26 +348,11 @@ pub fn cat<const R: usize, D>(
 where
     D: SimdElement + DataType + Default,
 {
-    let tensors: Vec<_> = tensors.into_iter().collect();
-    assert!(!tensors.is_empty(), "Cannot concatenate empty list of tensors");
-
-    // Check if all tensors are on the same device
-    let is_cpu = tensors[0].is_cpu();
-    assert!(
-        tensors.iter().all(|t| t.is_cpu() == is_cpu),
-        "All tensors must be on the same device for concatenation"
-    );
-
-    if is_cpu {
-        let cpu_tensors: Vec<_> = tensors
-            .into_iter()
-            .map(|t| t.unwrap_cpu().eval())
-            .collect();
-        Tensor::Cpu(fusor_cpu::Tensor::cat(cpu_tensors, dim))
-    } else {
-        let gpu_tensors: Vec<_> = tensors.into_iter().map(|t| t.unwrap_gpu()).collect();
-        Tensor::Gpu(fusor_core::Tensor::cat(gpu_tensors, dim))
-    }
+    dispatch_vec(
+        tensors,
+        |cpu_tensors| Tensor::Cpu(fusor_cpu::Tensor::cat(cpu_tensors, dim)),
+        |gpu_tensors| Tensor::Gpu(fusor_core::Tensor::cat(gpu_tensors, dim)),
+    )
 }
 
 /// Stack tensors along a new dimension.
@@ -359,26 +369,15 @@ where
     ConcreteTensor<D, R>: fusor_cpu::NextRank<R2, D>,
     fusor_core::Tensor<R, D>: fusor_core::NextRank<R2, D>,
 {
-    let tensors: Vec<_> = tensors.into_iter().collect();
-    assert!(!tensors.is_empty(), "Cannot stack empty list of tensors");
-
-    // Check if all tensors are on the same device
-    let is_cpu = tensors[0].is_cpu();
-    assert!(
-        tensors.iter().all(|t| t.is_cpu() == is_cpu),
-        "All tensors must be on the same device for stacking"
-    );
-
-    if is_cpu {
-        let cpu_tensors: Vec<_> = tensors
-            .into_iter()
-            .map(|t| t.unwrap_cpu().eval())
-            .collect();
-        Tensor::Cpu(fusor_cpu::Tensor::stack(cpu_tensors, dim))
-    } else {
-        let gpu_tensors: Vec<_> = tensors.into_iter().map(|t| t.unwrap_gpu()).collect();
-        Tensor::Gpu(fusor_core::Tensor::stack(gpu_tensors, dim))
-    }
+    dispatch_vec(
+        tensors,
+        |cpu_tensors| {
+            Tensor::Cpu(fusor_cpu::Tensor::stack(cpu_tensors, dim))
+        },
+        |gpu_tensors| {
+            Tensor::Gpu(fusor_core::Tensor::stack(gpu_tensors, dim))
+        },
+    )
 }
 
 /// Create a range tensor from start (inclusive) to end (exclusive).
@@ -401,7 +400,9 @@ where
 {
     match device {
         Device::Cpu => Tensor::Cpu(fusor_cpu::Tensor::arange_step(start, end, step)),
-        Device::Gpu(gpu_device) => Tensor::Gpu(fusor_core::Tensor::arange_step(gpu_device, start, end, step)),
+        Device::Gpu(gpu_device) => Tensor::Gpu(fusor_core::Tensor::arange_step(
+            gpu_device, start, end, step,
+        )),
     }
 }
 
@@ -548,8 +549,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_cat_cpu() {
-        let a: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
-        let b: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &[7.0, 8.0, 9.0, 10.0, 11.0, 12.0]));
+        let a: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice(
+            [2, 3],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        ));
+        let b: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice(
+            [2, 3],
+            &[7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+        ));
 
         let catted = cat([a, b], 0);
         assert_eq!(catted.shape(), [4, 3]);
