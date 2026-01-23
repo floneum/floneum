@@ -90,6 +90,7 @@ fn simd_lane_count<E: SimdElement, S: Simd>() -> usize {
 struct ExprEvaluator<'a, E: Expr> {
     expr: &'a E,
     output: &'a mut [E::Elem],
+    base_offset: usize,
 }
 
 impl<E: Expr> WithSimd for ExprEvaluator<'_, E> {
@@ -102,14 +103,14 @@ impl<E: Expr> WithSimd for ExprEvaluator<'_, E> {
 
         // Main SIMD loop - evaluates full vectors
         for (i, out) in out_simd.iter_mut().enumerate() {
-            let base_idx = i * lane_count;
+            let base_idx = self.base_offset + i * lane_count;
             *out = self.expr.eval_simd(simd, base_idx);
         }
 
         // Scalar tail - handles remaining elements
         let simd_len = out_simd.len() * lane_count;
         for (i, out) in out_tail.iter_mut().enumerate() {
-            *out = self.expr.eval_scalar(simd_len + i);
+            *out = self.expr.eval_scalar(self.base_offset + simd_len + i);
         }
     }
 }
@@ -129,6 +130,7 @@ pub fn materialize_expr<E: Expr, const R: usize>(
     Arch::new().dispatch(ExprEvaluator {
         expr,
         output: output.data_mut(),
+        base_offset: 0,
     });
 
     output

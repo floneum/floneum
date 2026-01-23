@@ -666,10 +666,16 @@ impl WithSimd for LayerNormRowDispatch<'_> {
     }
 }
 
+/// Minimum elements for parallel GELU evaluation.
+const GELU_PARALLEL_THRESHOLD: usize = 32 * 1024;
+/// Chunk size for parallel GELU evaluation.
+const GELU_CHUNK_SIZE: usize = 16 * 1024;
+
 /// Fused GELU activation function.
 ///
 /// gelu(x) = 0.5 * x * (1 + tanh(sqrt(2/pi) * x * (1 + 0.044715 * x^2)))
 /// All computed in a single pass through memory.
+/// Automatically parallelized for large tensors (>32K elements).
 pub fn gelu_fused<const R: usize>(tensor: &ConcreteTensor<f32, R>) -> ConcreteTensor<f32, R> {
     let shape: [usize; R] = tensor.shape().try_into().expect("Shape length mismatch");
     let total_elements: usize = shape.iter().product();
@@ -680,7 +686,18 @@ pub fn gelu_fused<const R: usize>(tensor: &ConcreteTensor<f32, R>) -> ConcreteTe
         let in_data: &[f32] = tensor.data();
         let out_data = output.data_mut();
 
-        Arch::new().dispatch(GeluDispatch { input: in_data, output: out_data });
+        if total_elements >= GELU_PARALLEL_THRESHOLD {
+            use rayon::prelude::*;
+
+            // Process chunks in parallel
+            in_data.par_chunks(GELU_CHUNK_SIZE)
+                .zip(out_data.par_chunks_mut(GELU_CHUNK_SIZE))
+                .for_each(|(in_chunk, out_chunk)| {
+                    Arch::new().dispatch(GeluDispatch { input: in_chunk, output: out_chunk });
+                });
+        } else {
+            Arch::new().dispatch(GeluDispatch { input: in_data, output: out_data });
+        }
     } else {
         // Fall back to element-by-element for non-contiguous
         let in_data: &[f32] = tensor.data();

@@ -1,6 +1,6 @@
 //! Math operations that work on both CPU and GPU backends.
 
-use crate::{ConcreteTensor, Expr, FloatOps, Tensor, MulOp, ResolveTensor, ResolvedTensor, SimdBinaryOp, SimdElement, TensorBacking};
+use crate::{ConcreteTensor, FloatOps, Tensor, MulOp, ResolvedTensor, SimdBinaryOp, SimdElement};
 use fusor_core::{DataType, FloatDataType};
 
 impl<const R: usize, D> Tensor<R, D>
@@ -20,24 +20,18 @@ where
     }
 }
 
-impl<const R: usize, D, B> Tensor<R, D, B>
+impl<const R: usize, D> Tensor<R, D, ConcreteTensor<D, R>>
 where
     D: SimdElement + DataType + FloatDataType + FloatOps + Default,
-    B: TensorBacking<R, Elem = D> + ResolveTensor<R> + Expr<Elem = D>,
 {
     /// Element-wise power: pow(self, other) computes self^other for each element.
-    pub fn pow<B2>(&self, other: &Tensor<R, D, B2>) -> Tensor<R, D, ConcreteTensor<D, R>>
-    where
-        B2: TensorBacking<R, Elem = D> + ResolveTensor<R> + Expr<Elem = D>,
-    {
+    pub fn pow(&self, other: &Self) -> Self {
         match (self, other) {
             (Tensor::Cpu(a), Tensor::Cpu(b)) => {
                 // Use element-wise powf via iterating
-                let a_concrete = a.eval();
-                let b_concrete = b.eval();
-                let shape: [usize; R] = Expr::shape(&a_concrete).try_into().expect("Shape mismatch");
-                let a_data = ResolvedTensor::data(a_concrete.inner());
-                let b_data = ResolvedTensor::data(b_concrete.inner());
+                let shape = self.shape();
+                let a_data = ResolvedTensor::data(a.inner());
+                let b_data = ResolvedTensor::data(b.inner());
                 let result: Vec<D> = a_data
                     .iter()
                     .zip(b_data.iter())
@@ -51,13 +45,12 @@ where
     }
 
     /// Resize tensor to new shape with padding/truncation.
-    pub fn resize(&self, new_shape: [usize; R]) -> Tensor<R, D, ConcreteTensor<D, R>> {
+    pub fn resize(&self, new_shape: [usize; R]) -> Self {
         match self {
             Tensor::Cpu(t) => {
                 // CPU resize: create new tensor and copy elements
-                let t_concrete = t.eval();
-                let old_shape: [usize; R] = Expr::shape(&t_concrete).try_into().expect("Shape mismatch");
-                let src_data = ResolvedTensor::data(t_concrete.inner());
+                let old_shape = self.shape();
+                let src_data = ResolvedTensor::data(t.inner());
                 let mut result = vec![D::default(); new_shape.iter().product()];
 
                 // Calculate how many elements to copy per dimension
