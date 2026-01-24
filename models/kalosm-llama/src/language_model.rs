@@ -1,4 +1,4 @@
-use fusor_core::{CastTensor, FloatDataType, WasmNotSync};
+use fusor::{CastTensor, FloatDataType, WasmNotSync};
 use kalosm_language_model::{
     ContentChunk, CreateDefaultChatConstraintsForType, CreateDefaultCompletionConstraintsForType,
     CreateTextCompletionSession, GenerationParameters, MessageContent,

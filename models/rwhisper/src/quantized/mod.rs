@@ -2,10 +2,8 @@
 
 use std::{num::NonZeroUsize, sync::Arc};
 
-use fusor_core::{
-    cache::{AttentionMask, KvCache, MaskCache, TensorCache},
-    layers::{Conv1d, Conv1dConfig, Embedding, LayerNorm, Linear},
-    Device, Error, Result, Tensor, VarBuilder,
+use fusor::{
+    Device, Error, MapLayout, Result, Tensor, VarBuilder, cache::{AttentionMask, KvCache, MaskCache, TensorCache}, layers::{Conv1d, Conv1dConfig, Embedding, LayerNorm, Linear}
 };
 use timestamps::extract_timestamps;
 
@@ -17,9 +15,23 @@ fn conv1d(
     config: Conv1dConfig,
     device: &Device,
     vb: &mut VarBuilder,
+    in_channels: usize,
+    out_channels: usize,
+    kernel_size: usize,
 ) -> Result<Conv1d<crate::WhisperDType>> {
-    let weight = vb.get("weight", device)?.dequantize();
-    let bias = vb.get("bias", device)?.dequantize();
+    let weight_2d: Tensor<2, crate::WhisperDType> = vb.get("weight", device)?.dequantize();
+    // Reshape from [out_channels, in_channels*kernel_size] to [out_channels, in_channels, kernel_size]
+    let weight: Tensor<3, crate::WhisperDType> = weight_2d
+        .reshape([out_channels, in_channels, kernel_size])
+        .to_concrete();
+
+    let bias_2d: Tensor<2, crate::WhisperDType> = vb.get("bias", device)?.dequantize();
+    // Squeeze to rank 1: assume shape is (1, out_channels) or (out_channels, 1)
+    let bias: Tensor<1, crate::WhisperDType, _> = if bias_2d.shape()[0] == 1 {
+        bias_2d.squeeze(0).to_concrete()
+    } else {
+        bias_2d.squeeze(1).to_concrete()
+    };
     Ok(Conv1d::new(weight, Some(bias), config))
 }
 
@@ -73,15 +85,18 @@ impl MultiHeadAttention {
         Tensor<3, crate::WhisperDType>,
         Tensor<3, crate::WhisperDType>,
     )> {
+        let device = x.device();
         let key_states = self.key.forward(x);
         let value_states = self.value.forward(x);
         let (key_states, value_states) = match cache {
             None => (key_states, value_states),
             Some(cache) => {
+                let key_states_4d = key_states.unsqueeze(2).to_concrete();
+                let value_states_4d = value_states.unsqueeze(2).to_concrete();
                 let (k, v) = cache
                     .kv_cache
-                    .append(&key_states.unsqueeze(2), &value_states.unsqueeze(2));
-                (k.squeeze(2), v.squeeze(2))
+                    .append(&device, &key_states_4d, &value_states_4d);
+                (k.squeeze(2).to_concrete(), v.squeeze(2).to_concrete())
             }
         };
         Ok((key_states, value_states))
@@ -109,8 +124,11 @@ impl MultiHeadAttention {
         Ok(self.out.forward(&wv))
     }
 
-    fn reshape_head(&self, x: &Tensor<3, crate::WhisperDType>) -> Tensor<4, crate::WhisperDType> {
-        let [n_batch, n_ctx, n_state] = *x.shape();
+    fn reshape_head(
+        &self,
+        x: &Tensor<3, crate::WhisperDType>,
+    ) -> Tensor<4, crate::WhisperDType, MapLayout<crate::WhisperDType, 4>> {
+        let [n_batch, n_ctx, n_state] = x.shape();
         let target_dims = [n_batch, n_ctx, self.n_head, n_state / self.n_head];
         x.reshape(target_dims).transpose(1, 2)
     }
@@ -123,31 +141,36 @@ impl MultiHeadAttention {
         mask: Option<&AttentionMask<crate::WhisperDType>>,
         attention_output: Option<&mut TensorCache<4, crate::WhisperDType>>,
     ) -> Result<Tensor<3, crate::WhisperDType>> {
-        let [_, _, n_state] = *q.shape();
+        let device = q.device();
+        let [_, _, n_state] = q.shape();
         let scale = crate::WhisperDType::from(((n_state / self.n_head) as f32).powf(-0.25));
-        let q = self.reshape_head(q) * scale;
-        let k = self.reshape_head(k).transpose(2, 3) * scale;
+        let q = self.reshape_head(q).mul_scalar(scale);
+        let k = self.reshape_head(k).transpose(2, 3).mul_scalar(scale);
         let v = self.reshape_head(v);
+
         let mut qk = {
             let _enter = self.matmul_span.enter();
             q.mat_mul(&k)
         };
+
         if let Some(mask) = mask {
             mask.forward(&mut qk)
         }
         if let Some(out) = attention_output {
-            out.append(&qk);
+            out.append(&device, &qk);
         }
         let w = {
             let _enter = self.softmax_span.enter();
-            qk.softmax_last_dim()
+            qk.softmax_last_dim_fused()
         };
-        let wv = {
+
+        let wv_raw = {
             let _enter = self.matmul_span.enter();
             w.mat_mul(&v)
-        }
-        .transpose(1, 2)
-        .flatten_last_n::<1, _>();
+        };
+
+        let wv = wv_raw.transpose(1, 2).flatten_last_n::<1, _>();
+
         Ok(wv)
     }
 }
@@ -211,20 +234,27 @@ impl ResidualAttentionBlock {
     ) -> Result<Tensor<3, crate::WhisperDType>> {
         let _enter = self.span.enter();
 
-        let attn_ln_x = self.attn_ln.forward(x);
+        let attn_ln_x = self.attn_ln.forward_fused(x);
         let kv = self
             .attn
             .forward_kv(&attn_ln_x, cache.as_mut().map(|cache| &mut cache.attn))?;
         let attn = self.attn.forward(&attn_ln_x, kv, mask, None)?;
-        let mut x = x + &attn;
+        let mut x = (x + &attn).to_concrete();
+
         if let (Some(kv), Some((attn, ln))) = (audio_features_kv, &mut self.cross_attn) {
-            let ln_x = ln.forward(&x);
-            x = &x + &attn.forward(&ln_x, kv, None, attention_output)?;
+            let ln_x = ln.forward_fused(&x);
+            let attn_out = attn.forward(&ln_x, kv, None, attention_output)?;
+            x = (&x + &attn_out).to_concrete();
         }
-        let mlp = self
-            .mlp_linear2
-            .forward(&self.mlp_linear1.forward(&self.mlp_ln.forward(&x)).gelu());
-        Ok(x + mlp)
+        let mlp = self.mlp_linear2.forward(
+            &self
+                .mlp_linear1
+                .forward(&self.mlp_ln.forward_fused(&x))
+                .gelu(),
+        );
+        let result = (x + mlp).to_concrete();
+
+        Ok(result)
     }
 }
 
@@ -236,12 +266,18 @@ fn sinusoids(length: usize, channels: usize, device: &Device) -> Tensor<2, crate
         .map(|i| (crate::WhisperDType::from(i as f32) * (-log_timescale_increment)).exp())
         .collect();
     let inv_timescales = Tensor::new(device, inv_timescales.as_slice()).unsqueeze(0);
-    let arange = Tensor::arange(device, 0, length as u32)
+    let arange = fusor::arange(device, 0u32, length as u32)
         .cast::<crate::WhisperDType>()
         .unsqueeze(1);
     let sh = [length, channels / 2];
-    let scaled_time = arange.broadcast_as(sh) * inv_timescales.broadcast_as(sh);
-    Tensor::cat([scaled_time.sin(), scaled_time.cos()], 1)
+    let scaled_time = (&arange.broadcast_as(sh) * &inv_timescales.broadcast_as(sh)).to_concrete();
+    Tensor::cat(
+        [
+            scaled_time.sin().to_concrete(),
+            scaled_time.cos().to_concrete(),
+        ],
+        1,
+    )
 }
 
 // https://github.com/openai/whisper/blob/f572f2161ba831bae131364c3bffdead7af6d210/whisper/model.py#L143
@@ -276,8 +312,9 @@ impl AudioEncoder {
             groups: 1,
             dilation: 1,
         };
-        let conv1 = conv1d(cfg1, device, &mut vb.pp("conv1"))?;
-        let conv2 = conv1d(cfg2, device, &mut vb.pp("conv2"))?;
+        let n_mels = cfg.num_mel_bins;
+        let conv1 = conv1d(cfg1, device, &mut vb.pp("conv1"), n_mels, n_state, 3)?;
+        let conv2 = conv1d(cfg2, device, &mut vb.pp("conv2"), n_state, n_state, 3)?;
         let positional_embedding = sinusoids(n_ctx, n_state, device);
         let blocks = (0..cfg.encoder_layers)
             .map(|i| {
@@ -307,6 +344,7 @@ impl AudioEncoder {
         x: &Tensor<3, crate::WhisperDType>,
     ) -> Result<Tensor<3, crate::WhisperDType>> {
         let _enter = self.span.enter();
+
         let x = {
             let _enter = self.conv1_span.enter();
             self.conv1.forward(x).gelu()
@@ -316,13 +354,16 @@ impl AudioEncoder {
             self.conv2.forward(&x).gelu()
         };
         let x = x.transpose(1, 2);
-        let [_bsize, seq_len, _hidden] = *x.shape();
+        let [_bsize, seq_len, _hidden] = x.shape();
+
         let positional_embedding = self.positional_embedding.narrow(0, 0, seq_len);
         let mut x = x.add_(&positional_embedding);
+
         for block in self.blocks.iter_mut() {
-            x = block.forward(None, &x, None, None, None)?
+            x = block.forward(None, &x, None, None, None)?;
         }
-        let x = self.ln_post.forward(&x);
+        let x = self.ln_post.forward_fused(&x);
+
         Ok(x)
     }
 }
@@ -396,18 +437,21 @@ impl TextDecoder {
             return Err(Error::msg("exceeded max sequence length"));
         }
         let device = audio_features.device();
-        let mask = self.mask_cache.get_mask(seq_len, index_pos, None, device);
-        let x = Tensor::new(device, tokens);
+        let mask = self.mask_cache.get_mask(seq_len, index_pos, None, &device);
+        let x: Tensor<1, u32> = Tensor::new(&device, tokens);
         // The model expects a batch dim but this inference loop does not handle
         // it so we add it at this point.
-        let x = x.unsqueeze(0);
+        let x = x.unsqueeze(0).to_concrete();
 
         let _enter = self.span.enter();
         let token_embedding = self.token_embedding.forward(&x);
         let positional_embedding = self.positional_embedding.narrow(0, index_pos, seq_len);
+
         let mut x = token_embedding.add_(&positional_embedding);
+
         // Add batch dimension to audio_features for forward_kv
-        let audio_features_batched = audio_features.unsqueeze(0);
+        let audio_features_batched = audio_features.unsqueeze(0).to_concrete();
+
         for (i, block) in self.blocks.iter_mut().enumerate() {
             if cache.blocks.len() <= i {
                 cache.blocks.push(ResidualAttentionBlockCache {
@@ -423,7 +467,9 @@ impl TextDecoder {
             let attention_output = attention_output.as_mut().map(|outputs| &mut outputs[i]);
             x = block.forward(query, &x, Some(&mask), Some(block_cache), attention_output)?;
         }
-        let out = self.ln.forward(&x);
+
+        let out = self.ln.forward_fused(&x);
+
         Ok(out)
     }
 
@@ -432,10 +478,12 @@ impl TextDecoder {
         x: &Tensor<3, crate::WhisperDType>,
     ) -> Result<Tensor<3, crate::WhisperDType>> {
         let embeddings = self.token_embedding.embeddings_quantized();
+
         let logits = {
             let _enter = self.span_final.enter();
             x.q_mat_mul(embeddings)
         };
+
         Ok(logits)
     }
 

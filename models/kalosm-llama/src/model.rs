@@ -4,11 +4,11 @@ use crate::raw::Model;
 use crate::token_stream::TokenOutputStream;
 use crate::token_stream::TokenOutputStreamError;
 use crate::LlamaConfigJson;
-use fusor_core::CastTensor;
-use fusor_core::Device;
-use fusor_core::FloatDataType;
-use fusor_core::ShardedVarBuilder;
-use fusor_core::{WasmNotSend, WasmNotSync};
+use fusor::CastTensor;
+use fusor::Device;
+use fusor::FloatDataType;
+use fusor::ShardedVarBuilder;
+use fusor::{WasmNotSend, WasmNotSync};
 use fusor_gguf::GgufMetadata;
 use fusor_gguf::GgufValue;
 use kalosm_language_model::ImageFetchError;
@@ -28,7 +28,7 @@ use crate::{InferenceSettings, LlamaSourceError};
 pub enum LlamaModelError {
     /// An error from candle while running the model.
     #[error("Candle error: {0}")]
-    Candle(#[from] fusor_core::Error),
+    Candle(#[from] fusor::Error),
 
     /// An error from tokenizers while running the model.
     #[error("Tokenizer error: {0}")]
@@ -121,12 +121,12 @@ where
         Box::pin(async move {
             let logits = logits?.squeeze(0);
             // Cast logits back to f32 for sampling
-            let logits: fusor_core::Tensor<1, f32> = logits.cast();
+            let logits: fusor::Tensor<1, f32> = logits.cast();
             let len = logits.shape()[0];
             let logits = logits
                 .as_slice()
                 .await
-                .map_err(fusor_core::Error::BufferAsyncError)?;
+                .map_err(fusor::Error::BufferAsyncError)?;
             let mut logits_vec = Vec::with_capacity(len);
             for i in 0..len {
                 let logit = logits[[i]];

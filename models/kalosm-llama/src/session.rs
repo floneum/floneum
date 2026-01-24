@@ -1,6 +1,6 @@
 use crate::raw::cache::LlamaCache;
 use crate::raw::LlamaConfig;
-use fusor_core::FloatDataType;
+use fusor::FloatDataType;
 use kalosm_language_model::TextCompletionSession;
 use std::sync::{Arc, RwLock};
 
@@ -12,7 +12,7 @@ pub enum LlamaSessionLoadingError {
     Safetensors(#[from] safetensors::SafeTensorError),
     /// An error from candle while loading or saving a [`LlamaSession`].
     #[error("Candle error: {0:?}")]
-    Candle(#[from] fusor_core::Error),
+    Candle(#[from] fusor::Error),
     /// The chat messages deserialized from the session are invalid.
     #[error("Chat messages deserialized from the session are invalid")]
     InvalidChatMessages,
@@ -50,14 +50,14 @@ impl<F: FloatDataType> LlamaSession<F> {
     // }
 
     // /// Import a cache tensor map.
-    // pub fn set_tensor_map(&mut self, map: HashMap<String, Tensor>) -> fusor_core::Result<()> {
+    // pub fn set_tensor_map(&mut self, map: HashMap<String, Tensor>) -> fusor::Result<()> {
     //     let mut cache = self.cache.write().unwrap();
     //     *cache = LlamaCache::from_tensor_map(map)?;
     //     Ok(())
     // }
 
     // /// Create a cache from a tensor map. This can be used to load a cache from disk.
-    // pub fn from_tensor_map(map: HashMap<String, Tensor>) -> fusor_core::Result<Self> {
+    // pub fn from_tensor_map(map: HashMap<String, Tensor>) -> fusor::Result<Self> {
     //     Ok(Self {
     //         cache: Arc::new(RwLock::new(LlamaCache::from_tensor_map(map)?)),
     //     })

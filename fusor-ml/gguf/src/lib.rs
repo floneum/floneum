@@ -1,5 +1,8 @@
 //! Support for [GGUF](https://github.com/ggml-org/ggml/blob/master/docs/gguf.md) files
 
+// Enable NEON dot product intrinsics for faster quantized matmul on Apple Silicon
+#![cfg_attr(target_arch = "aarch64", feature(stdarch_neon_dotprod))]
+
 // Tensor layout is described at https://github.com/ggml-org/llama.cpp/wiki/Tensor-Encoding-Schemes
 // Modified from https://github.com/huggingface/candle/blob/e286cf7cc9e34bc426a542264b818e35e6eed05b/candle-core/src/quantized/gguf_file.rs#L31
 
@@ -714,7 +717,7 @@ impl GgufMetadata {
     }
 }
 
-pub trait GgufBlock: Pod + Sized {
+pub trait GgufBlock: Pod + Sized + Sync {
     const BLOCK_SIZE: usize;
 
     type Bytes: AsRef<[u8]> + Copy;
@@ -722,12 +725,29 @@ pub trait GgufBlock: Pod + Sized {
     type AsBytes: AsRef<[u8]> + Copy;
     type Dequantized: AsRef<[f32]> + Copy;
 
+    /// The activation block type for integer dot product.
+    /// For 32-element blocks (Q4_0, Q5_0, Q8_0), this is BlockQ8_0.
+    /// For 256-element K-quant blocks (Q4_K, Q6_K), this is BlockQ8K.
+    type ActivationBlock: Pod + Sized;
+
     fn finite(&self) -> bool;
     fn into_wgsl_bytes(self) -> Self::Bytes;
     fn into_wgsl_bytes_f32(self) -> Self::BytesF32;
     fn from_wgsl_bytes(bytes: Self::Bytes) -> Self;
 
     fn dequantize(&self) -> Self::Dequantized;
+
+    /// Compute integer dot product with a quantized activation block.
+    ///
+    /// This performs the dot product directly on quantized values and applies
+    /// the scale factors at the end, avoiding the overhead of full dequantization.
+    /// Returns the dot product result with scales already applied.
+    fn vec_dot(&self, activation: &Self::ActivationBlock) -> f32;
+
+    /// Quantize a slice of f32 values into an activation block.
+    ///
+    /// The slice must have exactly `BLOCK_SIZE` elements.
+    fn quantize_activation(data: &[f32]) -> Self::ActivationBlock;
 }
 
 const Q4_0_BLOCK_SIZE: usize = 32;
@@ -765,6 +785,7 @@ impl GgufBlock for BlockQ4_0 {
     type BytesF32 = [u8; std::mem::size_of::<BlockQ4_0WgslF32>()];
     type AsBytes = [u8; std::mem::size_of::<Self>()];
     type Dequantized = [f32; Q4_0_BLOCK_SIZE];
+    type ActivationBlock = BlockQ8_0;
 
     fn finite(&self) -> bool {
         self.scale.is_finite()
@@ -820,6 +841,62 @@ impl GgufBlock for BlockQ4_0 {
 
         data
     }
+
+    #[cfg(target_arch = "aarch64")]
+    fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
+        use std::arch::aarch64::*;
+        const CENTER: i8 = 8;
+        unsafe {
+            // Load 16 packed Q4 bytes
+            let q4_bytes = vld1q_u8(self.data.as_ptr());
+
+            // Unpack low and high nibbles
+            let mask_low = vdupq_n_u8(0x0F);
+            let q4_lo_u8 = vandq_u8(q4_bytes, mask_low);
+            let q4_hi_u8 = vshrq_n_u8(q4_bytes, 4);
+
+            // Convert to signed and subtract center (8)
+            let center = vdupq_n_s8(CENTER);
+            let q4_lo = vsubq_s8(vreinterpretq_s8_u8(q4_lo_u8), center);
+            let q4_hi = vsubq_s8(vreinterpretq_s8_u8(q4_hi_u8), center);
+
+            // Load activation values (first 16 for low nibbles, next 16 for high nibbles)
+            let y_lo = vld1q_s8(y.data.as_ptr());
+            let y_hi = vld1q_s8(y.data.as_ptr().add(16));
+
+            // Use vdotq_s32 for fast i8x4 dot products
+            let acc = vdupq_n_s32(0);
+            let acc = vdotq_s32(acc, q4_lo, y_lo);
+            let acc = vdotq_s32(acc, q4_hi, y_hi);
+            let sum = vaddvq_s32(acc);
+
+            let scale = self.scale.to_f32() * y.scale.to_f32();
+            (sum as f32) * scale
+        }
+    }
+
+    #[cfg(not(target_arch = "aarch64"))]
+    fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
+        const CENTER: i8 = 8;
+        let mut sum: i32 = 0;
+
+        for i in 0..16 {
+            let byte = self.data[i];
+            let q4_lo = (byte & 0x0F) as i8 - CENTER;
+            let q4_hi = (byte >> 4) as i8 - CENTER;
+
+            sum += (q4_lo as i32) * (y.data[i] as i32);
+            sum += (q4_hi as i32) * (y.data[i + 16] as i32);
+        }
+
+        let scale = self.scale.to_f32() * y.scale.to_f32();
+        (sum as f32) * scale
+    }
+
+    fn quantize_activation(data: &[f32]) -> Self::ActivationBlock {
+        let arr: &[f32; 32] = data.try_into().expect("data must have 32 elements");
+        BlockQ8_0::quantize(arr)
+    }
 }
 
 const Q5_0_BLOCK_SIZE: usize = 32;
@@ -863,6 +940,7 @@ impl GgufBlock for BlockQ5_0 {
     type BytesF32 = [u8; std::mem::size_of::<BlockQ5_0WgslF32>()];
     type AsBytes = [u8; std::mem::size_of::<Self>()];
     type Dequantized = [f32; Q5_0_BLOCK_SIZE];
+    type ActivationBlock = BlockQ8_0;
 
     fn finite(&self) -> bool {
         self.scale.is_finite()
@@ -949,6 +1027,36 @@ impl GgufBlock for BlockQ5_0 {
 
         out
     }
+
+    fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
+        const CENTER: i8 = 16;
+        const FIFTH_BIT: u8 = 0x10;
+        let high_bits: u32 = bytemuck::cast(self.data_high_bits);
+        let mut sum: i32 = 0;
+
+        for i in 0..16 {
+            let byte = self.data_low_bits[i];
+            let low = byte & 0x0F;
+            let high = byte >> 4;
+
+            let low_bit = ((high_bits >> i) << 4) as u8 & FIFTH_BIT;
+            let high_bit = (high_bits >> (i + 12)) as u8 & FIFTH_BIT;
+
+            let q5_lo = (low | low_bit) as i8 - CENTER;
+            let q5_hi = (high | high_bit) as i8 - CENTER;
+
+            sum += (q5_lo as i32) * (y.data[i] as i32);
+            sum += (q5_hi as i32) * (y.data[i + 16] as i32);
+        }
+
+        let scale = self.scale.to_f32() * y.scale.to_f32();
+        (sum as f32) * scale
+    }
+
+    fn quantize_activation(data: &[f32]) -> Self::ActivationBlock {
+        let arr: &[f32; 32] = data.try_into().expect("data must have 32 elements");
+        BlockQ8_0::quantize(arr)
+    }
 }
 
 const Q8_0_BLOCK_SIZE: usize = 32;
@@ -977,6 +1085,27 @@ pub struct BlockQ8_0 {
 impl BlockQ8_0 {
     pub const BLOCK_SIZE: usize = Q8_0_BLOCK_SIZE;
     pub const WEIGHTS_SIZE: usize = Q8_0_BLOCK_SIZE;
+
+    /// Quantize 32 f32 values into a Q8_0 block.
+    ///
+    /// This finds the maximum absolute value, computes a scale factor,
+    /// and quantizes each value to an i8 in the range [-127, 127].
+    pub fn quantize(data: &[f32; 32]) -> Self {
+        // Find max absolute value for scale
+        let max_abs = data.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+        let scale = max_abs / 127.0;
+        let inv_scale = if max_abs != 0.0 { 127.0 / max_abs } else { 0.0 };
+
+        let mut qs = [0i8; 32];
+        for (i, &v) in data.iter().enumerate() {
+            qs[i] = (v * inv_scale).round().clamp(-127.0, 127.0) as i8;
+        }
+
+        Self {
+            scale: half::f16::from_f32(scale),
+            data: qs,
+        }
+    }
 }
 
 impl GgufBlock for BlockQ8_0 {
@@ -986,6 +1115,7 @@ impl GgufBlock for BlockQ8_0 {
     type BytesF32 = [u8; std::mem::size_of::<BlockQ8_0WgslF32>()];
     type AsBytes = [u8; std::mem::size_of::<Self>()];
     type Dequantized = [f32; Q8_0_BLOCK_SIZE];
+    type ActivationBlock = BlockQ8_0;
 
     fn finite(&self) -> bool {
         self.scale.is_finite()
@@ -1031,9 +1161,93 @@ impl GgufBlock for BlockQ8_0 {
 
         std::array::from_fn(|i| self.data[i] as f32 * scale)
     }
+
+    #[cfg(target_arch = "aarch64")]
+    fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
+        use std::arch::aarch64::*;
+        unsafe {
+            // Load 32 i8 values from each block (2 NEON registers each)
+            let x0 = vld1q_s8(self.data.as_ptr());
+            let x1 = vld1q_s8(self.data.as_ptr().add(16));
+            let y0 = vld1q_s8(y.data.as_ptr());
+            let y1 = vld1q_s8(y.data.as_ptr().add(16));
+
+            // Use vdotq_s32: computes 4 simultaneous i8x4 dot products per instruction
+            // Each lane accumulates: a[i*4+0]*b[i*4+0] + a[i*4+1]*b[i*4+1] + a[i*4+2]*b[i*4+2] + a[i*4+3]*b[i*4+3]
+            let acc = vdupq_n_s32(0);
+            let acc = vdotq_s32(acc, x0, y0);
+            let acc = vdotq_s32(acc, x1, y1);
+
+            // Horizontal sum of 4 i32 lanes
+            let sum = vaddvq_s32(acc);
+
+            let scale = self.scale.to_f32() * y.scale.to_f32();
+            (sum as f32) * scale
+        }
+    }
+
+    #[cfg(not(target_arch = "aarch64"))]
+    fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
+        let mut sum: i32 = 0;
+        for i in 0..32 {
+            sum += (self.data[i] as i32) * (y.data[i] as i32);
+        }
+        let scale = self.scale.to_f32() * y.scale.to_f32();
+        (sum as f32) * scale
+    }
+
+    fn quantize_activation(data: &[f32]) -> Self::ActivationBlock {
+        let arr: &[f32; 32] = data.try_into().expect("data must have 32 elements");
+        BlockQ8_0::quantize(arr)
+    }
 }
 
 const K_BLOCK_SIZE: usize = 256;
+
+/// Q8_K block type for quantized activations in K-quant dot products.
+///
+/// This is used to quantize f32 activations for integer dot product
+/// with Q4_K and Q6_K weight blocks. Each block stores 256 i8 values
+/// with a single f16 scale factor.
+#[derive(Zeroable, Pod, Clone, Copy, PartialEq, Debug)]
+#[repr(C)]
+pub struct BlockQ8K {
+    /// Scale factor for the block
+    pub scale: half::f16,
+    /// Quantized i8 values
+    pub data: [i8; K_BLOCK_SIZE],
+}
+
+impl BlockQ8K {
+    pub const BLOCK_SIZE: usize = K_BLOCK_SIZE;
+
+    /// Quantize 256 f32 values into a Q8_K block.
+    ///
+    /// This finds the maximum absolute value, computes a scale factor,
+    /// and quantizes each value to an i8 in the range [-127, 127].
+    pub fn quantize(data: &[f32; K_BLOCK_SIZE]) -> Self {
+        // Find max absolute value for scale
+        let max_abs = data.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+        let scale = max_abs / 127.0;
+        let inv_scale = if max_abs != 0.0 { 127.0 / max_abs } else { 0.0 };
+
+        let mut qs = [0i8; K_BLOCK_SIZE];
+        for (i, &v) in data.iter().enumerate() {
+            qs[i] = (v * inv_scale).round().clamp(-127.0, 127.0) as i8;
+        }
+
+        Self {
+            scale: half::f16::from_f32(scale),
+            data: qs,
+        }
+    }
+
+    /// Dequantize the block back to f32 values.
+    pub fn dequantize(&self) -> [f32; K_BLOCK_SIZE] {
+        let scale = self.scale.to_f32();
+        std::array::from_fn(|i| self.data[i] as f32 * scale)
+    }
+}
 
 #[derive(AnyBitPattern, Clone, Copy)]
 #[repr(C)]
@@ -1083,6 +1297,7 @@ impl GgufBlock for BlockQ4K {
     type BytesF32 = [u8; std::mem::size_of::<BlockQ4KWgslF32>()];
     type AsBytes = [u8; std::mem::size_of::<Self>()];
     type Dequantized = [f32; K_BLOCK_SIZE];
+    type ActivationBlock = BlockQ8K;
 
     fn finite(&self) -> bool {
         self.scale.is_finite() && self.min.is_finite()
@@ -1181,6 +1396,138 @@ impl GgufBlock for BlockQ4K {
 
         data
     }
+
+    #[cfg(target_arch = "aarch64")]
+    fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
+        use std::arch::aarch64::*;
+
+        let super_scale = self.scale.to_f32() * y.scale.to_f32();
+        let super_min = self.min.to_f32() * y.scale.to_f32();
+
+        // Extract scales and offsets (same as dequantize logic)
+        let scales_bytes = bytemuck::cast_slice(&self.scales);
+        let (first_scales, first_offset) = first_scales_min_k4(scales_bytes);
+        let (second_scales, second_offset) = second_scales_min_k4(scales_bytes);
+        let scales: [u8; 8] = bytemuck::cast([first_scales, second_scales]);
+        let offsets: [u8; 8] = bytemuck::cast([first_offset, second_offset]);
+
+        unsafe {
+            let mask_low = vdupq_n_u8(0x0F);
+
+            let mut scale_dot_sum = 0.0f32;
+            let mut offset_y_sum = 0.0f32;
+            let mut pair_index = 0;
+
+            // Vector of ones for computing activation sums via dot product
+            let ones = vdupq_n_s8(1);
+
+            for chunk_index in (0..128).step_by(32) {
+                let out_chunk_index = chunk_index * 2;
+
+                // Load 32 weight bytes as two 16-byte vectors
+                let w0 = vld1q_u8(self.data.as_ptr().add(chunk_index));
+                let w1 = vld1q_u8(self.data.as_ptr().add(chunk_index + 16));
+
+                // Extract low and high nibbles (values 0-15, fit in signed i8)
+                let q_lo_0 = vreinterpretq_s8_u8(vandq_u8(w0, mask_low));
+                let q_lo_1 = vreinterpretq_s8_u8(vandq_u8(w1, mask_low));
+                let q_hi_0 = vreinterpretq_s8_u8(vshrq_n_u8(w0, 4));
+                let q_hi_1 = vreinterpretq_s8_u8(vshrq_n_u8(w1, 4));
+
+                // Load activation values
+                let y_lo_0 = vld1q_s8(y.data.as_ptr().add(out_chunk_index));
+                let y_lo_1 = vld1q_s8(y.data.as_ptr().add(out_chunk_index + 16));
+                let y_hi_0 = vld1q_s8(y.data.as_ptr().add(out_chunk_index + 32));
+                let y_hi_1 = vld1q_s8(y.data.as_ptr().add(out_chunk_index + 48));
+
+                // Low nibbles integer dot product using vdotq_s32
+                let acc_lo = vdupq_n_s32(0);
+                let acc_lo = vdotq_s32(acc_lo, q_lo_0, y_lo_0);
+                let acc_lo = vdotq_s32(acc_lo, q_lo_1, y_lo_1);
+                let int_dot_lo = vaddvq_s32(acc_lo);
+
+                // High nibbles integer dot product
+                let acc_hi = vdupq_n_s32(0);
+                let acc_hi = vdotq_s32(acc_hi, q_hi_0, y_hi_0);
+                let acc_hi = vdotq_s32(acc_hi, q_hi_1, y_hi_1);
+                let int_dot_hi = vaddvq_s32(acc_hi);
+
+                // Sum of y values for offset correction using vdotq_s32 with ones
+                let y_sum_acc_lo = vdupq_n_s32(0);
+                let y_sum_acc_lo = vdotq_s32(y_sum_acc_lo, y_lo_0, ones);
+                let y_sum_acc_lo = vdotq_s32(y_sum_acc_lo, y_lo_1, ones);
+                let y_sum_lo = vaddvq_s32(y_sum_acc_lo);
+
+                let y_sum_acc_hi = vdupq_n_s32(0);
+                let y_sum_acc_hi = vdotq_s32(y_sum_acc_hi, y_hi_0, ones);
+                let y_sum_acc_hi = vdotq_s32(y_sum_acc_hi, y_hi_1, ones);
+                let y_sum_hi = vaddvq_s32(y_sum_acc_hi);
+
+                // Apply group scales and accumulate
+                let low_scale = scales[pair_index] as f32;
+                let low_offset = offsets[pair_index] as f32;
+                pair_index += 1;
+
+                let high_scale = scales[pair_index] as f32;
+                let high_offset = offsets[pair_index] as f32;
+                pair_index += 1;
+
+                scale_dot_sum += low_scale * (int_dot_lo as f32) + high_scale * (int_dot_hi as f32);
+                offset_y_sum += low_offset * (y_sum_lo as f32) + high_offset * (y_sum_hi as f32);
+            }
+
+            super_scale * scale_dot_sum - super_min * offset_y_sum
+        }
+    }
+
+    #[cfg(not(target_arch = "aarch64"))]
+    fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
+        let super_scale = self.scale.to_f32() * y.scale.to_f32();
+        let super_min = self.min.to_f32() * y.scale.to_f32();
+
+        // Extract scales and offsets (same as dequantize logic)
+        let scales_bytes = bytemuck::cast_slice(&self.scales);
+        let (first_scales, first_offset) = first_scales_min_k4(scales_bytes);
+        let (second_scales, second_offset) = second_scales_min_k4(scales_bytes);
+        let scales: [u8; 8] = bytemuck::cast([first_scales, second_scales]);
+        let offsets: [u8; 8] = bytemuck::cast([first_offset, second_offset]);
+
+        let mut sum = 0.0f32;
+        let mut pair_index = 0;
+
+        for chunk_index in (0..128).step_by(32) {
+            let out_chunk_index = chunk_index * 2;
+
+            let low_scale = scales[pair_index] as f32 * super_scale;
+            let low_offset = offsets[pair_index] as f32 * super_min;
+            pair_index += 1;
+
+            let high_scale = scales[pair_index] as f32 * super_scale;
+            let high_offset = offsets[pair_index] as f32 * super_min;
+            pair_index += 1;
+
+            for offset in 0..32 {
+                let weight_byte = self.data[chunk_index + offset];
+                let q_lo = (weight_byte & 0xF) as f32;
+                let q_hi = (weight_byte >> 4) as f32;
+
+                let w_lo = low_scale * q_lo - low_offset;
+                let w_hi = high_scale * q_hi - high_offset;
+
+                let y_lo = y.data[out_chunk_index + offset] as f32;
+                let y_hi = y.data[out_chunk_index + offset + 32] as f32;
+
+                sum += w_lo * y_lo + w_hi * y_hi;
+            }
+        }
+
+        sum
+    }
+
+    fn quantize_activation(data: &[f32]) -> Self::ActivationBlock {
+        let arr: &[f32; K_BLOCK_SIZE] = data.try_into().expect("data must have 256 elements");
+        BlockQ8K::quantize(arr)
+    }
 }
 
 #[derive(AnyBitPattern, Clone, Copy)]
@@ -1228,6 +1575,7 @@ impl GgufBlock for BlockQ6K {
     type BytesF32 = [u8; std::mem::size_of::<BlockQ6KWgslF32>()];
     type AsBytes = [u8; std::mem::size_of::<Self>()];
     type Dequantized = [f32; K_BLOCK_SIZE];
+    type ActivationBlock = BlockQ8K;
 
     fn finite(&self) -> bool {
         self.scale.is_finite()
@@ -1349,6 +1697,52 @@ impl GgufBlock for BlockQ6K {
 
         data
     }
+
+    fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
+        const CENTER: i8 = 32;
+        const TWO_BITS: u8 = 0b11;
+        const FOUR_BITS: u8 = 0b1111;
+
+        let scale = self.scale.to_f32() * y.scale.to_f32();
+        let mut sum = 0.0f32;
+
+        for chunk_index in 0..2 {
+            let output_index = chunk_index * 128;
+            let lower_index = chunk_index * 64;
+            let high_index = chunk_index * 32;
+            let base_scale_index = chunk_index * 8;
+
+            for high_byte_index in 0..32 {
+                let sc_idx = base_scale_index + high_byte_index / 16;
+                let high_byte = self.data_high_bits[high_index + high_byte_index];
+                let first_low = self.data_low_bits[lower_index + high_byte_index];
+                let second_low = self.data_low_bits[lower_index + high_byte_index + 32];
+
+                // Reconstruct 6-bit values
+                let q1 = ((high_byte & TWO_BITS) << 4 | (first_low & FOUR_BITS)) as i8 - CENTER;
+                let q2 = (((high_byte >> 2) & TWO_BITS) << 4 | (second_low & FOUR_BITS)) as i8 - CENTER;
+                let q3 = (((high_byte >> 4) & TWO_BITS) << 4 | (first_low >> 4)) as i8 - CENTER;
+                let q4 = (((high_byte >> 6) & TWO_BITS) << 4 | (second_low >> 4)) as i8 - CENTER;
+
+                let s1 = self.scales[sc_idx] as f32;
+                let s2 = self.scales[sc_idx + 2] as f32;
+                let s3 = self.scales[sc_idx + 4] as f32;
+                let s4 = self.scales[sc_idx + 6] as f32;
+
+                sum += scale * s1 * (q1 as f32) * (y.data[output_index + high_byte_index] as f32);
+                sum += scale * s2 * (q2 as f32) * (y.data[output_index + high_byte_index + 32] as f32);
+                sum += scale * s3 * (q3 as f32) * (y.data[output_index + high_byte_index + 64] as f32);
+                sum += scale * s4 * (q4 as f32) * (y.data[output_index + high_byte_index + 96] as f32);
+            }
+        }
+
+        sum
+    }
+
+    fn quantize_activation(data: &[f32]) -> Self::ActivationBlock {
+        let arr: &[f32; K_BLOCK_SIZE] = data.try_into().expect("data must have 256 elements");
+        BlockQ8K::quantize(arr)
+    }
 }
 
 const SIX_BITS_MASK: u32 = 0b0011_1111_0011_1111_0011_1111_0011_1111;
@@ -1401,6 +1795,107 @@ fn second_scales_min_k4(packed_scales: &[u32]) -> (u32, u32) {
     let second_offsets = msb_offsets | lsb_offsets;
 
     (second_scales, second_offsets)
+}
+
+#[cfg(test)]
+mod vec_dot_tests {
+    use super::*;
+
+    #[test]
+    fn test_q8_0_quantize_roundtrip() {
+        let data: [f32; 32] = std::array::from_fn(|i| (i as f32 - 16.0) * 0.1);
+        let block = BlockQ8_0::quantize(&data);
+        let dequant = block.dequantize();
+        for (a, b) in data.iter().zip(&dequant) {
+            assert!(
+                (a - b).abs() < 0.02,
+                "Quantization roundtrip error: {} vs {}",
+                a,
+                b
+            );
+        }
+    }
+
+    #[test]
+    fn test_q8_0_vec_dot() {
+        // Create two Q8_0 blocks with known values
+        let data_a: [f32; 32] = std::array::from_fn(|i| (i as f32) * 0.1);
+        let data_b: [f32; 32] = std::array::from_fn(|i| ((i as f32) - 16.0) * 0.05);
+
+        let block_a = BlockQ8_0::quantize(&data_a);
+        let block_b = BlockQ8_0::quantize(&data_b);
+
+        // Compute expected result using dequantized values
+        let dequant_a = block_a.dequantize();
+        let dequant_b = block_b.dequantize();
+        let expected: f32 = dequant_a.iter().zip(&dequant_b).map(|(a, b)| a * b).sum();
+
+        // Compute using vec_dot
+        let actual = block_a.vec_dot(&block_b);
+
+        // Allow small error due to quantization
+        let tolerance = expected.abs().max(1.0) * 0.05;
+        assert!(
+            (actual - expected).abs() < tolerance,
+            "vec_dot mismatch: expected {}, got {}, diff {}",
+            expected,
+            actual,
+            (actual - expected).abs()
+        );
+    }
+
+    #[test]
+    fn test_q8k_quantize_roundtrip() {
+        let data: [f32; 256] = std::array::from_fn(|i| ((i as f32) - 128.0) * 0.01);
+        let block = BlockQ8K::quantize(&data);
+        let dequant = block.dequantize();
+        for (a, b) in data.iter().zip(&dequant) {
+            assert!(
+                (a - b).abs() < 0.02,
+                "Quantization roundtrip error: {} vs {}",
+                a,
+                b
+            );
+        }
+    }
+
+    #[test]
+    fn test_q4_k_vec_dot_vs_dequantize() {
+        // Create a Q4_K block with known pattern
+        let block = BlockQ4K {
+            scale: half::f16::from_f32(0.1),
+            min: half::f16::from_f32(0.05),
+            scales: [8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96],
+            data: std::array::from_fn(|i| ((i * 3) % 256) as u8),
+        };
+
+        // Create Q8_K activation block
+        let act_data: [f32; 256] = std::array::from_fn(|i| ((i as f32) - 128.0) * 0.01);
+        let act_block = BlockQ8K::quantize(&act_data);
+
+        // Compute expected using dequantize
+        let dequant_weights = block.dequantize();
+        let dequant_acts = act_block.dequantize();
+        let expected: f32 = dequant_weights
+            .iter()
+            .zip(&dequant_acts)
+            .map(|(w, a)| w * a)
+            .sum();
+
+        // Compute using vec_dot
+        let actual = block.vec_dot(&act_block);
+
+        // Allow for quantization error (Q4 has more error than Q8)
+        let tolerance = expected.abs().max(1.0) * 0.10; // 10% tolerance for Q4_K
+        assert!(
+            (actual - expected).abs() < tolerance,
+            "Q4_K vec_dot mismatch: expected {}, got {}, diff {} (tolerance {})",
+            expected,
+            actual,
+            (actual - expected).abs(),
+            tolerance
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1598,4 +2093,89 @@ async fn test_load_tiny_llama() {
             _ => todo!(),
         }
     }
+}
+
+#[test]
+fn test_q8_0_quantize_roundtrip() {
+    // Test that quantizing and dequantizing f32 values gives reasonable results
+    let data: [f32; 32] = std::array::from_fn(|i| (i as f32 - 16.0) * 0.1);
+    let block = BlockQ8_0::quantize(&data);
+    let dequant = block.dequantize();
+    for (a, b) in data.iter().zip(&dequant) {
+        // Quantization to 8-bit introduces ~1% error
+        assert!((a - b).abs() < 0.02, "Mismatch: original={}, dequantized={}", a, b);
+    }
+}
+
+#[test]
+fn test_q8_k_quantize_roundtrip() {
+    // Test that quantizing and dequantizing f32 values gives reasonable results
+    let data: [f32; K_BLOCK_SIZE] = std::array::from_fn(|i| (i as f32 - 128.0) * 0.01);
+    let block = BlockQ8K::quantize(&data);
+    let dequant = block.dequantize();
+    for (a, b) in data.iter().zip(&dequant) {
+        // Quantization to 8-bit introduces ~1% error
+        assert!((a - b).abs() < 0.02, "Mismatch: original={}, dequantized={}", a, b);
+    }
+}
+
+#[test]
+fn test_vec_dot_q8_0_matches_dequantize() {
+    // Test that vec_dot gives the same result as dequantize-then-dot
+    let weight_data: [f32; 32] = std::array::from_fn(|i| (i as f32 - 16.0) * 0.05);
+    let activation_data: [f32; 32] = std::array::from_fn(|i| ((i as f32) * 0.1).sin());
+
+    // Create weight block by quantizing the weight data
+    let weight_block = BlockQ8_0::quantize(&weight_data);
+    let activation_block = BlockQ8_0::quantize(&activation_data);
+
+    // Compute vec_dot
+    let vec_dot_result = weight_block.vec_dot(&activation_block);
+
+    // Compute dequantize-then-dot
+    let weight_dequant = weight_block.dequantize();
+    let act_dequant = activation_block.dequantize();
+    let dequant_dot: f32 = weight_dequant.iter().zip(&act_dequant).map(|(w, a)| w * a).sum();
+
+    // Results should be very close (within quantization error)
+    assert!(
+        (vec_dot_result - dequant_dot).abs() < 0.5,
+        "vec_dot={}, dequant_dot={}, diff={}",
+        vec_dot_result, dequant_dot, (vec_dot_result - dequant_dot).abs()
+    );
+}
+
+#[test]
+fn test_vec_dot_q4_0_matches_dequantize() {
+    // Create a Q4_0 block with known values
+    let mut raw_bytes = Vec::new();
+    let scale_f16 = half::f16::from_f32(0.1);
+    raw_bytes.extend_from_slice(&scale_f16.to_le_bytes());
+    // Pack 32 4-bit values: indices 0-15 in low nibble, 16-31 in high nibble
+    for i in 0..16 {
+        let low_val = (i % 16) as u8;  // indices 0-15
+        let high_val = ((i + 8) % 16) as u8; // indices 16-31
+        let packed = low_val | (high_val << 4);
+        raw_bytes.push(packed);
+    }
+    let weight_block: BlockQ4_0 = *bytemuck::from_bytes(&raw_bytes);
+
+    // Create activation block
+    let activation_data: [f32; 32] = std::array::from_fn(|i| ((i as f32) * 0.2).cos());
+    let activation_block = BlockQ8_0::quantize(&activation_data);
+
+    // Compute vec_dot
+    let vec_dot_result = weight_block.vec_dot(&activation_block);
+
+    // Compute dequantize-then-dot
+    let weight_dequant = weight_block.dequantize();
+    let act_dequant = activation_block.dequantize();
+    let dequant_dot: f32 = weight_dequant.iter().zip(&act_dequant).map(|(w, a)| w * a).sum();
+
+    // Results should be close (within quantization error)
+    assert!(
+        (vec_dot_result - dequant_dot).abs() < 1.0,
+        "vec_dot={}, dequant_dot={}, diff={}",
+        vec_dot_result, dequant_dot, (vec_dot_result - dequant_dot).abs()
+    );
 }

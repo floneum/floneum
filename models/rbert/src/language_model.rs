@@ -3,6 +3,7 @@ use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::pin::Pin;
 
+use fusor_core::ToVec2;
 pub use crate::Bert;
 use crate::BertBuilder;
 use crate::BertError;

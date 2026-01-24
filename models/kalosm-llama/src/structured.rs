@@ -1,4 +1,4 @@
-use fusor_core::{CastTensor, FloatDataType, WasmNotSend, WasmNotSync};
+use fusor::{CastTensor, FloatDataType, WasmNotSend, WasmNotSync};
 use kalosm_language_model::{ContentChunk, MessageContent};
 use kalosm_sample::CreateParserState;
 use kalosm_sample::{LiteralParser, ParseStatus, Parser, ParserExt};

@@ -1,4 +1,4 @@
-use fusor_core::{
+use fusor::{
     cache::{AttentionMask, KvCache},
     layers::{Linear, RmsNorm},
     CastTensor, Device, FloatDataType, Tensor, VarBuilder, D,
@@ -28,7 +28,7 @@ where
         head_dim: usize,
         embed_dim: usize,
         layer_norm_eps: f64,
-    ) -> fusor_core::Result<Self> {
+    ) -> fusor::Result<Self> {
         // norm1, norm2
         let norm1_weight = vb.get("ln1.weight", device)?.dequantize();
         let norm1 = RmsNorm::new(norm1_weight, None, layer_norm_eps as f32);
@@ -68,7 +68,7 @@ where
         cu_seqlens: &[u32],
         rope_cache: &RopeCache<F>,
         cache: Option<&mut KvCache<F>>,
-    ) -> fusor_core::Result<Tensor<2, F>> {
+    ) -> fusor::Result<Tensor<2, F>> {
         let xs_3d = xs.unsqueeze(0); // [1, seq, dim]
         let after_norm = self.norm1.forward(&xs_3d);
         let after_attention = self
@@ -106,7 +106,7 @@ where
         head_count: usize,
         head_dim: usize,
         embed_dim: usize,
-    ) -> fusor_core::Result<Self> {
+    ) -> fusor::Result<Self> {
         let q = Linear::new(
             vb.get("attn_q.weight", device)?,
             Some(vb.get("attn_q.bias", device)?.dequantize()),
@@ -141,7 +141,7 @@ where
         cu_seqlens: &[u32],
         rope_cache: &RopeCache<F>,
         cache: Option<&mut KvCache<F>>,
-    ) -> fusor_core::Result<Tensor<3, F>> {
+    ) -> fusor::Result<Tensor<3, F>> {
         let [bsz, seq_len, _] = *xs.shape();
 
         // qkv

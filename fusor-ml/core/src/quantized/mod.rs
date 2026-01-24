@@ -63,7 +63,14 @@ impl QMatrix {
         QMatrix::from_parts(device, &bytes, shape, ty)
     }
 
-    pub(crate) fn from_parts(
+    /// Create a QMatrix from raw quantized bytes.
+    ///
+    /// # Arguments
+    /// * `device` - The GPU device to create the matrix on
+    /// * `bytes` - Raw quantized bytes
+    /// * `shape` - The logical shape in elements (not blocks)
+    /// * `ty` - The quantization type
+    pub fn from_parts(
         device: &Device,
         bytes: &[u8],
         shape: Box<[usize]>,
@@ -178,11 +185,13 @@ impl QMatrix {
         &self.shape
     }
 
-    pub(crate) fn device(&self) -> &Device {
+    /// Returns the device this matrix is on.
+    pub fn device(&self) -> &Device {
         &self.device
     }
 
-    pub(crate) fn datatype(&self) -> GgmlType {
+    /// Returns the quantization type.
+    pub fn datatype(&self) -> GgmlType {
         self.datatype
     }
 }

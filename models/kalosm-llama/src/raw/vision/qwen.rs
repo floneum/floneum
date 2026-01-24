@@ -1,4 +1,4 @@
-use fusor_core::{
+use fusor::{
     cache::KvCache, CastTensor, Device, FloatDataType, Result, Tensor, VarBuilder, D,
 };
 use fusor_gguf::GgufMetadata;

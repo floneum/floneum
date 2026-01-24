@@ -40,7 +40,7 @@ mod token_stream;
 pub use crate::chat::LlamaChatSession;
 use crate::model::LlamaModel;
 pub use crate::session::LlamaSession;
-use fusor_core::{Device, WasmNotSend, WasmNotSync};
+use fusor::{Device, WasmNotSend, WasmNotSync};
 use futures::FutureExt;
 use kalosm_language_model::{MediaHints, TextCompletionBuilder, TextCompletionModelExt};
 pub use kalosm_model_types::FileSource;
@@ -60,8 +60,8 @@ use tokenizers::Tokenizer;
 /// Re-export half::f16 for users who want to use f16 activation types
 pub use half::f16;
 
-/// Re-export fusor_core types needed for the activation type generic
-pub use fusor_core::{CastTensor, FloatDataType};
+/// Re-export fusor types needed for the activation type generic
+pub use fusor::{CastTensor, FloatDataType};
 
 /// A prelude of commonly used items in kalosm-llama.
 pub mod prelude {

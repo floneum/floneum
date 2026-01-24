@@ -1,4 +1,4 @@
-use fusor_core::{DataType, Device, Tensor};
+use fusor::{DataType, Device, Tensor};
 
 fn pad_to<const R: usize, T: DataType + std::fmt::Debug>(
     tensor: &Tensor<R, T>,
@@ -48,7 +48,7 @@ pub(crate) fn get_window_index(
     spatial_merge_unit: usize,
     patch_size: usize,
     device: &Device,
-) -> fusor_core::Result<(Tensor<1, u32>, Vec<u32>)> {
+) -> fusor::Result<(Tensor<1, u32>, Vec<u32>)> {
     let mut window_index = vec![];
     let mut cu_window_seqlens = vec![0];
     let mut window_index_id = 0;

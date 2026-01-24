@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use fusor_core::{Device, LastRank, MaxRank, NextRankInner, Result, Tensor, TensorSlice};
+use fusor_core::{Device, LastRank, MaxRank, MappedBuffer, NextRankInner, Result, Tensor, TensorSlice};
 
 pub fn layer_norm<const N: usize>(
     device: &Device,
@@ -28,7 +28,7 @@ impl<const N: usize> LayerNorm<N> {
         (Tensor<N2, f32>, Tensor<N, f32>): MaxRank<N2, f32>,
         (Tensor<N2, f32>, Tensor<N2, f32>): MaxRank<N2, f32>,
         Tensor<N3, f32>: NextRankInner<NextRank = Tensor<N2, f32>>,
-        TensorSlice<N2, f32>: Debug,
+        TensorSlice<N2, f32, MappedBuffer>: Debug,
     {
         input.layer_norm(&self.weight, self.bias.as_ref(), self.eps, true)
     }
