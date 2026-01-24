@@ -5,10 +5,10 @@ use rodio::Decoder;
 async fn main() -> Result<(), anyhow::Error> {
     eprintln!("Starting transcription...");
 
-    // Create a new small whisper model
+    // Create a new large whisper model
     eprintln!("Building model...");
     let model = WhisperBuilder::default()
-        .with_source(WhisperSource::tiny_en())
+        .with_source(WhisperSource::large_v3_turbo())
         .build()
         .await?;
     eprintln!("Model built successfully");
