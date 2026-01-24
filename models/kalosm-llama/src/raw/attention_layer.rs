@@ -1,14 +1,14 @@
 use crate::raw::rope::RopeImplementation;
 
-use fusor_core::cache::AttentionMask;
-use fusor_core::cache::KvCache;
-use fusor_core::layers::Linear;
-use fusor_core::layers::RmsNorm;
-use fusor_core::CastTensor;
-use fusor_core::FloatDataType;
-use fusor_core::QMatrix;
-use fusor_core::Tensor;
-use fusor_core::D;
+use fusor::cache::AttentionMask;
+use fusor::cache::KvCache;
+use fusor::layers::Linear;
+use fusor::layers::RmsNorm;
+use fusor::CastTensor;
+use fusor::FloatDataType;
+use fusor::QMatrix;
+use fusor::Tensor;
+use fusor::D;
 
 pub enum FeedForwardVariant<F: FloatDataType = f32> {
     // Used by the Llama, Qwen, and Gemma models

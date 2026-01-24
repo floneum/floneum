@@ -4737,7 +4737,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "cudarc 0.9.15",
- "fusor-core",
+ "fusor",
  "fusor-gguf",
  "futures",
  "getrandom 0.3.4",

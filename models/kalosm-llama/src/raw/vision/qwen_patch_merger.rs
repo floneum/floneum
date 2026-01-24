@@ -1,4 +1,4 @@
-use fusor_core::{
+use fusor::{
     layers::{Linear, RmsNorm},
     CastTensor, Device, FloatDataType, Tensor, VarBuilder,
 };
@@ -21,7 +21,7 @@ where
         layer_norm_eps: f64,
         vb: &mut VarBuilder,
         device: &Device,
-    ) -> fusor_core::Result<Self> {
+    ) -> fusor::Result<Self> {
         let hidden_size = in_channels * spatial_merge_size.pow(2);
 
         let ln_q_weight = vb.get("v.post_ln.weight", device)?.dequantize();

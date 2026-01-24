@@ -1,5 +1,5 @@
 use crate::raw::rope::create_inverse_frequency;
-use fusor_core::{CastTensor, Device, FloatDataType, Tensor};
+use fusor::{CastTensor, Device, FloatDataType, Tensor};
 
 pub struct VisionRotaryEmbedding<F> {
     inv_freq: Tensor<2, F>,
@@ -10,13 +10,13 @@ where
     F: FloatDataType,
     f32: CastTensor<F>,
 {
-    pub(crate) fn new(dim: usize, rope_theta: f32, device: &Device) -> fusor_core::Result<Self> {
+    pub(crate) fn new(dim: usize, rope_theta: f32, device: &Device) -> fusor::Result<Self> {
         Ok(Self {
             inv_freq: create_inverse_frequency(None, None, dim, rope_theta, device),
         })
     }
 
-    pub(crate) fn make_embeds(&self, sequence_length: u32) -> fusor_core::Result<Tensor<2, F>> {
+    pub(crate) fn make_embeds(&self, sequence_length: u32) -> fusor::Result<Tensor<2, F>> {
         let seq = Tensor::arange(
             self.inv_freq.device(),
             F::from_f32(0.0),

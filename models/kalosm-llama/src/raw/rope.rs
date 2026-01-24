@@ -1,5 +1,5 @@
 use super::{LlamaConfig, RopeScalingConfig};
-use fusor_core::{CastTensor, DataType, Device, Dim, FloatDataType, Tensor, D};
+use fusor::{CastTensor, DataType, Device, Dim, FloatDataType, Tensor, D};
 use std::f32::consts::PI;
 
 pub(crate) fn create_inverse_frequency<F: FloatDataType>(
@@ -59,7 +59,7 @@ where
         config: &LlamaConfig<F>,
         rope_theta: f32,
         device: &Device,
-    ) -> fusor_core::Result<Self> {
+    ) -> fusor::Result<Self> {
         if let Some(mrope_sections) = &config.mrope_sections {
             let cache = QwenVLRopeCache::new(config, rope_theta, mrope_sections, device)?;
             Ok(Self::QwenVL(cache))
@@ -109,7 +109,7 @@ where
         rope_theta: f32,
         mrope_sections: &[usize],
         device: &Device,
-    ) -> fusor_core::Result<Self> {
+    ) -> fusor::Result<Self> {
         let inverse_frequency = create_inverse_frequency(
             config.rope_scaling.as_ref(),
             config.rope_freq_weight.as_ref(),
@@ -201,7 +201,7 @@ where
         config: &LlamaConfig<F>,
         rope_theta: f32,
         device: &Device,
-    ) -> fusor_core::Result<Self> {
+    ) -> fusor::Result<Self> {
         let inverse_frequency: Tensor<2, F> = create_inverse_frequency(
             config.rope_scaling.as_ref(),
             config.rope_freq_weight.as_ref(),
@@ -278,7 +278,7 @@ where
 #[cfg(test)]
 #[tokio::test]
 async fn test_rope_cache() {
-    use fusor_core::{Device, Tensor};
+    use fusor::{Device, Tensor};
 
     let config: LlamaConfig<f32> = LlamaConfig::mock_test();
     let device = Device::new().await.unwrap();

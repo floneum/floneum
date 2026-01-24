@@ -1,4 +1,4 @@
-use fusor_core::{CastTensor, Device, FloatDataType, Tensor, VarBuilder};
+use fusor::{CastTensor, Device, FloatDataType, Tensor, VarBuilder};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Conv3dConfig {
@@ -21,7 +21,7 @@ pub struct Conv3d<T> {
     config: Conv3dConfig,
 }
 
-impl<T: fusor_core::DataType> Conv3d<T> {
+impl<T: fusor::DataType> Conv3d<T> {
     pub fn new(weight: Tensor<5, T>, bias: Option<Tensor<1, T>>, config: Conv3dConfig) -> Self {
         Self {
             weight,
@@ -63,7 +63,7 @@ where
         hidden_size: usize,
         vb: &mut VarBuilder,
         device: &Device,
-    ) -> fusor_core::Result<Self> {
+    ) -> fusor::Result<Self> {
         // GGUF stores Conv3D weights split into two Conv2D tensors along the temporal dimension
         // - "weight" contains temporal slice 0: [out_channels, in_channels, kernel_h, kernel_w]
         // - "weight.1" contains temporal slice 1: [out_channels, in_channels, kernel_h, kernel_w]
@@ -102,7 +102,7 @@ where
         self.temporal_patch_size
     }
 
-    pub fn forward(&self, hidden_states: &Tensor<2, F>) -> fusor_core::Result<Tensor<2, F>> {
+    pub fn forward(&self, hidden_states: &Tensor<2, F>) -> fusor::Result<Tensor<2, F>> {
         let [num_patches, _] = *hidden_states.shape();
 
         // Input: (num_patches, in_channels * temporal * patch * patch)

@@ -1,4 +1,4 @@
-use fusor_core::{Device, Tensor};
+use fusor::{Device, Tensor};
 use image::DynamicImage;
 
 #[allow(clippy::too_many_arguments)]
@@ -12,7 +12,7 @@ pub(crate) fn process_image(
     image_mean: &[f32],
     image_std: &[f32],
     device: &Device,
-) -> fusor_core::Result<(Tensor<2, f32>, [u32; 3])> {
+) -> fusor::Result<(Tensor<2, f32>, [u32; 3])> {
     let patch_size_u32 = patch_size as u32;
     let merge_size_u32 = merge_size as u32;
     let merge_patch = patch_size_u32 * merge_size_u32;
@@ -99,7 +99,7 @@ fn normalize_image_shape(
 fn image_to_rgb(
     image: &DynamicImage,
     device: &Device,
-) -> Result<Tensor<4, f32>, fusor_core::Error> {
+) -> Result<Tensor<4, f32>, fusor::Error> {
     let height = image.height() as usize;
     let width = image.width() as usize;
     let rgb = image.to_rgb8();

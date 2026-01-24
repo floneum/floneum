@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{model::LlamaModelError, session::LlamaSessionLoadingError, Llama, LlamaSession};
-use fusor_core::{CastTensor, FloatDataType};
+use fusor::{CastTensor, FloatDataType};
 use kalosm_language_model::{
     ChatMessage, ChatModel, ChatSession, ContentChunk, CreateChatSession,
     CreateTextCompletionSession, MessageContent, MessageType, StructuredChatModel,
