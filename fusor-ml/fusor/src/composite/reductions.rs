@@ -271,11 +271,11 @@ where
         let x_sq = self.sqr();
         let mean_x2 = x_sq.mean::<OUT_RANK>(axis);
         // mean(x^2) - mean(x)^2
-        match (&mean_x2, &mean_x_sq) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a - b).to_concrete()),
-            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a - b),
-            _ => panic!("Cannot mix CPU and GPU tensors"),
-        }
+        mean_x2.dispatch_pair_concrete(
+            &mean_x_sq,
+            |a, b| (a - b).to_concrete(),
+            |a, b| a - b,
+        )
     }
 
     /// Variance along a specific axis, keeping the dimension (with size 1).
@@ -301,11 +301,11 @@ where
         let x_sq = self.sqr();
         let mean_x2 = x_sq.mean_keepdim::<OUT_RANK>(axis);
         // mean(x^2) - mean(x)^2
-        match (&mean_x2, &mean_x_sq) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a - b).to_concrete()),
-            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a - b),
-            _ => panic!("Cannot mix CPU and GPU tensors"),
-        }
+        mean_x2.dispatch_pair_concrete(
+            &mean_x_sq,
+            |a, b| (a - b).to_concrete(),
+            |a, b| a - b,
+        )
     }
 }
 

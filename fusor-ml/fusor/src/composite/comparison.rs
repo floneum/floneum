@@ -18,10 +18,7 @@ where
     where
         EqOp: SimdComparisonOp<D>,
     {
-        match (self, rhs) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu(a.eq(b)),
-            _ => panic!("Tensor-to-tensor comparison is only supported on CPU tensors"),
-        }
+        self.dispatch_cpu_only_pair(rhs, |a, b| a.eq(b))
     }
 
     /// Element-wise less-than comparison between two tensors.
@@ -32,10 +29,7 @@ where
     where
         LtOp: SimdComparisonOp<D>,
     {
-        match (self, rhs) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu(a.lt(b)),
-            _ => panic!("Tensor-to-tensor comparison is only supported on CPU tensors"),
-        }
+        self.dispatch_cpu_only_pair(rhs, |a, b| a.lt(b))
     }
 
     /// Element-wise less-than-or-equal comparison between two tensors.
@@ -46,10 +40,7 @@ where
     where
         LteOp: SimdComparisonOp<D>,
     {
-        match (self, rhs) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu(a.lte(b)),
-            _ => panic!("Tensor-to-tensor comparison is only supported on CPU tensors"),
-        }
+        self.dispatch_cpu_only_pair(rhs, |a, b| a.lte(b))
     }
 
     /// Element-wise greater-than comparison between two tensors.
@@ -60,10 +51,7 @@ where
     where
         GtOp: SimdComparisonOp<D>,
     {
-        match (self, rhs) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu(a.gt(b)),
-            _ => panic!("Tensor-to-tensor comparison is only supported on CPU tensors"),
-        }
+        self.dispatch_cpu_only_pair(rhs, |a, b| a.gt(b))
     }
 
     /// Element-wise greater-than-or-equal comparison between two tensors.
@@ -74,10 +62,7 @@ where
     where
         GteOp: SimdComparisonOp<D>,
     {
-        match (self, rhs) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu(a.gte(b)),
-            _ => panic!("Tensor-to-tensor comparison is only supported on CPU tensors"),
-        }
+        self.dispatch_cpu_only_pair(rhs, |a, b| a.gte(b))
     }
 
     /// Element-wise equality comparison with a scalar.

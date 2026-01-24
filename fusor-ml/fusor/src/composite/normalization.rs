@@ -117,11 +117,11 @@ where
         let max_val = self.max_keepdim::<OUT_RANK>(axis);
 
         // x - max(x) (broadcasts automatically since max has size 1 in reduced dim)
-        let shifted = match (self, &max_val) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a - b).to_concrete()),
-            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a - b),
-            _ => panic!("Cannot mix CPU and GPU tensors"),
-        };
+        let shifted = self.dispatch_pair_concrete(
+            &max_val,
+            |a, b| (a - b).to_concrete(),
+            |a, b| a - b,
+        );
 
         // exp(x - max(x)) - materialize since sum_keepdim is a reduction
         let exp_val = shifted.exp().to_concrete();
@@ -130,11 +130,11 @@ where
         let sum_exp = exp_val.sum_keepdim::<OUT_RANK>(axis);
 
         // exp / sum (broadcasts)
-        match (&exp_val, &sum_exp) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).to_concrete()),
-            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a / b),
-            _ => panic!("Cannot mix CPU and GPU tensors"),
-        }
+        exp_val.dispatch_pair_concrete(
+            &sum_exp,
+            |a, b| (a / b).to_concrete(),
+            |a, b| a / b,
+        )
     }
 
     /// RMS Normalization along the last axis.
@@ -414,18 +414,15 @@ where
     where
         fusor_core::Tensor<R, f32>: fusor_core::LastRank<OUT_RANK, f32>,
     {
-        match self {
-            Tensor::Cpu(t) => {
+        self.dispatch_ref(
+            |t| {
                 // Make contiguous if needed, then use fused kernel
                 let contiguous = t.to_concrete();
                 let result = fusor_cpu::softmax_last_dim_fused(contiguous.inner());
-                Tensor::Cpu(fusor_cpu::Tensor::new(result))
-            }
-            Tensor::Gpu(t) => {
-                // GPU uses its own optimized softmax kernel
-                Tensor::Gpu(t.softmax_last_dim::<OUT_RANK>())
-            }
-        }
+                fusor_cpu::Tensor::new(result)
+            },
+            |t| t.softmax_last_dim::<OUT_RANK>(),
+        )
     }
 }
 

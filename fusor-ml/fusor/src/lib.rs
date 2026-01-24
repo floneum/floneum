@@ -280,6 +280,65 @@ where
         }
     }
 
+    /// Dispatch a four-tensor operation to the appropriate backend.
+    #[inline]
+    pub fn dispatch_quad<const R2: usize, const R3: usize, const R4: usize, D2, D3, D4, B2, B3, B4>(
+        &self,
+        second: &Tensor<R2, D2, B2>,
+        third: &Tensor<R3, D3, B3>,
+        fourth: &Tensor<R4, D4, B4>,
+        cpu_fn: impl FnOnce(&CpuTensor<R, B>, &CpuTensor<R2, B2>, &CpuTensor<R3, B3>, &CpuTensor<R4, B4>) -> CpuTensor<R, ConcreteTensor<D, R>>,
+        gpu_fn: impl FnOnce(&GpuTensor<R, D>, &GpuTensor<R2, D2>, &GpuTensor<R3, D3>, &GpuTensor<R4, D4>) -> GpuTensor<R, D>,
+    ) -> Tensor<R, D>
+    where
+        D: SimdElement,
+        B2: TensorBacking<R2, Elem = D2>,
+        B3: TensorBacking<R3, Elem = D3>,
+        B4: TensorBacking<R4, Elem = D4>,
+    {
+        match (self, second, third, fourth) {
+            (Tensor::Cpu(a), Tensor::Cpu(b), Tensor::Cpu(c), Tensor::Cpu(d)) => Tensor::Cpu(cpu_fn(a, b, c, d)),
+            (Tensor::Gpu(a), Tensor::Gpu(b), Tensor::Gpu(c), Tensor::Gpu(d)) => Tensor::Gpu(gpu_fn(a, b, c, d)),
+            _ => panic!("All tensors must be on the same device"),
+        }
+    }
+
+    /// Dispatch a two-tensor binary operation where CPU materializes the result.
+    #[inline]
+    pub fn dispatch_pair_concrete<const R2: usize, D2, B2>(
+        &self,
+        other: &Tensor<R2, D2, B2>,
+        cpu_fn: impl FnOnce(&CpuTensor<R, B>, &CpuTensor<R2, B2>) -> CpuTensor<R, ConcreteTensor<D, R>>,
+        gpu_fn: impl FnOnce(&GpuTensor<R, D>, &GpuTensor<R2, D2>) -> GpuTensor<R, D>,
+    ) -> Tensor<R, D>
+    where
+        D: SimdElement,
+        B2: TensorBacking<R2, Elem = D2>,
+    {
+        match (self, other) {
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu(cpu_fn(a, b)),
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(gpu_fn(a, b)),
+            _ => panic!("Cannot mix CPU and GPU tensors"),
+        }
+    }
+
+    /// Dispatch a two-tensor operation that only supports CPU (panics on GPU).
+    #[inline]
+    pub fn dispatch_cpu_only_pair<B2>(
+        &self,
+        other: &Tensor<R, D, B2>,
+        cpu_fn: impl FnOnce(&CpuTensor<R, B>, &CpuTensor<R, B2>) -> CpuTensor<R, ConcreteTensor<D, R>>,
+    ) -> Tensor<R, D>
+    where
+        D: SimdElement,
+        B2: TensorBacking<R, Elem = D>,
+    {
+        match (self, other) {
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu(cpu_fn(a, b)),
+            _ => panic!("Tensor-to-tensor comparison is only supported on CPU tensors"),
+        }
+    }
+
     pub async fn as_slice(self) -> Result<TensorSlice<R, D, EitherMappedBuffer>, Error>
     where
         B: ResolveTensor<R>,

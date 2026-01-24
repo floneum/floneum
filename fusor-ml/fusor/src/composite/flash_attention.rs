@@ -131,10 +131,11 @@ where
             // Mask is [q_seq_len, kv_seq_len], broadcast to [batch, num_heads, q_seq_len, kv_seq_len]
             let mask_4d: Tensor<4, D, _> = m.reshape([1, 1, q_seq_len, kv_seq_len]);
             let mask_broadcast = mask_4d.broadcast_as([batch, num_heads, q_seq_len, kv_seq_len]);
-            match (&scores_scaled, &mask_broadcast) {
-                (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a + b).to_concrete()),
-                _ => panic!("Cannot mix CPU and GPU tensors"),
-            }
+            scores_scaled.dispatch_pair_concrete(
+                &mask_broadcast,
+                |a, b| (a + b).to_concrete(),
+                |_, _| panic!("Cannot mix CPU and GPU tensors"),
+            )
         } else {
             scores_scaled
         };
@@ -142,17 +143,19 @@ where
         // Softmax along last dimension
         // max(scores) for numerical stability
         let max_scores = scores_masked.max_keepdim::<3>(3);
-        let scores_shifted = match (&scores_masked, &max_scores) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a - b).to_concrete()),
-            _ => panic!("Cannot mix CPU and GPU tensors"),
-        };
+        let scores_shifted = scores_masked.dispatch_pair_concrete(
+            &max_scores,
+            |a, b| (a - b).to_concrete(),
+            |_, _| panic!("Cannot mix CPU and GPU tensors"),
+        );
         // Materialize exp_scores since sum_keepdim is a reduction that needs concrete data
         let exp_scores = scores_shifted.exp().to_concrete();
         let sum_exp = exp_scores.sum_keepdim::<3>(3);
-        let attn_weights = match (&exp_scores, &sum_exp) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).to_concrete()),
-            _ => panic!("Cannot mix CPU and GPU tensors"),
-        };
+        let attn_weights = exp_scores.dispatch_pair_concrete(
+            &sum_exp,
+            |a, b| (a / b).to_concrete(),
+            |_, _| panic!("Cannot mix CPU and GPU tensors"),
+        );
 
         // attn_weights @ V -> [batch, num_heads, q_seq_len, head_dim]
         attn_weights.mat_mul(&v_expanded)
