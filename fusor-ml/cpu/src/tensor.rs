@@ -53,6 +53,13 @@ impl<const R: usize, T: TensorBacking<R>> Tensor<R, T> {
     pub fn into_inner(self) -> T {
         self.inner
     }
+
+    /// Borrow the tensor's backing, returning a tensor that holds a reference.
+    ///
+    /// This enables sharing the backing between multiple tensors without cloning.
+    pub fn as_ref(&self) -> Tensor<R, &T> {
+        Tensor::new(&self.inner)
+    }
 }
 
 // Constructors for Tensor that create ConcreteTensor backing
