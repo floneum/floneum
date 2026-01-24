@@ -131,6 +131,22 @@ impl Layout {
         self.contiguous
     }
 
+    /// Returns true if the innermost dimension has stride 1
+    #[inline(always)]
+    pub fn inner_dim_contiguous(&self) -> bool {
+        !self.strides.is_empty() && self.strides[self.strides.len() - 1] == 1
+    }
+
+    /// Returns the size of the innermost dimension
+    #[inline(always)]
+    pub fn inner_dim_size(&self) -> usize {
+        if self.shape.is_empty() {
+            0
+        } else {
+            self.shape[self.shape.len() - 1]
+        }
+    }
+
     pub fn slice(&self, slices: &[Range<usize>]) -> Self {
         let (offset, strides) = slice_strides(slices, self.offset, &self.strides);
         let shape = slice_shape(slices, &self.strides);

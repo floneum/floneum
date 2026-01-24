@@ -8,8 +8,7 @@ use aligned_vec::ABox;
 use fusor_types::Layout;
 use pulp::Simd;
 
-use crate::expr::{linear_to_indices, materialize_expr};
-use crate::{ConcreteTensor, ResolvedTensor, SimdElement, TensorBacking, MAX_SIMD_LANES};
+use crate::{ConcreteTensor, ResolvedTensor, SimdElement, TensorBacking};
 
 /// A tensor that holds backing data with a transformed layout.
 ///
@@ -19,15 +18,13 @@ use crate::{ConcreteTensor, ResolvedTensor, SimdElement, TensorBacking, MAX_SIMD
 ///
 /// This enables O(1) layout operations instead of O(n) cloning.
 pub struct MapLayout<E: SimdElement, const R: usize> {
-    backing: ABox<[E]>,
-    layout: Layout,
+    tensor: ConcreteTensor<E, R>,
 }
 
 impl<E: SimdElement, const R: usize> Clone for MapLayout<E, R> {
     fn clone(&self) -> Self {
         Self {
-            backing: self.backing.clone(),
-            layout: self.layout.clone(),
+            tensor: self.tensor.clone(),
         }
     }
 }
@@ -35,28 +32,13 @@ impl<E: SimdElement, const R: usize> Clone for MapLayout<E, R> {
 impl<E: SimdElement, const R: usize> MapLayout<E, R> {
     /// Create a new MapLayout from backing data and a layout.
     pub(crate) fn new(backing: ABox<[E]>, layout: Layout) -> Self {
-        Self { backing, layout }
-    }
-
-    /// Get a reference to the layout.
-    pub(crate) fn layout(&self) -> &Layout {
-        &self.layout
-    }
-
-    /// Get a reference to the backing data.
-    pub(crate) fn backing(&self) -> &ABox<[E]> {
-        &self.backing
-    }
-
-    /// Get a mutable reference to the backing data.
-    pub(crate) fn backing_mut(&mut self) -> &mut ABox<[E]> {
-        &mut self.backing
+        Self { tensor: ConcreteTensor::from_parts(layout, backing) }
     }
 
     /// Get element at logical indices.
     pub fn get(&self, indices: [usize; R]) -> E {
-        let idx = self.layout.linear_index(&indices);
-        self.backing[idx]
+        let idx = self.tensor.layout().linear_index(&indices);
+        self.tensor.backing()[idx]
     }
 }
 
@@ -64,55 +46,30 @@ impl<E: SimdElement, const R: usize> TensorBacking<R> for MapLayout<E, R> {
     type Elem = E;
 
     fn layout(&self) -> Layout {
-        self.layout.clone()
+        self.tensor.layout().clone()
     }
 
     fn to_concrete(&self) -> ConcreteTensor<E, R> {
-        let shape: [usize; R] = self
-            .layout
-            .shape()
-            .try_into()
-            .expect("Shape length mismatch");
-        materialize_expr(self, shape)
+        self.tensor.clone()
     }
 
     #[inline(always)]
     fn eval_scalar(&self, idx: usize) -> E {
-        if self.layout.is_contiguous() {
-            self.backing[idx]
-        } else {
-            // Convert linear index to logical indices for strided access
-            let indices = linear_to_indices::<R>(idx, self.layout.shape());
-            let phys_idx = self.layout.linear_index(&indices);
-            self.backing[phys_idx]
-        }
+        self.tensor.eval_scalar(idx)
     }
 
     #[inline(always)]
     fn eval_simd<S: Simd>(&self, _simd: S, base_idx: usize) -> E::Simd<S> {
-        if self.layout.is_contiguous() {
-            // Fast path: direct SIMD load from contiguous, aligned data
-            let (simd_slice, _) = E::as_simd::<S>(&self.backing[base_idx..]);
-            simd_slice[0]
-        } else {
-            // Slow path: gather elements one by one
-            let lane_count = std::mem::size_of::<E::Simd<S>>() / std::mem::size_of::<E>();
-            let mut temp = [E::default(); MAX_SIMD_LANES];
-            for i in 0..lane_count {
-                temp[i] = self.eval_scalar(base_idx + i);
-            }
-            let (simd_vec, _) = E::as_simd::<S>(&temp[..lane_count]);
-            simd_vec[0]
-        }
+        self.tensor.eval_simd(_simd, base_idx)
     }
 }
 
 impl<E: SimdElement, const R: usize> ResolvedTensor<R> for MapLayout<E, R> {
     fn data(&self) -> &ABox<[Self::Elem]> {
-        &self.backing
+        self.tensor.data()
     }
 
     fn data_mut(&mut self) -> &mut ABox<[Self::Elem]> {
-        &mut self.backing
+        self.tensor.data_mut()
     }
 }

@@ -49,7 +49,7 @@ impl<T: TensorBacking<R>, const R: usize> WithSimd for TensorEvaluator<'_, T, R>
 
 /// Minimum number of elements before parallelization is used.
 /// Below this threshold, the overhead of thread spawning isn't worth it.
-const PARALLEL_THRESHOLD: usize = 4096;
+const PARALLEL_THRESHOLD: usize = 65_536;
 
 /// Materialize a tensor backing into a new ConcreteTensor.
 ///
