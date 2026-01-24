@@ -173,7 +173,7 @@ where
         let concrete = self.inner.to_concrete();
 
         if concrete.layout().is_contiguous() {
-            let new_layout = self.layout().reshape(&new_shape);
+            let new_layout = concrete.layout().reshape(&new_shape);
             Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
         } else {
             // Make contiguous first, then reshape
