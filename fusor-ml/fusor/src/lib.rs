@@ -81,7 +81,6 @@ pub use fusor_cpu::{
     MulOp,
     Neg,
     NegOp,
-    ResolveTensor,
     ResolvedTensor,
     SimdBinaryOp,
     SimdElement,
@@ -261,12 +260,30 @@ where
 
     /// Dispatch a three-tensor operation to the appropriate backend.
     #[inline]
-    pub fn dispatch_triple<const R2: usize, const R3: usize, const R4: usize, D2, D3, D4, B2, B3, B4>(
+    pub fn dispatch_triple<
+        const R2: usize,
+        const R3: usize,
+        const R4: usize,
+        D2,
+        D3,
+        D4,
+        B2,
+        B3,
+        B4,
+    >(
         &self,
         second: &Tensor<R2, D2, B2>,
         third: &Tensor<R3, D3, B3>,
-        cpu_fn: impl FnOnce(&CpuTensor<R, B>, &CpuTensor<R2, B2>, &CpuTensor<R3, B3>) -> CpuTensor<R4, B4>,
-        gpu_fn: impl FnOnce(&GpuTensor<R, D>, &GpuTensor<R2, D2>, &GpuTensor<R3, D3>) -> GpuTensor<R4, D4>,
+        cpu_fn: impl FnOnce(
+            &CpuTensor<R, B>,
+            &CpuTensor<R2, B2>,
+            &CpuTensor<R3, B3>,
+        ) -> CpuTensor<R4, B4>,
+        gpu_fn: impl FnOnce(
+            &GpuTensor<R, D>,
+            &GpuTensor<R2, D2>,
+            &GpuTensor<R3, D3>,
+        ) -> GpuTensor<R4, D4>,
     ) -> Tensor<R4, D4, B4>
     where
         B2: TensorBacking<R2, Elem = D2>,
@@ -282,13 +299,33 @@ where
 
     /// Dispatch a four-tensor operation to the appropriate backend.
     #[inline]
-    pub fn dispatch_quad<const R2: usize, const R3: usize, const R4: usize, D2, D3, D4, B2, B3, B4>(
+    pub fn dispatch_quad<
+        const R2: usize,
+        const R3: usize,
+        const R4: usize,
+        D2,
+        D3,
+        D4,
+        B2,
+        B3,
+        B4,
+    >(
         &self,
         second: &Tensor<R2, D2, B2>,
         third: &Tensor<R3, D3, B3>,
         fourth: &Tensor<R4, D4, B4>,
-        cpu_fn: impl FnOnce(&CpuTensor<R, B>, &CpuTensor<R2, B2>, &CpuTensor<R3, B3>, &CpuTensor<R4, B4>) -> CpuTensor<R, ConcreteTensor<D, R>>,
-        gpu_fn: impl FnOnce(&GpuTensor<R, D>, &GpuTensor<R2, D2>, &GpuTensor<R3, D3>, &GpuTensor<R4, D4>) -> GpuTensor<R, D>,
+        cpu_fn: impl FnOnce(
+            &CpuTensor<R, B>,
+            &CpuTensor<R2, B2>,
+            &CpuTensor<R3, B3>,
+            &CpuTensor<R4, B4>,
+        ) -> CpuTensor<R, ConcreteTensor<D, R>>,
+        gpu_fn: impl FnOnce(
+            &GpuTensor<R, D>,
+            &GpuTensor<R2, D2>,
+            &GpuTensor<R3, D3>,
+            &GpuTensor<R4, D4>,
+        ) -> GpuTensor<R, D>,
     ) -> Tensor<R, D>
     where
         D: SimdElement,
@@ -297,8 +334,12 @@ where
         B4: TensorBacking<R4, Elem = D4>,
     {
         match (self, second, third, fourth) {
-            (Tensor::Cpu(a), Tensor::Cpu(b), Tensor::Cpu(c), Tensor::Cpu(d)) => Tensor::Cpu(cpu_fn(a, b, c, d)),
-            (Tensor::Gpu(a), Tensor::Gpu(b), Tensor::Gpu(c), Tensor::Gpu(d)) => Tensor::Gpu(gpu_fn(a, b, c, d)),
+            (Tensor::Cpu(a), Tensor::Cpu(b), Tensor::Cpu(c), Tensor::Cpu(d)) => {
+                Tensor::Cpu(cpu_fn(a, b, c, d))
+            }
+            (Tensor::Gpu(a), Tensor::Gpu(b), Tensor::Gpu(c), Tensor::Gpu(d)) => {
+                Tensor::Gpu(gpu_fn(a, b, c, d))
+            }
             _ => panic!("All tensors must be on the same device"),
         }
     }
@@ -341,7 +382,7 @@ where
 
     pub async fn as_slice(self) -> Result<TensorSlice<R, D, EitherMappedBuffer>, Error>
     where
-        B: ResolveTensor<R>,
+        B: TensorBacking<R>,
         D: fusor_cpu::SimdElement + DataType,
     {
         match self {
@@ -359,7 +400,7 @@ where
     /// For GPU tensors, this is a no-op as GPU tensors are already concrete.
     pub fn to_concrete(&self) -> Tensor<R, D>
     where
-        B: ResolveTensor<R>,
+        B: TensorBacking<R>,
         D: SimdElement,
     {
         match self {
@@ -374,7 +415,11 @@ where
         D: SimdElement + DataType,
     {
         match self {
-            Tensor::Cpu(t) => Expr::shape(t).try_into().expect("Shape length mismatch"),
+            Tensor::Cpu(t) => t
+                .layout()
+                .shape()
+                .try_into()
+                .expect("Shape length mismatch"),
             Tensor::Gpu(t) => *t.shape(),
         }
     }
@@ -685,7 +730,7 @@ macro_rules! impl_tensor_unary_op_lazy {
         impl<const R: usize, D, B> Tensor<R, D, B>
         where
             D: SimdElement + DataType + FloatDataType,
-            B: TensorBacking<R, Elem = D>,
+            B: TensorBacking<R, Elem = D> + Expr<Elem = D>,
             fusor_cpu::$op: fusor_cpu::SimdUnaryOp<D>,
         {
             #[doc = concat!("Element-wise ", stringify!($method), " operation (lazy for CPU).")]
@@ -727,18 +772,12 @@ where
     /// Approximate exp function (faster but less accurate on GPU, exact on CPU).
     /// Uses a polynomial approximation on GPU for better performance.
     pub fn approximate_exp(&self) -> Tensor<R, D> {
-        self.dispatch_ref(
-            |t| t.exp().to_concrete(),
-            |t| t.appoximate_exp(),
-        )
+        self.dispatch_ref(|t| t.exp().to_concrete(), |t| t.appoximate_exp())
     }
 
     /// Less approximate exp function (medium accuracy/speed tradeoff on GPU, exact on CPU).
     pub fn less_approximate_exp(&self) -> Tensor<R, D> {
-        self.dispatch_ref(
-            |t| t.exp().to_concrete(),
-            |t| t.less_appoximate_exp(),
-        )
+        self.dispatch_ref(|t| t.exp().to_concrete(), |t| t.less_appoximate_exp())
     }
 }
 
@@ -752,10 +791,7 @@ where
     /// More accurate but potentially slower than built-in tanh on some platforms.
     pub fn tanh_exact(&self) -> Tensor<R, D> {
         // CPU tanh is already exact - evaluate to concrete
-        self.dispatch_ref(
-            |t| t.tanh().to_concrete(),
-            |t| t.tanh_exact(),
-        )
+        self.dispatch_ref(|t| t.tanh().to_concrete(), |t| t.tanh_exact())
     }
 }
 
@@ -782,26 +818,17 @@ where
 {
     /// Raise each element to a power.
     pub fn pow_scalar(&self, exponent: D) -> Self {
-        self.dispatch_ref(
-            |t| t.pow_scalar(exponent),
-            |t| t.pow_elementwise(exponent),
-        )
+        self.dispatch_ref(|t| t.pow_scalar(exponent), |t| t.pow_elementwise(exponent))
     }
 
     /// Element-wise maximum with a scalar.
     pub fn max_scalar(&self, scalar: D) -> Self {
-        self.dispatch_ref(
-            |t| t.max_scalar(scalar),
-            |t| t.max_elementwise(scalar),
-        )
+        self.dispatch_ref(|t| t.max_scalar(scalar), |t| t.max_elementwise(scalar))
     }
 
     /// Element-wise minimum with a scalar.
     pub fn min_scalar(&self, scalar: D) -> Self {
-        self.dispatch_ref(
-            |t| t.min_scalar(scalar),
-            |t| t.min_elementwise(scalar),
-        )
+        self.dispatch_ref(|t| t.min_scalar(scalar), |t| t.min_elementwise(scalar))
     }
 
     /// Clamp each element to a range [min, max].
@@ -948,7 +975,7 @@ where
 // Quantized matrix multiplication for Tensor<R, f32>
 impl<const R: usize, B> Tensor<R, f32, B>
 where
-    B: TensorBacking<R, Elem = f32> + ResolveTensor<R>,
+    B: TensorBacking<R, Elem = f32> + TensorBacking<R>,
 {
     /// Quantized matrix multiplication: self @ weights where weights is quantized.
     ///
@@ -986,7 +1013,8 @@ where
             // F32 is not quantized, use regular matmul with transpose
             // Weight is [N, K] (out_features, in_features), we need input @ weight.T
             (Tensor::Cpu(lhs), QMatrix::CpuF32(rhs)) => {
-                let rhs_shape = rhs.layout().shape();
+                let rhs_layout = rhs.layout();
+                let rhs_shape = rhs_layout.shape();
                 let n = rhs_shape[0]; // out_features
                 let k = rhs_shape[1]; // in_features
 
@@ -1045,7 +1073,11 @@ where
                 // CPU flatten_last_n takes N where output = input - N + 1
                 // So we need CPU_N = FROM_END + 1 to match GPU semantics
                 // Calculate new shape manually since we can't do const arithmetic
-                let shape = t.shape();
+                let shape: [usize; R] = t
+                    .layout()
+                    .shape()
+                    .try_into()
+                    .expect("Shape length mismatch");
                 let new_shape: [usize; R2] = std::array::from_fn(|i| {
                     if i < R - 1 - FROM_END {
                         shape[i]
@@ -1079,7 +1111,11 @@ where
             Tensor::Cpu(t) => {
                 // Calculate new shape: first element is product of first FROM_START+1 dims
                 // remaining elements are the rest of the dimensions
-                let shape = t.shape();
+                let shape: [usize; R] = t
+                    .layout()
+                    .shape()
+                    .try_into()
+                    .expect("Shape length mismatch");
                 let new_shape: [usize; R2] = std::array::from_fn(|i| {
                     if i == 0 {
                         shape[..=FROM_START].iter().product()
@@ -1120,7 +1156,7 @@ where
 impl<const R: usize, D, B: TensorBacking<R, Elem = D>> Tensor<R, D, B>
 where
     D: SimdElement + DataType + Default + Copy,
-    B: ResolveTensor<R>,
+    B: TensorBacking<R>,
 {
     /// Convert a scalar tensor (or get the first element) to a scalar value.
     ///

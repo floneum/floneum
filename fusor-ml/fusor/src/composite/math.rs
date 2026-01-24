@@ -1,6 +1,6 @@
 //! Math operations that work on both CPU and GPU backends.
 
-use crate::{ConcreteTensor, Expr, FloatOps, Tensor, MulOp, ResolvedTensor, SimdBinaryOp, SimdElement};
+use crate::{ConcreteTensor, FloatOps, Tensor, MulOp, ResolvedTensor, SimdBinaryOp, SimdElement, TensorBacking};
 use fusor_core::{DataType, FloatDataType};
 use fusor_cpu::Mul;
 
@@ -28,7 +28,7 @@ where
             other,
             |a, b| {
                 // Use element-wise powf via iterating
-                let shape: [usize; R] = Expr::shape(a).try_into().expect("Shape length mismatch");
+                let shape: [usize; R] = a.layout().shape().try_into().expect("Shape length mismatch");
                 let a_data = ResolvedTensor::data(a.inner());
                 let b_data = ResolvedTensor::data(b.inner());
                 let result: Vec<D> = a_data

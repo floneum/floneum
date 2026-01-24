@@ -1,13 +1,13 @@
 //! Axis reduction operations that work on both CPU and GPU backends.
 
-use crate::{AddOp, ConcreteTensor, DivOp, Expr, FloatOps, Tensor, SimdBinaryOp, SimdElement};
+use crate::{AddOp, ConcreteTensor, DivOp, FloatOps, Tensor, SimdBinaryOp, SimdElement};
 use fusor_core::{DataType, FloatDataType, LastRank as GpuLastRank, NextRankInner as GpuNextRankInner};
-use fusor_cpu::{LastRank as CpuLastRank, MaxOp, MinOp, ProdOp, ResolveTensor, SimdReduceOp, SumOp, TensorBacking};
+use fusor_cpu::{LastRank as CpuLastRank, MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp, TensorBacking};
 
 impl<const R: usize, D, B> Tensor<R, D, B>
 where
     D: SimdElement + DataType + FloatDataType + FloatOps + Default,
-    B: ResolveTensor<R, Elem = D>,
+    B: TensorBacking<R, Elem = D>,
 {
     /// Sum along a specific axis, reducing the tensor rank by 1.
     ///
@@ -80,7 +80,7 @@ where
     }
 
     /// Product along a specific axis, broadcasting result back to original shape.
-    pub fn product_keepdim<const OUT_RANK: usize>(&self, axis: usize) -> Self
+    pub fn product_keepdim<const OUT_RANK: usize>(&self, axis: usize) -> Tensor<R, D>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
@@ -91,8 +91,8 @@ where
         match self {
             Tensor::Cpu(t) => {
                 let reduced = t.prod_axis::<OUT_RANK>(axis);
-                let original_shape: [usize; R] = Expr::shape(t).try_into().expect("Shape mismatch");
-                Tensor::Cpu(Self::broadcast_reduced_to_original::<OUT_RANK>(
+                let original_shape: [usize; R] = t.layout().shape().try_into().expect("Shape mismatch");
+                Tensor::Cpu(broadcast_reduced_to_original::<R, OUT_RANK, D>(
                     &reduced,
                     original_shape,
                     axis,
@@ -108,7 +108,7 @@ where
     /// along the reduced axis. This enables element-wise operations without explicit broadcasting.
     ///
     /// For GPU: Uses native keepdim which supports broadcasting.
-    pub fn sum_keepdim<const OUT_RANK: usize>(&self, axis: usize) -> Self
+    pub fn sum_keepdim<const OUT_RANK: usize>(&self, axis: usize) -> Tensor<R, D>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
@@ -120,8 +120,8 @@ where
             Tensor::Cpu(t) => {
                 // CPU: reduce, then broadcast back to original shape
                 let reduced = t.sum_axis::<OUT_RANK>(axis);
-                let original_shape: [usize; R] = Expr::shape(t).try_into().expect("Shape mismatch");
-                Tensor::Cpu(Self::broadcast_reduced_to_original::<OUT_RANK>(
+                let original_shape: [usize; R] = t.layout().shape().try_into().expect("Shape mismatch");
+                Tensor::Cpu(broadcast_reduced_to_original::<R, OUT_RANK, D>(
                     &reduced,
                     original_shape,
                     axis,
@@ -132,7 +132,7 @@ where
     }
 
     /// Max along a specific axis, broadcasting result back to original shape.
-    pub fn max_keepdim<const OUT_RANK: usize>(&self, axis: usize) -> Self
+    pub fn max_keepdim<const OUT_RANK: usize>(&self, axis: usize) -> Tensor<R, D>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
@@ -143,8 +143,8 @@ where
         match self {
             Tensor::Cpu(t) => {
                 let reduced = t.max_axis::<OUT_RANK>(axis);
-                let original_shape: [usize; R] = Expr::shape(t).try_into().expect("Shape mismatch");
-                Tensor::Cpu(Self::broadcast_reduced_to_original::<OUT_RANK>(
+                let original_shape: [usize; R] = t.layout().shape().try_into().expect("Shape mismatch");
+                Tensor::Cpu(broadcast_reduced_to_original::<R, OUT_RANK, D>(
                     &reduced,
                     original_shape,
                     axis,
@@ -155,7 +155,7 @@ where
     }
 
     /// Min along a specific axis, broadcasting result back to original shape.
-    pub fn min_keepdim<const OUT_RANK: usize>(&self, axis: usize) -> Self
+    pub fn min_keepdim<const OUT_RANK: usize>(&self, axis: usize) -> Tensor<R, D>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
@@ -166,8 +166,8 @@ where
         match self {
             Tensor::Cpu(t) => {
                 let reduced = t.min_axis::<OUT_RANK>(axis);
-                let original_shape: [usize; R] = Expr::shape(t).try_into().expect("Shape mismatch");
-                Tensor::Cpu(Self::broadcast_reduced_to_original::<OUT_RANK>(
+                let original_shape: [usize; R] = t.layout().shape().try_into().expect("Shape mismatch");
+                Tensor::Cpu(broadcast_reduced_to_original::<R, OUT_RANK, D>(
                     &reduced,
                     original_shape,
                     axis,
@@ -175,43 +175,6 @@ where
             }
             Tensor::Gpu(t) => Tensor::Gpu(t.min_keepdim(axis)),
         }
-    }
-
-    /// Helper function to broadcast a reduced tensor back to the original shape.
-    /// The reduced tensor has OUT_RANK dimensions (one less than original R).
-    /// The result has the original R dimensions with values repeated along the reduced axis.
-    fn broadcast_reduced_to_original<const OUT_RANK: usize>(
-        reduced: &fusor_cpu::Tensor<OUT_RANK, ConcreteTensor<D, OUT_RANK>>,
-        original_shape: [usize; R],
-        axis: usize,
-    ) -> fusor_cpu::Tensor<R, ConcreteTensor<D, R>>
-    where
-        ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
-    {
-        let total_elements: usize = original_shape.iter().product();
-        let reduced_concrete = reduced.to_concrete();
-        let data: Vec<D> = (0..total_elements)
-            .map(|i| {
-                // Convert linear index to original shape indices
-                let mut indices = [0usize; R];
-                let mut remainder = i;
-                for dim in (0..R).rev() {
-                    indices[dim] = remainder % original_shape[dim];
-                    remainder /= original_shape[dim];
-                }
-                // Map to reduced tensor indices (skip axis dimension)
-                let mut reduced_idx = [0usize; OUT_RANK];
-                let mut j = 0;
-                for dim in 0..R {
-                    if dim != axis {
-                        reduced_idx[j] = indices[dim];
-                        j += 1;
-                    }
-                }
-                reduced_concrete.get(reduced_idx)
-            })
-            .collect();
-        fusor_cpu::Tensor::from_slice(original_shape, &data)
     }
 
     /// Mean along a specific axis, reducing the tensor rank by 1.
@@ -233,7 +196,7 @@ where
     }
 
     /// Mean along a specific axis, keeping the dimension (with size 1).
-    pub fn mean_keepdim<const OUT_RANK: usize>(&self, axis: usize) -> Self
+    pub fn mean_keepdim<const OUT_RANK: usize>(&self, axis: usize) -> Tensor<R, D>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
@@ -267,20 +230,17 @@ where
         DivOp: SimdBinaryOp<D>,
     {
         // var(x) = mean(x^2) - mean(x)^2
-        let mean_x = self.mean::<OUT_RANK>(axis);
+        let concrete = self.to_concrete();
+        let mean_x = concrete.mean::<OUT_RANK>(axis);
         let mean_x_sq = mean_x.sqr();
-        let x_sq = self.sqr();
+        let x_sq = concrete.sqr();
         let mean_x2 = x_sq.mean::<OUT_RANK>(axis);
         // mean(x^2) - mean(x)^2
-        mean_x2.dispatch_pair_concrete(
-            &mean_x_sq,
-            |a, b| (a - b).to_concrete(),
-            |a, b| a - b,
-        )
+        (&mean_x2 - &mean_x_sq).to_concrete()
     }
 
     /// Variance along a specific axis, keeping the dimension (with size 1).
-    pub fn var_keepdim<const OUT_RANK: usize>(&self, axis: usize) -> Self
+    pub fn var_keepdim<const OUT_RANK: usize>(&self, axis: usize) -> Tensor<R, D>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
@@ -297,17 +257,52 @@ where
         DivOp: SimdBinaryOp<D>,
     {
         // var(x) = mean(x^2) - mean(x)^2
-        let mean_x = self.mean_keepdim::<OUT_RANK>(axis);
+        let concrete = self.to_concrete();
+        let mean_x = concrete.mean_keepdim::<OUT_RANK>(axis);
         let mean_x_sq = mean_x.sqr();
-        let x_sq = self.sqr();
+        let x_sq = concrete.sqr();
         let mean_x2 = x_sq.mean_keepdim::<OUT_RANK>(axis);
         // mean(x^2) - mean(x)^2
-        mean_x2.dispatch_pair_concrete(
-            &mean_x_sq,
-            |a, b| (a - b).to_concrete(),
-            |a, b| a - b,
-        )
+        (&mean_x2 - &mean_x_sq).to_concrete()
     }
+}
+
+/// Helper function to broadcast a reduced tensor back to the original shape.
+/// The reduced tensor has OUT_RANK dimensions (one less than original R).
+/// The result has the original R dimensions with values repeated along the reduced axis.
+fn broadcast_reduced_to_original<const R: usize, const OUT_RANK: usize, D>(
+    reduced: &fusor_cpu::Tensor<OUT_RANK, ConcreteTensor<D, OUT_RANK>>,
+    original_shape: [usize; R],
+    axis: usize,
+) -> fusor_cpu::Tensor<R, ConcreteTensor<D, R>>
+where
+    D: SimdElement + Default,
+    ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
+{
+    let total_elements: usize = original_shape.iter().product();
+    let reduced_concrete = reduced.to_concrete();
+    let data: Vec<D> = (0..total_elements)
+        .map(|i| {
+            // Convert linear index to original shape indices
+            let mut indices = [0usize; R];
+            let mut remainder = i;
+            for dim in (0..R).rev() {
+                indices[dim] = remainder % original_shape[dim];
+                remainder /= original_shape[dim];
+            }
+            // Map to reduced tensor indices (skip axis dimension)
+            let mut reduced_idx = [0usize; OUT_RANK];
+            let mut j = 0;
+            for dim in 0..R {
+                if dim != axis {
+                    reduced_idx[j] = indices[dim];
+                    j += 1;
+                }
+            }
+            reduced_concrete.get(reduced_idx)
+        })
+        .collect();
+    fusor_cpu::Tensor::from_slice(original_shape, &data)
 }
 
 #[cfg(test)]

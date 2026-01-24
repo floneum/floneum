@@ -164,8 +164,8 @@ where
         // mean(x^2) with keepdim along last axis
         let mean_sq = x_sq.mean_keepdim::<OUT_RANK>(axis);
 
-        // mean(x^2) + eps
-        let mean_sq_eps = mean_sq.add_scalar(eps);
+        // mean(x^2) + eps - materialize first since add_scalar requires concrete tensor
+        let mean_sq_eps = mean_sq.to_concrete().add_scalar(eps);
 
         // sqrt(mean(x^2) + eps)
         let rms = mean_sq_eps.sqrt();
@@ -227,8 +227,8 @@ where
         let centered_sq = centered.sqr();
         let var = centered_sq.mean_keepdim::<OUT_RANK>(axis);
 
-        // sqrt(var + eps)
-        let var_plus_eps = var.add_scalar(eps);
+        // sqrt(var + eps) - materialize first since add_scalar requires concrete tensor
+        let var_plus_eps = var.to_concrete().add_scalar(eps);
         let std = var_plus_eps.sqrt();
 
         // centered / std
@@ -368,8 +368,8 @@ where
         // mean(x^2) with keepdim along last axis
         let mean_sq = x_sq.mean_keepdim::<OUT_RANK>(axis);
 
-        // mean(x^2) + eps
-        let mean_sq_eps = mean_sq.add_scalar(eps_d);
+        // mean(x^2) + eps - materialize first since add_scalar requires concrete tensor
+        let mean_sq_eps = mean_sq.to_concrete().add_scalar(eps_d);
 
         // sqrt(mean(x^2) + eps)
         let rms = mean_sq_eps.sqrt();

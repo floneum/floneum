@@ -5,7 +5,7 @@
 
 use crate::{Device, Tensor};
 use fusor_core::QMatrix as GpuQMatrix;
-use fusor_cpu::{BlockQ4K, BlockQ4_0, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, QuantizedTensor, ResolvedTensor};
+use fusor_cpu::{BlockQ4K, BlockQ4_0, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, QuantizedTensor};
 
 /// Unified quantized tensor type that holds either CPU or GPU quantized data.
 ///
@@ -66,7 +66,7 @@ impl<const R: usize> QMatrix<R> {
             QMatrix::CpuQ8_0(t) => t.element_shape(),
             QMatrix::CpuQ4K(t) => t.element_shape(),
             QMatrix::CpuQ6K(t) => t.element_shape(),
-            QMatrix::CpuF32(t) => t.shape(),
+            QMatrix::CpuF32(t) => t.layout().shape(),
             QMatrix::Gpu(m) => m.shape(),
         }
     }

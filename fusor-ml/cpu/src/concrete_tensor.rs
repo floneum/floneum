@@ -174,7 +174,7 @@ impl<T: SimdElement, const R: usize> ConcreteTensor<T, R> {
     }
 
     /// Get a reference to the layout
-    pub(crate) fn layout(&self) -> &Layout {
+    pub fn layout(&self) -> &Layout {
         &self.layout
     }
 

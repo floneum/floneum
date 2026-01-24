@@ -2,9 +2,9 @@
 
 use std::ops::Range;
 
-use crate::{ConcreteTensor, Device, Expr, SimdElement, Tensor};
+use crate::{ConcreteTensor, Device, SimdElement, Tensor};
 use fusor_core::{DataType, ShapeWithOneHole};
-use fusor_cpu::{ResolveTensor, TensorBacking};
+use fusor_cpu::TensorBacking;
 use fusor_types::SlidingWindow;
 
 impl<const R: usize, D> Tensor<R, D>
@@ -20,7 +20,7 @@ where
     ) -> Tensor<R2, D, ConcreteTensor<D, R2>> {
         match self {
             Tensor::Cpu(t) => {
-                let resolved_shape = new_shape.resolve_shape(Expr::shape(t));
+                let resolved_shape = new_shape.resolve_shape(t.layout().shape());
                 Tensor::Cpu(t.reshape(resolved_shape).to_concrete())
             }
             Tensor::Gpu(t) => Tensor::Gpu(t.reshape(new_shape)),
@@ -247,7 +247,7 @@ where
 impl<const R: usize, D, B> Tensor<R, D, B>
 where
     D: SimdElement + DataType + Default,
-    B: ResolveTensor<R, Elem = D>,
+    B: TensorBacking<R, Elem = D>,
 {
     /// Stack tensors along a new dimension.
     ///
@@ -349,7 +349,7 @@ pub fn cat<const R: usize, D, B>(
 ) -> Tensor<R, D>
 where
     D: SimdElement + DataType + Default,
-    B: ResolveTensor<R, Elem = D>,
+    B: TensorBacking<R, Elem = D>,
 {
     dispatch_vec(
         tensors,
@@ -371,7 +371,7 @@ where
     D: SimdElement + DataType + Default,
     ConcreteTensor<D, R>: fusor_cpu::NextRank<R2, D>,
     fusor_core::Tensor<R, D>: fusor_core::NextRank<R2, D>,
-    B: ResolveTensor<R, Elem = D>,
+    B: TensorBacking<R, Elem = D>,
 {
     dispatch_vec(
         tensors,

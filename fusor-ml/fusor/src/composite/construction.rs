@@ -2,7 +2,7 @@
 
 use crate::{Device, Tensor, SimdElement};
 use fusor_core::DataType;
-use fusor_cpu::Expr;
+use fusor_cpu::TensorBacking;
 
 impl<D> Tensor<1, D>
 where
@@ -59,7 +59,7 @@ where
         match self {
             Tensor::Cpu(t) => {
                 let shape: [usize; R] = t
-                    .inner()
+                    .layout()
                     .shape()
                     .try_into()
                     .expect("Shape length mismatch");
