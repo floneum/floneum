@@ -18,7 +18,7 @@ where
     where
         EqOp: SimdComparisonOp<D>,
     {
-        self.dispatch_cpu_only_pair(rhs, |a, b| a.eq(b))
+        self.dispatch_cpu_only_pair(rhs, |a, b| a.as_ref().eq(b.as_ref()))
     }
 
     /// Element-wise less-than comparison between two tensors.
@@ -29,7 +29,7 @@ where
     where
         LtOp: SimdComparisonOp<D>,
     {
-        self.dispatch_cpu_only_pair(rhs, |a, b| a.lt(b))
+        self.dispatch_cpu_only_pair(rhs, |a, b| a.as_ref().lt(b.as_ref()))
     }
 
     /// Element-wise less-than-or-equal comparison between two tensors.
@@ -40,7 +40,7 @@ where
     where
         LteOp: SimdComparisonOp<D>,
     {
-        self.dispatch_cpu_only_pair(rhs, |a, b| a.lte(b))
+        self.dispatch_cpu_only_pair(rhs, |a, b| a.as_ref().lte(b.as_ref()))
     }
 
     /// Element-wise greater-than comparison between two tensors.
@@ -51,7 +51,7 @@ where
     where
         GtOp: SimdComparisonOp<D>,
     {
-        self.dispatch_cpu_only_pair(rhs, |a, b| a.gt(b))
+        self.dispatch_cpu_only_pair(rhs, |a, b| a.as_ref().gt(b.as_ref()))
     }
 
     /// Element-wise greater-than-or-equal comparison between two tensors.
@@ -62,7 +62,7 @@ where
     where
         GteOp: SimdComparisonOp<D>,
     {
-        self.dispatch_cpu_only_pair(rhs, |a, b| a.gte(b))
+        self.dispatch_cpu_only_pair(rhs, |a, b| a.as_ref().gte(b.as_ref()))
     }
 
     /// Element-wise equality comparison with a scalar.
@@ -73,7 +73,7 @@ where
         EqOp: SimdComparisonOp<D>,
     {
         self.dispatch_ref(
-            |t| t.eq_scalar(scalar),
+            |t| t.as_ref().eq_scalar(scalar),
             |t| t.eq(scalar),
         )
     }
@@ -86,7 +86,7 @@ where
         LtOp: SimdComparisonOp<D>,
     {
         self.dispatch_ref(
-            |t| t.lt_scalar(scalar),
+            |t| t.as_ref().lt_scalar(scalar),
             |t| t.lt(scalar),
         )
     }
@@ -99,7 +99,7 @@ where
         LteOp: SimdComparisonOp<D>,
     {
         self.dispatch_ref(
-            |t| t.lte_scalar(scalar),
+            |t| t.as_ref().lte_scalar(scalar),
             |t| t.lte(scalar),
         )
     }
@@ -112,7 +112,7 @@ where
         GtOp: SimdComparisonOp<D>,
     {
         self.dispatch_ref(
-            |t| t.gt_scalar(scalar),
+            |t| t.as_ref().gt_scalar(scalar),
             |t| t.mt(scalar),
         )
     }
@@ -125,7 +125,7 @@ where
         GteOp: SimdComparisonOp<D>,
     {
         self.dispatch_ref(
-            |t| t.gte_scalar(scalar),
+            |t| t.as_ref().gte_scalar(scalar),
             |t| t.mte(scalar),
         )
     }

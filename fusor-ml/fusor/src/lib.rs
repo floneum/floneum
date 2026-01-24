@@ -660,7 +660,7 @@ where
         D: std::ops::Add<Output = D>,
         AddOp: SimdBinaryOp<D>,
     {
-        self.dispatch_pair(second, |a, b| a.add_(b), |a, b| a.add_(b))
+        self.dispatch_pair(second, |a, b| a.as_ref().add_(b.as_ref()), |a, b| a.add_(b))
     }
 
     /// Broadcasting subtract: broadcasts both tensors to a common shape and subtracts them.
@@ -674,7 +674,7 @@ where
         D: std::ops::Sub<Output = D>,
         SubOp: SimdBinaryOp<D>,
     {
-        self.dispatch_pair(second, |a, b| a.sub_(b), |a, b| a.sub_(b))
+        self.dispatch_pair(second, |a, b| a.as_ref().sub_(b.as_ref()), |a, b| a.sub_(b))
     }
 
     /// Broadcasting multiply: broadcasts both tensors to a common shape and multiplies them.
@@ -688,7 +688,7 @@ where
         D: std::ops::Mul<Output = D>,
         MulOp: SimdBinaryOp<D>,
     {
-        self.dispatch_pair(second, |a, b| a.mul_(b), |a, b| a.mul_(b))
+        self.dispatch_pair(second, |a, b| a.as_ref().mul_(b.as_ref()), |a, b| a.mul_(b))
     }
 
     /// Broadcasting divide: broadcasts both tensors to a common shape and divides them.
@@ -702,7 +702,7 @@ where
         D: std::ops::Div<Output = D>,
         DivOp: SimdBinaryOp<D>,
     {
-        self.dispatch_pair(second, |a, b| a.div_(b), |a, b| a.div_(b))
+        self.dispatch_pair(second, |a, b| a.as_ref().div_(b.as_ref()), |a, b| a.div_(b))
     }
 
     /// Broadcasting power: broadcasts both tensors to a common shape and computes power.
@@ -715,7 +715,7 @@ where
         (ConcreteTensor<D, R>, ConcreteTensor<D, R2>): fusor_cpu::MaxRank<R3, D>,
         D: FloatDataType + FloatOps,
     {
-        self.dispatch_pair(second, |a, b| a.pow_(b), |a, b| a.pow_(b))
+        self.dispatch_pair(second, |a, b| a.as_ref().pow_(b.as_ref()), |a, b| a.pow_(b))
     }
 }
 
@@ -731,7 +731,7 @@ macro_rules! impl_tensor_unary_op_lazy {
             #[doc = concat!("Element-wise ", stringify!($method), " operation (lazy for CPU).")]
             pub fn $method(&self) -> Tensor<R, D, fusor_cpu::$expr_type<D, R, &B>> {
                 match self {
-                    Tensor::Cpu(t) => Tensor::Cpu(t.$method()),
+                    Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().$method()),
                     Tensor::Gpu(t) => Tensor::Gpu(t.$method()),
                 }
             }
@@ -767,12 +767,12 @@ where
     /// Approximate exp function (faster but less accurate on GPU, exact on CPU).
     /// Uses a polynomial approximation on GPU for better performance.
     pub fn approximate_exp(&self) -> Tensor<R, D> {
-        self.dispatch_ref(|t| t.exp().to_concrete(), |t| t.appoximate_exp())
+        self.dispatch_ref(|t| t.as_ref().exp().to_concrete(), |t| t.appoximate_exp())
     }
 
     /// Less approximate exp function (medium accuracy/speed tradeoff on GPU, exact on CPU).
     pub fn less_approximate_exp(&self) -> Tensor<R, D> {
-        self.dispatch_ref(|t| t.exp().to_concrete(), |t| t.less_appoximate_exp())
+        self.dispatch_ref(|t| t.as_ref().exp().to_concrete(), |t| t.less_appoximate_exp())
     }
 }
 
@@ -786,7 +786,7 @@ where
     /// More accurate but potentially slower than built-in tanh on some platforms.
     pub fn tanh_exact(&self) -> Tensor<R, D> {
         // CPU tanh is already exact - evaluate to concrete
-        self.dispatch_ref(|t| t.tanh().to_concrete(), |t| t.tanh_exact())
+        self.dispatch_ref(|t| t.as_ref().tanh().to_concrete(), |t| t.tanh_exact())
     }
 }
 
@@ -800,7 +800,7 @@ where
         self.dispatch_triple(
             on_true,
             on_false,
-            |c, t, f| c.where_cond(t, f),
+            |c, t, f| c.as_ref().where_cond(t.as_ref(), f.as_ref()),
             |c, t, f| c.clone().where_cond(t, f),
         )
     }
@@ -813,23 +813,23 @@ where
 {
     /// Raise each element to a power.
     pub fn pow_scalar(&self, exponent: D) -> Self {
-        self.dispatch_ref(|t| t.pow_scalar(exponent), |t| t.pow_elementwise(exponent))
+        self.dispatch_ref(|t| t.as_ref().pow_scalar(exponent), |t| t.pow_elementwise(exponent))
     }
 
     /// Element-wise maximum with a scalar.
     pub fn max_scalar(&self, scalar: D) -> Self {
-        self.dispatch_ref(|t| t.max_scalar(scalar), |t| t.max_elementwise(scalar))
+        self.dispatch_ref(|t| t.as_ref().max_scalar(scalar), |t| t.max_elementwise(scalar))
     }
 
     /// Element-wise minimum with a scalar.
     pub fn min_scalar(&self, scalar: D) -> Self {
-        self.dispatch_ref(|t| t.min_scalar(scalar), |t| t.min_elementwise(scalar))
+        self.dispatch_ref(|t| t.as_ref().min_scalar(scalar), |t| t.min_elementwise(scalar))
     }
 
     /// Clamp each element to a range [min, max].
     pub fn clamp(&self, min: D, max: D) -> Self {
         self.dispatch_ref(
-            |t| t.clamp(min, max),
+            |t| t.as_ref().clamp(min, max),
             |t| t.max_elementwise(min).min_elementwise(max),
         )
     }
@@ -856,7 +856,7 @@ where
         AddOp: SimdBinaryOp<D>,
     {
         self.dispatch_ref(
-            |t| t.add_scalar(scalar).to_concrete(),
+            |t| t.as_ref().add_scalar(scalar).to_concrete(),
             |t| t.clone() + scalar,
         )
     }
@@ -868,7 +868,7 @@ where
         SubOp: SimdBinaryOp<D>,
     {
         self.dispatch_ref(
-            |t| t.sub_scalar(scalar).to_concrete(),
+            |t| t.as_ref().sub_scalar(scalar).to_concrete(),
             |t| t.clone() - scalar,
         )
     }
@@ -880,7 +880,7 @@ where
         MulOp: SimdBinaryOp<D>,
     {
         self.dispatch_ref(
-            |t| t.mul_scalar(scalar).to_concrete(),
+            |t| t.as_ref().mul_scalar(scalar).to_concrete(),
             |t| t.clone() * scalar,
         )
     }
@@ -892,7 +892,7 @@ where
         DivOp: SimdBinaryOp<D>,
     {
         self.dispatch_ref(
-            |t| t.div_scalar(scalar).to_concrete(),
+            |t| t.as_ref().div_scalar(scalar).to_concrete(),
             |t| t.clone() / scalar,
         )
     }
@@ -909,7 +909,7 @@ where
         D: CastTo<D2> + fusor_core::CastTensor<D2>,
         D2: SimdElement + DataType + Default,
     {
-        self.dispatch_ref(|t| t.cast(), |t| t.cast())
+        self.dispatch_ref(|t| t.as_ref().cast(), |t| t.cast())
     }
 }
 
@@ -926,7 +926,7 @@ where
     ) -> Self {
         self.dispatch_pair(
             indices,
-            |t, idx| t.index_select(dimension, idx),
+            |t, idx| t.as_ref().index_select(dimension, idx.to_concrete()),
             |t, idx| t.index_select(dimension, idx),
         )
     }
@@ -942,7 +942,7 @@ where
         let slices_clone = slices.clone();
         self.dispatch_pair(
             value,
-            |t, v| t.slice_assign(slices, v),
+            |t, v| t.as_ref().slice_assign(slices, v.as_ref()),
             |t, v| t.slice_assign(slices_clone, v),
         )
     }
@@ -958,7 +958,7 @@ where
     /// For ND: [...batch, M, K] @ [...batch, K, N] -> [...batch, M, N]
     /// Panics if R < 2
     pub fn matmul(&self, rhs: &Self) -> Self {
-        self.dispatch_pair(rhs, |a, b| a.matmul(b), |a, b| a.mat_mul(b))
+        self.dispatch_pair(rhs, |a, b| a.as_ref().matmul(b.as_ref()), |a, b| a.mat_mul(b))
     }
 
     /// Alias for matmul (for API compatibility with fusor-core)
@@ -1031,7 +1031,7 @@ where
 
                 // Do regular matmul
                 let lhs_eval = lhs.to_concrete();
-                let result = lhs_eval.matmul(&rhs_broadcast);
+                let result = lhs_eval.matmul(rhs_broadcast);
                 Tensor::Cpu(result)
             }
 
@@ -1078,7 +1078,7 @@ where
                         1
                     }
                 });
-                Tensor::Cpu(t.reshape(new_shape).to_concrete())
+                Tensor::Cpu(t.as_ref().reshape(new_shape).to_concrete())
             }
             Tensor::Gpu(t) => Tensor::Gpu(t.flatten_last_n::<FROM_END, R2>()),
         }
@@ -1110,7 +1110,7 @@ where
                         shape[i + FROM_START]
                     }
                 });
-                Tensor::Cpu(t.reshape(new_shape).to_concrete())
+                Tensor::Cpu(t.as_ref().reshape(new_shape).to_concrete())
             }
             Tensor::Gpu(t) => Tensor::Gpu(t.flatten_first_n::<FROM_START, R2>()),
         }
@@ -1151,7 +1151,7 @@ where
     pub async fn to_scalar(&self) -> Result<D, Error> {
         match self {
             Tensor::Cpu(t) => {
-                let slice = t.as_slice();
+                let slice = t.as_ref().as_slice();
                 Ok(slice.as_scalar())
             }
             Tensor::Gpu(t) => {

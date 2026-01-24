@@ -68,9 +68,9 @@ where
             &rotated,
             |s, c, sn, r| {
                 // Use broadcasting mul_ and add_
-                let sc = s.mul_(c);
-                let rsn = r.mul_(sn);
-                sc.add_(&rsn)
+                let sc = s.as_ref().mul_(c.as_ref());
+                let rsn = r.as_ref().mul_(sn.as_ref());
+                sc.add_(rsn)
             },
             |s, c, sn, r| s.mul_(c) + r.mul_(sn),
         )
@@ -109,9 +109,9 @@ where
             &sin,
             |a, c, b, s| {
                 // Use broadcasting mul_ and sub_
-                let ac = a.mul_(c);
-                let bs = b.mul_(s);
-                ac.sub_(&bs)
+                let ac = a.as_ref().mul_(c.as_ref());
+                let bs = b.as_ref().mul_(s.as_ref());
+                ac.sub_(bs)
             },
             |a, c, b, s| &a.mul_(c) - &b.mul_(s),
         );
@@ -121,9 +121,9 @@ where
             &cos,
             |a, s, b, c| {
                 // Use broadcasting mul_ and add_
-                let as_ = a.mul_(s);
-                let bc = b.mul_(c);
-                as_.add_(&bc)
+                let as_ = a.as_ref().mul_(s.as_ref());
+                let bc = b.as_ref().mul_(c.as_ref());
+                as_.add_(bc)
             },
             |a, s, b, c| &a.mul_(s) + &b.mul_(c),
         );

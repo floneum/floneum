@@ -26,7 +26,7 @@ where
         SumOp: SimdReduceOp<D>,
     {
         self.dispatch_ref(
-            |t| t.sum_axis::<OUT_RANK>(axis),
+            |t| t.as_ref().sum_axis::<OUT_RANK>(axis),
             |t| t.sum(axis),
         )
     }
@@ -42,7 +42,7 @@ where
         MaxOp: SimdReduceOp<D>,
     {
         self.dispatch_ref(
-            |t| t.max_axis::<OUT_RANK>(axis),
+            |t| t.as_ref().max_axis::<OUT_RANK>(axis),
             |t| t.max(axis),
         )
     }
@@ -58,7 +58,7 @@ where
         MinOp: SimdReduceOp<D>,
     {
         self.dispatch_ref(
-            |t| t.min_axis::<OUT_RANK>(axis),
+            |t| t.as_ref().min_axis::<OUT_RANK>(axis),
             |t| t.min(axis),
         )
     }
@@ -74,7 +74,7 @@ where
         ProdOp: SimdReduceOp<D>,
     {
         self.dispatch_ref(
-            |t| t.prod_axis::<OUT_RANK>(axis),
+            |t| t.as_ref().prod_axis::<OUT_RANK>(axis),
             |t| t.product(axis),
         )
     }
@@ -90,7 +90,7 @@ where
     {
         match self {
             Tensor::Cpu(t) => {
-                let reduced = t.prod_axis::<OUT_RANK>(axis);
+                let reduced = t.as_ref().prod_axis::<OUT_RANK>(axis);
                 let original_shape: [usize; R] = t.shape();
                 Tensor::Cpu(broadcast_reduced_to_original::<R, OUT_RANK, D>(
                     &reduced,
@@ -119,7 +119,7 @@ where
         match self {
             Tensor::Cpu(t) => {
                 // CPU: reduce, then broadcast back to original shape
-                let reduced = t.sum_axis::<OUT_RANK>(axis);
+                let reduced = t.as_ref().sum_axis::<OUT_RANK>(axis);
                 let original_shape: [usize; R] = t.shape();
                 Tensor::Cpu(broadcast_reduced_to_original::<R, OUT_RANK, D>(
                     &reduced,
@@ -142,7 +142,7 @@ where
     {
         match self {
             Tensor::Cpu(t) => {
-                let reduced = t.max_axis::<OUT_RANK>(axis);
+                let reduced = t.as_ref().max_axis::<OUT_RANK>(axis);
                 let original_shape: [usize; R] = t.shape();
                 Tensor::Cpu(broadcast_reduced_to_original::<R, OUT_RANK, D>(
                     &reduced,
@@ -165,7 +165,7 @@ where
     {
         match self {
             Tensor::Cpu(t) => {
-                let reduced = t.min_axis::<OUT_RANK>(axis);
+                let reduced = t.as_ref().min_axis::<OUT_RANK>(axis);
                 let original_shape: [usize; R] = t.shape();
                 Tensor::Cpu(broadcast_reduced_to_original::<R, OUT_RANK, D>(
                     &reduced,

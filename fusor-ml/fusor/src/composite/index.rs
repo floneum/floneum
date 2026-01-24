@@ -87,7 +87,7 @@ where
         let slices = [i1.to_range(shape[0]), i2.to_range(shape[1])];
 
         let sliced: Tensor<2, D, ConcreteTensor<D, 2>> = match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.slice(slices).to_concrete()),
+            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().slice(slices).to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t.slice(slices)),
         };
 
@@ -128,7 +128,7 @@ where
         ];
 
         let sliced: Tensor<3, D, ConcreteTensor<D, 3>> = match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.slice(slices).to_concrete()),
+            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().slice(slices).to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t.slice(slices)),
         };
 
@@ -186,7 +186,7 @@ where
         ];
 
         let sliced: Tensor<4, D, ConcreteTensor<D, 4>> = match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.slice(slices).to_concrete()),
+            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().slice(slices).to_concrete()),
             Tensor::Gpu(t) => Tensor::Gpu(t.slice(slices)),
         };
 

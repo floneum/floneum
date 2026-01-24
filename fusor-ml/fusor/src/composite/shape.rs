@@ -21,7 +21,7 @@ where
         match self {
             Tensor::Cpu(t) => {
                 let resolved_shape = new_shape.resolve_shape(&t.shape());
-                Tensor::Cpu(t.reshape(resolved_shape).to_concrete())
+                Tensor::Cpu(t.as_ref().reshape(resolved_shape).to_concrete())
             }
             Tensor::Gpu(t) => Tensor::Gpu(t.reshape(new_shape)),
         }
@@ -34,7 +34,7 @@ where
     /// * `dim1` - Second dimension to swap
     pub fn transpose(&self, dim0: usize, dim1: usize) -> Self {
         self.dispatch_ref(
-            |t| t.transpose(dim0, dim1).to_concrete(),
+            |t| t.as_ref().transpose(dim0, dim1).to_concrete(),
             |t| t.transpose(dim0, dim1),
         )
     }
@@ -45,7 +45,7 @@ where
     pub fn slice(&self, slices: [Range<usize>; R]) -> Self {
         let slices_clone = slices.clone();
         self.dispatch_ref(
-            |t| t.slice(slices).to_concrete(),
+            |t| t.as_ref().slice(slices).to_concrete(),
             |t| t.slice(slices_clone),
         )
     }
@@ -56,7 +56,7 @@ where
     /// * `axes` - A permutation of [0, 1, ..., R-1] specifying the new order
     pub fn permute(&self, axes: [usize; R]) -> Self {
         self.dispatch_ref(
-            |t| t.permute(axes).to_concrete(),
+            |t| t.as_ref().permute(axes).to_concrete(),
             |t| t.permute(axes),
         )
     }
@@ -72,7 +72,7 @@ where
         out_shape: [usize; R2],
     ) -> Tensor<R2, D, ConcreteTensor<D, R2>> {
         self.dispatch_ref(
-            |t| t.broadcast_as(out_shape).to_concrete(),
+            |t| t.as_ref().broadcast_as(out_shape).to_concrete(),
             |t| t.broadcast_as(out_shape),
         )
     }
@@ -88,7 +88,7 @@ where
     /// Flatten the tensor to 1D.
     pub fn flatten_all(&self) -> Tensor<1, D, ConcreteTensor<D, 1>> {
         self.dispatch_ref(
-            |t| t.flatten_all().to_concrete(),
+            |t| t.as_ref().flatten_all().to_concrete(),
             |t| t.flatten_all(),
         )
     }
@@ -101,7 +101,7 @@ where
     /// * `length` - The length of the slice
     pub fn narrow(&self, dim: usize, start: usize, length: usize) -> Self {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.narrow(dim, start, length).to_concrete()),
+            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().narrow(dim, start, length).to_concrete()),
             Tensor::Gpu(t) => {
                 // GPU narrow is implemented via slice
                 let shape = self.shape();
@@ -140,7 +140,7 @@ where
     /// * `repeats` - Number of times to repeat along each dimension
     pub fn repeat(&self, repeats: [usize; R]) -> Self {
         self.dispatch_ref(
-            |t| t.repeat(repeats),
+            |t| t.as_ref().repeat(repeats),
             |t| t.repeat(repeats),
         )
     }
@@ -155,7 +155,7 @@ where
         fusor_core::Tensor<R, D>: fusor_core::LastRank<R2, D>,
     {
         self.dispatch_ref(
-            |t| t.squeeze(dim).to_concrete(),
+            |t| t.as_ref().squeeze(dim).to_concrete(),
             |t| t.squeeze(dim),
         )
     }
@@ -170,7 +170,7 @@ where
         fusor_core::Tensor<R, D>: fusor_core::NextRank<R2, D>,
     {
         self.dispatch_ref(
-            |t| t.unsqueeze(dim).to_concrete(),
+            |t| t.as_ref().unsqueeze(dim).to_concrete(),
             |t| t.unsqueeze(dim),
         )
     }
@@ -192,7 +192,7 @@ where
         fusor_core::Tensor<R, D>: fusor_core::SmallerRank<DIFF, R2, D>,
     {
         self.dispatch_ref(
-            |t| t.squeeze_dims(axes).to_concrete(),
+            |t| t.as_ref().squeeze_dims(axes).to_concrete(),
             |t| t.squeeze_dims(axes),
         )
     }
@@ -214,7 +214,7 @@ where
         fusor_core::Tensor<R, D>: fusor_core::LargerRank<DIFF, R2, D>,
     {
         self.dispatch_ref(
-            |t| t.unsqueeze_dims(axes).to_concrete(),
+            |t| t.as_ref().unsqueeze_dims(axes).to_concrete(),
             |t| t.unsqueeze_dims(axes),
         )
     }
@@ -238,7 +238,7 @@ where
         fusor_core::Tensor<R, D>: fusor_core::LargerRank<DIFF, R2, D>,
     {
         self.dispatch_ref(
-            |t| t.sliding_window_view(windows).to_concrete(),
+            |t| t.as_ref().sliding_window_view(windows).to_concrete(),
             |t| t.sliding_window_view(windows),
         )
     }
