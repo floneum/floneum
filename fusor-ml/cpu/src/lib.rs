@@ -223,6 +223,95 @@ impl_larger_rank!(7, 1 => 8, 2 => 9, 3 => 10);
 impl_larger_rank!(8, 1 => 9, 2 => 10);
 impl_larger_rank!(9, 1 => 10);
 
+// Trait for mapping two tensors to their max rank (for broadcasting operations)
+pub trait MaxRankInner {
+    type MaxRank;
+}
+
+pub trait MaxRank<const R: usize, T: SimdElement>:
+    MaxRankInner<MaxRank = ConcreteTensor<T, R>>
+{
+}
+
+impl<const R: usize, T: SimdElement, X> MaxRank<R, T> for X where
+    X: MaxRankInner<MaxRank = ConcreteTensor<T, R>>
+{
+}
+
+// Same rank produces same rank
+impl<const N: usize, T: SimdElement> MaxRankInner for (ConcreteTensor<T, N>, ConcreteTensor<T, N>) {
+    type MaxRank = ConcreteTensor<T, N>;
+}
+
+// Macro to generate MaxRankInner implementations for different rank pairs
+macro_rules! impl_max_rank {
+    ($R1:literal, $R2:literal) => {
+        impl<T: SimdElement> MaxRankInner for (ConcreteTensor<T, $R1>, ConcreteTensor<T, $R2>) {
+            type MaxRank = ConcreteTensor<T, $R2>;
+        }
+        impl<T: SimdElement> MaxRankInner for (ConcreteTensor<T, $R2>, ConcreteTensor<T, $R1>) {
+            type MaxRank = ConcreteTensor<T, $R2>;
+        }
+    };
+}
+
+// Generate MaxRank implementations for all rank combinations 0-10
+impl_max_rank!(0, 1);
+impl_max_rank!(0, 2);
+impl_max_rank!(0, 3);
+impl_max_rank!(0, 4);
+impl_max_rank!(0, 5);
+impl_max_rank!(0, 6);
+impl_max_rank!(0, 7);
+impl_max_rank!(0, 8);
+impl_max_rank!(0, 9);
+impl_max_rank!(0, 10);
+impl_max_rank!(1, 2);
+impl_max_rank!(1, 3);
+impl_max_rank!(1, 4);
+impl_max_rank!(1, 5);
+impl_max_rank!(1, 6);
+impl_max_rank!(1, 7);
+impl_max_rank!(1, 8);
+impl_max_rank!(1, 9);
+impl_max_rank!(1, 10);
+impl_max_rank!(2, 3);
+impl_max_rank!(2, 4);
+impl_max_rank!(2, 5);
+impl_max_rank!(2, 6);
+impl_max_rank!(2, 7);
+impl_max_rank!(2, 8);
+impl_max_rank!(2, 9);
+impl_max_rank!(2, 10);
+impl_max_rank!(3, 4);
+impl_max_rank!(3, 5);
+impl_max_rank!(3, 6);
+impl_max_rank!(3, 7);
+impl_max_rank!(3, 8);
+impl_max_rank!(3, 9);
+impl_max_rank!(3, 10);
+impl_max_rank!(4, 5);
+impl_max_rank!(4, 6);
+impl_max_rank!(4, 7);
+impl_max_rank!(4, 8);
+impl_max_rank!(4, 9);
+impl_max_rank!(4, 10);
+impl_max_rank!(5, 6);
+impl_max_rank!(5, 7);
+impl_max_rank!(5, 8);
+impl_max_rank!(5, 9);
+impl_max_rank!(5, 10);
+impl_max_rank!(6, 7);
+impl_max_rank!(6, 8);
+impl_max_rank!(6, 9);
+impl_max_rank!(6, 10);
+impl_max_rank!(7, 8);
+impl_max_rank!(7, 9);
+impl_max_rank!(7, 10);
+impl_max_rank!(8, 9);
+impl_max_rank!(8, 10);
+impl_max_rank!(9, 10);
+
 pub trait TensorBacking<const R: usize> {
     type Elem: SimdElement;
 }

@@ -23,8 +23,8 @@ use crate::reduce::{
 };
 use crate::slice_assign::slice_assign_ref;
 use crate::{
-    ConcreteTensor, CpuMappedBuffer, LastRank, MapLayout, ResolveTensor, ResolvedTensor, SimdElement,
-    TensorBacking, TensorSlice, elementwise, pairwise, scalar,
+    ConcreteTensor, CpuMappedBuffer, LastRank, MapLayout, MaxRank, ResolveTensor, ResolvedTensor,
+    SimdElement, TensorBacking, TensorSlice, elementwise, pairwise, scalar,
 };
 
 /// A tensor wrapper that provides a unified interface over different tensor backends.
@@ -1320,103 +1320,141 @@ fn broadcast_shapes<const R1: usize, const R2: usize, const R3: usize>(
     result
 }
 
-// Broadcasting binary operations for same-rank tensors
-// These methods handle broadcasting when both tensors have the same rank.
+// Broadcasting binary operations for multi-rank tensors
+// These methods handle broadcasting when tensors have different ranks.
 impl<const R: usize, E, T> Tensor<R, T>
 where
     E: SimdElement + Default,
     T: TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E> + Expr<Elem = E>,
 {
-    /// Multiply with broadcasting support (same-rank tensors).
+    /// Multiply with broadcasting support (multi-rank tensors).
     ///
     /// Both tensors are broadcast to a common shape before multiplication.
-    /// Use this when both operands have the same rank.
-    pub fn mul_<T2>(
+    /// Supports tensors of different ranks.
+    pub fn mul_<const R2: usize, const R3: usize, T2>(
         &self,
-        other: &Tensor<R, T2>,
-    ) -> Tensor<R, ConcreteTensor<E, R>>
+        other: &Tensor<R2, T2>,
+    ) -> Tensor<R3, ConcreteTensor<E, R3>>
     where
         E: StdMul<Output = E>,
         MulOp: SimdBinaryOp<E>,
-        T2: TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E> + Expr<Elem = E>,
+        T2: TensorBacking<R2, Elem = E> + ResolveTensor<R2, Elem = E> + Expr<Elem = E>,
+        (ConcreteTensor<E, R>, ConcreteTensor<E, R2>): MaxRank<R3, E>,
     {
         let shape1: [usize; R] = Expr::shape(self).try_into().unwrap();
-        let shape2: [usize; R] = Expr::shape(other).try_into().unwrap();
-        let out_shape: [usize; R] = broadcast_shapes(&shape1, &shape2);
+        let shape2: [usize; R2] = Expr::shape(other).try_into().unwrap();
+        let out_shape: [usize; R3] = broadcast_shapes(&shape1, &shape2);
 
-        let a: Tensor<R, MapLayout<E, R>> = self.to_concrete().broadcast_as(out_shape);
-        let b: Tensor<R, MapLayout<E, R>> = other.to_concrete().broadcast_as(out_shape);
+        let a: Tensor<R3, MapLayout<E, R3>> = self.to_concrete().broadcast_as(out_shape);
+        let b: Tensor<R3, MapLayout<E, R3>> = other.to_concrete().broadcast_as(out_shape);
 
         (&a * &b).to_concrete()
     }
 
-    /// Add with broadcasting support (same-rank tensors).
+    /// Add with broadcasting support (multi-rank tensors).
     ///
     /// Both tensors are broadcast to a common shape before addition.
-    /// Use this when both operands have the same rank.
-    pub fn add_<T2>(
+    /// Supports tensors of different ranks.
+    pub fn add_<const R2: usize, const R3: usize, T2>(
         &self,
-        other: &Tensor<R, T2>,
-    ) -> Tensor<R, ConcreteTensor<E, R>>
+        other: &Tensor<R2, T2>,
+    ) -> Tensor<R3, ConcreteTensor<E, R3>>
     where
         E: StdAdd<Output = E>,
         AddOp: SimdBinaryOp<E>,
-        T2: TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E> + Expr<Elem = E>,
+        T2: TensorBacking<R2, Elem = E> + ResolveTensor<R2, Elem = E> + Expr<Elem = E>,
+        (ConcreteTensor<E, R>, ConcreteTensor<E, R2>): MaxRank<R3, E>,
     {
         let shape1: [usize; R] = Expr::shape(self).try_into().unwrap();
-        let shape2: [usize; R] = Expr::shape(other).try_into().unwrap();
-        let out_shape: [usize; R] = broadcast_shapes(&shape1, &shape2);
+        let shape2: [usize; R2] = Expr::shape(other).try_into().unwrap();
+        let out_shape: [usize; R3] = broadcast_shapes(&shape1, &shape2);
 
-        let a: Tensor<R, MapLayout<E, R>> = self.to_concrete().broadcast_as(out_shape);
-        let b: Tensor<R, MapLayout<E, R>> = other.to_concrete().broadcast_as(out_shape);
+        let a: Tensor<R3, MapLayout<E, R3>> = self.to_concrete().broadcast_as(out_shape);
+        let b: Tensor<R3, MapLayout<E, R3>> = other.to_concrete().broadcast_as(out_shape);
 
         (&a + &b).to_concrete()
     }
 
-    /// Subtract with broadcasting support (same-rank tensors).
+    /// Subtract with broadcasting support (multi-rank tensors).
     ///
     /// Both tensors are broadcast to a common shape before subtraction.
-    /// Use this when both operands have the same rank.
-    pub fn sub_<T2>(
+    /// Supports tensors of different ranks.
+    pub fn sub_<const R2: usize, const R3: usize, T2>(
         &self,
-        other: &Tensor<R, T2>,
-    ) -> Tensor<R, ConcreteTensor<E, R>>
+        other: &Tensor<R2, T2>,
+    ) -> Tensor<R3, ConcreteTensor<E, R3>>
     where
         E: StdSub<Output = E>,
         SubOp: SimdBinaryOp<E>,
-        T2: TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E> + Expr<Elem = E>,
+        T2: TensorBacking<R2, Elem = E> + ResolveTensor<R2, Elem = E> + Expr<Elem = E>,
+        (ConcreteTensor<E, R>, ConcreteTensor<E, R2>): MaxRank<R3, E>,
     {
         let shape1: [usize; R] = Expr::shape(self).try_into().unwrap();
-        let shape2: [usize; R] = Expr::shape(other).try_into().unwrap();
-        let out_shape: [usize; R] = broadcast_shapes(&shape1, &shape2);
+        let shape2: [usize; R2] = Expr::shape(other).try_into().unwrap();
+        let out_shape: [usize; R3] = broadcast_shapes(&shape1, &shape2);
 
-        let a: Tensor<R, MapLayout<E, R>> = self.to_concrete().broadcast_as(out_shape);
-        let b: Tensor<R, MapLayout<E, R>> = other.to_concrete().broadcast_as(out_shape);
+        let a: Tensor<R3, MapLayout<E, R3>> = self.to_concrete().broadcast_as(out_shape);
+        let b: Tensor<R3, MapLayout<E, R3>> = other.to_concrete().broadcast_as(out_shape);
 
         (&a - &b).to_concrete()
     }
 
-    /// Divide with broadcasting support (same-rank tensors).
+    /// Divide with broadcasting support (multi-rank tensors).
     ///
     /// Both tensors are broadcast to a common shape before division.
-    /// Use this when both operands have the same rank.
-    pub fn div_<T2>(
+    /// Supports tensors of different ranks.
+    pub fn div_<const R2: usize, const R3: usize, T2>(
         &self,
-        other: &Tensor<R, T2>,
-    ) -> Tensor<R, ConcreteTensor<E, R>>
+        other: &Tensor<R2, T2>,
+    ) -> Tensor<R3, ConcreteTensor<E, R3>>
     where
         E: StdDiv<Output = E>,
         DivOp: SimdBinaryOp<E>,
-        T2: TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E> + Expr<Elem = E>,
+        T2: TensorBacking<R2, Elem = E> + ResolveTensor<R2, Elem = E> + Expr<Elem = E>,
+        (ConcreteTensor<E, R>, ConcreteTensor<E, R2>): MaxRank<R3, E>,
     {
         let shape1: [usize; R] = Expr::shape(self).try_into().unwrap();
-        let shape2: [usize; R] = Expr::shape(other).try_into().unwrap();
-        let out_shape: [usize; R] = broadcast_shapes(&shape1, &shape2);
+        let shape2: [usize; R2] = Expr::shape(other).try_into().unwrap();
+        let out_shape: [usize; R3] = broadcast_shapes(&shape1, &shape2);
 
-        let a: Tensor<R, MapLayout<E, R>> = self.to_concrete().broadcast_as(out_shape);
-        let b: Tensor<R, MapLayout<E, R>> = other.to_concrete().broadcast_as(out_shape);
+        let a: Tensor<R3, MapLayout<E, R3>> = self.to_concrete().broadcast_as(out_shape);
+        let b: Tensor<R3, MapLayout<E, R3>> = other.to_concrete().broadcast_as(out_shape);
 
         (&a / &b).to_concrete()
+    }
+
+    /// Power with broadcasting support (multi-rank tensors).
+    ///
+    /// Both tensors are broadcast to a common shape before computing power.
+    /// Supports tensors of different ranks.
+    pub fn pow_<const R2: usize, const R3: usize, T2>(
+        &self,
+        other: &Tensor<R2, T2>,
+    ) -> Tensor<R3, ConcreteTensor<E, R3>>
+    where
+        E: FloatOps,
+        T2: TensorBacking<R2, Elem = E> + ResolveTensor<R2, Elem = E> + Expr<Elem = E>,
+        (ConcreteTensor<E, R>, ConcreteTensor<E, R2>): MaxRank<R3, E>,
+    {
+        let shape1: [usize; R] = Expr::shape(self).try_into().unwrap();
+        let shape2: [usize; R2] = Expr::shape(other).try_into().unwrap();
+        let out_shape: [usize; R3] = broadcast_shapes(&shape1, &shape2);
+
+        let a: Tensor<R3, ConcreteTensor<E, R3>> =
+            self.to_concrete().broadcast_as(out_shape).to_concrete();
+        let b: Tensor<R3, ConcreteTensor<E, R3>> =
+            other.to_concrete().broadcast_as(out_shape).to_concrete();
+
+        // Compute power element-wise
+        let a_data = ResolvedTensor::data(a.inner());
+        let b_data = ResolvedTensor::data(b.inner());
+        let result: Vec<E> = a_data
+            .iter()
+            .zip(b_data.iter())
+            .map(|(x, y)| x.powf(*y))
+            .collect();
+
+        Tensor::new(ConcreteTensor::from_slice(out_shape, &result))
     }
 }
 

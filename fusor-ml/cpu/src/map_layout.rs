@@ -9,7 +9,7 @@ use fusor_types::Layout;
 use pulp::Simd;
 
 use crate::expr::{linear_to_indices, materialize_expr, Expr};
-use crate::{ConcreteTensor, ResolveTensor, SimdElement, TensorBacking, MAX_SIMD_LANES};
+use crate::{ConcreteTensor, ResolveTensor, ResolvedTensor, SimdElement, TensorBacking, MAX_SIMD_LANES};
 
 /// A tensor that holds backing data with a transformed layout.
 ///
@@ -46,6 +46,11 @@ impl<E: SimdElement, const R: usize> MapLayout<E, R> {
     /// Get a reference to the backing data.
     pub(crate) fn backing(&self) -> &ABox<[E]> {
         &self.backing
+    }
+
+    /// Get a mutable reference to the backing data.
+    pub(crate) fn backing_mut(&mut self) -> &mut ABox<[E]> {
+        &mut self.backing
     }
 
     /// Get element at logical indices.
@@ -120,5 +125,27 @@ impl<E: SimdElement, const R: usize> ResolveTensor<R> for MapLayout<E, R> {
 impl<E: SimdElement, const R: usize> ResolveTensor<R> for &MapLayout<E, R> {
     fn to_concrete(&self) -> ConcreteTensor<E, R> {
         (*self).to_concrete()
+    }
+}
+
+impl<E: SimdElement, const R: usize> ResolvedTensor<R> for MapLayout<E, R> {
+    fn shape(&self) -> &[usize] {
+        self.layout.shape()
+    }
+
+    fn strides(&self) -> &[usize] {
+        self.layout.strides()
+    }
+
+    fn offset(&self) -> usize {
+        self.layout.offset()
+    }
+
+    fn data(&self) -> &ABox<[Self::Elem]> {
+        &self.backing
+    }
+
+    fn data_mut(&mut self) -> &mut ABox<[Self::Elem]> {
+        &mut self.backing
     }
 }

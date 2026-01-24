@@ -617,14 +617,11 @@ where
     ) -> Tensor<R3, D, ConcreteTensor<D, R3>>
     where
         (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
+        (ConcreteTensor<D, R>, ConcreteTensor<D, R2>): fusor_cpu::MaxRank<R3, D>,
         D: std::ops::Add<Output = D>,
         AddOp: SimdBinaryOp<D>,
     {
-        self.broadcast_binary_op(second, |a, b| match (a, b) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((&a + &b).to_concrete()),
-            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(&a + &b),
-            _ => panic!("Cannot mix CPU and GPU tensors"),
-        })
+        self.dispatch_pair(second, |a, b| a.add_(b), |a, b| a.add_(b))
     }
 
     /// Broadcasting subtract: broadcasts both tensors to a common shape and subtracts them.
@@ -634,14 +631,11 @@ where
     ) -> Tensor<R3, D, ConcreteTensor<D, R3>>
     where
         (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
+        (ConcreteTensor<D, R>, ConcreteTensor<D, R2>): fusor_cpu::MaxRank<R3, D>,
         D: std::ops::Sub<Output = D>,
         SubOp: SimdBinaryOp<D>,
     {
-        self.broadcast_binary_op(second, |a, b| match (a, b) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((&a - &b).to_concrete()),
-            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(&a - &b),
-            _ => panic!("Cannot mix CPU and GPU tensors"),
-        })
+        self.dispatch_pair(second, |a, b| a.sub_(b), |a, b| a.sub_(b))
     }
 
     /// Broadcasting multiply: broadcasts both tensors to a common shape and multiplies them.
@@ -651,14 +645,11 @@ where
     ) -> Tensor<R3, D, ConcreteTensor<D, R3>>
     where
         (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
+        (ConcreteTensor<D, R>, ConcreteTensor<D, R2>): fusor_cpu::MaxRank<R3, D>,
         D: std::ops::Mul<Output = D>,
         MulOp: SimdBinaryOp<D>,
     {
-        self.broadcast_binary_op(second, |a, b| match (a, b) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((&a * &b).to_concrete()),
-            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(&a * &b),
-            _ => panic!("Cannot mix CPU and GPU tensors"),
-        })
+        self.dispatch_pair(second, |a, b| a.mul_(b), |a, b| a.mul_(b))
     }
 
     /// Broadcasting divide: broadcasts both tensors to a common shape and divides them.
@@ -668,14 +659,11 @@ where
     ) -> Tensor<R3, D, ConcreteTensor<D, R3>>
     where
         (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
+        (ConcreteTensor<D, R>, ConcreteTensor<D, R2>): fusor_cpu::MaxRank<R3, D>,
         D: std::ops::Div<Output = D>,
         DivOp: SimdBinaryOp<D>,
     {
-        self.broadcast_binary_op(second, |a, b| match (a, b) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((&a / &b).to_concrete()),
-            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(&a / &b),
-            _ => panic!("Cannot mix CPU and GPU tensors"),
-        })
+        self.dispatch_pair(second, |a, b| a.div_(b), |a, b| a.div_(b))
     }
 
     /// Broadcasting power: broadcasts both tensors to a common shape and computes power.
@@ -685,66 +673,11 @@ where
     ) -> Tensor<R3, D, ConcreteTensor<D, R3>>
     where
         (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
+        (ConcreteTensor<D, R>, ConcreteTensor<D, R2>): fusor_cpu::MaxRank<R3, D>,
         D: FloatDataType + FloatOps,
     {
-        self.broadcast_binary_op(second, |a, b| match (&a, &b) {
-            (Tensor::Cpu(_), Tensor::Cpu(_)) => {
-                // Use the pow method from math module
-                a.to_concrete().pow(&b.to_concrete())
-            }
-            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a.pow(b)),
-            _ => panic!("Cannot mix CPU and GPU tensors"),
-        })
+        self.dispatch_pair(second, |a, b| a.pow_(b), |a, b| a.pow_(b))
     }
-
-    /// Helper function for broadcasting binary operations.
-    fn broadcast_binary_op<const R2: usize, const R3: usize>(
-        &self,
-        second: &Tensor<R2, D>,
-        op: impl Fn(Tensor<R3, D>, Tensor<R3, D>) -> Tensor<R3, D>,
-    ) -> Tensor<R3, D, ConcreteTensor<D, R3>>
-    where
-        (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
-    {
-        // Calculate the broadcasted shape
-        let shape1 = self.shape();
-        let shape2 = second.shape();
-        let out_shape = broadcast_shapes::<R, R2, R3>(&shape1, &shape2);
-
-        // Broadcast both tensors to the output shape
-        let b1: Tensor<R3, D, ConcreteTensor<D, R3>> = self.broadcast_as(out_shape);
-        let b2: Tensor<R3, D, ConcreteTensor<D, R3>> = second.broadcast_as(out_shape);
-
-        // Apply the operation
-        op(b1, b2).to_concrete()
-    }
-}
-
-/// Calculate the broadcasted shape for two tensors.
-fn broadcast_shapes<const R1: usize, const R2: usize, const R3: usize>(
-    shape1: &[usize; R1],
-    shape2: &[usize; R2],
-) -> [usize; R3] {
-    let mut result = [1usize; R3];
-
-    // Align shapes from the right
-    for i in 0..R1 {
-        let idx = R3 - R1 + i;
-        result[idx] = shape1[i];
-    }
-    for i in 0..R2 {
-        let idx = R3 - R2 + i;
-        if result[idx] == 1 {
-            result[idx] = shape2[i];
-        } else if shape2[i] != 1 && shape2[i] != result[idx] {
-            panic!(
-                "Cannot broadcast shapes: dimension {} has incompatible sizes {} and {}",
-                idx, result[idx], shape2[i]
-            );
-        }
-    }
-
-    result
 }
 
 /// Macro to implement lazy unary element-wise operations for Tensor (any backing type).
