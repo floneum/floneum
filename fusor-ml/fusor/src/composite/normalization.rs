@@ -9,16 +9,17 @@ use fusor_core::{
 };
 use fusor_cpu::{LastRank as CpuLastRank, MaxOp, SimdReduceOp, SumOp, TensorBacking};
 
-impl<const R: usize, D> Tensor<R, D>
+impl<const R: usize, D, B> Tensor<R, D, B>
 where
     D: SimdElement + DataType + FloatDataType + FloatOps + Default,
+    B: TensorBacking<R, Elem = D>,
 {
     /// Softmax along a specific axis.
     ///
     /// softmax(x)_i = exp(x_i - max(x)) / sum(exp(x - max(x)))
     ///
     /// The subtraction of max(x) is for numerical stability.
-    pub fn softmax<const OUT_RANK: usize>(&self, axis: usize) -> Self
+    pub fn softmax<const OUT_RANK: usize>(&self, axis: usize) -> Tensor<R, D>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
@@ -41,7 +42,7 @@ where
     ///
     /// This is a convenience method equivalent to `softmax(R - 1)`.
     /// For f32 CPU tensors, this uses an optimized fused implementation.
-    pub fn softmax_last_dim<const OUT_RANK: usize>(&self) -> Self
+    pub fn softmax_last_dim<const OUT_RANK: usize>(&self) -> Tensor<R, D>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
@@ -61,7 +62,7 @@ where
     ///
     /// This is provided for API parity with fusor-core. On CPU, this is the same
     /// as `softmax`. On GPU, fusor-core has an optimized fused kernel.
-    pub fn softmax_slow<const OUT_RANK: usize>(&self, axis: usize) -> Self
+    pub fn softmax_slow<const OUT_RANK: usize>(&self, axis: usize) -> Tensor<R, D>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
@@ -83,7 +84,7 @@ where
     /// Slow softmax along the last dimension using composite operations.
     ///
     /// This is provided for API parity with fusor-core.
-    pub fn softmax_slow_last_dim<const OUT_RANK: usize>(&self) -> Self
+    pub fn softmax_slow_last_dim<const OUT_RANK: usize>(&self) -> Tensor<R, D>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
@@ -100,7 +101,7 @@ where
     }
 
     /// CPU implementation of softmax
-    fn softmax_cpu_impl<const OUT_RANK: usize>(&self, axis: usize) -> Self
+    fn softmax_cpu_impl<const OUT_RANK: usize>(&self, axis: usize) -> Tensor<R, D>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
@@ -113,11 +114,14 @@ where
         DivOp: SimdBinaryOp<D>,
         ExpOp: SimdUnaryOp<D>,
     {
+        // Materialize to concrete first since we need it for operations
+        let concrete = self.to_concrete();
+
         // max(x) with keepdim for broadcasting
-        let max_val = self.max_keepdim::<OUT_RANK>(axis);
+        let max_val = concrete.max_keepdim::<OUT_RANK>(axis);
 
         // x - max(x) (broadcasts automatically since max has size 1 in reduced dim)
-        let shifted = self.dispatch_pair_concrete(
+        let shifted = concrete.dispatch_pair_concrete(
             &max_val,
             |a, b| (a - b).to_concrete(),
             |a, b| a - b,
@@ -143,7 +147,7 @@ where
     ///
     /// Note: This is a simplified implementation that assumes weight has the same
     /// rank as input. For more complex broadcasting, use the GPU's optimized kernels directly.
-    pub fn rms_norm<const OUT_RANK: usize, B2>(&self, weight: &Tensor<R, D, B2>, eps: D) -> Self
+    pub fn rms_norm<const OUT_RANK: usize, B2>(&self, weight: &Tensor<R, D, B2>, eps: D) -> Tensor<R, D>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
@@ -159,8 +163,11 @@ where
     {
         let axis = R - 1; // Normalize along last axis
 
+        // Materialize to concrete first since we need it for operations
+        let concrete = self.to_concrete();
+
         // x^2
-        let x_sq = self.sqr();
+        let x_sq = concrete.sqr();
 
         // mean(x^2) with keepdim along last axis
         let mean_sq = x_sq.mean_keepdim::<OUT_RANK>(axis);
@@ -172,7 +179,7 @@ where
         let rms = mean_sq_eps.sqrt();
 
         // x / rms
-        let normalized = self / &rms;
+        let normalized = &concrete / &rms;
 
         // normalized * weight
         (&normalized * weight).to_concrete()
@@ -192,7 +199,7 @@ where
         bias: Option<&Tensor<R, D, B3>>,
         eps: D,
         remove_mean: bool,
-    ) -> Self
+    ) -> Tensor<R, D>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
@@ -213,17 +220,20 @@ where
     {
         let axis = R - 1;
 
+        // Materialize to concrete first since we need it for operations
+        let concrete = self.to_concrete();
+
         // Optionally subtract mean
-        let centered = if remove_mean {
-            let mean = self.mean_keepdim::<OUT_RANK>(axis);
-            match (self, &mean) {
+        let centered: Tensor<R, D> = if remove_mean {
+            let mean = concrete.mean_keepdim::<OUT_RANK>(axis);
+            match (&concrete, &mean) {
                 (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a - b).to_concrete()),
                 // Use sub_ for broadcasting (mean has shape with last dim=1)
                 (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a.sub_::<R, R>(&b)),
                 _ => panic!("Cannot mix CPU and GPU tensors"),
             }
         } else {
-            self.clone()
+            concrete
         };
 
         // Compute variance: mean(centered^2)
@@ -235,7 +245,7 @@ where
         let std = var_plus_eps.sqrt();
 
         // centered / std
-        let normalized = match (&centered, &std) {
+        let normalized: Tensor<R, D> = match (&centered, &std) {
             (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).to_concrete()),
             // Use div_ for broadcasting (std has shape with last dim=1)
             (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a.div_::<R, R>(&b)),
@@ -243,7 +253,7 @@ where
         };
 
         // normalized * weight
-        let scaled = match (&normalized, weight) {
+        let scaled: Tensor<R, D> = match (&normalized, weight) {
             (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a * b).to_concrete()),
             // Use mul_ for broadcasting (weight may be 1D broadcast to R)
             (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a.mul_::<R, R>(&b)),
@@ -282,7 +292,7 @@ where
         weight: &Tensor<W, D, ConcreteTensor<D, W>>,
         bias: Option<&Tensor<W, D, ConcreteTensor<D, W>>>,
         eps: f32,
-    ) -> Self
+    ) -> Tensor<R, D>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
@@ -322,7 +332,7 @@ where
         &self,
         weight: &Tensor<W, D, ConcreteTensor<D, W>>,
         eps: f32,
-    ) -> Self
+    ) -> Tensor<R, D>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
@@ -349,7 +359,7 @@ where
         weight: &Tensor<W, D, ConcreteTensor<D, W>>,
         bias: Option<&Tensor<W, D, ConcreteTensor<D, W>>>,
         eps: f32,
-    ) -> Self
+    ) -> Tensor<R, D>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
@@ -365,8 +375,11 @@ where
         let axis = R - 1; // Normalize along last axis
         let eps_d = D::from_f32(eps);
 
+        // Materialize to concrete first since we need it for operations
+        let concrete = self.to_concrete();
+
         // x^2
-        let x_sq = self.sqr();
+        let x_sq = concrete.sqr();
 
         // mean(x^2) with keepdim along last axis
         let mean_sq = x_sq.mean_keepdim::<OUT_RANK>(axis);
@@ -378,15 +391,15 @@ where
         let rms = mean_sq_eps.sqrt();
 
         // x / rms
-        let normalized = match (self, &rms) {
+        let normalized: Tensor<R, D> = match (&concrete, &rms) {
             (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).to_concrete()),
             _ => unreachable!(),
         };
 
         // Broadcast weight to input shape if needed and multiply
-        let input_shape = self.shape();
+        let input_shape = concrete.shape();
         let weight_broadcast = weight.broadcast_as(input_shape);
-        let scaled = match (&normalized, &weight_broadcast) {
+        let scaled: Tensor<R, D> = match (&normalized, &weight_broadcast) {
             (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a * b).to_concrete()),
             _ => unreachable!(),
         };
@@ -405,15 +418,16 @@ where
 }
 
 // Specialized f32 implementation with fused softmax
-impl<const R: usize> Tensor<R, f32>
+impl<const R: usize, B> Tensor<R, f32, B>
 where
+    B: TensorBacking<R, Elem = f32>,
     fusor_core::Tensor<R, f32>: fusor_core::LastRankInner,
 {
     /// Optimized fused softmax along the last dimension for f32.
     ///
     /// This performs the entire softmax (max, exp, sum, normalize) in a single
     /// pass through memory, which is significantly faster for large tensors.
-    pub fn softmax_last_dim_fused<const OUT_RANK: usize>(&self) -> Self
+    pub fn softmax_last_dim_fused<const OUT_RANK: usize>(&self) -> Tensor<R, f32>
     where
         fusor_core::Tensor<R, f32>: fusor_core::LastRank<OUT_RANK, f32>,
     {

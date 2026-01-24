@@ -23,14 +23,14 @@ fn conv1d(
 ) -> Result<Conv1d<crate::WhisperDType>> {
     let weight_2d: Tensor<2, crate::WhisperDType> = vb.get("weight", device)?.dequantize();
     // Reshape from [out_channels, in_channels*kernel_size] to [out_channels, in_channels, kernel_size]
-    let weight: Tensor<3, crate::WhisperDType, _> = weight_2d.reshape([out_channels, in_channels, kernel_size]);
+    let weight: Tensor<3, crate::WhisperDType> = weight_2d.reshape([out_channels, in_channels, kernel_size]).to_concrete();
 
     let bias_2d: Tensor<2, crate::WhisperDType> = vb.get("bias", device)?.dequantize();
     // Squeeze to rank 1: assume shape is (1, out_channels) or (out_channels, 1)
     let bias: Tensor<1, crate::WhisperDType, _> = if bias_2d.shape()[0] == 1 {
-        bias_2d.squeeze(0)
+        bias_2d.squeeze(0).to_concrete()
     } else {
-        bias_2d.squeeze(1)
+        bias_2d.squeeze(1).to_concrete()
     };
     Ok(Conv1d::new(weight, Some(bias), config))
 }
@@ -91,10 +91,12 @@ impl MultiHeadAttention {
         let (key_states, value_states) = match cache {
             None => (key_states, value_states),
             Some(cache) => {
+                let key_states_4d = key_states.unsqueeze(2).to_concrete();
+                let value_states_4d = value_states.unsqueeze(2).to_concrete();
                 let (k, v) = cache
                     .kv_cache
-                    .append(&device, &key_states.unsqueeze(2), &value_states.unsqueeze(2));
-                (k.squeeze(2), v.squeeze(2))
+                    .append(&device, &key_states_4d, &value_states_4d);
+                (k.squeeze(2).to_concrete(), v.squeeze(2).to_concrete())
             }
         };
         Ok((key_states, value_states))
@@ -125,7 +127,7 @@ impl MultiHeadAttention {
     fn reshape_head(&self, x: &Tensor<3, crate::WhisperDType>) -> Tensor<4, crate::WhisperDType> {
         let [n_batch, n_ctx, n_state] = x.shape();
         let target_dims = [n_batch, n_ctx, self.n_head, n_state / self.n_head];
-        x.reshape(target_dims).transpose(1, 2)
+        x.reshape(target_dims).transpose(1, 2).to_concrete()
     }
 
     fn qkv_attention(
@@ -429,7 +431,7 @@ impl TextDecoder {
         let x: Tensor<1, u32> = Tensor::new(&device, tokens);
         // The model expects a batch dim but this inference loop does not handle
         // it so we add it at this point.
-        let x = x.unsqueeze(0);
+        let x = x.unsqueeze(0).to_concrete();
 
         let _enter = self.span.enter();
         let token_embedding = self.token_embedding.forward(&x);
@@ -438,7 +440,7 @@ impl TextDecoder {
         let mut x = token_embedding.add_(&positional_embedding);
 
         // Add batch dimension to audio_features for forward_kv
-        let audio_features_batched = audio_features.unsqueeze(0);
+        let audio_features_batched = audio_features.unsqueeze(0).to_concrete();
 
         for (i, block) in self.blocks.iter_mut().enumerate() {
             if cache.blocks.len() <= i {

@@ -154,6 +154,7 @@ impl WhisperInner {
         let mel_len = mel.len();
         let mel = Tensor::new(&self.device, &mel)
             .reshape([self.config.num_mel_bins, mel_len / self.config.num_mel_bins])
+            .to_concrete()
             .cast();
 
         if let Some(language) = language {
@@ -373,27 +374,28 @@ impl Decoder {
             if i == 0 {
                 let logits = match &mut self.model {
                     ModelType::Quantized(model) => {
-                        let ys_slice = ys.narrow(0, 0, 1);
+                        let ys_slice = ys.narrow(0, 0, 1).to_concrete();
                         model.decoder.final_linear(&ys_slice)?
                     }
                 };
                 let logits_2d = logits.i((.., 0, ..));
-                let logits_1d = logits_2d.narrow(0, 0, 1).squeeze(0);
+                let logits_1d = logits_2d.narrow(0, 0, 1).squeeze(0).to_concrete();
                 let softmax_result = logits_1d.softmax(0);
                 let token_prob = softmax_result
                     .narrow(0, self.no_speech_token as usize, 1)
-                    .squeeze(0);
+                    .squeeze(0)
+                    .to_concrete();
                 no_speech_prob = token_prob
                     .to_scalar()
                     .await
-                    .map_err(|e| WhisperError::Fusor(e.into()))?
+                    .map_err(|e: fusor::Error| WhisperError::Fusor(e.into()))?
                     .into();
             }
 
             let [_, seq_len, _] = ys.shape();
             let logits = match &mut self.model {
                 ModelType::Quantized(model) => {
-                    let ys_slice = ys.narrow(0, 0, 1).narrow(1, seq_len - 1, 1);
+                    let ys_slice = ys.narrow(0, 0, 1).narrow(1, seq_len - 1, 1).to_concrete();
                     model.decoder.final_linear(&ys_slice)?
                 }
             };
@@ -656,7 +658,7 @@ impl Decoder {
                 let segment_duration = (segment_size * HOP_LENGTH) as f64 / SAMPLE_RATE as f64;
 
                 // Squeeze the batch dimension since decode_with_fallback expects 2D tensor
-                let audio_features_2d = audio_features.squeeze(0);
+                let audio_features_2d = audio_features.squeeze(0).to_concrete();
 
                 let mut dr = self
                     .decode_with_fallback(

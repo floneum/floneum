@@ -765,9 +765,10 @@ impl_tensor_unary_op_lazy!(acosh, AcoshOp, Acosh);
 impl_tensor_unary_op_lazy!(atanh, AtanhOp, Atanh);
 
 // Approximate exp operations (GPU-optimized, CPU falls back to standard exp)
-impl<const R: usize, D> Tensor<R, D>
+impl<const R: usize, D, B> Tensor<R, D, B>
 where
     D: SimdElement + DataType + FloatDataType + Default,
+    B: TensorBacking<R, Elem = D>,
     fusor_cpu::ExpOp: fusor_cpu::SimdUnaryOp<D>,
 {
     /// Approximate exp function (faster but less accurate on GPU, exact on CPU).
@@ -786,9 +787,10 @@ where
 }
 
 // Exact tanh operation
-impl<const R: usize, D> Tensor<R, D>
+impl<const R: usize, D, B> Tensor<R, D, B>
 where
     D: SimdElement + DataType + FloatDataType + Default,
+    B: TensorBacking<R, Elem = D>,
     fusor_cpu::TanhOp: fusor_cpu::SimdUnaryOp<D>,
 {
     /// Exact tanh using (e^x - e^-x) / (e^x + e^-x).
@@ -800,12 +802,17 @@ where
 }
 
 // Conditional operation (where_cond)
-impl<const R: usize, D> Tensor<R, D>
+impl<const R: usize, D, B> Tensor<R, D, B>
 where
     D: SimdElement + DataType + Default + IsNonZero,
+    B: TensorBacking<R, Elem = D>,
 {
     /// Conditional selection: where self != 0, select on_true, else on_false.
-    pub fn where_cond(&self, on_true: &Self, on_false: &Self) -> Self {
+    pub fn where_cond<B2, B3>(&self, on_true: &Tensor<R, D, B2>, on_false: &Tensor<R, D, B3>) -> Tensor<R, D>
+    where
+        B2: TensorBacking<R, Elem = D>,
+        B3: TensorBacking<R, Elem = D>,
+    {
         self.dispatch_triple(
             on_true,
             on_false,
@@ -816,12 +823,13 @@ where
 }
 
 // Float operations (pow_scalar, max_scalar, min_scalar, clamp)
-impl<const R: usize, D> Tensor<R, D>
+impl<const R: usize, D, B> Tensor<R, D, B>
 where
     D: SimdElement + DataType + FloatDataType + FloatOps + Default,
+    B: TensorBacking<R, Elem = D>,
 {
     /// Raise each element to a power.
-    pub fn pow_scalar(&self, exponent: D) -> Self {
+    pub fn pow_scalar(&self, exponent: D) -> Tensor<R, D> {
         self.dispatch_ref(
             |t| t.as_ref().pow_scalar(exponent),
             |t| t.pow_elementwise(exponent),
@@ -829,7 +837,7 @@ where
     }
 
     /// Element-wise maximum with a scalar.
-    pub fn max_scalar(&self, scalar: D) -> Self {
+    pub fn max_scalar(&self, scalar: D) -> Tensor<R, D> {
         self.dispatch_ref(
             |t| t.as_ref().max_scalar(scalar),
             |t| t.max_elementwise(scalar),
@@ -837,7 +845,7 @@ where
     }
 
     /// Element-wise minimum with a scalar.
-    pub fn min_scalar(&self, scalar: D) -> Self {
+    pub fn min_scalar(&self, scalar: D) -> Tensor<R, D> {
         self.dispatch_ref(
             |t| t.as_ref().min_scalar(scalar),
             |t| t.min_elementwise(scalar),
@@ -845,7 +853,7 @@ where
     }
 
     /// Clamp each element to a range [min, max].
-    pub fn clamp(&self, min: D, max: D) -> Self {
+    pub fn clamp(&self, min: D, max: D) -> Tensor<R, D> {
         self.dispatch_ref(
             |t| t.as_ref().clamp(min, max),
             |t| t.max_elementwise(min).min_elementwise(max),
@@ -853,22 +861,22 @@ where
     }
 
     /// Raise each element to a power (alias for pow_scalar for fusor-core API compatibility).
-    pub fn pow_elementwise(&self, exponent: D) -> Self {
+    pub fn pow_elementwise(&self, exponent: D) -> Tensor<R, D> {
         self.pow_scalar(exponent)
     }
 
     /// Element-wise maximum with a scalar (alias for max_scalar for fusor-core API compatibility).
-    pub fn max_elementwise(&self, element: D) -> Self {
+    pub fn max_elementwise(&self, element: D) -> Tensor<R, D> {
         self.max_scalar(element)
     }
 
     /// Element-wise minimum with a scalar (alias for min_scalar for fusor-core API compatibility).
-    pub fn min_elementwise(&self, element: D) -> Self {
+    pub fn min_elementwise(&self, element: D) -> Tensor<R, D> {
         self.min_scalar(element)
     }
 
     /// Add a scalar to each element.
-    pub fn add_scalar(&self, scalar: D) -> Self
+    pub fn add_scalar(&self, scalar: D) -> Tensor<R, D>
     where
         D: std::ops::Add<Output = D>,
         AddOp: SimdBinaryOp<D>,
@@ -880,7 +888,7 @@ where
     }
 
     /// Subtract a scalar from each element.
-    pub fn sub_scalar(&self, scalar: D) -> Self
+    pub fn sub_scalar(&self, scalar: D) -> Tensor<R, D>
     where
         D: std::ops::Sub<Output = D>,
         SubOp: SimdBinaryOp<D>,
@@ -892,7 +900,7 @@ where
     }
 
     /// Multiply each element by a scalar.
-    pub fn mul_scalar(&self, scalar: D) -> Self
+    pub fn mul_scalar(&self, scalar: D) -> Tensor<R, D>
     where
         D: std::ops::Mul<Output = D>,
         MulOp: SimdBinaryOp<D>,
@@ -904,7 +912,7 @@ where
     }
 
     /// Divide each element by a scalar.
-    pub fn div_scalar(&self, scalar: D) -> Self
+    pub fn div_scalar(&self, scalar: D) -> Tensor<R, D>
     where
         D: std::ops::Div<Output = D>,
         DivOp: SimdBinaryOp<D>,
@@ -917,9 +925,10 @@ where
 }
 
 // Cast operation
-impl<const R: usize, D> Tensor<R, D>
+impl<const R: usize, D, B> Tensor<R, D, B>
 where
     D: SimdElement + DataType + Default,
+    B: TensorBacking<R, Elem = D>,
 {
     /// Cast tensor to another element type.
     pub fn cast<D2>(&self) -> Tensor<R, D2, ConcreteTensor<D2, R>>
@@ -951,12 +960,16 @@ where
 }
 
 // Slice assign operation
-impl<const R: usize, D> Tensor<R, D>
+impl<const R: usize, D, B> Tensor<R, D, B>
 where
     D: SimdElement + DataType + Default,
+    B: TensorBacking<R, Elem = D>,
 {
     /// Returns a new tensor with the slice region replaced by values from the value tensor.
-    pub fn slice_assign(&self, slices: [Range<usize>; R], value: &Self) -> Self {
+    pub fn slice_assign<B2>(&self, slices: [Range<usize>; R], value: &Tensor<R, D, B2>) -> Tensor<R, D>
+    where
+        B2: TensorBacking<R, Elem = D>,
+    {
         let slices_clone = slices.clone();
         self.dispatch_pair(
             value,
