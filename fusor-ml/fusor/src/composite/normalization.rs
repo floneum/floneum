@@ -7,7 +7,7 @@ use crate::{
 use fusor_core::{
     DataType, FloatDataType, LastRank as GpuLastRank, NextRankInner as GpuNextRankInner,
 };
-use fusor_cpu::{LastRank as CpuLastRank, MaxOp, SimdReduceOp, SumOp};
+use fusor_cpu::{LastRank as CpuLastRank, MaxOp, SimdReduceOp, SumOp, TensorBacking};
 
 impl<const R: usize, D> Tensor<R, D>
 where
@@ -143,7 +143,7 @@ where
     ///
     /// Note: This is a simplified implementation that assumes weight has the same
     /// rank as input. For more complex broadcasting, use the GPU's optimized kernels directly.
-    pub fn rms_norm<const OUT_RANK: usize>(&self, weight: &Self, eps: D) -> Self
+    pub fn rms_norm<const OUT_RANK: usize, B2>(&self, weight: &Tensor<R, D, B2>, eps: D) -> Self
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
@@ -155,6 +155,7 @@ where
         DivOp: SimdBinaryOp<D>,
         AddOp: SimdBinaryOp<D>,
         SqrtOp: SimdUnaryOp<D>,
+        B2: TensorBacking<R, Elem = D>,
     {
         let axis = R - 1; // Normalize along last axis
 
@@ -185,10 +186,10 @@ where
     ///
     /// Note: This is a simplified implementation that assumes weight and bias have
     /// the same rank as input.
-    pub fn layer_norm<const OUT_RANK: usize>(
+    pub fn layer_norm<const OUT_RANK: usize, B2, B3>(
         &self,
-        weight: &Self,
-        bias: Option<&Self>,
+        weight: &Tensor<R, D, B2>,
+        bias: Option<&Tensor<R, D, B3>>,
         eps: D,
         remove_mean: bool,
     ) -> Self
@@ -207,6 +208,8 @@ where
         AddOp: SimdBinaryOp<D>,
         SubOp: SimdBinaryOp<D>,
         SqrtOp: SimdUnaryOp<D>,
+        B2: TensorBacking<R, Elem = D>,
+        B3: TensorBacking<R, Elem = D>,
     {
         let axis = R - 1;
 
@@ -483,7 +486,7 @@ mod tests {
         let weight: Tensor<1, f32> =
             Tensor::Cpu(fusor_cpu::Tensor::from_slice([3], &[1.0, 1.0, 1.0]));
 
-        let result = t.rms_norm::<0>(&weight, 1e-5);
+        let result = t.rms_norm::<0, _>(&weight, 1e-5);
         let slice = result.as_slice().await.unwrap();
 
         // rms = sqrt(mean([1, 4, 9])) = sqrt(14/3) ~ 2.16
@@ -511,7 +514,7 @@ mod tests {
             &[1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         ));
 
-        let result = t.rms_norm::<1>(&weight, 1e-5);
+        let result = t.rms_norm::<1, _>(&weight, 1e-5);
         let slice = result.as_slice().await.unwrap();
 
         // Row 0: [1, 2, 3] -> rms = sqrt((1+4+9)/3 + eps) = sqrt(14/3 + eps)
@@ -535,7 +538,7 @@ mod tests {
         let weight: Tensor<1, f32> =
             Tensor::Cpu(fusor_cpu::Tensor::from_slice([3], &[2.0, 2.0, 2.0]));
 
-        let result = t.layer_norm::<0>(&weight, None, 1e-5, false);
+        let result = t.layer_norm::<0, _, ConcreteTensor<_, _>>(&weight, None, 1e-5, false);
         let slice = result.as_slice().await.unwrap();
 
         // With remove_mean=false, this should be like rms_norm but with weight=2
@@ -561,7 +564,7 @@ mod tests {
         let weight: Tensor<1, f32> =
             Tensor::Cpu(fusor_cpu::Tensor::from_slice([3], &[1.0, 1.0, 1.0]));
 
-        let result = t.layer_norm::<0>(&weight, None, 1e-5, true);
+        let result = t.layer_norm::<0, _, ConcreteTensor<_, _>>(&weight, None, 1e-5, true);
         let slice = result.as_slice().await.unwrap();
 
         // mean = 2, centered = [-1, 0, 1]
@@ -655,7 +658,7 @@ mod tests {
 
         // Create random-ish data similar to hidden states
         let data: Vec<f32> = (0..1 * 100 * 384)
-            .map(|i| ((i as f32 * 0.001).sin() * 2.0))
+            .map(|i| (i as f32 * 0.001).sin() * 2.0)
             .collect();
         let weight_data: Vec<f32> = (0..384)
             .map(|i| 0.9 + (i as f32 * 0.001).cos() * 0.2)
@@ -667,11 +670,11 @@ mod tests {
             Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 100, 384], &data));
         let cpu_weight_1d: Tensor<1, f32> =
             Tensor::Cpu(fusor_cpu::Tensor::from_slice([384], &weight_data));
-        let cpu_weight_broadcast: Tensor<3, f32> = cpu_weight_1d.broadcast_as([1, 100, 384]);
+        let cpu_weight_broadcast = cpu_weight_1d.broadcast_as([1, 100, 384]);
         let cpu_bias: Tensor<1, f32> =
             Tensor::Cpu(fusor_cpu::Tensor::from_slice([384], &bias_data));
-        let cpu_bias_broadcast: Tensor<3, f32> = cpu_bias.broadcast_as([1, 100, 384]);
-        let cpu_result = cpu_tensor.layer_norm::<2>(
+        let cpu_bias_broadcast = cpu_bias.broadcast_as([1, 100, 384]);
+        let cpu_result = cpu_tensor.layer_norm::<2, _, _>(
             &cpu_weight_broadcast,
             Some(&cpu_bias_broadcast),
             1e-5,
@@ -683,10 +686,10 @@ mod tests {
         let gpu_device = Device::new().await.expect("GPU required for this test");
         let gpu_tensor: Tensor<3, f32> = Tensor::from_slice(&gpu_device, [1, 100, 384], &data);
         let gpu_weight_1d: Tensor<1, f32> = Tensor::from_slice(&gpu_device, [384], &weight_data);
-        let gpu_weight_broadcast: Tensor<3, f32> = gpu_weight_1d.broadcast_as([1, 100, 384]);
+        let gpu_weight_broadcast = gpu_weight_1d.broadcast_as([1, 100, 384]);
         let gpu_bias: Tensor<1, f32> = Tensor::from_slice(&gpu_device, [384], &bias_data);
-        let gpu_bias_broadcast: Tensor<3, f32> = gpu_bias.broadcast_as([1, 100, 384]);
-        let gpu_result = gpu_tensor.layer_norm::<2>(
+        let gpu_bias_broadcast = gpu_bias.broadcast_as([1, 100, 384]);
+        let gpu_result = gpu_tensor.layer_norm::<2, _, _>(
             &gpu_weight_broadcast,
             Some(&gpu_bias_broadcast),
             1e-5,

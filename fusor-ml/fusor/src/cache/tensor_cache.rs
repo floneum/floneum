@@ -1,6 +1,6 @@
 //! Growable tensor cache implementation.
 
-use crate::{cat, Device, Tensor, SimdElement};
+use crate::{Device, SimdElement, Tensor, cat};
 use fusor_core::DataType;
 
 /// A growable tensor cache.
@@ -45,11 +45,7 @@ where
     /// Append a new value to the cache
     ///
     /// Returns the full cached tensor including the newly appended data
-    pub fn append(
-        &mut self,
-        device: &Device,
-        v: &Tensor<R, D>,
-    ) -> Tensor<R, D> {
+    pub fn append(&mut self, device: &Device, v: &Tensor<R, D>) -> Tensor<R, D> {
         let v_shape = v.shape();
         let seq_len = v_shape[self.concat_dim];
         // First find the required new sequence length
@@ -62,17 +58,20 @@ where
             let mut tensors = Vec::new();
             // Cut the start of the cache.
             if let Some(all_data) = self.all_data.as_ref() {
-                tensors.push(all_data.narrow(
-                    self.concat_dim,
-                    new_start,
-                    self.current_seq_len - new_start,
-                ));
+                tensors.push(
+                    all_data
+                        .narrow(self.concat_dim, new_start, self.current_seq_len - new_start)
+                        .to_concrete(),
+                );
             }
             tensors.push(v.clone());
             let all_data = cat(tensors, self.concat_dim);
             let all_data_len = all_data.shape()[self.concat_dim];
-            self.all_data =
-                Some(all_data.narrow(self.concat_dim, all_data_len - max_seq_len, max_seq_len));
+            self.all_data = Some(
+                all_data
+                    .narrow(self.concat_dim, all_data_len - max_seq_len, max_seq_len)
+                    .to_concrete(),
+            );
             self.current_seq_len = max_seq_len;
             self.allocated_seq_len = max_seq_len;
             return self.all_data.clone().unwrap();
@@ -106,7 +105,7 @@ where
             *cached = cached.slice_assign(slice, v);
             self.current_seq_len = required_seq_len;
             // Return only the valid portion of the cache, not the full allocated tensor
-            cached.narrow(self.concat_dim, 0, self.current_seq_len)
+            cached.narrow(self.concat_dim, 0, self.current_seq_len).to_concrete()
         } else {
             // First append - just store it
             self.all_data = Some(v.clone());
@@ -132,8 +131,7 @@ mod tests {
         let mut cache: TensorCache<3, f32> = TensorCache::new(1, 2);
 
         let data = [1.0f32, 2.0, 3.0, 4.0];
-        let tensor: Tensor<3, f32> =
-            Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 1, 2], &data));
+        let tensor: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 1, 2], &data));
 
         let result = cache.append(&device, &tensor);
 
@@ -154,10 +152,8 @@ mod tests {
 
         let data1 = [1.0f32, 2.0];
         let data2 = [3.0f32, 4.0];
-        let tensor1: Tensor<3, f32> =
-            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2], &data1));
-        let tensor2: Tensor<3, f32> =
-            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2], &data2));
+        let tensor1: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2], &data1));
+        let tensor2: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2], &data2));
 
         cache.append(&device, &tensor1);
         let result = cache.append(&device, &tensor2);
@@ -178,8 +174,7 @@ mod tests {
         let mut cache: TensorCache<3, f32> = TensorCache::new(1, 3);
 
         let data = [1.0f32, 2.0];
-        let tensor: Tensor<3, f32> =
-            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2], &data));
+        let tensor: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 2], &data));
         cache.append(&device, &tensor);
 
         cache.reset();

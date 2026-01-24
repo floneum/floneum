@@ -15,11 +15,8 @@ where
     let last_dim = shape[3];
     let xs1 = xs.narrow(3, 0, last_dim / 2);
     let xs2 = xs.narrow(3, last_dim / 2, last_dim - last_dim / 2);
-    let neg_xs2 = match xs2 {
-        Tensor::Cpu(t) => Tensor::Cpu((-t).to_concrete()),
-        Tensor::Gpu(t) => Tensor::Gpu(-t),
-    };
-    crate::cat([neg_xs2, xs1], 3)
+    let neg_xs2 = -xs2;
+    crate::cat([neg_xs2.to_concrete(), xs1.to_concrete()], 3)
 }
 
 impl<D> Tensor<4, D, ConcreteTensor<D, 4>>

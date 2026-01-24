@@ -94,7 +94,6 @@ impl WhisperInner {
         // Set FUSOR_USE_GPU=1 to use GPU, otherwise CPU
         let use_gpu = std::env::var("FUSOR_USE_GPU").map(|v| v == "1").unwrap_or(false);
         let device = if use_gpu {
-            
             Device::new().await?
         } else {
             Device::cpu()

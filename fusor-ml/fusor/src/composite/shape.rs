@@ -4,12 +4,13 @@ use std::ops::Range;
 
 use crate::{ConcreteTensor, Device, SimdElement, Tensor};
 use fusor_core::{DataType, ShapeWithOneHole};
-use fusor_cpu::TensorBacking;
+use fusor_cpu::{MapLayout, TensorBacking};
 use fusor_types::SlidingWindow;
 
-impl<const R: usize, D> Tensor<R, D>
+impl<const R: usize, D, B> Tensor<R, D, B>
 where
     D: SimdElement + DataType + Default,
+    B: TensorBacking<R, Elem = D>,
 {
     /// Reshape the tensor to a new shape.
     ///
@@ -17,11 +18,11 @@ where
     pub fn reshape<const R2: usize>(
         &self,
         new_shape: impl ShapeWithOneHole<R2>,
-    ) -> Tensor<R2, D, ConcreteTensor<D, R2>> {
+    ) -> Tensor<R2, D, MapLayout<D, R2>> {
         match self {
             Tensor::Cpu(t) => {
                 let resolved_shape = new_shape.resolve_shape(&t.shape());
-                Tensor::Cpu(t.as_ref().reshape(resolved_shape).to_concrete())
+                Tensor::Cpu(t.as_ref().reshape(resolved_shape))
             }
             Tensor::Gpu(t) => Tensor::Gpu(t.reshape(new_shape)),
         }
@@ -32,9 +33,9 @@ where
     /// # Arguments
     /// * `dim0` - First dimension to swap
     /// * `dim1` - Second dimension to swap
-    pub fn transpose(&self, dim0: usize, dim1: usize) -> Self {
+    pub fn transpose(&self, dim0: usize, dim1: usize) -> Tensor<R, D, MapLayout<D, R>> {
         self.dispatch_ref(
-            |t| t.as_ref().transpose(dim0, dim1).to_concrete(),
+            |t| t.as_ref().transpose(dim0, dim1),
             |t| t.transpose(dim0, dim1),
         )
     }
@@ -42,23 +43,17 @@ where
     /// Slice the tensor along all dimensions.
     ///
     /// Returns a view into the tensor's data with updated layout.
-    pub fn slice(&self, slices: [Range<usize>; R]) -> Self {
+    pub fn slice(&self, slices: [Range<usize>; R]) -> Tensor<R, D, MapLayout<D, R>> {
         let slices_clone = slices.clone();
-        self.dispatch_ref(
-            |t| t.as_ref().slice(slices).to_concrete(),
-            |t| t.slice(slices_clone),
-        )
+        self.dispatch_ref(|t| t.as_ref().slice(slices), |t| t.slice(slices_clone))
     }
 
     /// Permute the tensor dimensions according to the given axes order.
     ///
     /// # Arguments
     /// * `axes` - A permutation of [0, 1, ..., R-1] specifying the new order
-    pub fn permute(&self, axes: [usize; R]) -> Self {
-        self.dispatch_ref(
-            |t| t.as_ref().permute(axes).to_concrete(),
-            |t| t.permute(axes),
-        )
+    pub fn permute(&self, axes: [usize; R]) -> Tensor<R, D, MapLayout<D, R>> {
+        self.dispatch_ref(|t| t.as_ref().permute(axes), |t| t.permute(axes))
     }
 
     /// Broadcast the tensor to a larger shape.
@@ -70,9 +65,9 @@ where
     pub fn broadcast_as<const R2: usize>(
         &self,
         out_shape: [usize; R2],
-    ) -> Tensor<R2, D, ConcreteTensor<D, R2>> {
+    ) -> Tensor<R2, D, MapLayout<D, R2>> {
         self.dispatch_ref(
-            |t| t.as_ref().broadcast_as(out_shape).to_concrete(),
+            |t| t.as_ref().broadcast_as(out_shape),
             |t| t.broadcast_as(out_shape),
         )
     }
@@ -81,16 +76,13 @@ where
     pub fn expand<const R2: usize>(
         &self,
         out_shape: [usize; R2],
-    ) -> Tensor<R2, D, ConcreteTensor<D, R2>> {
+    ) -> Tensor<R2, D, MapLayout<D, R2>> {
         self.broadcast_as(out_shape)
     }
 
     /// Flatten the tensor to 1D.
-    pub fn flatten_all(&self) -> Tensor<1, D, ConcreteTensor<D, 1>> {
-        self.dispatch_ref(
-            |t| t.as_ref().flatten_all().to_concrete(),
-            |t| t.flatten_all(),
-        )
+    pub fn flatten_all(&self) -> Tensor<1, D, MapLayout<D, 1>> {
+        self.dispatch_ref(|t| t.as_ref().flatten_all(), |t| t.flatten_all())
     }
 
     /// Narrow the tensor along a given dimension.
@@ -99,16 +91,10 @@ where
     /// * `dim` - The dimension to narrow
     /// * `start` - The starting index
     /// * `length` - The length of the slice
-    pub fn narrow(&self, dim: usize, start: usize, length: usize) -> Self {
+    pub fn narrow(&self, dim: usize, start: usize, length: usize) -> Tensor<R, D, MapLayout<D, R>> {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().narrow(dim, start, length).to_concrete()),
-            Tensor::Gpu(t) => {
-                // GPU narrow is implemented via slice
-                let shape = self.shape();
-                let mut slices: [Range<usize>; R] = std::array::from_fn(|i| 0..shape[i]);
-                slices[dim] = start..start + length;
-                Tensor::Gpu(t.slice(slices))
-            }
+            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().narrow(dim, start, length)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.narrow(dim, start, length)),
         }
     }
 
@@ -117,7 +103,7 @@ where
     /// # Arguments
     /// * `chunks` - Number of chunks to split into
     /// * `dim` - The dimension to split along
-    pub fn chunk(&self, chunks: usize, dim: usize) -> Vec<Self> {
+    pub fn chunk(&self, chunks: usize, dim: usize) -> Vec<Tensor<R, D, MapLayout<D, R>>> {
         let shape = self.shape();
         let dim_size = shape[dim];
         let chunk_size = (dim_size + chunks - 1) / chunks;
@@ -138,24 +124,21 @@ where
     ///
     /// # Arguments
     /// * `repeats` - Number of times to repeat along each dimension
-    pub fn repeat(&self, repeats: [usize; R]) -> Self {
-        self.dispatch_ref(
-            |t| t.as_ref().repeat(repeats),
-            |t| t.repeat(repeats),
-        )
+    pub fn repeat(&self, repeats: [usize; R]) -> Tensor<R, D> {
+        self.dispatch_ref(|t| t.as_ref().repeat(repeats), |t| t.repeat(repeats))
     }
 
     /// Squeeze a dimension of size 1.
     ///
     /// # Arguments
     /// * `dim` - The dimension to squeeze (must have size 1)
-    pub fn squeeze<const R2: usize>(&self, dim: usize) -> Tensor<R2, D, ConcreteTensor<D, R2>>
+    pub fn squeeze<const R2: usize>(&self, dim: usize) -> Tensor<R2, D, MapLayout<D, R2>>
     where
         ConcreteTensor<D, R>: fusor_cpu::LastRank<R2, D>,
         fusor_core::Tensor<R, D>: fusor_core::LastRank<R2, D>,
     {
         self.dispatch_ref(
-            |t| t.as_ref().squeeze(dim).to_concrete(),
+            |t| t.as_ref().squeeze(dim),
             |t| t.squeeze(dim),
         )
     }
@@ -164,13 +147,13 @@ where
     ///
     /// # Arguments
     /// * `dim` - Where to insert the new dimension
-    pub fn unsqueeze<const R2: usize>(&self, dim: usize) -> Tensor<R2, D, ConcreteTensor<D, R2>>
+    pub fn unsqueeze<const R2: usize>(&self, dim: usize) -> Tensor<R2, D, MapLayout<D, R2>>
     where
         ConcreteTensor<D, R>: fusor_cpu::NextRank<R2, D>,
         fusor_core::Tensor<R, D>: fusor_core::NextRank<R2, D>,
     {
         self.dispatch_ref(
-            |t| t.as_ref().unsqueeze(dim).to_concrete(),
+            |t| t.as_ref().unsqueeze(dim),
             |t| t.unsqueeze(dim),
         )
     }
@@ -186,13 +169,13 @@ where
     pub fn squeeze_dims<const DIFF: usize, const R2: usize>(
         &self,
         axes: [usize; DIFF],
-    ) -> Tensor<R2, D, ConcreteTensor<D, R2>>
+    ) -> Tensor<R2, D, MapLayout<D, R2>>
     where
         ConcreteTensor<D, R>: fusor_cpu::SmallerRank<R2, DIFF, D>,
         fusor_core::Tensor<R, D>: fusor_core::SmallerRank<DIFF, R2, D>,
     {
         self.dispatch_ref(
-            |t| t.as_ref().squeeze_dims(axes).to_concrete(),
+            |t| t.as_ref().squeeze_dims(axes),
             |t| t.squeeze_dims(axes),
         )
     }
@@ -208,13 +191,13 @@ where
     pub fn unsqueeze_dims<const DIFF: usize, const R2: usize>(
         &self,
         axes: [usize; DIFF],
-    ) -> Tensor<R2, D, ConcreteTensor<D, R2>>
+    ) -> Tensor<R2, D, MapLayout<D, R2>>
     where
         ConcreteTensor<D, R>: fusor_cpu::LargerRank<R2, DIFF, D>,
         fusor_core::Tensor<R, D>: fusor_core::LargerRank<DIFF, R2, D>,
     {
         self.dispatch_ref(
-            |t| t.as_ref().unsqueeze_dims(axes).to_concrete(),
+            |t| t.as_ref().unsqueeze_dims(axes),
             |t| t.unsqueeze_dims(axes),
         )
     }
@@ -232,13 +215,13 @@ where
     pub fn sliding_window_view<const DIFF: usize, const R2: usize>(
         &self,
         windows: [SlidingWindow; DIFF],
-    ) -> Tensor<R2, D, ConcreteTensor<D, R2>>
+    ) -> Tensor<R2, D, MapLayout<D, R2>>
     where
         ConcreteTensor<D, R>: fusor_cpu::LargerRank<R2, DIFF, D>,
         fusor_core::Tensor<R, D>: fusor_core::LargerRank<DIFF, R2, D>,
     {
         self.dispatch_ref(
-            |t| t.as_ref().sliding_window_view(windows).to_concrete(),
+            |t| t.as_ref().sliding_window_view(windows),
             |t| t.sliding_window_view(windows),
         )
     }
@@ -281,38 +264,18 @@ where
     }
 }
 
-// Transpose for 2D tensors (convenience method)
-impl<D> Tensor<2, D, ConcreteTensor<D, 2>>
+// Transpose for ND tensors (convenience method)
+impl<const R: usize, D, B> Tensor<R, D, B>
 where
     D: SimdElement + DataType + Default,
+    B: TensorBacking<R, Elem = D>,
 {
-    /// Transpose a 2D matrix (swap dimensions 0 and 1).
-    pub fn t(&self) -> Self {
-        self.transpose(0, 1)
+    /// Transpose a ND tensor (swap the last two dimensions).
+    pub fn t(&self) -> Tensor<R, D, MapLayout<D, R>> {
+        self.transpose(R - 2, R - 1)
     }
 }
 
-// Transpose for 3D tensors (convenience method)
-impl<D> Tensor<3, D, ConcreteTensor<D, 3>>
-where
-    D: SimdElement + DataType + Default,
-{
-    /// Transpose last two dimensions.
-    pub fn t(&self) -> Self {
-        self.transpose(1, 2)
-    }
-}
-
-// Transpose for 4D tensors (convenience method)
-impl<D> Tensor<4, D, ConcreteTensor<D, 4>>
-where
-    D: SimdElement + DataType + Default,
-{
-    /// Transpose last two dimensions.
-    pub fn t(&self) -> Self {
-        self.transpose(2, 3)
-    }
-}
 
 fn dispatch_vec<const R: usize, D, B, O>(
     tensors: impl IntoIterator<Item = Tensor<R, D, B>>,
@@ -321,7 +284,7 @@ fn dispatch_vec<const R: usize, D, B, O>(
 ) -> O
 where
     D: SimdElement + DataType,
-    B: TensorBacking<R, Elem = D>
+    B: TensorBacking<R, Elem = D>,
 {
     let mut cpu_tensors = Vec::new();
     let mut gpu_tensors = Vec::new();
@@ -375,12 +338,8 @@ where
 {
     dispatch_vec(
         tensors,
-        |cpu_tensors| {
-            Tensor::Cpu(fusor_cpu::Tensor::stack(cpu_tensors, dim))
-        },
-        |gpu_tensors| {
-            Tensor::Gpu(fusor_core::Tensor::stack(gpu_tensors, dim))
-        },
+        |cpu_tensors| Tensor::Cpu(fusor_cpu::Tensor::stack(cpu_tensors, dim)),
+        |gpu_tensors| Tensor::Gpu(fusor_core::Tensor::stack(gpu_tensors, dim)),
     )
 }
 

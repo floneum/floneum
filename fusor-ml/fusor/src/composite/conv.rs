@@ -152,13 +152,9 @@ where
             // Need to broadcast to (batch, out_channels, ...spatial...)
             // Broadcast bias to the FULL output shape for correct addition
             let bias_broadcast: Tensor<R, D, _> = bias.broadcast_as(output_shape);
-            match (&output_final, &bias_broadcast) {
-                (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a + b).to_concrete()),
-                (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a.add_(b)),
-                _ => panic!("Cannot mix CPU and GPU tensors"),
-            }
+            output_final.add_(&bias_broadcast)
         } else {
-            output_final
+            output_final.to_concrete()
         }
     }
 }

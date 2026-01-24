@@ -112,8 +112,8 @@ where
             ]);
 
             (
-                k_broadcast.reshape([batch, num_heads, kv_seq_len, head_dim]),
-                v_broadcast.reshape([batch, num_heads, kv_seq_len, head_dim]),
+                k_broadcast.reshape([batch, num_heads, kv_seq_len, head_dim]).to_concrete(),
+                v_broadcast.reshape([batch, num_heads, kv_seq_len, head_dim]).to_concrete(),
             )
         } else {
             (k.clone(), v.clone())

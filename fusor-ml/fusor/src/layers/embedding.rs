@@ -2,6 +2,7 @@
 
 use crate::{ConcreteTensor, Device, QMatrix, Tensor, SimdElement, VarBuilder};
 use fusor_core::DataType;
+use fusor_cpu::MapLayout;
 
 /// Embedding layer for token/position embeddings.
 ///
@@ -54,7 +55,7 @@ where
     pub fn forward(
         &self,
         indices: &Tensor<2, u32, ConcreteTensor<u32, 2>>,
-    ) -> Tensor<3, D, ConcreteTensor<D, 3>> {
+    ) -> Tensor<3, D, MapLayout<D, 3>> {
         let [batch, seq_len] = indices.shape();
 
         // Flatten indices to 1D

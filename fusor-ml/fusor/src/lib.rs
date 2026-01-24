@@ -645,75 +645,81 @@ where
 }
 
 // Broadcasting binary operations that can work with tensors of different ranks
-impl<const R: usize, D> Tensor<R, D>
+impl<const R: usize, D, B> Tensor<R, D, B>
 where
     D: SimdElement + DataType + Default,
+    B: TensorBacking<R, Elem = D>,
 {
     /// Broadcasting add: broadcasts both tensors to a common shape and adds them.
-    pub fn add_<const R2: usize, const R3: usize>(
+    pub fn add_<const R2: usize, const R3: usize, B2>(
         &self,
-        second: &Tensor<R2, D>,
+        second: &Tensor<R2, D, B2>,
     ) -> Tensor<R3, D, ConcreteTensor<D, R3>>
     where
         (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
         (ConcreteTensor<D, R>, ConcreteTensor<D, R2>): fusor_cpu::MaxRank<R3, D>,
         D: std::ops::Add<Output = D>,
         AddOp: SimdBinaryOp<D>,
+        B2: TensorBacking<R2, Elem = D>,
     {
         self.dispatch_pair(second, |a, b| a.as_ref().add_(b.as_ref()), |a, b| a.add_(b))
     }
 
     /// Broadcasting subtract: broadcasts both tensors to a common shape and subtracts them.
-    pub fn sub_<const R2: usize, const R3: usize>(
+    pub fn sub_<const R2: usize, const R3: usize, B2>(
         &self,
-        second: &Tensor<R2, D>,
+        second: &Tensor<R2, D, B2>,
     ) -> Tensor<R3, D, ConcreteTensor<D, R3>>
     where
         (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
         (ConcreteTensor<D, R>, ConcreteTensor<D, R2>): fusor_cpu::MaxRank<R3, D>,
         D: std::ops::Sub<Output = D>,
         SubOp: SimdBinaryOp<D>,
+        B2: TensorBacking<R2, Elem = D>,
     {
         self.dispatch_pair(second, |a, b| a.as_ref().sub_(b.as_ref()), |a, b| a.sub_(b))
     }
 
     /// Broadcasting multiply: broadcasts both tensors to a common shape and multiplies them.
-    pub fn mul_<const R2: usize, const R3: usize>(
+    pub fn mul_<const R2: usize, const R3: usize, B2>(
         &self,
-        second: &Tensor<R2, D>,
+        second: &Tensor<R2, D, B2>,
     ) -> Tensor<R3, D, ConcreteTensor<D, R3>>
     where
         (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
         (ConcreteTensor<D, R>, ConcreteTensor<D, R2>): fusor_cpu::MaxRank<R3, D>,
         D: std::ops::Mul<Output = D>,
         MulOp: SimdBinaryOp<D>,
+        B2: TensorBacking<R2, Elem = D>,
     {
         self.dispatch_pair(second, |a, b| a.as_ref().mul_(b.as_ref()), |a, b| a.mul_(b))
     }
 
     /// Broadcasting divide: broadcasts both tensors to a common shape and divides them.
-    pub fn div_<const R2: usize, const R3: usize>(
+    pub fn div_<const R2: usize, const R3: usize, B2>(
         &self,
-        second: &Tensor<R2, D>,
+        second: &Tensor<R2, D, B2>,
     ) -> Tensor<R3, D, ConcreteTensor<D, R3>>
     where
         (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
         (ConcreteTensor<D, R>, ConcreteTensor<D, R2>): fusor_cpu::MaxRank<R3, D>,
         D: std::ops::Div<Output = D>,
         DivOp: SimdBinaryOp<D>,
+        B2: TensorBacking<R2, Elem = D>,
     {
         self.dispatch_pair(second, |a, b| a.as_ref().div_(b.as_ref()), |a, b| a.div_(b))
     }
 
     /// Broadcasting power: broadcasts both tensors to a common shape and computes power.
-    pub fn pow_<const R2: usize, const R3: usize>(
+    pub fn pow_<const R2: usize, const R3: usize, B2>(
         &self,
-        second: &Tensor<R2, D>,
+        second: &Tensor<R2, D, B2>,
     ) -> Tensor<R3, D, ConcreteTensor<D, R3>>
     where
         (fusor_core::Tensor<R, D>, fusor_core::Tensor<R2, D>): fusor_core::MaxRank<R3, D>,
         (ConcreteTensor<D, R>, ConcreteTensor<D, R2>): fusor_cpu::MaxRank<R3, D>,
         D: FloatDataType + FloatOps,
+        B2: TensorBacking<R2, Elem = D>,
     {
         self.dispatch_pair(second, |a, b| a.as_ref().pow_(b.as_ref()), |a, b| a.pow_(b))
     }
@@ -772,7 +778,10 @@ where
 
     /// Less approximate exp function (medium accuracy/speed tradeoff on GPU, exact on CPU).
     pub fn less_approximate_exp(&self) -> Tensor<R, D> {
-        self.dispatch_ref(|t| t.as_ref().exp().to_concrete(), |t| t.less_appoximate_exp())
+        self.dispatch_ref(
+            |t| t.as_ref().exp().to_concrete(),
+            |t| t.less_appoximate_exp(),
+        )
     }
 }
 
@@ -813,17 +822,26 @@ where
 {
     /// Raise each element to a power.
     pub fn pow_scalar(&self, exponent: D) -> Self {
-        self.dispatch_ref(|t| t.as_ref().pow_scalar(exponent), |t| t.pow_elementwise(exponent))
+        self.dispatch_ref(
+            |t| t.as_ref().pow_scalar(exponent),
+            |t| t.pow_elementwise(exponent),
+        )
     }
 
     /// Element-wise maximum with a scalar.
     pub fn max_scalar(&self, scalar: D) -> Self {
-        self.dispatch_ref(|t| t.as_ref().max_scalar(scalar), |t| t.max_elementwise(scalar))
+        self.dispatch_ref(
+            |t| t.as_ref().max_scalar(scalar),
+            |t| t.max_elementwise(scalar),
+        )
     }
 
     /// Element-wise minimum with a scalar.
     pub fn min_scalar(&self, scalar: D) -> Self {
-        self.dispatch_ref(|t| t.as_ref().min_scalar(scalar), |t| t.min_elementwise(scalar))
+        self.dispatch_ref(
+            |t| t.as_ref().min_scalar(scalar),
+            |t| t.min_elementwise(scalar),
+        )
     }
 
     /// Clamp each element to a range [min, max].
@@ -914,19 +932,19 @@ where
 }
 
 // Index select operation
-impl<const R: usize, D> Tensor<R, D>
+impl<const R: usize, D, B> Tensor<R, D, B>
 where
     D: SimdElement + DataType + Default,
+    B: TensorBacking<R, Elem = D>,
 {
     /// Select elements along a dimension using indices.
-    pub fn index_select(
-        &self,
-        dimension: usize,
-        indices: &Tensor<1, u32, ConcreteTensor<u32, 1>>,
-    ) -> Self {
+    pub fn index_select<B2>(&self, dimension: usize, indices: &Tensor<1, u32, B2>) -> Self
+    where
+        B2: TensorBacking<1, Elem = u32>,
+    {
         self.dispatch_pair(
             indices,
-            |t, idx| t.as_ref().index_select(dimension, idx.to_concrete()),
+            |t, idx| t.as_ref().index_select(dimension, idx),
             |t, idx| t.index_select(dimension, idx),
         )
     }
@@ -949,20 +967,31 @@ where
 }
 
 // Matrix multiplication for N-dimensional tensors (N >= 2)
-impl<const R: usize, D> Tensor<R, D>
+impl<const R: usize, D, B> Tensor<R, D, B>
 where
     D: SimdElement + DataType + FloatDataType + Default + MatmulImpl,
+    B: TensorBacking<R, Elem = D>,
 {
     /// Matrix multiplication (batched for rank > 2)
     /// For 2D: [M, K] @ [K, N] -> [M, N]
     /// For ND: [...batch, M, K] @ [...batch, K, N] -> [...batch, M, N]
     /// Panics if R < 2
-    pub fn matmul(&self, rhs: &Self) -> Self {
-        self.dispatch_pair(rhs, |a, b| a.as_ref().matmul(b.as_ref()), |a, b| a.mat_mul(b))
+    pub fn matmul<B2>(&self, rhs: &Tensor<R, D, B2>) -> Tensor<R, D>
+    where
+        B2: TensorBacking<R, Elem = D>,
+    {
+        self.dispatch_pair(
+            rhs,
+            |a, b| a.as_ref().matmul(b.as_ref()),
+            |a, b| a.mat_mul(b),
+        )
     }
 
     /// Alias for matmul (for API compatibility with fusor-core)
-    pub fn mat_mul(&self, rhs: &Self) -> Self {
+    pub fn mat_mul<B2>(&self, rhs: &Tensor<R, D, B2>) -> Tensor<R, D>
+    where
+        B2: TensorBacking<R, Elem = D>,
+    {
         self.matmul(rhs)
     }
 }
@@ -984,7 +1013,10 @@ where
     /// # Panics
     /// * If attempting to mix CPU and GPU tensors (self on CPU, weights on GPU or vice versa)
     /// * If R < 2 (matrix multiplication requires at least 2 dimensions)
-    pub fn q_mat_mul(&self, weights: &crate::QMatrix<2>) -> Tensor<R, f32> {
+    pub fn q_mat_mul<B2>(&self, weights: &crate::QMatrix<2>) -> Tensor<R, f32>
+    where
+        B2: TensorBacking<2, Elem = f32>,
+    {
         use crate::QMatrix;
 
         match (self, weights) {
@@ -1045,9 +1077,10 @@ where
 }
 
 // Flatten operations
-impl<const R: usize, D> Tensor<R, D>
+impl<const R: usize, D, B> Tensor<R, D, B>
 where
     D: SimdElement + DataType + Default,
+    B: TensorBacking<R, Elem = D>,
 {
     /// Flatten the last FROM_END+1 dimensions into one.
     ///

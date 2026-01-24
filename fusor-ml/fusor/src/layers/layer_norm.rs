@@ -1,6 +1,6 @@
 //! Layer normalization implementation.
 
-use crate::{ConcreteTensor, Device, Tensor, SimdElement, VarBuilder};
+use crate::{ConcreteTensor, Device, SimdElement, Tensor, VarBuilder};
 use fusor_core::{DataType, FloatDataType};
 use fusor_cpu::FloatOps;
 
@@ -72,7 +72,12 @@ where
         let weight_broadcast: Tensor<2, D, _> = self.weight.broadcast_as(input.shape());
         let bias_broadcast: Option<Tensor<2, D, _>> =
             self.bias.as_ref().map(|b| b.broadcast_as(input.shape()));
-        input.layer_norm(&weight_broadcast, bias_broadcast.as_ref(), D::from_f32(self.eps), true)
+        input.layer_norm(
+            &weight_broadcast,
+            bias_broadcast.as_ref(),
+            D::from_f32(self.eps),
+            true,
+        )
     }
 
     /// Forward pass for 3D input (batch, seq_len, features).
@@ -98,7 +103,12 @@ where
         let weight_broadcast: Tensor<3, D, _> = self.weight.broadcast_as(input.shape());
         let bias_broadcast: Option<Tensor<3, D, _>> =
             self.bias.as_ref().map(|b| b.broadcast_as(input.shape()));
-        input.layer_norm(&weight_broadcast, bias_broadcast.as_ref(), D::from_f32(self.eps), true)
+        input.layer_norm(
+            &weight_broadcast,
+            bias_broadcast.as_ref(),
+            D::from_f32(self.eps),
+            true,
+        )
     }
 }
 
@@ -119,9 +129,10 @@ impl LayerNorm<1, f32> {
                 let bias_broadcast = self.bias.as_ref().map(|b| b.broadcast_as(input.shape()));
 
                 let (weight_inner, bias_inner) = match (&weight_broadcast, &bias_broadcast) {
-                    (Tensor::Cpu(w), Some(Tensor::Cpu(b))) => {
-                        (w.to_concrete().inner().clone(), Some(b.to_concrete().inner().clone()))
-                    }
+                    (Tensor::Cpu(w), Some(Tensor::Cpu(b))) => (
+                        w.to_concrete().inner().clone(),
+                        Some(b.to_concrete().inner().clone()),
+                    ),
                     (Tensor::Cpu(w), None) => (w.to_concrete().inner().clone(), None),
                     _ => unreachable!(),
                 };
@@ -150,13 +161,13 @@ impl LayerNorm<1, f32> {
         let weight_q = vb.get("weight", device)?;
         let weight_2d: Tensor<2, f32> = weight_q.dequantize();
         // Squeeze to 1D
-        let weight: Tensor<1, f32> = if weight_2d.shape()[0] == 1 {
+        let weight = if weight_2d.shape()[0] == 1 {
             weight_2d.squeeze(0)
         } else {
             weight_2d.squeeze(1)
         };
 
-        let bias: Option<Tensor<1, f32>> = vb.get("bias", device).ok().map(|b| {
+        let bias = vb.get("bias", device).ok().map(|b| {
             let bias_2d: Tensor<2, f32> = b.dequantize();
             if bias_2d.shape()[0] == 1 {
                 bias_2d.squeeze(0)
@@ -165,7 +176,11 @@ impl LayerNorm<1, f32> {
             }
         });
 
-        Ok(Self::new(weight, bias, eps))
+        Ok(Self::new(
+            weight.to_concrete(),
+            bias.map(|t| t.to_concrete()),
+            eps,
+        ))
     }
 }
 
@@ -178,17 +193,14 @@ mod tests {
         // Weight and bias: (3,)
         let weight_data = [1.0f32, 1.0, 1.0];
         let bias_data = [0.0f32, 0.0, 0.0];
-        let weight: Tensor<1, f32> =
-            Tensor::Cpu(fusor_cpu::Tensor::from_slice([3], &weight_data));
-        let bias: Tensor<1, f32> =
-            Tensor::Cpu(fusor_cpu::Tensor::from_slice([3], &bias_data));
+        let weight: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([3], &weight_data));
+        let bias: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([3], &bias_data));
 
         let layer_norm = LayerNorm::new(weight, Some(bias), 1e-5);
 
         // Input: (2, 3)
         let input_data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let input: Tensor<2, f32> =
-            Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &input_data));
+        let input: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &input_data));
 
         let output = layer_norm.forward_2d(&input);
         let result = output.as_slice().await.unwrap();
@@ -207,8 +219,7 @@ mod tests {
     #[tokio::test]
     async fn test_layer_norm_3d() {
         let weight_data = [1.0f32, 1.0];
-        let weight: Tensor<1, f32> =
-            Tensor::Cpu(fusor_cpu::Tensor::from_slice([2], &weight_data));
+        let weight: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2], &weight_data));
 
         let layer_norm = LayerNorm::new(weight, None, 1e-5);
 
