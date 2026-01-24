@@ -80,7 +80,7 @@ impl<'a> VarBuilder<'a> {
     ///
     /// The tensor is loaded as a `fusor::QMatrix` which can be either CPU or GPU
     /// depending on the device.
-    pub fn get(&mut self, key: &str, device: &Device) -> crate::Result<QMatrix<2>> {
+    pub fn get(&mut self, key: &str, device: &Device) -> crate::Result<QMatrix> {
         let full_path = self.format_path(key);
         let q_matrix_metadata = self.metadata.tensor_infos.get(&*full_path).ok_or_else(|| {
             crate::Error::VarBuilder(format!("Key '{}' not found in GGUF metadata", full_path))
@@ -191,7 +191,7 @@ impl<R: std::io::Read + std::io::Seek> ShardedVarBuilder<R> {
     }
 
     /// Load a tensor from any shard to the specified device.
-    pub fn tensor(&mut self, name: &str, device: &Device) -> crate::Result<QMatrix<2>> {
+    pub fn tensor(&mut self, name: &str, device: &Device) -> crate::Result<QMatrix> {
         for (content, r) in &mut self.contents {
             if let Some(tensor_info) = content.tensor_infos.get(name) {
                 let offset = content.tensor_data_offset + tensor_info.offset;

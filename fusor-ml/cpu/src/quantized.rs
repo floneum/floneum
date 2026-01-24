@@ -20,21 +20,21 @@ use crate::{ConcreteTensor, MAX_SIMD_LANES, ResolvedTensor, SimdElement, TensorB
 
 /// A tensor storing quantized blocks.
 ///
-/// `QuantizedTensor<B, R>` stores data in quantized block format where `B` is
-/// the block type (e.g., `BlockQ4_0`) and `R` is the tensor rank.
+/// `QuantizedTensor<B>` stores data in quantized block format where `B` is
+/// the block type (e.g., `BlockQ4_0`). The rank is dynamic at runtime.
 ///
 /// The innermost dimension must be a multiple of the block size. For example,
 /// a [3, 256] tensor with Q4_0 quantization (block size 32) stores 3 rows of
 /// 8 blocks each.
 #[derive(Clone)]
-pub struct QuantizedTensor<B: GgufBlock, const R: usize> {
+pub struct QuantizedTensor<B: GgufBlock> {
     /// The logical shape in elements (not blocks)
-    element_shape: [usize; R],
+    element_shape: Box<[usize]>,
     /// The quantized blocks stored in row-major order
     blocks: ABox<[B]>,
 }
 
-impl<B: GgufBlock, const R: usize> QuantizedTensor<B, R> {
+impl<B: GgufBlock> QuantizedTensor<B> {
     /// Create a quantized tensor from pre-existing blocks.
     ///
     /// # Arguments
@@ -46,9 +46,11 @@ impl<B: GgufBlock, const R: usize> QuantizedTensor<B, R> {
     /// Panics if:
     /// - The innermost dimension is not a multiple of the block size
     /// - The number of blocks doesn't match the shape
-    pub fn from_blocks(element_shape: [usize; R], blocks: ABox<[B]>) -> Self {
-        assert!(R > 0, "Tensor must have at least rank 1");
-        let inner_dim = element_shape[R - 1];
+    pub fn from_blocks(element_shape: impl Into<Box<[usize]>>, blocks: ABox<[B]>) -> Self {
+        let element_shape = element_shape.into();
+        let rank = element_shape.len();
+        assert!(rank > 0, "Tensor must have at least rank 1");
+        let inner_dim = element_shape[rank - 1];
         assert!(
             inner_dim % B::BLOCK_SIZE == 0,
             "Innermost dimension ({}) must be a multiple of block size ({})",
@@ -85,7 +87,7 @@ impl<B: GgufBlock, const R: usize> QuantizedTensor<B, R> {
     /// - The bytes length is not a multiple of the block size
     /// - The innermost dimension is not a multiple of the block size
     /// - The number of blocks doesn't match the shape
-    pub fn from_raw_bytes(element_shape: [usize; R], bytes: &[u8]) -> Self {
+    pub fn from_raw_bytes(element_shape: impl Into<Box<[usize]>>, bytes: &[u8]) -> Self {
         let blocks_slice: &[B] = pulp::bytemuck::cast_slice(bytes);
         let mut vec: AVec<B> = AVec::with_capacity(64, blocks_slice.len());
         vec.extend_from_slice(blocks_slice);
@@ -93,13 +95,13 @@ impl<B: GgufBlock, const R: usize> QuantizedTensor<B, R> {
     }
 
     /// Compute the number of blocks needed for a given element shape.
-    fn compute_block_count(element_shape: &[usize; R]) -> usize {
+    fn compute_block_count(element_shape: &[usize]) -> usize {
         let total_elements: usize = element_shape.iter().product();
         total_elements / B::BLOCK_SIZE
     }
 
     /// Returns the logical element shape (not block shape).
-    pub fn element_shape(&self) -> &[usize; R] {
+    pub fn element_shape(&self) -> &[usize] {
         &self.element_shape
     }
 
@@ -122,8 +124,13 @@ impl<B: GgufBlock, const R: usize> QuantizedTensor<B, R> {
     ///
     /// This allocates a new `ConcreteTensor<f32, R>` and dequantizes all blocks.
     /// For large tensors, consider using `dequantize_lazy()` instead.
-    pub fn dequantize(&self) -> ConcreteTensor<f32, R> {
-        let mut output = ConcreteTensor::<f32, R>::uninit_unchecked(self.element_shape);
+    ///
+    /// # Panics
+    /// Panics if the tensor's rank doesn't match R.
+    pub fn dequantize<const R: usize>(&self) -> ConcreteTensor<f32, R> {
+        let shape: [usize; R] = self.element_shape.as_ref().try_into()
+            .expect("Shape length mismatch in dequantize");
+        let mut output = ConcreteTensor::<f32, R>::uninit_unchecked(shape);
         let out_data = output.data_mut();
 
         for (block_idx, block) in self.blocks.iter().enumerate() {
@@ -139,7 +146,17 @@ impl<B: GgufBlock, const R: usize> QuantizedTensor<B, R> {
     ///
     /// This returns a `Dequantize` expression that implements `Expr`,
     /// allowing it to be composed with other operations before materialization.
-    pub fn dequantize_lazy(&self) -> Dequantize<'_, B, R> {
+    ///
+    /// # Panics
+    /// Panics if the tensor's rank doesn't match R.
+    pub fn dequantize_lazy<const R: usize>(&self) -> Dequantize<'_, B, R> {
+        assert_eq!(
+            self.element_shape.len(),
+            R,
+            "Tensor rank {} doesn't match expected rank {}",
+            self.element_shape.len(),
+            R
+        );
         Dequantize { source: self }
     }
 }
@@ -150,7 +167,7 @@ impl<B: GgufBlock, const R: usize> QuantizedTensor<B, R> {
 /// Instead of dequantizing the entire tensor upfront, values are
 /// dequantized on-demand during expression evaluation.
 pub struct Dequantize<'a, B: GgufBlock, const R: usize> {
-    source: &'a QuantizedTensor<B, R>,
+    source: &'a QuantizedTensor<B>,
 }
 
 impl<B: GgufBlock, const R: usize> TensorBacking<R> for Dequantize<'_, B, R>
@@ -161,11 +178,14 @@ where
 
     fn layout(&self) -> Layout {
         // The layout of the dequantized tensor matches the source tensor's element shape
-        Layout::contiguous(&self.source.element_shape)
+        let shape: [usize; R] = self.source.element_shape.as_ref().try_into()
+            .expect("Shape length mismatch in Dequantize::layout");
+        Layout::contiguous(&shape)
     }
 
     fn to_concrete(&self) -> ConcreteTensor<f32, R> {
-        let shape: [usize; R] = self.source.element_shape.clone().try_into().expect("Shape length mismatch");
+        let shape: [usize; R] = self.source.element_shape.as_ref().try_into()
+            .expect("Shape length mismatch in Dequantize::to_concrete");
         materialize_expr(self, shape)
     }
 
@@ -203,10 +223,13 @@ impl<const R: usize> ConcreteTensor<f32, R> {
     /// Instead of dequantizing the entire RHS matrix, it processes block-by-block
     /// with SIMD acceleration.
     ///
-    /// The RHS is always 2D (K x N), while the LHS can have arbitrary batch dimensions.
+    /// The RHS must be 2D (K x N), while the LHS can have arbitrary batch dimensions.
+    ///
+    /// # Panics
+    /// Panics if rhs is not 2D.
     pub fn q_mat_mul<B: GgufBlock + Sync>(
         &self,
-        rhs: &QuantizedTensor<B, 2>,
+        rhs: &QuantizedTensor<B>,
     ) -> ConcreteTensor<f32, R>
     where
         B::Dequantized: AsRef<[f32]>,
@@ -214,10 +237,17 @@ impl<const R: usize> ConcreteTensor<f32, R> {
     {
         const { assert!(R >= 2, "q_mat_mul requires at least 2 dimensions") };
 
+        let rhs_shape = rhs.element_shape();
+        assert_eq!(
+            rhs_shape.len(),
+            2,
+            "q_mat_mul requires 2D weight tensor, got {}D",
+            rhs_shape.len()
+        );
+
         let lhs_shape = self.layout().shape();
         let m = lhs_shape[R - 2];
         let k = lhs_shape[R - 1];
-        let rhs_shape = rhs.element_shape();
         // Weight is stored as [out_features, in_features] to match GPU convention
         let n = rhs_shape[0];  // out_features
         let k2 = rhs_shape[1]; // in_features
@@ -676,7 +706,7 @@ mod tests {
         let blocks = blocks_vec.into_boxed_slice();
 
         let quantized = QuantizedTensor::from_blocks(shape, blocks);
-        let dequantized = quantized.dequantize();
+        let dequantized = quantized.dequantize::<2>();
 
         // Verify dequantization: each value should be scale * data[i] = 0.5 * i
         for i in 0..32 {
@@ -705,7 +735,7 @@ mod tests {
         let blocks = blocks_vec.into_boxed_slice();
 
         let quantized = QuantizedTensor::from_blocks(shape, blocks);
-        let lazy = quantized.dequantize_lazy();
+        let lazy = quantized.dequantize_lazy::<2>();
 
         // Test layout methods
         assert_eq!(lazy.layout().num_elements(), 32);
@@ -795,7 +825,7 @@ mod tests {
         // Compute using dequantize + regular matmul
         // Since qmatmul does A @ W.T and W is [N, K], we need A @ W.T
         // Regular matmul expects [K, N], so we transpose dequantized weight
-        let rhs_dequantized = rhs.dequantize();
+        let rhs_dequantized = rhs.dequantize::<2>();
         let rhs_tensor = crate::Tensor::new(rhs_dequantized);
         let rhs_transposed = rhs_tensor.transpose(0, 1).to_concrete();
         let result_dequantized = lhs.matmul_ref(rhs_transposed.inner());
@@ -837,13 +867,13 @@ mod tests {
             bytes[2 + i] = i as u8;
         }
 
-        let tensor = QuantizedTensor::<BlockQ8_0, 2>::from_raw_bytes(shape, &bytes);
+        let tensor = QuantizedTensor::<BlockQ8_0>::from_raw_bytes(shape, &bytes);
 
         assert_eq!(tensor.element_shape(), &[1, 32]);
         assert_eq!(tensor.block_count(), 1);
 
         // Verify dequantization
-        let dequantized = tensor.dequantize();
+        let dequantized = tensor.dequantize::<2>();
         for i in 0..32 {
             let expected = i as f32;
             let actual = dequantized.get([0, i]);
@@ -915,7 +945,7 @@ mod tests {
 
         // Compare with dequantize + regular batched matmul for each batch
         // qmatmul computes: C = A @ W.T where W is [N, K]
-        let rhs_dequantized = rhs.dequantize();
+        let rhs_dequantized = rhs.dequantize::<2>();
         for b in 0..batch {
             for i in 0..m {
                 for j in 0..n {
@@ -975,7 +1005,7 @@ mod tests {
 
         // Compare with dequantize for spot checks
         // qmatmul computes: C = A @ W.T where W is [N, K]
-        let rhs_dequantized = rhs.dequantize();
+        let rhs_dequantized = rhs.dequantize::<2>();
         for bi in 0..b1 {
             for bj in 0..b2 {
                 for i in 0..m {
@@ -1037,7 +1067,7 @@ mod tests {
             }
         }
 
-        let rhs = QuantizedTensor::<BlockQ4_0, 2>::from_raw_bytes(rhs_shape, &raw_bytes);
+        let rhs = QuantizedTensor::<BlockQ4_0>::from_raw_bytes(rhs_shape, &raw_bytes);
 
         // Compute using q_mat_mul
         let result = lhs.q_mat_mul(&rhs);
@@ -1046,7 +1076,7 @@ mod tests {
         assert_eq!(result.layout().shape(), &[m, n]);
 
         // Compare with dequantize + manual matmul
-        let rhs_dequantized = rhs.dequantize();
+        let rhs_dequantized = rhs.dequantize::<2>();
         for i in 0..m {
             for j in 0..n {
                 // qmatmul computes: C[i, j] = sum_l A[i, l] * W[j, l]
@@ -1105,7 +1135,7 @@ mod tests {
             }
         }
 
-        let weights = QuantizedTensor::<BlockQ4_0, 2>::from_raw_bytes(weight_shape, &raw_bytes);
+        let weights = QuantizedTensor::<BlockQ4_0>::from_raw_bytes(weight_shape, &raw_bytes);
 
         // Compute using q_mat_mul
         let result = lhs.q_mat_mul(&weights);
@@ -1114,7 +1144,7 @@ mod tests {
         assert_eq!(result.layout().shape(), &[batch, seq_len, out_features]);
 
         // Compare with dequantize + manual matmul for the first few positions
-        let weights_dequantized = weights.dequantize();
+        let weights_dequantized = weights.dequantize::<2>();
         for b in 0..batch {
             for s in 0..seq_len.min(2) {
                 for o in 0..out_features.min(10) {

@@ -7,7 +7,7 @@ use fusor_cpu::GgmlType;
 ///
 /// Computes `output = input @ weight.T + bias` using quantized matrix multiplication.
 pub struct Linear<T: SimdElement> {
-    weight: QMatrix<2>,
+    weight: QMatrix,
     bias: Option<Tensor<1, T>>,
 }
 
@@ -16,7 +16,7 @@ impl<T: SimdElement> Linear<T> {
     ///
     /// Weight shape: (out_features, in_features)
     /// Bias shape: (out_features,)
-    pub fn new(weight: QMatrix<2>, bias: Option<Tensor<1, T>>) -> Self {
+    pub fn new(weight: QMatrix, bias: Option<Tensor<1, T>>) -> Self {
         Self { weight, bias }
     }
 
@@ -50,7 +50,7 @@ impl Linear<f32> {
     pub fn load(device: &Device, vb: &mut VarBuilder) -> crate::Result<Self> {
         let weight = vb.get("weight", device)?;
         let bias: Option<Tensor<1, f32>> = vb.get("bias", device).ok().map(|b| {
-            let dequant: Tensor<2, f32> = b.dequantize();
+            let dequant: Tensor<2, f32> = b.dequantize::<2>();
             // The bias is stored as 2D in GGUF, squeeze to 1D
             let shape = dequant.shape();
             if shape[1] == 1 {

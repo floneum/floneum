@@ -5,7 +5,36 @@
 
 use crate::{Device, Tensor};
 use fusor_core::QMatrix as GpuQMatrix;
-use fusor_cpu::{BlockQ4K, BlockQ4_0, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, QuantizedTensor};
+use fusor_cpu::{ABox, AVec, BlockQ4K, BlockQ4_0, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, Layout, QuantizedTensor};
+
+/// CPU tensor with F32 data (not quantized).
+///
+/// This stores unquantized f32 data with a dynamic shape, matching the interface
+/// of quantized tensors for uniform handling in `QMatrix`.
+#[derive(Clone)]
+pub struct CpuF32Tensor {
+    /// The f32 data stored in aligned memory
+    data: ABox<[f32]>,
+    /// The shape of the tensor
+    shape: Box<[usize]>,
+}
+
+impl CpuF32Tensor {
+    /// Create a new CpuF32Tensor from data and shape.
+    pub fn new(data: ABox<[f32]>, shape: Box<[usize]>) -> Self {
+        Self { data, shape }
+    }
+
+    /// Returns the shape of the tensor.
+    pub fn shape(&self) -> &[usize] {
+        &self.shape
+    }
+
+    /// Returns a reference to the underlying data.
+    pub fn data(&self) -> &ABox<[f32]> {
+        &self.data
+    }
+}
 
 /// Unified quantized tensor type that holds either CPU or GPU quantized data.
 ///
@@ -15,24 +44,24 @@ use fusor_cpu::{BlockQ4K, BlockQ4_0, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, Q
 /// The CPU variants are parameterized by block type at compile time, while
 /// the GPU variant uses runtime type information via `GgmlType`.
 #[derive(Clone)]
-pub enum QMatrix<const R: usize> {
+pub enum QMatrix {
     /// CPU quantized tensor with Q4_0 quantization (4-bit, block size 32)
-    CpuQ4_0(QuantizedTensor<BlockQ4_0, R>),
+    CpuQ4_0(QuantizedTensor<BlockQ4_0>),
     /// CPU quantized tensor with Q5_0 quantization (5-bit, block size 32)
-    CpuQ5_0(QuantizedTensor<BlockQ5_0, R>),
+    CpuQ5_0(QuantizedTensor<BlockQ5_0>),
     /// CPU quantized tensor with Q8_0 quantization (8-bit, block size 32)
-    CpuQ8_0(QuantizedTensor<BlockQ8_0, R>),
+    CpuQ8_0(QuantizedTensor<BlockQ8_0>),
     /// CPU quantized tensor with Q4K quantization (4-bit, block size 256)
-    CpuQ4K(QuantizedTensor<BlockQ4K, R>),
+    CpuQ4K(QuantizedTensor<BlockQ4K>),
     /// CPU quantized tensor with Q6K quantization (6-bit, block size 256)
-    CpuQ6K(QuantizedTensor<BlockQ6K, R>),
+    CpuQ6K(QuantizedTensor<BlockQ6K>),
     /// CPU tensor with F32 data (not quantized)
-    CpuF32(fusor_cpu::ConcreteTensor<f32, R>),
+    CpuF32(CpuF32Tensor),
     /// GPU quantized matrix (type-erased, uses runtime GgmlType)
     Gpu(GpuQMatrix),
 }
 
-impl<const R: usize> QMatrix<R> {
+impl QMatrix {
     /// Returns the quantization type (e.g., Q4_0, Q8_0, Q4K, etc.)
     pub fn ggml_type(&self) -> GgmlType {
         match self {
@@ -66,7 +95,7 @@ impl<const R: usize> QMatrix<R> {
             QMatrix::CpuQ8_0(t) => t.element_shape(),
             QMatrix::CpuQ4K(t) => t.element_shape(),
             QMatrix::CpuQ6K(t) => t.element_shape(),
-            QMatrix::CpuF32(t) => t.layout().shape(),
+            QMatrix::CpuF32(t) => t.shape(),
             QMatrix::Gpu(m) => m.shape(),
         }
     }
@@ -98,10 +127,11 @@ impl<const R: usize> QMatrix<R> {
     /// Panics if the quantization type is not supported.
     pub fn from_raw_bytes(
         device: &Device,
-        shape: [usize; R],
+        shape: impl Into<Box<[usize]>>,
         bytes: &[u8],
         ty: GgmlType,
     ) -> Result<Self, fusor_core::GgufReadError> {
+        let shape = shape.into();
         match device {
             Device::Cpu => Ok(match ty {
                 GgmlType::Q4_0 => {
@@ -125,13 +155,14 @@ impl<const R: usize> QMatrix<R> {
                         .chunks_exact(4)
                         .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
                         .collect();
-                    QMatrix::CpuF32(fusor_cpu::ConcreteTensor::from_slice(shape, &f32_data))
+                    let mut data = AVec::<f32>::with_capacity(64, f32_data.len());
+                    data.extend_from_slice(&f32_data);
+                    QMatrix::CpuF32(CpuF32Tensor::new(data.into_boxed_slice(), shape))
                 }
                 _ => panic!("Unsupported quantization type for CPU: {:?}", ty),
             }),
             Device::Gpu(gpu_device) => {
-                let boxed_shape: Box<[usize]> = shape.into();
-                let q_matrix = GpuQMatrix::from_parts(gpu_device, bytes, boxed_shape, ty)?;
+                let q_matrix = GpuQMatrix::from_parts(gpu_device, bytes, shape, ty)?;
                 Ok(QMatrix::Gpu(q_matrix))
             }
         }
@@ -140,14 +171,32 @@ impl<const R: usize> QMatrix<R> {
     /// Dequantize to an f32 tensor.
     ///
     /// This converts the quantized tensor to full-precision f32.
-    pub fn dequantize(&self) -> Tensor<R, f32> {
+    ///
+    /// # Panics
+    /// Panics if the tensor's rank doesn't match R.
+    pub fn dequantize<const R: usize>(&self) -> Tensor<R, f32> {
         match self {
-            QMatrix::CpuQ4_0(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize())),
-            QMatrix::CpuQ5_0(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize())),
-            QMatrix::CpuQ8_0(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize())),
-            QMatrix::CpuQ4K(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize())),
-            QMatrix::CpuQ6K(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize())),
-            QMatrix::CpuF32(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.clone())),
+            QMatrix::CpuQ4_0(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize::<R>())),
+            QMatrix::CpuQ5_0(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize::<R>())),
+            QMatrix::CpuQ8_0(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize::<R>())),
+            QMatrix::CpuQ4K(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize::<R>())),
+            QMatrix::CpuQ6K(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize::<R>())),
+            QMatrix::CpuF32(t) => {
+                let shape = t.shape();
+                assert_eq!(
+                    shape.len(),
+                    R,
+                    "CpuF32 rank {} doesn't match expected rank {}",
+                    shape.len(),
+                    R
+                );
+                let arr_shape: [usize; R] = shape.try_into().unwrap();
+                let concrete = fusor_cpu::ConcreteTensor::from_parts(
+                    Layout::contiguous(&arr_shape),
+                    t.data().clone(),
+                );
+                Tensor::Cpu(fusor_cpu::Tensor::new(concrete))
+            }
             QMatrix::Gpu(m) => Tensor::Gpu(m.dequantize()),
         }
     }
@@ -178,7 +227,7 @@ mod tests {
             }
         }
 
-        let qgpuor: QMatrix<2> =
+        let qgpuor: QMatrix =
             QMatrix::from_raw_bytes(&Device::Cpu, shape, &raw_bytes, GgmlType::Q8_0).unwrap();
 
         assert!(qgpuor.is_cpu());
@@ -204,10 +253,10 @@ mod tests {
             raw_bytes[2 + i] = i as u8;
         }
 
-        let qgpuor: QMatrix<2> =
+        let qgpuor: QMatrix =
             QMatrix::from_raw_bytes(&Device::Cpu, shape, &raw_bytes, GgmlType::Q8_0).unwrap();
 
-        let dequantized = qgpuor.dequantize();
+        let dequantized = qgpuor.dequantize::<2>();
         assert!(dequantized.is_cpu());
 
         // Verify the dequantized values
@@ -254,7 +303,7 @@ mod tests {
             raw_bytes[block_size_bytes + 2 + i] = 2i8 as u8; // all 2s
         }
 
-        let qmatrix: QMatrix<2> =
+        let qmatrix: QMatrix =
             QMatrix::from_raw_bytes(&Device::Cpu, shape, &raw_bytes, GgmlType::Q8_0).unwrap();
 
         // Create input tensor [1, 32] with values 0.5 for each element
@@ -301,7 +350,7 @@ mod tests {
         let weight_data: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let weight_bytes: Vec<u8> = weight_data.iter().flat_map(|f| f.to_le_bytes()).collect();
 
-        let qmatrix: QMatrix<2> =
+        let qmatrix: QMatrix =
             QMatrix::from_raw_bytes(&Device::Cpu, shape, &weight_bytes, GgmlType::F32).unwrap();
 
         // Create input tensor [1, 4] with values [1, 1, 1, 1]

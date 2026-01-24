@@ -10,7 +10,7 @@ use fusor_cpu::MapLayout;
 /// Embedding table shape: (num_embeddings, embedding_dim)
 #[derive(Clone)]
 pub struct Embedding<D: SimdElement> {
-    embeddings_quantized: Option<QMatrix<2>>,
+    embeddings_quantized: Option<QMatrix>,
     embeddings: Tensor<2, D, ConcreteTensor<D, 2>>,
     num_embeddings: usize,
     embedding_dim: usize,
@@ -88,8 +88,8 @@ impl Embedding<f32> {
     /// Create a new embedding layer from a quantized matrix.
     ///
     /// The quantized matrix is dequantized to f32 for efficient lookup.
-    pub fn new(embeddings_quantized: QMatrix<2>) -> Self {
-        let embeddings: Tensor<2, f32> = embeddings_quantized.dequantize();
+    pub fn new(embeddings_quantized: QMatrix) -> Self {
+        let embeddings: Tensor<2, f32> = embeddings_quantized.dequantize::<2>();
         let shape = embeddings.shape();
         let num_embeddings = shape[0];
         let embedding_dim = shape[1];
@@ -133,7 +133,7 @@ impl Embedding<f32> {
     }
 
     /// Get the quantized embedding table if available.
-    pub fn embeddings_quantized(&self) -> &QMatrix<2> {
+    pub fn embeddings_quantized(&self) -> &QMatrix {
         self.embeddings_quantized.as_ref().expect("No quantized embeddings available")
     }
 }

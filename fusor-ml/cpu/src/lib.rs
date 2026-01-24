@@ -2,7 +2,6 @@
 
 use std::ops::Deref;
 
-use aligned_vec::ABox;
 use pulp::Simd;
 use pulp::bytemuck::Pod;
 
@@ -44,8 +43,12 @@ pub use tensor::{FloatOps, Scalar, Tensor};
 // Re-export SlidingWindow from fusor-types
 pub use fusor_types::SlidingWindow;
 
-// Import Layout for ResolvedTensor trait
-use fusor_types::Layout;
+// Re-export Layout from fusor-types for public API
+pub use fusor_types::Layout;
+
+// Re-export aligned_vec types for use by dependent crates
+pub use aligned_vec::ABox;
+pub use aligned_vec::AVec;
 
 // Re-export GGUF types for convenience
 pub use fusor_gguf::{BlockQ4_0, BlockQ4K, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, GgufBlock};

@@ -18,7 +18,7 @@ mod varbuilder;
 
 pub use varbuilder::{ShardedVarBuilder, VarBuilder};
 
-pub use quantized::QMatrix;
+pub use quantized::{CpuF32Tensor, QMatrix};
 
 use std::ops::{Deref, Range};
 
@@ -1022,13 +1022,21 @@ where
     /// in quantized format (e.g., from GGUF model files).
     ///
     /// # Arguments
-    /// * `weights` - A quantized 2D weight matrix
+    /// * `weights` - A quantized weight matrix (must be 2D)
     ///
     /// # Panics
     /// * If attempting to mix CPU and GPU tensors (self on CPU, weights on GPU or vice versa)
     /// * If R < 2 (matrix multiplication requires at least 2 dimensions)
-    pub fn q_mat_mul(&self, weights: &crate::QMatrix<2>) -> Tensor<R, f32> {
+    /// * If weights is not 2D
+    pub fn q_mat_mul(&self, weights: &crate::QMatrix) -> Tensor<R, f32> {
         use crate::QMatrix;
+
+        assert_eq!(
+            weights.shape().len(),
+            2,
+            "q_mat_mul requires 2D weight tensor, got {}D",
+            weights.shape().len()
+        );
 
         match (self, weights) {
             // CPU path - dispatch based on block type
@@ -1050,14 +1058,20 @@ where
             )),
             // F32 is not quantized, use regular matmul with transpose
             // Weight is [N, K] (out_features, in_features), we need input @ weight.T
-            (Tensor::Cpu(lhs), QMatrix::CpuF32(rhs)) => {
-                let rhs_layout = rhs.layout();
-                let rhs_shape = rhs_layout.shape();
-                let n = rhs_shape[0]; // out_features
-                let k = rhs_shape[1]; // in_features
+            (Tensor::Cpu(lhs), QMatrix::CpuF32(t)) => {
+                let shape = t.shape();
+                let n = shape[0]; // out_features
+                let k = shape[1]; // in_features
+
+                // Create 2D ConcreteTensor from data and shape
+                let rhs_concrete: fusor_cpu::ConcreteTensor<f32, 2> =
+                    fusor_cpu::ConcreteTensor::from_parts(
+                        fusor_cpu::Layout::contiguous(&[n, k]),
+                        t.data().clone(),
+                    );
 
                 // Transpose weight from [N, K] to [K, N]
-                let rhs_tensor = fusor_cpu::Tensor::new(rhs.clone());
+                let rhs_tensor = fusor_cpu::Tensor::new(rhs_concrete);
                 let rhs_transposed = rhs_tensor.transpose(0, 1);
 
                 // Reshape to R dimensions: [1, 1, ..., K, N]

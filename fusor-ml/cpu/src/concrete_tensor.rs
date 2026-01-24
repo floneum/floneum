@@ -191,8 +191,8 @@ impl<T: SimdElement, const R: usize> ConcreteTensor<T, R> {
         self.backing[idx] = value;
     }
 
-    /// Create a new tensor from existing layout and backing data
-    pub(crate) fn from_parts(layout: Layout, backing: ABox<[T]>) -> Self {
+    /// Create a new tensor from existing layout and backing data.
+    pub fn from_parts(layout: Layout, backing: ABox<[T]>) -> Self {
         Self { layout, backing }
     }
 
