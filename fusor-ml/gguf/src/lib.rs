@@ -1,5 +1,8 @@
 //! Support for [GGUF](https://github.com/ggml-org/ggml/blob/master/docs/gguf.md) files
 
+// Enable NEON dot product intrinsics for faster quantized matmul on Apple Silicon
+#![cfg_attr(target_arch = "aarch64", feature(stdarch_neon_dotprod))]
+
 // Tensor layout is described at https://github.com/ggml-org/llama.cpp/wiki/Tensor-Encoding-Schemes
 // Modified from https://github.com/huggingface/candle/blob/e286cf7cc9e34bc426a542264b818e35e6eed05b/candle-core/src/quantized/gguf_file.rs#L31
 
@@ -861,22 +864,11 @@ impl GgufBlock for BlockQ4_0 {
             let y_lo = vld1q_s8(y.data.as_ptr());
             let y_hi = vld1q_s8(y.data.as_ptr().add(16));
 
-            // Multiply and accumulate
-            let prod_lo_a = vmull_s8(vget_low_s8(q4_lo), vget_low_s8(y_lo));
-            let prod_lo_b = vmull_high_s8(q4_lo, y_lo);
-            let prod_hi_a = vmull_s8(vget_low_s8(q4_hi), vget_low_s8(y_hi));
-            let prod_hi_b = vmull_high_s8(q4_hi, y_hi);
-
-            // Sum i16 products to i32
-            let sum0 = vpaddlq_s16(prod_lo_a);
-            let sum1 = vpaddlq_s16(prod_lo_b);
-            let sum2 = vpaddlq_s16(prod_hi_a);
-            let sum3 = vpaddlq_s16(prod_hi_b);
-
-            let sum_a = vaddq_s32(sum0, sum1);
-            let sum_b = vaddq_s32(sum2, sum3);
-            let sum_total = vaddq_s32(sum_a, sum_b);
-            let sum = vaddvq_s32(sum_total);
+            // Use vdotq_s32 for fast i8x4 dot products
+            let acc = vdupq_n_s32(0);
+            let acc = vdotq_s32(acc, q4_lo, y_lo);
+            let acc = vdotq_s32(acc, q4_hi, y_hi);
+            let sum = vaddvq_s32(acc);
 
             let scale = self.scale.to_f32() * y.scale.to_f32();
             (sum as f32) * scale
@@ -1180,27 +1172,14 @@ impl GgufBlock for BlockQ8_0 {
             let y0 = vld1q_s8(y.data.as_ptr());
             let y1 = vld1q_s8(y.data.as_ptr().add(16));
 
-            // Multiply and accumulate using widening multiply
-            // vdotq_s32 would be faster but requires ARMv8.2 with dotprod
-            // Using vmull approach: i8 x i8 -> i16, then sum to i32
-            let prod0_lo = vmull_s8(vget_low_s8(x0), vget_low_s8(y0));
-            let prod0_hi = vmull_high_s8(x0, y0);
-            let prod1_lo = vmull_s8(vget_low_s8(x1), vget_low_s8(y1));
-            let prod1_hi = vmull_high_s8(x1, y1);
+            // Use vdotq_s32: computes 4 simultaneous i8x4 dot products per instruction
+            // Each lane accumulates: a[i*4+0]*b[i*4+0] + a[i*4+1]*b[i*4+1] + a[i*4+2]*b[i*4+2] + a[i*4+3]*b[i*4+3]
+            let acc = vdupq_n_s32(0);
+            let acc = vdotq_s32(acc, x0, y0);
+            let acc = vdotq_s32(acc, x1, y1);
 
-            // Sum the i16 products to i32
-            let sum0 = vpaddlq_s16(prod0_lo);
-            let sum1 = vpaddlq_s16(prod0_hi);
-            let sum2 = vpaddlq_s16(prod1_lo);
-            let sum3 = vpaddlq_s16(prod1_hi);
-
-            // Combine all sums
-            let sum_a = vaddq_s32(sum0, sum1);
-            let sum_b = vaddq_s32(sum2, sum3);
-            let sum_total = vaddq_s32(sum_a, sum_b);
-
-            // Horizontal sum
-            let sum = vaddvq_s32(sum_total);
+            // Horizontal sum of 4 i32 lanes
+            let sum = vaddvq_s32(acc);
 
             let scale = self.scale.to_f32() * y.scale.to_f32();
             (sum as f32) * scale
@@ -1439,6 +1418,9 @@ impl GgufBlock for BlockQ4K {
             let mut offset_y_sum = 0.0f32;
             let mut pair_index = 0;
 
+            // Vector of ones for computing activation sums via dot product
+            let ones = vdupq_n_s8(1);
+
             for chunk_index in (0..128).step_by(32) {
                 let out_chunk_index = chunk_index * 2;
 
@@ -1458,42 +1440,28 @@ impl GgufBlock for BlockQ4K {
                 let y_hi_0 = vld1q_s8(y.data.as_ptr().add(out_chunk_index + 32));
                 let y_hi_1 = vld1q_s8(y.data.as_ptr().add(out_chunk_index + 48));
 
-                // Low nibbles integer dot product: sum(q_lo * y_lo)
-                let prod_lo_0a = vmull_s8(vget_low_s8(q_lo_0), vget_low_s8(y_lo_0));
-                let prod_lo_0b = vmull_high_s8(q_lo_0, y_lo_0);
-                let prod_lo_1a = vmull_s8(vget_low_s8(q_lo_1), vget_low_s8(y_lo_1));
-                let prod_lo_1b = vmull_high_s8(q_lo_1, y_lo_1);
+                // Low nibbles integer dot product using vdotq_s32
+                let acc_lo = vdupq_n_s32(0);
+                let acc_lo = vdotq_s32(acc_lo, q_lo_0, y_lo_0);
+                let acc_lo = vdotq_s32(acc_lo, q_lo_1, y_lo_1);
+                let int_dot_lo = vaddvq_s32(acc_lo);
 
-                let sum_lo = vaddq_s32(
-                    vaddq_s32(vpaddlq_s16(prod_lo_0a), vpaddlq_s16(prod_lo_0b)),
-                    vaddq_s32(vpaddlq_s16(prod_lo_1a), vpaddlq_s16(prod_lo_1b)),
-                );
-                let int_dot_lo = vaddvq_s32(sum_lo);
+                // High nibbles integer dot product
+                let acc_hi = vdupq_n_s32(0);
+                let acc_hi = vdotq_s32(acc_hi, q_hi_0, y_hi_0);
+                let acc_hi = vdotq_s32(acc_hi, q_hi_1, y_hi_1);
+                let int_dot_hi = vaddvq_s32(acc_hi);
 
-                // High nibbles integer dot product: sum(q_hi * y_hi)
-                let prod_hi_0a = vmull_s8(vget_low_s8(q_hi_0), vget_low_s8(y_hi_0));
-                let prod_hi_0b = vmull_high_s8(q_hi_0, y_hi_0);
-                let prod_hi_1a = vmull_s8(vget_low_s8(q_hi_1), vget_low_s8(y_hi_1));
-                let prod_hi_1b = vmull_high_s8(q_hi_1, y_hi_1);
+                // Sum of y values for offset correction using vdotq_s32 with ones
+                let y_sum_acc_lo = vdupq_n_s32(0);
+                let y_sum_acc_lo = vdotq_s32(y_sum_acc_lo, y_lo_0, ones);
+                let y_sum_acc_lo = vdotq_s32(y_sum_acc_lo, y_lo_1, ones);
+                let y_sum_lo = vaddvq_s32(y_sum_acc_lo);
 
-                let sum_hi = vaddq_s32(
-                    vaddq_s32(vpaddlq_s16(prod_hi_0a), vpaddlq_s16(prod_hi_0b)),
-                    vaddq_s32(vpaddlq_s16(prod_hi_1a), vpaddlq_s16(prod_hi_1b)),
-                );
-                let int_dot_hi = vaddvq_s32(sum_hi);
-
-                // Sum of y values for offset correction: sum(y_lo) and sum(y_hi)
-                let y_lo_sum = vaddq_s32(
-                    vpaddlq_s16(vpaddlq_s8(y_lo_0)),
-                    vpaddlq_s16(vpaddlq_s8(y_lo_1)),
-                );
-                let y_sum_lo = vaddvq_s32(y_lo_sum);
-
-                let y_hi_sum = vaddq_s32(
-                    vpaddlq_s16(vpaddlq_s8(y_hi_0)),
-                    vpaddlq_s16(vpaddlq_s8(y_hi_1)),
-                );
-                let y_sum_hi = vaddvq_s32(y_hi_sum);
+                let y_sum_acc_hi = vdupq_n_s32(0);
+                let y_sum_acc_hi = vdotq_s32(y_sum_acc_hi, y_hi_0, ones);
+                let y_sum_acc_hi = vdotq_s32(y_sum_acc_hi, y_hi_1, ones);
+                let y_sum_hi = vaddvq_s32(y_sum_acc_hi);
 
                 // Apply group scales and accumulate
                 let low_scale = scales[pair_index] as f32;

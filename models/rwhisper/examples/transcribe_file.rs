@@ -8,7 +8,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // Create a new large whisper model
     eprintln!("Building model...");
     let model = WhisperBuilder::default()
-        .with_source(WhisperSource::large_v3_turbo())
+        .with_source(WhisperSource::tiny_en())
         .build()
         .await?;
     eprintln!("Model built successfully");

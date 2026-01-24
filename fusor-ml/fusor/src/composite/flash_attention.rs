@@ -1,8 +1,8 @@
 //! Flash attention operations that work on both CPU and GPU backends.
 
 use crate::{
-    AddOp, ConcreteTensor, DivOp, ExpOp, FloatOps, Tensor, MulOp, SimdBinaryOp, SimdElement,
-    SimdUnaryOp, SubOp,
+    AddOp, ConcreteTensor, DivOp, ExpOp, FloatOps, MulOp, SimdBinaryOp, SimdElement, SimdUnaryOp,
+    SubOp, Tensor,
 };
 use fusor_core::{DataType, FloatDataType};
 use fusor_cpu::{MatmulImpl, MaxOp, SimdReduceOp, SumOp};
@@ -90,34 +90,41 @@ where
         let num_key_value_groups = num_heads / num_kv_heads;
 
         // For GQA/MQA, we need to expand K and V to match Q heads
-        let (k_expanded, v_expanded): (Tensor<4, D, _>, Tensor<4, D, _>) = if num_key_value_groups > 1 {
-            // Expand K and V from [batch, num_kv_heads, kv_seq_len, head_dim]
-            // to [batch, num_heads, kv_seq_len, head_dim]
-            let k_reshaped: Tensor<5, D, _> = k.reshape([batch, num_kv_heads, 1, kv_seq_len, head_dim]);
-            let v_reshaped: Tensor<5, D, _> = v.reshape([batch, num_kv_heads, 1, kv_seq_len, head_dim]);
+        let (k_expanded, v_expanded): (Tensor<4, D, _>, Tensor<4, D, _>) =
+            if num_key_value_groups > 1 {
+                // Expand K and V from [batch, num_kv_heads, kv_seq_len, head_dim]
+                // to [batch, num_heads, kv_seq_len, head_dim]
+                let k_reshaped: Tensor<5, D, _> =
+                    k.reshape([batch, num_kv_heads, 1, kv_seq_len, head_dim]);
+                let v_reshaped: Tensor<5, D, _> =
+                    v.reshape([batch, num_kv_heads, 1, kv_seq_len, head_dim]);
 
-            let k_broadcast = k_reshaped.broadcast_as([
-                batch,
-                num_kv_heads,
-                num_key_value_groups,
-                kv_seq_len,
-                head_dim,
-            ]);
-            let v_broadcast = v_reshaped.broadcast_as([
-                batch,
-                num_kv_heads,
-                num_key_value_groups,
-                kv_seq_len,
-                head_dim,
-            ]);
+                let k_broadcast = k_reshaped.broadcast_as([
+                    batch,
+                    num_kv_heads,
+                    num_key_value_groups,
+                    kv_seq_len,
+                    head_dim,
+                ]);
+                let v_broadcast = v_reshaped.broadcast_as([
+                    batch,
+                    num_kv_heads,
+                    num_key_value_groups,
+                    kv_seq_len,
+                    head_dim,
+                ]);
 
-            (
-                k_broadcast.reshape([batch, num_heads, kv_seq_len, head_dim]).to_concrete(),
-                v_broadcast.reshape([batch, num_heads, kv_seq_len, head_dim]).to_concrete(),
-            )
-        } else {
-            (k.clone(), v.clone())
-        };
+                (
+                    k_broadcast
+                        .reshape([batch, num_heads, kv_seq_len, head_dim])
+                        .to_concrete(),
+                    v_broadcast
+                        .reshape([batch, num_heads, kv_seq_len, head_dim])
+                        .to_concrete(),
+                )
+            } else {
+                (k.clone(), v.clone())
+            };
 
         // Q @ K^T -> [batch, num_heads, q_seq_len, kv_seq_len]
         let k_t = k_expanded.transpose(2, 3);
@@ -131,11 +138,7 @@ where
             // Mask is [q_seq_len, kv_seq_len], broadcast to [batch, num_heads, q_seq_len, kv_seq_len]
             let mask_4d: Tensor<4, D, _> = m.reshape([1, 1, q_seq_len, kv_seq_len]);
             let mask_broadcast = mask_4d.broadcast_as([batch, num_heads, q_seq_len, kv_seq_len]);
-            scores_scaled.dispatch_pair_concrete(
-                &mask_broadcast,
-                |a, b| (a + b).to_concrete(),
-                |_, _| panic!("Cannot mix CPU and GPU tensors"),
-            )
+            (scores_scaled + mask_broadcast).to_concrete()
         } else {
             scores_scaled
         };
@@ -143,19 +146,11 @@ where
         // Softmax along last dimension
         // max(scores) for numerical stability
         let max_scores = scores_masked.max_keepdim::<3>(3);
-        let scores_shifted = scores_masked.dispatch_pair_concrete(
-            &max_scores,
-            |a, b| (a - b).to_concrete(),
-            |_, _| panic!("Cannot mix CPU and GPU tensors"),
-        );
+        let scores_shifted = scores_masked - max_scores;
         // Materialize exp_scores since sum_keepdim is a reduction that needs concrete data
-        let exp_scores = scores_shifted.exp().to_concrete();
+        let exp_scores: Tensor<4, D, fusor_cpu::Exp<D, 4, &fusor_cpu::Sub<D, 4, ConcreteTensor<D, 4>, ConcreteTensor<D, 4>>>> = scores_shifted.exp();
         let sum_exp = exp_scores.sum_keepdim::<3>(3);
-        let attn_weights = exp_scores.dispatch_pair_concrete(
-            &sum_exp,
-            |a, b| (a / b).to_concrete(),
-            |_, _| panic!("Cannot mix CPU and GPU tensors"),
-        );
+        let attn_weights = exp_scores / sum_exp;
 
         // attn_weights @ V -> [batch, num_heads, q_seq_len, head_dim]
         attn_weights.mat_mul(&v_expanded)

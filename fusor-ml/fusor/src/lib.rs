@@ -99,6 +99,7 @@ pub use fusor_cpu::{
     Tanh,
     TanhOp,
     Tensor as CpuTensor,
+    MapLayout
 };
 
 pub use fusor_core::Tensor as GpuTensor;

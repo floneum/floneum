@@ -2,7 +2,7 @@
 
 use crate::{ConcreteTensor, Device, SimdElement, Tensor, VarBuilder};
 use fusor_core::{DataType, FloatDataType};
-use fusor_cpu::FloatOps;
+use fusor_cpu::{FloatOps, TensorBacking};
 
 /// Layer Normalization.
 ///
@@ -52,10 +52,7 @@ where
     /// Forward pass for 2D input (batch, features).
     ///
     /// Normalizes over the last dimension (features).
-    pub fn forward_2d(
-        &self,
-        input: &Tensor<2, D, ConcreteTensor<D, 2>>,
-    ) -> Tensor<2, D, ConcreteTensor<D, 2>>
+    pub fn forward_2d<B>(&self, input: &Tensor<2, D, B>) -> Tensor<2, D, ConcreteTensor<D, 2>>
     where
         D: std::ops::Add<Output = D>
             + std::ops::Sub<Output = D>
@@ -67,6 +64,7 @@ where
         crate::DivOp: fusor_cpu::SimdBinaryOp<D>,
         fusor_cpu::SumOp: fusor_cpu::SimdReduceOp<D>,
         fusor_cpu::SqrtOp: fusor_cpu::SimdUnaryOp<D>,
+        B: TensorBacking<2, Elem = D>,
     {
         // Broadcast weight to input shape
         let weight_broadcast: Tensor<2, D, _> = self.weight.broadcast_as(input.shape());
@@ -83,10 +81,7 @@ where
     /// Forward pass for 3D input (batch, seq_len, features).
     ///
     /// Normalizes over the last dimension (features).
-    pub fn forward(
-        &self,
-        input: &Tensor<3, D, ConcreteTensor<D, 3>>,
-    ) -> Tensor<3, D, ConcreteTensor<D, 3>>
+    pub fn forward<B>(&self, input: &Tensor<3, D, B>) -> Tensor<3, D, ConcreteTensor<D, 3>>
     where
         D: std::ops::Add<Output = D>
             + std::ops::Sub<Output = D>
@@ -98,6 +93,7 @@ where
         crate::DivOp: fusor_cpu::SimdBinaryOp<D>,
         fusor_cpu::SumOp: fusor_cpu::SimdReduceOp<D>,
         fusor_cpu::SqrtOp: fusor_cpu::SimdUnaryOp<D>,
+        B: TensorBacking<3, Elem = D>,
     {
         // Broadcast weight to input shape
         let weight_broadcast: Tensor<3, D, _> = self.weight.broadcast_as(input.shape());
@@ -117,10 +113,13 @@ impl LayerNorm<1, f32> {
     ///
     /// This is significantly faster than the standard forward pass on CPU
     /// as it computes mean, variance, and normalization in fewer passes.
-    pub fn forward_fused(
+    pub fn forward_fused<B>(
         &self,
-        input: &Tensor<3, f32, ConcreteTensor<f32, 3>>,
-    ) -> Tensor<3, f32, ConcreteTensor<f32, 3>> {
+        input: &Tensor<3, f32, B>,
+    ) -> Tensor<3, f32, ConcreteTensor<f32, 3>>
+    where
+        B: TensorBacking<3, Elem = f32>,
+    {
         match input {
             Tensor::Cpu(t) => {
                 let contiguous = t.to_concrete();

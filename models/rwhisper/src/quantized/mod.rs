@@ -3,9 +3,7 @@
 use std::{num::NonZeroUsize, sync::Arc};
 
 use fusor::{
-    cache::{AttentionMask, KvCache, MaskCache, TensorCache},
-    layers::{Conv1d, Conv1dConfig, Embedding, LayerNorm, Linear},
-    Device, Error, Result, Tensor, VarBuilder,
+    Device, Error, MapLayout, Result, Tensor, VarBuilder, cache::{AttentionMask, KvCache, MaskCache, TensorCache}, layers::{Conv1d, Conv1dConfig, Embedding, LayerNorm, Linear}
 };
 use timestamps::extract_timestamps;
 
@@ -23,7 +21,9 @@ fn conv1d(
 ) -> Result<Conv1d<crate::WhisperDType>> {
     let weight_2d: Tensor<2, crate::WhisperDType> = vb.get("weight", device)?.dequantize();
     // Reshape from [out_channels, in_channels*kernel_size] to [out_channels, in_channels, kernel_size]
-    let weight: Tensor<3, crate::WhisperDType> = weight_2d.reshape([out_channels, in_channels, kernel_size]).to_concrete();
+    let weight: Tensor<3, crate::WhisperDType> = weight_2d
+        .reshape([out_channels, in_channels, kernel_size])
+        .to_concrete();
 
     let bias_2d: Tensor<2, crate::WhisperDType> = vb.get("bias", device)?.dequantize();
     // Squeeze to rank 1: assume shape is (1, out_channels) or (out_channels, 1)
@@ -124,10 +124,13 @@ impl MultiHeadAttention {
         Ok(self.out.forward(&wv))
     }
 
-    fn reshape_head(&self, x: &Tensor<3, crate::WhisperDType>) -> Tensor<4, crate::WhisperDType> {
+    fn reshape_head(
+        &self,
+        x: &Tensor<3, crate::WhisperDType>,
+    ) -> Tensor<4, crate::WhisperDType, MapLayout<crate::WhisperDType, 4>> {
         let [n_batch, n_ctx, n_state] = x.shape();
         let target_dims = [n_batch, n_ctx, self.n_head, n_state / self.n_head];
-        x.reshape(target_dims).transpose(1, 2).to_concrete()
+        x.reshape(target_dims).transpose(1, 2)
     }
 
     fn qkv_attention(
@@ -166,9 +169,7 @@ impl MultiHeadAttention {
             w.mat_mul(&v)
         };
 
-        let wv = wv_raw
-            .transpose(1, 2)
-            .flatten_last_n::<1, _>();
+        let wv = wv_raw.transpose(1, 2).flatten_last_n::<1, _>();
 
         Ok(wv)
     }
@@ -245,9 +246,12 @@ impl ResidualAttentionBlock {
             let attn_out = attn.forward(&ln_x, kv, None, attention_output)?;
             x = (&x + &attn_out).to_concrete();
         }
-        let mlp = self
-            .mlp_linear2
-            .forward(&self.mlp_linear1.forward(&self.mlp_ln.forward_fused(&x)).gelu());
+        let mlp = self.mlp_linear2.forward(
+            &self
+                .mlp_linear1
+                .forward(&self.mlp_ln.forward_fused(&x))
+                .gelu(),
+        );
         let result = (x + mlp).to_concrete();
 
         Ok(result)
@@ -267,7 +271,13 @@ fn sinusoids(length: usize, channels: usize, device: &Device) -> Tensor<2, crate
         .unsqueeze(1);
     let sh = [length, channels / 2];
     let scaled_time = (&arange.broadcast_as(sh) * &inv_timescales.broadcast_as(sh)).to_concrete();
-    Tensor::cat([scaled_time.sin().to_concrete(), scaled_time.cos().to_concrete()], 1)
+    Tensor::cat(
+        [
+            scaled_time.sin().to_concrete(),
+            scaled_time.cos().to_concrete(),
+        ],
+        1,
+    )
 }
 
 // https://github.com/openai/whisper/blob/f572f2161ba831bae131364c3bffdead7af6d210/whisper/model.py#L143
