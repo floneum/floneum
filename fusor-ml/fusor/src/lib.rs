@@ -415,11 +415,7 @@ where
         D: SimdElement + DataType,
     {
         match self {
-            Tensor::Cpu(t) => t
-                .layout()
-                .shape()
-                .try_into()
-                .expect("Shape length mismatch"),
+            Tensor::Cpu(t) => t.shape(),
             Tensor::Gpu(t) => *t.shape(),
         }
     }
@@ -1073,11 +1069,7 @@ where
                 // CPU flatten_last_n takes N where output = input - N + 1
                 // So we need CPU_N = FROM_END + 1 to match GPU semantics
                 // Calculate new shape manually since we can't do const arithmetic
-                let shape: [usize; R] = t
-                    .layout()
-                    .shape()
-                    .try_into()
-                    .expect("Shape length mismatch");
+                let shape = t.shape();
                 let new_shape: [usize; R2] = std::array::from_fn(|i| {
                     if i < R - 1 - FROM_END {
                         shape[i]
@@ -1111,11 +1103,7 @@ where
             Tensor::Cpu(t) => {
                 // Calculate new shape: first element is product of first FROM_START+1 dims
                 // remaining elements are the rest of the dimensions
-                let shape: [usize; R] = t
-                    .layout()
-                    .shape()
-                    .try_into()
-                    .expect("Shape length mismatch");
+                let shape = t.shape();
                 let new_shape: [usize; R2] = std::array::from_fn(|i| {
                     if i == 0 {
                         shape[..=FROM_START].iter().product()

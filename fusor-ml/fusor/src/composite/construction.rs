@@ -2,7 +2,6 @@
 
 use crate::{Device, Tensor, SimdElement};
 use fusor_core::DataType;
-use fusor_cpu::TensorBacking;
 
 impl<D> Tensor<1, D>
 where
@@ -58,11 +57,7 @@ where
     pub fn zeros_like(&self) -> Self {
         match self {
             Tensor::Cpu(t) => {
-                let shape: [usize; R] = t
-                    .layout()
-                    .shape()
-                    .try_into()
-                    .expect("Shape length mismatch");
+                let shape: [usize; R] = t.shape();
                 Tensor::Cpu(fusor_cpu::Tensor::zeros(shape))
             }
             Tensor::Gpu(t) => Tensor::Gpu(t.zeros_like()),

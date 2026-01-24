@@ -20,7 +20,7 @@ where
     ) -> Tensor<R2, D, ConcreteTensor<D, R2>> {
         match self {
             Tensor::Cpu(t) => {
-                let resolved_shape = new_shape.resolve_shape(t.layout().shape());
+                let resolved_shape = new_shape.resolve_shape(&t.shape());
                 Tensor::Cpu(t.reshape(resolved_shape).to_concrete())
             }
             Tensor::Gpu(t) => Tensor::Gpu(t.reshape(new_shape)),

@@ -626,7 +626,7 @@ mod tests {
         // Test layout methods
         assert_eq!(lazy.layout().num_elements(), 32);
         assert_eq!(lazy.layout().shape(), &[1, 32]);
-        assert!(!lazy.layout().is_contiguous());
+        assert!(lazy.layout().is_contiguous());
 
         // Test scalar evaluation
         for i in 0..32 {

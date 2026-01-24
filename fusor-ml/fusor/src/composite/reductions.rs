@@ -91,7 +91,7 @@ where
         match self {
             Tensor::Cpu(t) => {
                 let reduced = t.prod_axis::<OUT_RANK>(axis);
-                let original_shape: [usize; R] = t.layout().shape().try_into().expect("Shape mismatch");
+                let original_shape: [usize; R] = t.shape();
                 Tensor::Cpu(broadcast_reduced_to_original::<R, OUT_RANK, D>(
                     &reduced,
                     original_shape,
@@ -120,7 +120,7 @@ where
             Tensor::Cpu(t) => {
                 // CPU: reduce, then broadcast back to original shape
                 let reduced = t.sum_axis::<OUT_RANK>(axis);
-                let original_shape: [usize; R] = t.layout().shape().try_into().expect("Shape mismatch");
+                let original_shape: [usize; R] = t.shape();
                 Tensor::Cpu(broadcast_reduced_to_original::<R, OUT_RANK, D>(
                     &reduced,
                     original_shape,
@@ -143,7 +143,7 @@ where
         match self {
             Tensor::Cpu(t) => {
                 let reduced = t.max_axis::<OUT_RANK>(axis);
-                let original_shape: [usize; R] = t.layout().shape().try_into().expect("Shape mismatch");
+                let original_shape: [usize; R] = t.shape();
                 Tensor::Cpu(broadcast_reduced_to_original::<R, OUT_RANK, D>(
                     &reduced,
                     original_shape,
@@ -166,7 +166,7 @@ where
         match self {
             Tensor::Cpu(t) => {
                 let reduced = t.min_axis::<OUT_RANK>(axis);
-                let original_shape: [usize; R] = t.layout().shape().try_into().expect("Shape mismatch");
+                let original_shape: [usize; R] = t.shape();
                 Tensor::Cpu(broadcast_reduced_to_original::<R, OUT_RANK, D>(
                     &reduced,
                     original_shape,

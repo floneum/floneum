@@ -95,6 +95,15 @@ where
     E: SimdElement,
     T: TensorBacking<R, Elem = E>,
 {
+    /// Returns the shape of the tensor as a fixed-size array
+    pub fn shape(&self) -> [usize; R] {
+        self.inner
+            .layout()
+            .shape()
+            .try_into()
+            .expect("Shape length mismatch")
+    }
+
     /// Materialize the tensor to a ConcreteTensor
     pub fn to_concrete(&self) -> Tensor<R, ConcreteTensor<E, R>> {
         Tensor::new(self.inner.to_concrete())
