@@ -63,7 +63,6 @@ pub use fusor_cpu::{
     Exp2,
     Exp2Op,
     ExpOp,
-    Expr,
     // Float operations
     FloatOps,
     // Conditional operations
@@ -726,7 +725,7 @@ macro_rules! impl_tensor_unary_op_lazy {
         impl<const R: usize, D, B> Tensor<R, D, B>
         where
             D: SimdElement + DataType + FloatDataType,
-            B: TensorBacking<R, Elem = D> + Expr<Elem = D>,
+            B: TensorBacking<R, Elem = D>,
             fusor_cpu::$op: fusor_cpu::SimdUnaryOp<D>,
         {
             #[doc = concat!("Element-wise ", stringify!($method), " operation (lazy for CPU).")]
