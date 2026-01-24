@@ -109,18 +109,6 @@ impl<E: SimdElement, const R: usize> Expr for MapLayout<E, R> {
             simd_vec[0]
         }
     }
-
-    fn len(&self) -> usize {
-        self.layout.num_elements()
-    }
-
-    fn shape(&self) -> &[usize] {
-        self.layout.shape()
-    }
-
-    fn is_contiguous(&self) -> bool {
-        self.layout.is_contiguous()
-    }
 }
 
 impl<E: SimdElement, const R: usize> ResolvedTensor<R> for MapLayout<E, R> {

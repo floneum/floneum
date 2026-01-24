@@ -39,11 +39,11 @@ macro_rules! define_scalar_tensor_op {
             type Elem = E;
 
             fn layout(&self) -> Layout {
-                Layout::contiguous(Expr::shape(self))
+                Layout::contiguous(self.tensor.layout().shape())
             }
 
             fn to_concrete(&self) -> ConcreteTensor<E, R> {
-                let shape: [usize; R] = Expr::shape(&self.tensor)
+                let shape: [usize; R] = self.tensor.layout().shape()
                     .try_into()
                     .expect("Shape length mismatch");
                 materialize_expr(self, shape)
@@ -70,18 +70,6 @@ macro_rules! define_scalar_tensor_op {
                     self.tensor.eval_simd(simd, base_idx),
                     E::splat(simd, self.scalar),
                 )
-            }
-
-            fn len(&self) -> usize {
-                self.tensor.len()
-            }
-
-            fn shape(&self) -> &[usize] {
-                self.tensor.shape()
-            }
-
-            fn is_contiguous(&self) -> bool {
-                self.tensor.is_contiguous()
             }
         }
     };

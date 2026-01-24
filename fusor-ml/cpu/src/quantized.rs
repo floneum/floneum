@@ -11,9 +11,11 @@ use aligned_vec::{ABox, AVec};
 use fusor_gguf::GgufBlock;
 use pulp::Simd;
 
-use crate::expr::Expr;
+use fusor_types::Layout;
+
+use crate::expr::{materialize_expr, Expr};
 use crate::reduce::{SimdReduceOp, SumOp};
-use crate::{ConcreteTensor, MAX_SIMD_LANES, ResolvedTensor, SimdElement};
+use crate::{ConcreteTensor, MAX_SIMD_LANES, ResolvedTensor, SimdElement, TensorBacking};
 
 /// A tensor storing quantized blocks.
 ///
@@ -150,6 +152,23 @@ pub struct Dequantize<'a, B: GgufBlock, const R: usize> {
     source: &'a QuantizedTensor<B, R>,
 }
 
+impl<B: GgufBlock, const R: usize> TensorBacking<R> for Dequantize<'_, B, R>
+where
+    B::Dequantized: AsRef<[f32]>,
+{
+    type Elem = f32;
+
+    fn layout(&self) -> Layout {
+        // The layout of the dequantized tensor matches the source tensor's element shape
+        Layout::contiguous(&self.source.element_shape)
+    }
+
+    fn to_concrete(&self) -> ConcreteTensor<f32, R> {
+        let shape: [usize; R] = self.source.element_shape.clone().try_into().expect("Shape length mismatch");
+        materialize_expr(self, shape)
+    }
+}
+
 impl<B: GgufBlock, const R: usize> Expr for Dequantize<'_, B, R>
 where
     B::Dequantized: AsRef<[f32]>,
@@ -175,19 +194,6 @@ where
         }
         let (simd_vec, _) = f32::as_simd::<S>(&temp[..lane_count]);
         simd_vec[0]
-    }
-
-    fn len(&self) -> usize {
-        self.source.element_count()
-    }
-
-    fn shape(&self) -> &[usize] {
-        &self.source.element_shape
-    }
-
-    fn is_contiguous(&self) -> bool {
-        // Quantized data is not contiguous in the f32 sense
-        false
     }
 }
 
@@ -617,10 +623,10 @@ mod tests {
         let quantized = QuantizedTensor::from_blocks(shape, blocks);
         let lazy = quantized.dequantize_lazy();
 
-        // Test Expr trait methods
-        assert_eq!(lazy.len(), 32);
-        assert_eq!(lazy.shape(), &[1, 32]);
-        assert!(!lazy.is_contiguous());
+        // Test layout methods
+        assert_eq!(lazy.layout().num_elements(), 32);
+        assert_eq!(lazy.layout().shape(), &[1, 32]);
+        assert!(!lazy.layout().is_contiguous());
 
         // Test scalar evaluation
         for i in 0..32 {
@@ -657,7 +663,7 @@ mod tests {
         let result = lhs.q_mat_mul(&rhs);
 
         // Each output element should be sum of 32 ones = 32.0
-        assert_eq!(<ConcreteTensor<f32, 2> as Expr>::shape(&result), &[2, 32]);
+        assert_eq!(result.layout().shape(), &[2, 32]);
         for i in 0..2 {
             for j in 0..32 {
                 let val = result.get([i, j]);
@@ -711,8 +717,8 @@ mod tests {
 
         // Results should match
         assert_eq!(
-            <ConcreteTensor<f32, 2> as Expr>::shape(&result_quantized),
-            <ConcreteTensor<f32, 2> as Expr>::shape(&result_dequantized)
+            result_quantized.layout().shape(),
+            result_dequantized.layout().shape()
         );
         for i in 0..3 {
             for j in 0..64 {
@@ -817,7 +823,7 @@ mod tests {
         let result = lhs.q_mat_mul(&rhs);
 
         // Verify output shape
-        assert_eq!(<ConcreteTensor<f32, 3> as Expr>::shape(&result), &[batch, m, n]);
+        assert_eq!(result.layout().shape(), &[batch, m, n]);
 
         // Compare with dequantize + regular batched matmul for each batch
         // qmatmul computes: C = A @ W.T where W is [N, K]
@@ -875,7 +881,7 @@ mod tests {
         let result = lhs.q_mat_mul(&rhs);
 
         // Verify output shape
-        assert_eq!(<ConcreteTensor<f32, 4> as Expr>::shape(&result), &[b1, b2, m, n]);
+        assert_eq!(result.layout().shape(), &[b1, b2, m, n]);
 
         // Compare with dequantize for spot checks
         // qmatmul computes: C = A @ W.T where W is [N, K]
@@ -945,7 +951,7 @@ mod tests {
         let result = lhs.q_mat_mul(&rhs);
 
         // Verify output shape
-        assert_eq!(<ConcreteTensor<f32, 2> as Expr>::shape(&result), &[m, n]);
+        assert_eq!(result.layout().shape(), &[m, n]);
 
         // Compare with dequantize + manual matmul
         let rhs_dequantized = rhs.dequantize();
@@ -1010,7 +1016,7 @@ mod tests {
         let result = lhs.q_mat_mul(&weights);
 
         // Verify output shape
-        assert_eq!(<ConcreteTensor<f32, 3> as Expr>::shape(&result), &[batch, seq_len, out_features]);
+        assert_eq!(result.layout().shape(), &[batch, seq_len, out_features]);
 
         // Compare with dequantize + manual matmul for the first few positions
         let weights_dequantized = weights.dequantize();
@@ -1074,8 +1080,8 @@ mod tests {
         let result_batched = lhs_batched.q_mat_mul(&rhs);
 
         // Verify shapes
-        assert_eq!(<ConcreteTensor<f32, 2> as Expr>::shape(&result1), &[m, n]);
-        assert_eq!(<ConcreteTensor<f32, 3> as Expr>::shape(&result_batched), &[2, m, n]);
+        assert_eq!(result1.layout().shape(), &[m, n]);
+        assert_eq!(result_batched.layout().shape(), &[2, m, n]);
 
         // Verify values match
         for i in 0..m {

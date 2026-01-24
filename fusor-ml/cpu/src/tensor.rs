@@ -1349,8 +1349,8 @@ where
         T2: TensorBacking<R2, Elem = E> + Expr<Elem = E>,
         (ConcreteTensor<E, R>, ConcreteTensor<E, R2>): MaxRank<R3, E>,
     {
-        let shape1: [usize; R] = Expr::shape(self).try_into().unwrap();
-        let shape2: [usize; R2] = Expr::shape(other).try_into().unwrap();
+        let shape1: [usize; R] = self.layout().shape().try_into().unwrap();
+        let shape2: [usize; R2] = other.layout().shape().try_into().unwrap();
         let out_shape: [usize; R3] = broadcast_shapes(&shape1, &shape2);
 
         let a: Tensor<R3, MapLayout<E, R3>> = self.to_concrete().broadcast_as(out_shape);
@@ -1373,8 +1373,8 @@ where
         T2: TensorBacking<R2, Elem = E> + Expr<Elem = E>,
         (ConcreteTensor<E, R>, ConcreteTensor<E, R2>): MaxRank<R3, E>,
     {
-        let shape1: [usize; R] = Expr::shape(self).try_into().unwrap();
-        let shape2: [usize; R2] = Expr::shape(other).try_into().unwrap();
+        let shape1: [usize; R] = self.layout().shape().try_into().unwrap();
+        let shape2: [usize; R2] = other.layout().shape().try_into().unwrap();
         let out_shape: [usize; R3] = broadcast_shapes(&shape1, &shape2);
 
         let a: Tensor<R3, MapLayout<E, R3>> = self.to_concrete().broadcast_as(out_shape);
@@ -1397,8 +1397,8 @@ where
         T2: TensorBacking<R2, Elem = E> + Expr<Elem = E>,
         (ConcreteTensor<E, R>, ConcreteTensor<E, R2>): MaxRank<R3, E>,
     {
-        let shape1: [usize; R] = Expr::shape(self).try_into().unwrap();
-        let shape2: [usize; R2] = Expr::shape(other).try_into().unwrap();
+        let shape1: [usize; R] = self.layout().shape().try_into().unwrap();
+        let shape2: [usize; R2] = other.layout().shape().try_into().unwrap();
         let out_shape: [usize; R3] = broadcast_shapes(&shape1, &shape2);
 
         let a: Tensor<R3, MapLayout<E, R3>> = self.to_concrete().broadcast_as(out_shape);
@@ -1421,8 +1421,8 @@ where
         T2: TensorBacking<R2, Elem = E> + Expr<Elem = E>,
         (ConcreteTensor<E, R>, ConcreteTensor<E, R2>): MaxRank<R3, E>,
     {
-        let shape1: [usize; R] = Expr::shape(self).try_into().unwrap();
-        let shape2: [usize; R2] = Expr::shape(other).try_into().unwrap();
+        let shape1: [usize; R] = self.layout().shape().try_into().unwrap();
+        let shape2: [usize; R2] = other.layout().shape().try_into().unwrap();
         let out_shape: [usize; R3] = broadcast_shapes(&shape1, &shape2);
 
         let a: Tensor<R3, MapLayout<E, R3>> = self.to_concrete().broadcast_as(out_shape);
@@ -1444,8 +1444,8 @@ where
         T2: TensorBacking<R2, Elem = E> + Expr<Elem = E>,
         (ConcreteTensor<E, R>, ConcreteTensor<E, R2>): MaxRank<R3, E>,
     {
-        let shape1: [usize; R] = Expr::shape(self).try_into().unwrap();
-        let shape2: [usize; R2] = Expr::shape(other).try_into().unwrap();
+        let shape1: [usize; R] = self.layout().shape().try_into().unwrap();
+        let shape2: [usize; R2] = other.layout().shape().try_into().unwrap();
         let out_shape: [usize; R3] = broadcast_shapes(&shape1, &shape2);
 
         let a: Tensor<R3, ConcreteTensor<E, R3>> =
@@ -1482,18 +1482,6 @@ where
     #[inline(always)]
     fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> E::Simd<S> {
         self.inner.eval_simd(simd, base_idx)
-    }
-
-    fn len(&self) -> usize {
-        self.inner.len()
-    }
-
-    fn shape(&self) -> &[usize] {
-        self.inner.shape()
-    }
-
-    fn is_contiguous(&self) -> bool {
-        self.inner.is_contiguous()
     }
 }
 

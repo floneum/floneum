@@ -31,23 +31,6 @@ pub trait Expr {
     /// starting at `base_idx`. The caller must ensure that there are
     /// enough elements remaining to fill a complete SIMD vector.
     fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> <Self::Elem as SimdElement>::Simd<S>;
-
-    /// Total number of elements in this expression.
-    fn len(&self) -> usize;
-
-    /// The shape of this expression as a slice.
-    fn shape(&self) -> &[usize];
-
-    /// Whether this expression is contiguous in memory.
-    ///
-    /// When all inputs are contiguous, the evaluator can use faster
-    /// direct SIMD loads instead of gathering individual elements.
-    fn is_contiguous(&self) -> bool;
-
-    /// Returns true if the expression has no elements.
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
 }
 
 /// Implement Expr for references to Expr types
@@ -62,18 +45,6 @@ impl<E: Expr> Expr for &E {
     #[inline(always)]
     fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> <Self::Elem as SimdElement>::Simd<S> {
         (*self).eval_simd(simd, base_idx)
-    }
-
-    fn len(&self) -> usize {
-        (*self).len()
-    }
-
-    fn shape(&self) -> &[usize] {
-        (*self).shape()
-    }
-
-    fn is_contiguous(&self) -> bool {
-        (*self).is_contiguous()
     }
 }
 
@@ -185,13 +156,13 @@ mod tests {
 
     #[test]
     fn test_concrete_tensor_expr() {
+        use crate::TensorBacking;
         let tensor = ConcreteTensor::<f32, 1>::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
 
-        // Test Expr trait methods
-        assert_eq!(Expr::len(&tensor), 4);
-        assert_eq!(Expr::shape(&tensor), &[4]);
-        assert!(Expr::is_contiguous(&tensor));
-        assert!(!Expr::is_empty(&tensor));
+        // Test layout methods (moved from Expr to Layout)
+        assert_eq!(tensor.layout().num_elements(), 4);
+        assert_eq!(tensor.layout().shape(), &[4]);
+        assert!(tensor.layout().is_contiguous());
 
         // Test scalar evaluation
         assert_eq!(tensor.eval_scalar(0), 1.0);
@@ -213,13 +184,14 @@ mod tests {
 
     #[test]
     fn test_expr_reference_impl() {
+        use crate::TensorBacking;
         let tensor = ConcreteTensor::<f32, 1>::from_slice([3], &[1.0, 2.0, 3.0]);
         let tensor_ref = &tensor;
 
-        // Test that references implement Expr correctly
-        assert_eq!(Expr::len(tensor_ref), 3);
-        assert_eq!(Expr::shape(tensor_ref), &[3]);
-        assert!(Expr::is_contiguous(tensor_ref));
+        // Test that references implement TensorBacking correctly
+        assert_eq!(tensor_ref.layout().num_elements(), 3);
+        assert_eq!(tensor_ref.layout().shape(), &[3]);
+        assert!(tensor_ref.layout().is_contiguous());
         assert_eq!(tensor_ref.eval_scalar(0), 1.0);
         assert_eq!(tensor_ref.eval_scalar(2), 3.0);
     }

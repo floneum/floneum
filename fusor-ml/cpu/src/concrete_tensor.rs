@@ -129,18 +129,6 @@ impl<T: SimdElement, const R: usize> Expr for ConcreteTensor<T, R> {
             simd_vec[0]
         }
     }
-
-    fn len(&self) -> usize {
-        self.layout.num_elements()
-    }
-
-    fn shape(&self) -> &[usize] {
-        self.layout.shape()
-    }
-
-    fn is_contiguous(&self) -> bool {
-        self.layout.is_contiguous()
-    }
 }
 
 

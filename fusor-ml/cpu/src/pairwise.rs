@@ -202,18 +202,6 @@ macro_rules! define_binary_tensor_op {
                     self.rhs.eval_simd(simd, base_idx),
                 )
             }
-
-            fn len(&self) -> usize {
-                self.lhs.len()
-            }
-
-            fn shape(&self) -> &[usize] {
-                self.lhs.shape()
-            }
-
-            fn is_contiguous(&self) -> bool {
-                self.lhs.is_contiguous() && self.rhs.is_contiguous()
-            }
         }
     };
 }
@@ -237,10 +225,10 @@ mod tests {
 
         let add_expr: Add<f32, 1, _, _> = Add::new(&a, &b);
 
-        // Test Expr trait methods
-        assert_eq!(add_expr.len(), 4);
-        assert_eq!(add_expr.shape(), &[4]);
-        assert!(add_expr.is_contiguous());
+        // Test layout methods
+        assert_eq!(add_expr.layout().num_elements(), 4);
+        assert_eq!(add_expr.layout().shape(), &[4]);
+        assert!(add_expr.layout().is_contiguous());
 
         // Test scalar evaluation
         assert_eq!(add_expr.eval_scalar(0), 11.0);

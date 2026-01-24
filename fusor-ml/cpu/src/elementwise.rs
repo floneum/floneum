@@ -225,11 +225,11 @@ macro_rules! define_unary_tensor_op {
             type Elem = E;
 
             fn layout(&self) -> Layout {
-                Layout::contiguous(Expr::shape(self))
+                Layout::contiguous(self.input.layout().shape())
             }
 
             fn to_concrete(&self) -> ConcreteTensor<E, R> {
-                let shape: [usize; R] = Expr::shape(&self.input)
+                let shape: [usize; R] = self.input.layout().shape()
                     .try_into()
                     .expect("Shape length mismatch");
                 materialize_expr(self, shape)
@@ -252,18 +252,6 @@ macro_rules! define_unary_tensor_op {
             #[inline(always)]
             fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> E::Simd<S> {
                 <$simd_op>::apply_simd_vec(simd, self.input.eval_simd(simd, base_idx))
-            }
-
-            fn len(&self) -> usize {
-                self.input.len()
-            }
-
-            fn shape(&self) -> &[usize] {
-                self.input.shape()
-            }
-
-            fn is_contiguous(&self) -> bool {
-                self.input.is_contiguous()
             }
         }
     };
@@ -295,11 +283,11 @@ macro_rules! define_unary_tensor_op {
             type Elem = E;
 
             fn layout(&self) -> Layout {
-                Layout::contiguous(Expr::shape(self))
+                Layout::contiguous(self.input.layout().shape())
             }
 
             fn to_concrete(&self) -> ConcreteTensor<E, R> {
-                let shape: [usize; R] = Expr::shape(&self.input)
+                let shape: [usize; R] = self.input.layout().shape()
                     .try_into()
                     .expect("Shape length mismatch");
                 materialize_expr(self, shape)
@@ -322,18 +310,6 @@ macro_rules! define_unary_tensor_op {
             #[inline(always)]
             fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> E::Simd<S> {
                 <$simd_op>::apply_simd_vec(simd, self.input.eval_simd(simd, base_idx))
-            }
-
-            fn len(&self) -> usize {
-                self.input.len()
-            }
-
-            fn shape(&self) -> &[usize] {
-                self.input.shape()
-            }
-
-            fn is_contiguous(&self) -> bool {
-                self.input.is_contiguous()
             }
         }
     };
@@ -375,10 +351,10 @@ mod tests {
 
         let neg_expr: Neg<f32, 1, _> = Neg::new(&a);
 
-        // Test Expr trait methods
-        assert_eq!(neg_expr.len(), 4);
-        assert_eq!(neg_expr.shape(), &[4]);
-        assert!(neg_expr.is_contiguous());
+        // Test layout methods
+        assert_eq!(neg_expr.layout().num_elements(), 4);
+        assert_eq!(neg_expr.layout().shape(), &[4]);
+        assert!(neg_expr.layout().is_contiguous());
 
         // Test scalar evaluation
         assert_eq!(neg_expr.eval_scalar(0), -1.0);
