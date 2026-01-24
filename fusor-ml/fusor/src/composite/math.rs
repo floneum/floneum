@@ -2,21 +2,19 @@
 
 use crate::{ConcreteTensor, Expr, FloatOps, Tensor, MulOp, ResolvedTensor, SimdBinaryOp, SimdElement};
 use fusor_core::{DataType, FloatDataType};
+use fusor_cpu::Mul;
 
 impl<const R: usize, D> Tensor<R, D>
 where
     D: SimdElement + DataType + FloatDataType + FloatOps + Default,
 {
     /// Square each element: sqr(x) = x * x
-    pub fn sqr(&self) -> Self
+    pub fn sqr(&self) -> Tensor<R, D, Mul<D, R, &ConcreteTensor<D, R>, &ConcreteTensor<D, R>>>
     where
         D: std::ops::Mul<Output = D>,
         MulOp: SimdBinaryOp<D>,
     {
-        self.dispatch_ref(
-            |t| (t * t).to_concrete(),
-            |t| t * t,
-        )
+        self * self
     }
 }
 

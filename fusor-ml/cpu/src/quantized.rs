@@ -213,7 +213,7 @@ impl<const R: usize> ConcreteTensor<f32, R> {
     {
         const { assert!(R >= 2, "q_mat_mul requires at least 2 dimensions") };
 
-        let lhs_shape = <Self as ResolvedTensor<R>>::shape(self);
+        let lhs_shape = self.layout().shape();
         let m = lhs_shape[R - 2];
         let k = lhs_shape[R - 1];
         let rhs_shape = rhs.element_shape();

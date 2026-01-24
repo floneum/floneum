@@ -30,14 +30,14 @@ where
 {
     assert!(dimension < R, "dimension out of bounds");
 
-    let input_shape = ResolvedTensor::shape(input);
+    let input_shape = input.layout().shape();
     let num_indices = indices.data().len();
     let output_shape = index_select_output_shape::<R>(input_shape, dimension, num_indices);
 
     let mut output = ConcreteTensor::<E, R>::uninit_unchecked(output_shape);
 
     // Compute strides for iteration
-    let input_strides = ResolvedTensor::strides(input);
+    let input_strides = input.layout().strides();
     let output_strides: Box<[usize]> = output.layout().strides().into();
 
     // For each position in output, compute corresponding input position

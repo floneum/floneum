@@ -296,7 +296,7 @@ pub(crate) fn reduce_tensor_op<E: SimdElement, const R: usize, Op: SimdReduceOp<
     } else {
         // Fall back to scalar iteration for strided tensors
         let mut result = Op::identity();
-        for indices in IndexIterator::new(tensor.shape()) {
+        for indices in IndexIterator::new(tensor.layout().shape()) {
             let idx = tensor.layout().linear_index(&indices);
             result = Op::combine_scalar(result, tensor.data()[idx]);
         }
@@ -313,7 +313,7 @@ pub(crate) fn reduce_tensor_op<E: SimdElement, const R: usize, Op: SimdReduceOp<
 ///
 /// For attention matrices, this is significantly faster than separate max/sub/exp/sum/div operations.
 pub fn softmax_last_dim_fused<const R: usize>(tensor: &ConcreteTensor<f32, R>) -> ConcreteTensor<f32, R> {
-    let shape: [usize; R] = tensor.shape().try_into().expect("Shape length mismatch");
+    let shape: [usize; R] = tensor.layout().shape().try_into().expect("Shape length mismatch");
     let last_dim = shape[R - 1];
 
     // Total number of rows (product of all dims except last)
@@ -346,7 +346,7 @@ pub fn softmax_last_dim_fused<const R: usize>(tensor: &ConcreteTensor<f32, R>) -
         }
     } else {
         // Slow path: extract rows to contiguous buffer
-        let strides = tensor.strides();
+        let strides = tensor.layout().strides();
         let in_data = tensor.data();
         let out_data = output.data_mut();
 
@@ -498,7 +498,7 @@ pub fn layer_norm_last_dim_fused<const R: usize>(
     bias: Option<&ConcreteTensor<f32, R>>,
     eps: f32,
 ) -> ConcreteTensor<f32, R> {
-    let shape: [usize; R] = tensor.shape().try_into().expect("Shape length mismatch");
+    let shape: [usize; R] = tensor.layout().shape().try_into().expect("Shape length mismatch");
     let last_dim = shape[R - 1];
     let num_rows: usize = shape[..R - 1].iter().product();
 
@@ -683,7 +683,7 @@ where
     assert_eq!(OUT_RANK, R - 1, "Output rank must be input rank - 1");
 
     // Compute output shape (remove axis dimension)
-    let in_shape = tensor.shape();
+    let in_shape = tensor.layout().shape();
     let mut out_shape = [0usize; OUT_RANK];
     let mut j = 0;
     for i in 0..R {
@@ -697,7 +697,7 @@ where
     let reduce_dim = in_shape[axis];
 
     // Pre-compute strides for the reduction axis for faster linear index calculation
-    let axis_stride = tensor.strides()[axis];
+    let axis_stride = tensor.layout().strides()[axis];
 
     // Iterate over output indices and reduce along axis
     // Use fixed-size array to avoid allocation

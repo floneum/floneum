@@ -85,14 +85,8 @@ impl<T, const R: usize> ResolvedTensor<R> for ConcreteTensor<T, R>
 where
     T: SimdElement,
 {
-    fn shape(&self) -> &[usize] {
-        self.layout.shape()
-    }
-    fn strides(&self) -> &[usize] {
-        self.layout.strides()
-    }
-    fn offset(&self) -> usize {
-        self.layout.offset()
+    fn layout(&self) -> &Layout {
+        &self.layout
     }
     fn data(&self) -> &ABox<[Self::Elem]> {
         &self.backing

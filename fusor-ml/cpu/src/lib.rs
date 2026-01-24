@@ -44,6 +44,9 @@ pub use tensor::{FloatOps, Scalar, Tensor};
 // Re-export SlidingWindow from fusor-types
 pub use fusor_types::SlidingWindow;
 
+// Import Layout for ResolvedTensor trait
+use fusor_types::Layout;
+
 // Re-export GGUF types for convenience
 pub use fusor_gguf::{BlockQ4_0, BlockQ4K, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, GgufBlock};
 
@@ -326,9 +329,7 @@ pub trait ResolveTensor<const R: usize, M = ()>: TensorBacking<R> {
 }
 
 pub trait ResolvedTensor<const R: usize>: TensorBacking<R> {
-    fn shape(&self) -> &[usize];
-    fn strides(&self) -> &[usize];
-    fn offset(&self) -> usize;
+    fn layout(&self) -> &Layout;
     fn data(&self) -> &ABox<[Self::Elem]>;
     fn data_mut(&mut self) -> &mut ABox<[Self::Elem]>;
 }

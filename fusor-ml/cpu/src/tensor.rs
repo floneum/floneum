@@ -976,7 +976,7 @@ where
     #[inline]
     pub fn pow_scalar(&self, exponent: E) -> Tensor<R, ConcreteTensor<E, R>> {
         let concrete = self.inner.to_concrete();
-        let shape: [usize; R] = ResolvedTensor::shape(&concrete)
+        let shape: [usize; R] = concrete.layout().shape()
             .try_into()
             .expect("Shape length mismatch");
         let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
@@ -990,7 +990,7 @@ where
     #[inline]
     pub fn max_scalar(&self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>> {
         let concrete = self.inner.to_concrete();
-        let shape: [usize; R] = ResolvedTensor::shape(&concrete)
+        let shape: [usize; R] = concrete.layout().shape()
             .try_into()
             .expect("Shape length mismatch");
         let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
@@ -1004,7 +1004,7 @@ where
     #[inline]
     pub fn min_scalar(&self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>> {
         let concrete = self.inner.to_concrete();
-        let shape: [usize; R] = ResolvedTensor::shape(&concrete)
+        let shape: [usize; R] = concrete.layout().shape()
             .try_into()
             .expect("Shape length mismatch");
         let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
@@ -1018,7 +1018,7 @@ where
     #[inline]
     pub fn clamp(&self, min: E, max: E) -> Tensor<R, ConcreteTensor<E, R>> {
         let concrete = self.inner.to_concrete();
-        let shape: [usize; R] = ResolvedTensor::shape(&concrete)
+        let shape: [usize; R] = concrete.layout().shape()
             .try_into()
             .expect("Shape length mismatch");
         let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);

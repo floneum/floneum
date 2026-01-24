@@ -371,7 +371,6 @@ where
     /// Returns the shape of the tensor.
     pub fn shape(&self) -> [usize; R]
     where
-        B: Expr<Elem = D>,
         D: SimdElement + DataType,
     {
         match self {
@@ -987,8 +986,7 @@ where
             // F32 is not quantized, use regular matmul with transpose
             // Weight is [N, K] (out_features, in_features), we need input @ weight.T
             (Tensor::Cpu(lhs), QMatrix::CpuF32(rhs)) => {
-                use fusor_cpu::ResolvedTensor;
-                let rhs_shape = ResolvedTensor::shape(rhs);
+                let rhs_shape = rhs.layout().shape();
                 let n = rhs_shape[0]; // out_features
                 let k = rhs_shape[1]; // in_features
 

@@ -81,8 +81,8 @@ pub(crate) fn slice_assign_ref<E, const R: usize>(
 where
     E: SimdElement,
 {
-    let input_shape = ResolvedTensor::shape(input);
-    let value_shape = ResolvedTensor::shape(value);
+    let input_shape = input.layout().shape();
+    let value_shape = value.layout().shape();
 
     validate_slice_assign::<R>(input_shape, &slices, value_shape);
 
@@ -106,13 +106,13 @@ fn slice_assign_contiguous<E, const R: usize>(
 where
     E: SimdElement,
 {
-    let input_shape: [usize; R] = ResolvedTensor::shape(input)
+    let input_shape: [usize; R] = input.layout().shape()
         .try_into()
         .expect("Shape length mismatch");
     let mut output = ConcreteTensor::<E, R>::uninit_unchecked(input_shape);
 
-    let input_strides = ResolvedTensor::strides(input);
-    let value_strides = ResolvedTensor::strides(value);
+    let input_strides = input.layout().strides();
+    let value_strides = value.layout().strides();
     let total_elements: usize = input_shape.iter().product();
 
     for out_linear in 0..total_elements {
@@ -152,16 +152,16 @@ fn slice_assign_strided<E, const R: usize>(
 where
     E: SimdElement,
 {
-    let input_shape: [usize; R] = ResolvedTensor::shape(input)
+    let input_shape: [usize; R] = input.layout().shape()
         .try_into()
         .expect("Shape length mismatch");
     let mut output = ConcreteTensor::<E, R>::uninit_unchecked(input_shape);
 
     let output_strides: Box<[usize]> = output.layout().strides().into();
-    let input_strides = ResolvedTensor::strides(input);
-    let value_strides = ResolvedTensor::strides(value);
-    let input_offset = ResolvedTensor::offset(input);
-    let value_offset = ResolvedTensor::offset(value);
+    let input_strides = input.layout().strides();
+    let value_strides = value.layout().strides();
+    let input_offset = input.layout().offset();
+    let value_offset = value.layout().offset();
     let total_elements: usize = input_shape.iter().product();
 
     for out_linear in 0..total_elements {

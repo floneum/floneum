@@ -177,8 +177,8 @@ pub fn batched_matmul<T: SimdElement + MatmulImpl, const R: usize>(
         )
     };
 
-    let lhs_shape = lhs.shape();
-    let rhs_shape = rhs.shape();
+    let lhs_shape = lhs.layout().shape();
+    let rhs_shape = rhs.layout().shape();
 
     // Last two dimensions are matrix dimensions
     let m = lhs_shape[R - 2];

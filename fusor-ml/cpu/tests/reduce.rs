@@ -98,7 +98,7 @@ fn test_sum_axis_2d_axis0() {
 
     let result = tensor.sum_axis::<1>(0);
 
-    assert_eq!(result.inner().shape(), &[3]);
+    assert_eq!(result.inner().layout().shape(), &[3]);
     assert_eq!(result.get([0]), 5.0);
     assert_eq!(result.get([1]), 7.0);
     assert_eq!(result.get([2]), 9.0);
@@ -113,7 +113,7 @@ fn test_sum_axis_2d_axis1() {
 
     let result = tensor.sum_axis::<1>(1);
 
-    assert_eq!(result.inner().shape(), &[2]);
+    assert_eq!(result.inner().layout().shape(), &[2]);
     assert_eq!(result.get([0]), 6.0);
     assert_eq!(result.get([1]), 15.0);
 }
@@ -127,7 +127,7 @@ fn test_max_axis_2d() {
 
     let result = tensor.max_axis::<1>(0);
 
-    assert_eq!(result.inner().shape(), &[3]);
+    assert_eq!(result.inner().layout().shape(), &[3]);
     assert_eq!(result.get([0]), 4.0);
     assert_eq!(result.get([1]), 5.0);
     assert_eq!(result.get([2]), 6.0);
@@ -142,7 +142,7 @@ fn test_min_axis_2d() {
 
     let result = tensor.min_axis::<1>(1);
 
-    assert_eq!(result.inner().shape(), &[2]);
+    assert_eq!(result.inner().layout().shape(), &[2]);
     assert_eq!(result.get([0]), 1.0);
     assert_eq!(result.get([1]), 2.0);
 }
@@ -156,7 +156,7 @@ fn test_prod_axis_2d() {
 
     let result = tensor.prod_axis::<1>(0);
 
-    assert_eq!(result.inner().shape(), &[2]);
+    assert_eq!(result.inner().layout().shape(), &[2]);
     assert_eq!(result.get([0]), 3.0);
     assert_eq!(result.get([1]), 8.0);
 }
@@ -169,7 +169,7 @@ fn test_sum_axis_3d() {
     // Sum along axis 0 -> 2x2 tensor
     let result = tensor.sum_axis::<2>(0);
 
-    assert_eq!(result.inner().shape(), &[2, 2]);
+    assert_eq!(result.inner().layout().shape(), &[2, 2]);
     // [1,2;3,4] + [5,6;7,8] = [6,8;10,12]
     assert_eq!(result.get([0, 0]), 6.0);
     assert_eq!(result.get([0, 1]), 8.0);

@@ -15,7 +15,7 @@ fn test_add_tensor_contiguous() {
     let add = Add::new(lhs, rhs);
     let result = add.to_concrete();
 
-    assert_eq!(result.shape(), &[2, 3]);
+    assert_eq!(result.layout().shape(), &[2, 3]);
     assert_eq!(result.get([0, 0]), 11.0);
     assert_eq!(result.get([0, 1]), 22.0);
     assert_eq!(result.get([0, 2]), 33.0);
@@ -32,7 +32,7 @@ fn test_add_tensor_1d() {
     let add = Add::new(lhs, rhs);
     let result = add.to_concrete();
 
-    assert_eq!(result.shape(), &[4]);
+    assert_eq!(result.layout().shape(), &[4]);
     assert_eq!(result.get([0]), 11);
     assert_eq!(result.get([1]), 22);
     assert_eq!(result.get([2]), 33);
@@ -50,7 +50,7 @@ fn test_add_tensor_3d() {
     let add = Add::new(lhs, rhs);
     let result = add.to_concrete();
 
-    assert_eq!(result.shape(), &[2, 2, 2]);
+    assert_eq!(result.layout().shape(), &[2, 2, 2]);
     assert!((result.get([0, 0, 0]) - 1.1).abs() < 1e-10);
     assert!((result.get([0, 0, 1]) - 2.2).abs() < 1e-10);
     assert!((result.get([1, 1, 1]) - 8.8).abs() < 1e-10);
@@ -87,7 +87,7 @@ fn test_sub_tensor_contiguous() {
     let sub = Sub::new(lhs, rhs);
     let result = sub.to_concrete();
 
-    assert_eq!(result.shape(), &[2, 3]);
+    assert_eq!(result.layout().shape(), &[2, 3]);
     assert_eq!(result.get([0, 0]), 9.0);
     assert_eq!(result.get([0, 1]), 18.0);
     assert_eq!(result.get([0, 2]), 27.0);
@@ -126,7 +126,7 @@ fn test_mul_tensor_contiguous() {
     let mul = Mul::new(lhs, rhs);
     let result = mul.to_concrete();
 
-    assert_eq!(result.shape(), &[2, 3]);
+    assert_eq!(result.layout().shape(), &[2, 3]);
     assert_eq!(result.get([0, 0]), 2.0);
     assert_eq!(result.get([0, 1]), 6.0);
     assert_eq!(result.get([0, 2]), 12.0);
@@ -179,7 +179,7 @@ fn test_div_tensor_contiguous() {
     let div = Div::new(lhs, rhs);
     let result = div.to_concrete();
 
-    assert_eq!(result.shape(), &[2, 3]);
+    assert_eq!(result.layout().shape(), &[2, 3]);
     assert_eq!(result.get([0, 0]), 5.0);
     assert_eq!(result.get([0, 1]), 5.0);
     assert_eq!(result.get([0, 2]), 6.0);

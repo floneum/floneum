@@ -2,11 +2,12 @@
 
 use crate::{AddOp, ConcreteTensor, DivOp, Expr, FloatOps, Tensor, SimdBinaryOp, SimdElement};
 use fusor_core::{DataType, FloatDataType, LastRank as GpuLastRank, NextRankInner as GpuNextRankInner};
-use fusor_cpu::{LastRank as CpuLastRank, MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp};
+use fusor_cpu::{LastRank as CpuLastRank, MaxOp, MinOp, ProdOp, ResolveTensor, SimdReduceOp, SumOp, TensorBacking};
 
-impl<const R: usize, D> Tensor<R, D>
+impl<const R: usize, D, B> Tensor<R, D, B>
 where
     D: SimdElement + DataType + FloatDataType + FloatOps + Default,
+    B: ResolveTensor<R, Elem = D>,
 {
     /// Sum along a specific axis, reducing the tensor rank by 1.
     ///

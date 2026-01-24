@@ -243,7 +243,7 @@ where
     E: SimdElement,
     Op: SimdComparisonOp<E>,
 {
-    let shape: [usize; R] = ResolvedTensor::shape(lhs)
+    let shape: [usize; R] = lhs.layout().shape()
         .try_into()
         .expect("Shape length mismatch");
     let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
@@ -253,7 +253,7 @@ where
     if all_contiguous {
         comparison_op_contiguous::<E, Op>(lhs.data(), rhs.data(), output.data_mut());
     } else {
-        let tensor_shape = ResolvedTensor::shape(lhs);
+        let tensor_shape = lhs.layout().shape();
         for indices in IndexIterator::new(tensor_shape) {
             let lhs_idx = lhs.layout().linear_index(&indices);
             let rhs_idx = rhs.layout().linear_index(&indices);
@@ -275,7 +275,7 @@ where
     E: SimdElement,
     Op: SimdComparisonOp<E>,
 {
-    let shape: [usize; R] = ResolvedTensor::shape(lhs)
+    let shape: [usize; R] = lhs.layout().shape()
         .try_into()
         .expect("Shape length mismatch");
     let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);

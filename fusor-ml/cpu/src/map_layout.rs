@@ -129,16 +129,8 @@ impl<E: SimdElement, const R: usize> ResolveTensor<R> for &MapLayout<E, R> {
 }
 
 impl<E: SimdElement, const R: usize> ResolvedTensor<R> for MapLayout<E, R> {
-    fn shape(&self) -> &[usize] {
-        self.layout.shape()
-    }
-
-    fn strides(&self) -> &[usize] {
-        self.layout.strides()
-    }
-
-    fn offset(&self) -> usize {
-        self.layout.offset()
+    fn layout(&self) -> &Layout {
+        &self.layout
     }
 
     fn data(&self) -> &ABox<[Self::Elem]> {

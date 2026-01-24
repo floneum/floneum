@@ -122,7 +122,7 @@ pub(crate) fn where_cond_ref<E, const R: usize>(
 where
     E: SimdElement + IsNonZero,
 {
-    let shape: [usize; R] = ResolvedTensor::shape(cond)
+    let shape: [usize; R] = cond.layout().shape()
         .try_into()
         .expect("Shape length mismatch");
     let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
@@ -139,7 +139,7 @@ where
             output.data_mut(),
         );
     } else {
-        let tensor_shape = ResolvedTensor::shape(cond);
+        let tensor_shape = cond.layout().shape();
         for indices in IndexIterator::new(tensor_shape) {
             let cond_idx = cond.layout().linear_index(&indices);
             let true_idx = on_true.layout().linear_index(&indices);

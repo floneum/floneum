@@ -14,7 +14,7 @@ fn test_matmul_2x3_3x2() {
 
     let result = lhs.matmul_ref(&rhs);
 
-    assert_eq!(result.shape(), &[2, 2]);
+    assert_eq!(result.layout().shape(), &[2, 2]);
     assert_eq!(result.get([0, 0]), 22.0);
     assert_eq!(result.get([0, 1]), 28.0);
     assert_eq!(result.get([1, 0]), 49.0);
@@ -31,7 +31,7 @@ fn test_matmul_identity() {
 
     let result = mat.matmul_ref(&identity);
 
-    assert_eq!(result.shape(), &[2, 3]);
+    assert_eq!(result.layout().shape(), &[2, 3]);
     assert_eq!(result.get([0, 0]), 1.0);
     assert_eq!(result.get([0, 1]), 2.0);
     assert_eq!(result.get([0, 2]), 3.0);
@@ -52,7 +52,7 @@ fn test_matmul_large() {
 
     let result = lhs.matmul_ref(&rhs);
 
-    assert_eq!(result.shape(), &[size, size]);
+    assert_eq!(result.layout().shape(), &[size, size]);
 
     // Verify a few elements by computing them manually
     // result[0,0] = sum(lhs[0,:] * rhs[:,0])
@@ -71,7 +71,7 @@ fn test_matmul_f64() {
 
     let result = lhs.matmul_ref(&rhs);
 
-    assert_eq!(result.shape(), &[2, 2]);
+    assert_eq!(result.layout().shape(), &[2, 2]);
     // [1 2] @ [5 6] = [1*5+2*7  1*6+2*8] = [19 22]
     // [3 4]   [7 8]   [3*5+4*7  3*6+4*8]   [43 50]
     assert_eq!(result.get([0, 0]), 19.0);
