@@ -317,19 +317,24 @@ impl_max_rank!(9, 10);
 
 pub trait TensorBacking<const R: usize> {
     type Elem: SimdElement;
+    fn layout(&self) -> Layout;
+    fn to_concrete(&self) -> ConcreteTensor<Self::Elem, R>;
 }
 
 // Blanket implementation for references
 impl<const R: usize, T: TensorBacking<R>> TensorBacking<R> for &T {
     type Elem = T::Elem;
-}
 
-pub trait ResolveTensor<const R: usize, M = ()>: TensorBacking<R> {
-    fn to_concrete(&self) -> ConcreteTensor<Self::Elem, R>;
+    fn layout(&self) -> Layout {
+        (*self).layout()
+    }
+
+    fn to_concrete(&self) -> ConcreteTensor<Self::Elem, R> {
+        (*self).to_concrete()
+    }
 }
 
 pub trait ResolvedTensor<const R: usize>: TensorBacking<R> {
-    fn layout(&self) -> &Layout;
     fn data(&self) -> &ABox<[Self::Elem]>;
     fn data_mut(&mut self) -> &mut ABox<[Self::Elem]>;
 }

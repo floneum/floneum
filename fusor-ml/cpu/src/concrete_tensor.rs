@@ -7,7 +7,7 @@ use fusor_types::Layout;
 use pulp::Simd;
 
 use crate::expr::{Expr, linear_to_indices};
-use crate::{MAX_SIMD_LANES, ResolveTensor, ResolvedTensor, SimdElement, TensorBacking};
+use crate::{MAX_SIMD_LANES, ResolvedTensor, SimdElement, TensorBacking};
 
 /// Helper to iterate over indices of a tensor with given shape
 pub struct IndexIterator {
@@ -70,12 +70,11 @@ where
     T: SimdElement,
 {
     type Elem = T;
-}
 
-impl<T, const R: usize> ResolveTensor<R> for ConcreteTensor<T, R>
-where
-    T: SimdElement,
-{
+    fn layout(&self) -> Layout {
+        self.layout.clone()
+    }
+
     fn to_concrete(&self) -> ConcreteTensor<T, R> {
         self.clone()
     }
@@ -85,9 +84,6 @@ impl<T, const R: usize> ResolvedTensor<R> for ConcreteTensor<T, R>
 where
     T: SimdElement,
 {
-    fn layout(&self) -> &Layout {
-        &self.layout
-    }
     fn data(&self) -> &ABox<[Self::Elem]> {
         &self.backing
     }
@@ -147,12 +143,6 @@ impl<T: SimdElement, const R: usize> Expr for ConcreteTensor<T, R> {
     }
 }
 
-// Implement ResolveTensor for references (TensorBacking is covered by blanket impl in lib.rs)
-impl<T: SimdElement, const R: usize> ResolveTensor<R> for &ConcreteTensor<T, R> {
-    fn to_concrete(&self) -> ConcreteTensor<T, R> {
-        (*self).clone()
-    }
-}
 
 impl<T: SimdElement, const R: usize> ConcreteTensor<T, R> {
     /// Create a new tensor with contiguous layout from shape, filled with zeros

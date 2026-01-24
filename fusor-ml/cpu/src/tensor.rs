@@ -23,7 +23,7 @@ use crate::reduce::{
 };
 use crate::slice_assign::slice_assign_ref;
 use crate::{
-    ConcreteTensor, CpuMappedBuffer, LastRank, MapLayout, MaxRank, ResolveTensor, ResolvedTensor,
+    ConcreteTensor, CpuMappedBuffer, LastRank, MapLayout, MaxRank, ResolvedTensor,
     SimdElement, TensorBacking, TensorSlice, elementwise, pairwise, scalar,
 };
 
@@ -89,11 +89,11 @@ impl<const R: usize, E: SimdElement> Tensor<R, MapLayout<E, R>> {
     }
 }
 
-// Methods available on any Tensor with ResolveTensor inner
+// Methods available on any Tensor with TensorBacking inner
 impl<const R: usize, E, T> Tensor<R, T>
 where
     E: SimdElement,
-    T: TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>,
+    T: TensorBacking<R, Elem = E>,
 {
     /// Materialize the tensor to a ConcreteTensor
     pub fn to_concrete(&self) -> Tensor<R, ConcreteTensor<E, R>> {
@@ -444,7 +444,7 @@ where
     #[inline]
     pub fn eq(
         &self,
-        rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>,
+        rhs: &Tensor<R, impl TensorBacking<R, Elem = E>>,
     ) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
@@ -460,7 +460,7 @@ where
     #[inline]
     pub fn lt(
         &self,
-        rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>,
+        rhs: &Tensor<R, impl TensorBacking<R, Elem = E>>,
     ) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
@@ -476,7 +476,7 @@ where
     #[inline]
     pub fn gt(
         &self,
-        rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>,
+        rhs: &Tensor<R, impl TensorBacking<R, Elem = E>>,
     ) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
@@ -492,7 +492,7 @@ where
     #[inline]
     pub fn ne(
         &self,
-        rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>,
+        rhs: &Tensor<R, impl TensorBacking<R, Elem = E>>,
     ) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
@@ -508,7 +508,7 @@ where
     #[inline]
     pub fn lte(
         &self,
-        rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>,
+        rhs: &Tensor<R, impl TensorBacking<R, Elem = E>>,
     ) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
@@ -524,7 +524,7 @@ where
     #[inline]
     pub fn gte(
         &self,
-        rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>,
+        rhs: &Tensor<R, impl TensorBacking<R, Elem = E>>,
     ) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
@@ -612,8 +612,8 @@ where
     #[inline]
     pub fn where_cond(
         &self,
-        on_true: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>,
-        on_false: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>,
+        on_true: &Tensor<R, impl TensorBacking<R, Elem = E>>,
+        on_false: &Tensor<R, impl TensorBacking<R, Elem = E>>,
     ) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default + IsNonZero,
@@ -682,7 +682,7 @@ where
     pub fn slice_assign(
         &self,
         slices: [Range<usize>; R],
-        value: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>,
+        value: &Tensor<R, impl TensorBacking<R, Elem = E>>,
     ) -> Tensor<R, ConcreteTensor<E, R>> {
         Tensor::new(slice_assign_ref(
             &self.inner.to_concrete(),
@@ -797,11 +797,11 @@ impl FloatOps for f64 {
     }
 }
 
-// Lazy unary operations that don't require ResolveTensor
+// Lazy unary operations
 impl<const R: usize, E, T> Tensor<R, T>
 where
     E: SimdElement,
-    T: TensorBacking<R, Elem = E>,
+    T: TensorBacking<R, Elem = E> + Expr<Elem = E>,
 {
     /// Absolute value element-wise (lazy)
     #[inline]
@@ -970,7 +970,7 @@ where
 impl<const R: usize, E, T> Tensor<R, T>
 where
     E: FloatOps,
-    T: TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>,
+    T: TensorBacking<R, Elem = E>,
 {
     /// Raise each element to a power
     #[inline]
@@ -1033,7 +1033,7 @@ where
 impl<const R: usize, E, T> Tensor<R, T>
 where
     E: SimdElement + MatmulImpl,
-    T: TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>,
+    T: TensorBacking<R, Elem = E>,
 {
     /// Matrix multiplication (batched for rank > 2)
     /// For 2D: [M, K] @ [K, N] -> [M, N]
@@ -1042,7 +1042,7 @@ where
     #[inline]
     pub fn matmul(
         &self,
-        rhs: &Tensor<R, impl TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>>,
+        rhs: &Tensor<R, impl TensorBacking<R, Elem = E>>,
     ) -> Tensor<R, ConcreteTensor<E, R>> {
         Tensor::new(
             self.inner
@@ -1054,6 +1054,14 @@ where
 
 impl<const R: usize, T: TensorBacking<R>> TensorBacking<R> for Tensor<R, T> {
     type Elem = T::Elem;
+
+    fn layout(&self) -> fusor_types::Layout {
+        self.inner.layout()
+    }
+
+    fn to_concrete(&self) -> ConcreteTensor<T::Elem, R> {
+        self.inner.to_concrete()
+    }
 }
 
 /// Macro to implement pairwise operators for CPU Tensor.
@@ -1066,14 +1074,14 @@ impl<const R: usize, T: TensorBacking<R>> TensorBacking<R> for Tensor<R, T> {
 macro_rules! impl_cpu_pairwise_op {
     ($std_trait:ident, $method:ident, $pairwise_ty:ident, $simd_op:ident) => {
         // Owned + Owned
-        impl<const R: usize, T1, T2> $std_trait<Tensor<R, T2>> for Tensor<R, T1>
+        impl<const R: usize, E, T1, T2> $std_trait<Tensor<R, T2>> for Tensor<R, T1>
         where
-            T1: TensorBacking<R>,
-            T2: TensorBacking<R, Elem = T1::Elem>,
-            T1::Elem: SimdElement + $std_trait<Output = T1::Elem> + Default,
-            $simd_op: SimdBinaryOp<T1::Elem>,
+            E: SimdElement + $std_trait<Output = E> + Default,
+            T1: TensorBacking<R, Elem = E> + Expr<Elem = E>,
+            T2: TensorBacking<R, Elem = E> + Expr<Elem = E>,
+            $simd_op: SimdBinaryOp<E>,
         {
-            type Output = Tensor<R, pairwise::$pairwise_ty<T1::Elem, R, T1, T2>>;
+            type Output = Tensor<R, pairwise::$pairwise_ty<E, R, T1, T2>>;
 
             fn $method(self, rhs: Tensor<R, T2>) -> Self::Output {
                 Tensor::new(pairwise::$pairwise_ty::new(self.inner, rhs.inner))
@@ -1081,14 +1089,14 @@ macro_rules! impl_cpu_pairwise_op {
         }
 
         // Ref + Ref
-        impl<'a, const R: usize, T1, T2> $std_trait<&'a Tensor<R, T2>> for &'a Tensor<R, T1>
+        impl<'a, const R: usize, E, T1, T2> $std_trait<&'a Tensor<R, T2>> for &'a Tensor<R, T1>
         where
-            T1: TensorBacking<R>,
-            T2: TensorBacking<R, Elem = T1::Elem>,
-            T1::Elem: SimdElement + $std_trait<Output = T1::Elem> + Default,
-            $simd_op: SimdBinaryOp<T1::Elem>,
+            E: SimdElement + $std_trait<Output = E> + Default,
+            T1: TensorBacking<R, Elem = E> + Expr<Elem = E>,
+            T2: TensorBacking<R, Elem = E> + Expr<Elem = E>,
+            $simd_op: SimdBinaryOp<E>,
         {
-            type Output = Tensor<R, pairwise::$pairwise_ty<T1::Elem, R, &'a T1, &'a T2>>;
+            type Output = Tensor<R, pairwise::$pairwise_ty<E, R, &'a T1, &'a T2>>;
 
             fn $method(self, rhs: &'a Tensor<R, T2>) -> Self::Output {
                 Tensor::new(pairwise::$pairwise_ty::new(&self.inner, &rhs.inner))
@@ -1096,14 +1104,14 @@ macro_rules! impl_cpu_pairwise_op {
         }
 
         // Owned + Ref
-        impl<'a, const R: usize, T1, T2> $std_trait<&'a Tensor<R, T2>> for Tensor<R, T1>
+        impl<'a, const R: usize, E, T1, T2> $std_trait<&'a Tensor<R, T2>> for Tensor<R, T1>
         where
-            T1: TensorBacking<R>,
-            T2: TensorBacking<R, Elem = T1::Elem>,
-            T1::Elem: SimdElement + $std_trait<Output = T1::Elem> + Default,
-            $simd_op: SimdBinaryOp<T1::Elem>,
+            E: SimdElement + $std_trait<Output = E> + Default,
+            T1: TensorBacking<R, Elem = E> + Expr<Elem = E>,
+            T2: TensorBacking<R, Elem = E> + Expr<Elem = E>,
+            $simd_op: SimdBinaryOp<E>,
         {
-            type Output = Tensor<R, pairwise::$pairwise_ty<T1::Elem, R, T1, &'a T2>>;
+            type Output = Tensor<R, pairwise::$pairwise_ty<E, R, T1, &'a T2>>;
 
             fn $method(self, rhs: &'a Tensor<R, T2>) -> Self::Output {
                 Tensor::new(pairwise::$pairwise_ty::new(self.inner, &rhs.inner))
@@ -1111,14 +1119,14 @@ macro_rules! impl_cpu_pairwise_op {
         }
 
         // Ref + Owned
-        impl<'a, const R: usize, T1, T2> $std_trait<Tensor<R, T2>> for &'a Tensor<R, T1>
+        impl<'a, const R: usize, E, T1, T2> $std_trait<Tensor<R, T2>> for &'a Tensor<R, T1>
         where
-            T1: TensorBacking<R>,
-            T2: TensorBacking<R, Elem = T1::Elem>,
-            T1::Elem: SimdElement + $std_trait<Output = T1::Elem> + Default,
-            $simd_op: SimdBinaryOp<T1::Elem>,
+            E: SimdElement + $std_trait<Output = E> + Default,
+            T1: TensorBacking<R, Elem = E> + Expr<Elem = E>,
+            T2: TensorBacking<R, Elem = E> + Expr<Elem = E>,
+            $simd_op: SimdBinaryOp<E>,
         {
-            type Output = Tensor<R, pairwise::$pairwise_ty<T1::Elem, R, &'a T1, T2>>;
+            type Output = Tensor<R, pairwise::$pairwise_ty<E, R, &'a T1, T2>>;
 
             fn $method(self, rhs: Tensor<R, T2>) -> Self::Output {
                 Tensor::new(pairwise::$pairwise_ty::new(&self.inner, rhs.inner))
@@ -1136,11 +1144,11 @@ impl_cpu_pairwise_op!(StdRem, rem, Rem, RemOp);
 // Neg is unary, so handle separately
 impl<const R: usize, T> StdNeg for Tensor<R, T>
 where
-    T: TensorBacking<R>,
-    T::Elem: SimdElement + StdNeg<Output = T::Elem> + Default,
-    NegOp: SimdUnaryOp<T::Elem>,
+    T: TensorBacking<R> + Expr<Elem = <T as TensorBacking<R>>::Elem>,
+    <T as TensorBacking<R>>::Elem: SimdElement + StdNeg<Output = <T as TensorBacking<R>>::Elem> + Default,
+    NegOp: SimdUnaryOp<<T as TensorBacking<R>>::Elem>,
 {
-    type Output = Tensor<R, elementwise::Neg<T::Elem, R, T>>;
+    type Output = Tensor<R, elementwise::Neg<<T as TensorBacking<R>>::Elem, R, T>>;
 
     fn neg(self) -> Self::Output {
         Tensor::new(elementwise::Neg::new(self.inner))
@@ -1149,11 +1157,11 @@ where
 
 impl<'a, const R: usize, T> StdNeg for &'a Tensor<R, T>
 where
-    T: TensorBacking<R>,
-    T::Elem: SimdElement + StdNeg<Output = T::Elem> + Default,
-    NegOp: SimdUnaryOp<T::Elem>,
+    T: TensorBacking<R> + Expr<Elem = <T as TensorBacking<R>>::Elem>,
+    <T as TensorBacking<R>>::Elem: SimdElement + StdNeg<Output = <T as TensorBacking<R>>::Elem> + Default,
+    NegOp: SimdUnaryOp<<T as TensorBacking<R>>::Elem>,
 {
-    type Output = Tensor<R, elementwise::Neg<T::Elem, R, &'a T>>;
+    type Output = Tensor<R, elementwise::Neg<<T as TensorBacking<R>>::Elem, R, &'a T>>;
 
     fn neg(self) -> Self::Output {
         Tensor::new(elementwise::Neg::new(&self.inner))
@@ -1178,7 +1186,7 @@ impl Scalar for u64 {}
 // Scalar multiplication: Tensor * scalar
 impl<const R: usize, T, E> StdMul<E> for Tensor<R, T>
 where
-    T: TensorBacking<R, Elem = E>,
+    T: TensorBacking<R, Elem = E> + Expr<Elem = E>,
     E: SimdElement + StdMul<Output = E> + Default + Scalar,
     MulOp: SimdBinaryOp<E>,
 {
@@ -1191,7 +1199,7 @@ where
 
 impl<'a, const R: usize, T, E> StdMul<E> for &'a Tensor<R, T>
 where
-    T: TensorBacking<R, Elem = E>,
+    T: TensorBacking<R, Elem = E> + Expr<Elem = E>,
     E: SimdElement + StdMul<Output = E> + Default + Scalar,
     MulOp: SimdBinaryOp<E>,
 {
@@ -1205,7 +1213,7 @@ where
 // Scalar addition: Tensor + scalar
 impl<const R: usize, T, E> StdAdd<E> for Tensor<R, T>
 where
-    T: TensorBacking<R, Elem = E>,
+    T: TensorBacking<R, Elem = E> + Expr<Elem = E>,
     E: SimdElement + StdAdd<Output = E> + Default + Scalar,
     AddOp: SimdBinaryOp<E>,
 {
@@ -1218,7 +1226,7 @@ where
 
 impl<'a, const R: usize, T, E> StdAdd<E> for &'a Tensor<R, T>
 where
-    T: TensorBacking<R, Elem = E>,
+    T: TensorBacking<R, Elem = E> + Expr<Elem = E>,
     E: SimdElement + StdAdd<Output = E> + Default + Scalar,
     AddOp: SimdBinaryOp<E>,
 {
@@ -1233,7 +1241,7 @@ where
 impl<const R: usize, E, T> Tensor<R, T>
 where
     E: SimdElement + Default,
-    T: TensorBacking<R, Elem = E>,
+    T: TensorBacking<R, Elem = E> + Expr<Elem = E>,
 {
     /// Add a scalar to each element
     #[inline]
@@ -1325,7 +1333,7 @@ fn broadcast_shapes<const R1: usize, const R2: usize, const R3: usize>(
 impl<const R: usize, E, T> Tensor<R, T>
 where
     E: SimdElement + Default,
-    T: TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E> + Expr<Elem = E>,
+    T: TensorBacking<R, Elem = E> + Expr<Elem = E>,
 {
     /// Multiply with broadcasting support (multi-rank tensors).
     ///
@@ -1338,7 +1346,7 @@ where
     where
         E: StdMul<Output = E>,
         MulOp: SimdBinaryOp<E>,
-        T2: TensorBacking<R2, Elem = E> + ResolveTensor<R2, Elem = E> + Expr<Elem = E>,
+        T2: TensorBacking<R2, Elem = E> + Expr<Elem = E>,
         (ConcreteTensor<E, R>, ConcreteTensor<E, R2>): MaxRank<R3, E>,
     {
         let shape1: [usize; R] = Expr::shape(self).try_into().unwrap();
@@ -1362,7 +1370,7 @@ where
     where
         E: StdAdd<Output = E>,
         AddOp: SimdBinaryOp<E>,
-        T2: TensorBacking<R2, Elem = E> + ResolveTensor<R2, Elem = E> + Expr<Elem = E>,
+        T2: TensorBacking<R2, Elem = E> + Expr<Elem = E>,
         (ConcreteTensor<E, R>, ConcreteTensor<E, R2>): MaxRank<R3, E>,
     {
         let shape1: [usize; R] = Expr::shape(self).try_into().unwrap();
@@ -1386,7 +1394,7 @@ where
     where
         E: StdSub<Output = E>,
         SubOp: SimdBinaryOp<E>,
-        T2: TensorBacking<R2, Elem = E> + ResolveTensor<R2, Elem = E> + Expr<Elem = E>,
+        T2: TensorBacking<R2, Elem = E> + Expr<Elem = E>,
         (ConcreteTensor<E, R>, ConcreteTensor<E, R2>): MaxRank<R3, E>,
     {
         let shape1: [usize; R] = Expr::shape(self).try_into().unwrap();
@@ -1410,7 +1418,7 @@ where
     where
         E: StdDiv<Output = E>,
         DivOp: SimdBinaryOp<E>,
-        T2: TensorBacking<R2, Elem = E> + ResolveTensor<R2, Elem = E> + Expr<Elem = E>,
+        T2: TensorBacking<R2, Elem = E> + Expr<Elem = E>,
         (ConcreteTensor<E, R>, ConcreteTensor<E, R2>): MaxRank<R3, E>,
     {
         let shape1: [usize; R] = Expr::shape(self).try_into().unwrap();
@@ -1433,7 +1441,7 @@ where
     ) -> Tensor<R3, ConcreteTensor<E, R3>>
     where
         E: FloatOps,
-        T2: TensorBacking<R2, Elem = E> + ResolveTensor<R2, Elem = E> + Expr<Elem = E>,
+        T2: TensorBacking<R2, Elem = E> + Expr<Elem = E>,
         (ConcreteTensor<E, R>, ConcreteTensor<E, R2>): MaxRank<R3, E>,
     {
         let shape1: [usize; R] = Expr::shape(self).try_into().unwrap();
@@ -1489,22 +1497,11 @@ where
     }
 }
 
-// Implement ResolveTensor for Tensor to enable materialization
-impl<const R: usize, E, T> ResolveTensor<R> for Tensor<R, T>
-where
-    E: SimdElement,
-    T: TensorBacking<R, Elem = E> + ResolveTensor<R, Elem = E>,
-{
-    fn to_concrete(&self) -> ConcreteTensor<E, R> {
-        self.inner.to_concrete()
-    }
-}
-
 // Matrix transpose for 2D tensors
 impl<E, T> Tensor<2, T>
 where
     E: SimdElement,
-    T: TensorBacking<2, Elem = E> + ResolveTensor<2, Elem = E>,
+    T: TensorBacking<2, Elem = E>,
 {
     /// Transpose a 2D matrix (swap dimensions 0 and 1)
     pub fn t(&self) -> Tensor<2, MapLayout<E, 2>> {
@@ -1516,7 +1513,7 @@ where
 impl<E, T> Tensor<3, T>
 where
     E: SimdElement,
-    T: TensorBacking<3, Elem = E> + ResolveTensor<3, Elem = E>,
+    T: TensorBacking<3, Elem = E>,
 {
     /// Transpose last two dimensions
     pub fn t(&self) -> Tensor<3, MapLayout<E, 3>> {
@@ -1528,7 +1525,7 @@ where
 impl<E, T> Tensor<4, T>
 where
     E: SimdElement,
-    T: TensorBacking<4, Elem = E> + ResolveTensor<4, Elem = E>,
+    T: TensorBacking<4, Elem = E>,
 {
     /// Transpose last two dimensions
     pub fn t(&self) -> Tensor<4, MapLayout<E, 4>> {
@@ -1537,7 +1534,7 @@ where
 }
 
 // Static methods for concatenation and stacking
-impl<const R: usize, T: ResolveTensor<R>> Tensor<R, T> {
+impl<const R: usize, T: TensorBacking<R>> Tensor<R, T> {
     /// Concatenate multiple tensors along a given dimension
     ///
     /// # Arguments

@@ -4,7 +4,8 @@ use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Rem as StdRem, Sub a
 
 use pulp::Simd;
 
-use crate::{ConcreteTensor, Expr, ResolveTensor, SimdElement, TensorBacking, materialize_expr};
+use crate::{ConcreteTensor, Expr, SimdElement, TensorBacking, materialize_expr};
+use fusor_types::Layout;
 
 /// Trait for binary operations that have SIMD support
 pub trait SimdBinaryOp<E: SimdElement>: Copy {
@@ -162,10 +163,21 @@ macro_rules! define_binary_tensor_op {
         where
             E: SimdElement + $std_trait<Output = E> + Default,
             $simd_op: SimdBinaryOp<E>,
-            T1: TensorBacking<R, Elem = E>,
-            T2: TensorBacking<R, Elem = E>,
+            T1: Expr<Elem = E> + TensorBacking<R, Elem = E>,
+            T2: Expr<Elem = E> + TensorBacking<R, Elem = E>,
         {
             type Elem = E;
+
+            fn layout(&self) -> Layout {
+                Layout::contiguous(self.lhs.layout().shape())
+            }
+
+            fn to_concrete(&self) -> ConcreteTensor<E, R> {
+                let shape: [usize; R] = self.lhs.layout().shape()
+                    .try_into()
+                    .expect("Shape length mismatch");
+                materialize_expr(self, shape)
+            }
         }
 
         impl<E, const R: usize, T1, T2> Expr for $name<E, R, T1, T2>
@@ -203,36 +215,6 @@ macro_rules! define_binary_tensor_op {
                 self.lhs.is_contiguous() && self.rhs.is_contiguous()
             }
         }
-
-        impl<E, const R: usize, T1, T2> ResolveTensor<R> for $name<E, R, T1, T2>
-        where
-            E: SimdElement + $std_trait<Output = E> + Default,
-            $simd_op: SimdBinaryOp<E>,
-            T1: Expr<Elem = E> + ResolveTensor<R, Elem = E>,
-            T2: Expr<Elem = E> + ResolveTensor<R, Elem = E>,
-        {
-            fn to_concrete(&self) -> ConcreteTensor<E, R> {
-                let shape: [usize; R] = Expr::shape(&self.lhs)
-                    .try_into()
-                    .expect("Shape length mismatch");
-                materialize_expr(self, shape)
-            }
-        }
-
-        impl<'a, E, const R: usize, T1, T2> ResolveTensor<R> for &'a $name<E, R, T1, T2>
-        where
-            E: SimdElement + $std_trait<Output = E> + Default,
-            $simd_op: SimdBinaryOp<E>,
-            T1: Expr<Elem = E> + ResolveTensor<R, Elem = E>,
-            T2: Expr<Elem = E> + ResolveTensor<R, Elem = E>,
-        {
-            fn to_concrete(&self) -> ConcreteTensor<E, R> {
-                let shape: [usize; R] = Expr::shape(&self.lhs)
-                    .try_into()
-                    .expect("Shape length mismatch");
-                materialize_expr(*self, shape)
-            }
-        }
     };
 }
 
@@ -246,7 +228,7 @@ define_binary_tensor_op!(Rem, StdRem, RemOp, "Tensor rank mismatch in Rem");
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ResolveTensor;
+    use crate::TensorBacking;
 
     #[test]
     fn test_add_expr() {

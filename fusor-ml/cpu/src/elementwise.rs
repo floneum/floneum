@@ -5,8 +5,9 @@ use std::ops::Neg as StdNeg;
 use pulp::Simd;
 
 use crate::{
-    ConcreteTensor, Expr, ResolveTensor, SimdElement, TensorBacking, materialize_expr,
+    ConcreteTensor, Expr, SimdElement, TensorBacking, materialize_expr,
 };
+use fusor_types::Layout;
 
 /// Trait for unary operations that have SIMD support
 pub trait SimdUnaryOp<E: SimdElement>: Copy {
@@ -219,9 +220,20 @@ macro_rules! define_unary_tensor_op {
         where
             E: SimdElement + Default,
             $simd_op: SimdUnaryOp<E>,
-            T: TensorBacking<R, Elem = E>,
+            T: Expr<Elem = E> + TensorBacking<R, Elem = E>,
         {
             type Elem = E;
+
+            fn layout(&self) -> Layout {
+                Layout::contiguous(Expr::shape(self))
+            }
+
+            fn to_concrete(&self) -> ConcreteTensor<E, R> {
+                let shape: [usize; R] = Expr::shape(&self.input)
+                    .try_into()
+                    .expect("Shape length mismatch");
+                materialize_expr(self, shape)
+            }
         }
 
         impl<E, const R: usize, T> Expr for $name<E, R, T>
@@ -254,34 +266,6 @@ macro_rules! define_unary_tensor_op {
                 self.input.is_contiguous()
             }
         }
-
-        impl<E, const R: usize, T> ResolveTensor<R> for $name<E, R, T>
-        where
-            E: SimdElement + Default,
-            $simd_op: SimdUnaryOp<E>,
-            T: Expr<Elem = E> + ResolveTensor<R, Elem = E>,
-        {
-            fn to_concrete(&self) -> ConcreteTensor<E, R> {
-                let shape: [usize; R] = Expr::shape(&self.input)
-                    .try_into()
-                    .expect("Shape length mismatch");
-                materialize_expr(self, shape)
-            }
-        }
-
-        impl<'a, E, const R: usize, T> ResolveTensor<R> for &'a $name<E, R, T>
-        where
-            E: SimdElement + Default,
-            $simd_op: SimdUnaryOp<E>,
-            T: Expr<Elem = E> + ResolveTensor<R, Elem = E>,
-        {
-            fn to_concrete(&self) -> ConcreteTensor<E, R> {
-                let shape: [usize; R] = Expr::shape(&self.input)
-                    .try_into()
-                    .expect("Shape length mismatch");
-                materialize_expr(*self, shape)
-            }
-        }
     };
     ($name:ident, $simd_op:ty, $std_trait:ident) => {
         pub struct $name<E: SimdElement, const R: usize, T: TensorBacking<R, Elem = E>> {
@@ -306,9 +290,20 @@ macro_rules! define_unary_tensor_op {
         where
             E: SimdElement + $std_trait<Output = E> + Default,
             $simd_op: SimdUnaryOp<E>,
-            T: TensorBacking<R, Elem = E>,
+            T: Expr<Elem = E> + TensorBacking<R, Elem = E>,
         {
             type Elem = E;
+
+            fn layout(&self) -> Layout {
+                Layout::contiguous(Expr::shape(self))
+            }
+
+            fn to_concrete(&self) -> ConcreteTensor<E, R> {
+                let shape: [usize; R] = Expr::shape(&self.input)
+                    .try_into()
+                    .expect("Shape length mismatch");
+                materialize_expr(self, shape)
+            }
         }
 
         impl<E, const R: usize, T> Expr for $name<E, R, T>
@@ -339,34 +334,6 @@ macro_rules! define_unary_tensor_op {
 
             fn is_contiguous(&self) -> bool {
                 self.input.is_contiguous()
-            }
-        }
-
-        impl<E, const R: usize, T> ResolveTensor<R> for $name<E, R, T>
-        where
-            E: SimdElement + $std_trait<Output = E> + Default,
-            $simd_op: SimdUnaryOp<E>,
-            T: Expr<Elem = E> + ResolveTensor<R, Elem = E>,
-        {
-            fn to_concrete(&self) -> ConcreteTensor<E, R> {
-                let shape: [usize; R] = Expr::shape(&self.input)
-                    .try_into()
-                    .expect("Shape length mismatch");
-                materialize_expr(self, shape)
-            }
-        }
-
-        impl<'a, E, const R: usize, T> ResolveTensor<R> for &'a $name<E, R, T>
-        where
-            E: SimdElement + $std_trait<Output = E> + Default,
-            $simd_op: SimdUnaryOp<E>,
-            T: Expr<Elem = E> + ResolveTensor<R, Elem = E>,
-        {
-            fn to_concrete(&self) -> ConcreteTensor<E, R> {
-                let shape: [usize; R] = Expr::shape(&self.input)
-                    .try_into()
-                    .expect("Shape length mismatch");
-                materialize_expr(*self, shape)
             }
         }
     };
@@ -400,7 +367,7 @@ define_unary_tensor_op!(Atanh, AtanhOp);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ResolveTensor;
+    use crate::TensorBacking;
 
     #[test]
     fn test_neg_expr() {

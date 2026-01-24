@@ -9,7 +9,7 @@ use fusor_types::Layout;
 use pulp::Simd;
 
 use crate::expr::{linear_to_indices, materialize_expr, Expr};
-use crate::{ConcreteTensor, ResolveTensor, ResolvedTensor, SimdElement, TensorBacking, MAX_SIMD_LANES};
+use crate::{ConcreteTensor, ResolvedTensor, SimdElement, TensorBacking, MAX_SIMD_LANES};
 
 /// A tensor that holds backing data with a transformed layout.
 ///
@@ -62,6 +62,19 @@ impl<E: SimdElement, const R: usize> MapLayout<E, R> {
 
 impl<E: SimdElement, const R: usize> TensorBacking<R> for MapLayout<E, R> {
     type Elem = E;
+
+    fn layout(&self) -> Layout {
+        self.layout.clone()
+    }
+
+    fn to_concrete(&self) -> ConcreteTensor<E, R> {
+        let shape: [usize; R] = self
+            .layout
+            .shape()
+            .try_into()
+            .expect("Shape length mismatch");
+        materialize_expr(self, shape)
+    }
 }
 
 impl<E: SimdElement, const R: usize> Expr for MapLayout<E, R> {
@@ -110,29 +123,7 @@ impl<E: SimdElement, const R: usize> Expr for MapLayout<E, R> {
     }
 }
 
-impl<E: SimdElement, const R: usize> ResolveTensor<R> for MapLayout<E, R> {
-    fn to_concrete(&self) -> ConcreteTensor<E, R> {
-        let shape: [usize; R] = self
-            .layout
-            .shape()
-            .try_into()
-            .expect("Shape length mismatch");
-        materialize_expr(self, shape)
-    }
-}
-
-// Implement ResolveTensor for references
-impl<E: SimdElement, const R: usize> ResolveTensor<R> for &MapLayout<E, R> {
-    fn to_concrete(&self) -> ConcreteTensor<E, R> {
-        (*self).to_concrete()
-    }
-}
-
 impl<E: SimdElement, const R: usize> ResolvedTensor<R> for MapLayout<E, R> {
-    fn layout(&self) -> &Layout {
-        &self.layout
-    }
-
     fn data(&self) -> &ABox<[Self::Elem]> {
         &self.backing
     }

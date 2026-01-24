@@ -1,6 +1,6 @@
 //! Tests for pairwise (binary) tensor operations: Add, Sub, Mul, Div
 
-use fusor_cpu::{Add, ConcreteTensor, Div, Mul, ResolveTensor, ResolvedTensor, Sub};
+use fusor_cpu::{Add, ConcreteTensor, Div, Mul, TensorBacking, Sub};
 
 // ========== Add Tests ==========
 

@@ -533,7 +533,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ResolveTensor;
+    use crate::TensorBacking;
     use fusor_gguf::BlockQ8_0;
     use pulp::bytemuck;
 
