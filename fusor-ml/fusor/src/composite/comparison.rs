@@ -87,10 +87,10 @@ where
     where
         EqOp: SimdComparisonOp<D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.eq_scalar(scalar)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.eq(scalar)),
-        }
+        self.dispatch_ref(
+            |t| t.eq_scalar(scalar),
+            |t| t.eq(scalar),
+        )
     }
 
     /// Element-wise less-than comparison with a scalar.
@@ -100,10 +100,10 @@ where
     where
         LtOp: SimdComparisonOp<D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.lt_scalar(scalar)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.lt(scalar)),
-        }
+        self.dispatch_ref(
+            |t| t.lt_scalar(scalar),
+            |t| t.lt(scalar),
+        )
     }
 
     /// Element-wise less-than-or-equal comparison with a scalar.
@@ -113,10 +113,10 @@ where
     where
         LteOp: SimdComparisonOp<D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.lte_scalar(scalar)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.lte(scalar)),
-        }
+        self.dispatch_ref(
+            |t| t.lte_scalar(scalar),
+            |t| t.lte(scalar),
+        )
     }
 
     /// Element-wise greater-than comparison with a scalar.
@@ -126,10 +126,10 @@ where
     where
         GtOp: SimdComparisonOp<D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.gt_scalar(scalar)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.mt(scalar)),
-        }
+        self.dispatch_ref(
+            |t| t.gt_scalar(scalar),
+            |t| t.mt(scalar),
+        )
     }
 
     /// Element-wise greater-than-or-equal comparison with a scalar.
@@ -139,10 +139,10 @@ where
     where
         GteOp: SimdComparisonOp<D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.gte_scalar(scalar)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.mte(scalar)),
-        }
+        self.dispatch_ref(
+            |t| t.gte_scalar(scalar),
+            |t| t.mte(scalar),
+        )
     }
 
     /// Element-wise equality comparison with a scalar (fusor-core compatible API).

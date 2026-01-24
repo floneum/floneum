@@ -224,6 +224,62 @@ where
         }
     }
 
+    /// Dispatch a single-tensor operation (reference variant).
+    #[inline]
+    pub fn dispatch_ref<const R2: usize, D2, B2>(
+        &self,
+        cpu_fn: impl FnOnce(&CpuTensor<R, B>) -> CpuTensor<R2, B2>,
+        gpu_fn: impl FnOnce(&GpuTensor<R, D>) -> GpuTensor<R2, D2>,
+    ) -> Tensor<R2, D2, B2>
+    where
+        B2: TensorBacking<R2, Elem = D2>,
+    {
+        match self {
+            Tensor::Cpu(t) => Tensor::Cpu(cpu_fn(t)),
+            Tensor::Gpu(t) => Tensor::Gpu(gpu_fn(t)),
+        }
+    }
+
+    /// Dispatch a two-tensor operation to the appropriate backend.
+    #[inline]
+    pub fn dispatch_pair<const R2: usize, const R3: usize, D2, D3, B2, B3>(
+        &self,
+        other: &Tensor<R2, D2, B2>,
+        cpu_fn: impl FnOnce(&CpuTensor<R, B>, &CpuTensor<R2, B2>) -> CpuTensor<R3, B3>,
+        gpu_fn: impl FnOnce(&GpuTensor<R, D>, &GpuTensor<R2, D2>) -> GpuTensor<R3, D3>,
+    ) -> Tensor<R3, D3, B3>
+    where
+        B2: TensorBacking<R2, Elem = D2>,
+        B3: TensorBacking<R3, Elem = D3>,
+    {
+        match (self, other) {
+            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu(cpu_fn(a, b)),
+            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(gpu_fn(a, b)),
+            _ => panic!("Cannot mix CPU and GPU tensors"),
+        }
+    }
+
+    /// Dispatch a three-tensor operation to the appropriate backend.
+    #[inline]
+    pub fn dispatch_triple<const R2: usize, const R3: usize, const R4: usize, D2, D3, D4, B2, B3, B4>(
+        &self,
+        second: &Tensor<R2, D2, B2>,
+        third: &Tensor<R3, D3, B3>,
+        cpu_fn: impl FnOnce(&CpuTensor<R, B>, &CpuTensor<R2, B2>, &CpuTensor<R3, B3>) -> CpuTensor<R4, B4>,
+        gpu_fn: impl FnOnce(&GpuTensor<R, D>, &GpuTensor<R2, D2>, &GpuTensor<R3, D3>) -> GpuTensor<R4, D4>,
+    ) -> Tensor<R4, D4, B4>
+    where
+        B2: TensorBacking<R2, Elem = D2>,
+        B3: TensorBacking<R3, Elem = D3>,
+        B4: TensorBacking<R4, Elem = D4>,
+    {
+        match (self, second, third) {
+            (Tensor::Cpu(a), Tensor::Cpu(b), Tensor::Cpu(c)) => Tensor::Cpu(cpu_fn(a, b, c)),
+            (Tensor::Gpu(a), Tensor::Gpu(b), Tensor::Gpu(c)) => Tensor::Gpu(gpu_fn(a, b, c)),
+            _ => panic!("All tensors must be on the same device"),
+        }
+    }
+
     pub async fn as_slice(self) -> Result<TensorSlice<R, D, EitherMappedBuffer>, Error>
     where
         B: ResolveTensor<R>,
@@ -680,18 +736,18 @@ where
     /// Approximate exp function (faster but less accurate on GPU, exact on CPU).
     /// Uses a polynomial approximation on GPU for better performance.
     pub fn approximate_exp(&self) -> Tensor<R, D> {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.exp().to_concrete()),
-            Tensor::Gpu(t) => Tensor::Gpu(t.appoximate_exp()),
-        }
+        self.dispatch_ref(
+            |t| t.exp().to_concrete(),
+            |t| t.appoximate_exp(),
+        )
     }
 
     /// Less approximate exp function (medium accuracy/speed tradeoff on GPU, exact on CPU).
     pub fn less_approximate_exp(&self) -> Tensor<R, D> {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.exp().to_concrete()),
-            Tensor::Gpu(t) => Tensor::Gpu(t.less_appoximate_exp()),
-        }
+        self.dispatch_ref(
+            |t| t.exp().to_concrete(),
+            |t| t.less_appoximate_exp(),
+        )
     }
 }
 
@@ -704,11 +760,11 @@ where
     /// Exact tanh using (e^x - e^-x) / (e^x + e^-x).
     /// More accurate but potentially slower than built-in tanh on some platforms.
     pub fn tanh_exact(&self) -> Tensor<R, D> {
-        match self {
-            // CPU tanh is already exact - evaluate to concrete
-            Tensor::Cpu(t) => Tensor::Cpu(t.tanh().to_concrete()),
-            Tensor::Gpu(t) => Tensor::Gpu(t.tanh_exact()),
-        }
+        // CPU tanh is already exact - evaluate to concrete
+        self.dispatch_ref(
+            |t| t.tanh().to_concrete(),
+            |t| t.tanh_exact(),
+        )
     }
 }
 
@@ -719,13 +775,12 @@ where
 {
     /// Conditional selection: where self != 0, select on_true, else on_false.
     pub fn where_cond(&self, on_true: &Self, on_false: &Self) -> Self {
-        match (self, on_true, on_false) {
-            (Tensor::Cpu(c), Tensor::Cpu(t), Tensor::Cpu(f)) => Tensor::Cpu(c.where_cond(t, f)),
-            (Tensor::Gpu(c), Tensor::Gpu(t), Tensor::Gpu(f)) => {
-                Tensor::Gpu(c.clone().where_cond(t, f))
-            }
-            _ => panic!("Cannot mix CPU and GPU tensors in where_cond"),
-        }
+        self.dispatch_triple(
+            on_true,
+            on_false,
+            |c, t, f| c.where_cond(t, f),
+            |c, t, f| c.clone().where_cond(t, f),
+        )
     }
 }
 
@@ -736,34 +791,34 @@ where
 {
     /// Raise each element to a power.
     pub fn pow_scalar(&self, exponent: D) -> Self {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.pow_scalar(exponent)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.pow_elementwise(exponent)),
-        }
+        self.dispatch_ref(
+            |t| t.pow_scalar(exponent),
+            |t| t.pow_elementwise(exponent),
+        )
     }
 
     /// Element-wise maximum with a scalar.
     pub fn max_scalar(&self, scalar: D) -> Self {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.max_scalar(scalar)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.max_elementwise(scalar)),
-        }
+        self.dispatch_ref(
+            |t| t.max_scalar(scalar),
+            |t| t.max_elementwise(scalar),
+        )
     }
 
     /// Element-wise minimum with a scalar.
     pub fn min_scalar(&self, scalar: D) -> Self {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.min_scalar(scalar)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.min_elementwise(scalar)),
-        }
+        self.dispatch_ref(
+            |t| t.min_scalar(scalar),
+            |t| t.min_elementwise(scalar),
+        )
     }
 
     /// Clamp each element to a range [min, max].
     pub fn clamp(&self, min: D, max: D) -> Self {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.clamp(min, max)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.max_elementwise(min).min_elementwise(max)),
-        }
+        self.dispatch_ref(
+            |t| t.clamp(min, max),
+            |t| t.max_elementwise(min).min_elementwise(max),
+        )
     }
 
     /// Raise each element to a power (alias for pow_scalar for fusor-core API compatibility).
@@ -787,10 +842,10 @@ where
         D: std::ops::Add<Output = D>,
         AddOp: SimdBinaryOp<D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.add_scalar(scalar).to_concrete()),
-            Tensor::Gpu(t) => Tensor::Gpu(t.clone() + scalar),
-        }
+        self.dispatch_ref(
+            |t| t.add_scalar(scalar).to_concrete(),
+            |t| t.clone() + scalar,
+        )
     }
 
     /// Subtract a scalar from each element.
@@ -799,10 +854,10 @@ where
         D: std::ops::Sub<Output = D>,
         SubOp: SimdBinaryOp<D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.sub_scalar(scalar).to_concrete()),
-            Tensor::Gpu(t) => Tensor::Gpu(t.clone() - scalar),
-        }
+        self.dispatch_ref(
+            |t| t.sub_scalar(scalar).to_concrete(),
+            |t| t.clone() - scalar,
+        )
     }
 
     /// Multiply each element by a scalar.
@@ -811,10 +866,10 @@ where
         D: std::ops::Mul<Output = D>,
         MulOp: SimdBinaryOp<D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.mul_scalar(scalar).to_concrete()),
-            Tensor::Gpu(t) => Tensor::Gpu(t.clone() * scalar),
-        }
+        self.dispatch_ref(
+            |t| t.mul_scalar(scalar).to_concrete(),
+            |t| t.clone() * scalar,
+        )
     }
 
     /// Divide each element by a scalar.
@@ -823,10 +878,10 @@ where
         D: std::ops::Div<Output = D>,
         DivOp: SimdBinaryOp<D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.div_scalar(scalar).to_concrete()),
-            Tensor::Gpu(t) => Tensor::Gpu(t.clone() / scalar),
-        }
+        self.dispatch_ref(
+            |t| t.div_scalar(scalar).to_concrete(),
+            |t| t.clone() / scalar,
+        )
     }
 }
 
@@ -841,10 +896,7 @@ where
         D: CastTo<D2> + fusor_core::CastTensor<D2>,
         D2: SimdElement + DataType + Default,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.cast()),
-            Tensor::Gpu(t) => Tensor::Gpu(t.cast()),
-        }
+        self.dispatch_ref(|t| t.cast(), |t| t.cast())
     }
 }
 
@@ -859,11 +911,11 @@ where
         dimension: usize,
         indices: &Tensor<1, u32, ConcreteTensor<u32, 1>>,
     ) -> Self {
-        match (self, indices) {
-            (Tensor::Cpu(t), Tensor::Cpu(idx)) => Tensor::Cpu(t.index_select(dimension, idx)),
-            (Tensor::Gpu(t), Tensor::Gpu(idx)) => Tensor::Gpu(t.index_select(dimension, idx)),
-            _ => panic!("Cannot mix CPU and GPU tensors in index_select"),
-        }
+        self.dispatch_pair(
+            indices,
+            |t, idx| t.index_select(dimension, idx),
+            |t, idx| t.index_select(dimension, idx),
+        )
     }
 }
 
@@ -874,11 +926,12 @@ where
 {
     /// Returns a new tensor with the slice region replaced by values from the value tensor.
     pub fn slice_assign(&self, slices: [Range<usize>; R], value: &Self) -> Self {
-        match (self, value) {
-            (Tensor::Cpu(t), Tensor::Cpu(v)) => Tensor::Cpu(t.slice_assign(slices, v)),
-            (Tensor::Gpu(t), Tensor::Gpu(v)) => Tensor::Gpu(t.slice_assign(slices, v)),
-            _ => panic!("Cannot mix CPU and GPU tensors in slice_assign"),
-        }
+        let slices_clone = slices.clone();
+        self.dispatch_pair(
+            value,
+            |t, v| t.slice_assign(slices, v),
+            |t, v| t.slice_assign(slices_clone, v),
+        )
     }
 }
 
@@ -892,11 +945,7 @@ where
     /// For ND: [...batch, M, K] @ [...batch, K, N] -> [...batch, M, N]
     /// Panics if R < 2
     pub fn matmul(&self, rhs: &Self) -> Self {
-        match (self, rhs) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu(a.matmul(b)),
-            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a.mat_mul(b)),
-            _ => panic!("Cannot multiply CPU tensor with GPU tensor"),
-        }
+        self.dispatch_pair(rhs, |a, b| a.matmul(b), |a, b| a.mat_mul(b))
     }
 
     /// Alias for matmul (for API compatibility with fusor-core)

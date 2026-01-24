@@ -33,20 +33,21 @@ where
     /// * `dim0` - First dimension to swap
     /// * `dim1` - Second dimension to swap
     pub fn transpose(&self, dim0: usize, dim1: usize) -> Self {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.transpose(dim0, dim1).to_concrete()),
-            Tensor::Gpu(t) => Tensor::Gpu(t.transpose(dim0, dim1)),
-        }
+        self.dispatch_ref(
+            |t| t.transpose(dim0, dim1).to_concrete(),
+            |t| t.transpose(dim0, dim1),
+        )
     }
 
     /// Slice the tensor along all dimensions.
     ///
     /// Returns a view into the tensor's data with updated layout.
     pub fn slice(&self, slices: [Range<usize>; R]) -> Self {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.slice(slices.clone()).to_concrete()),
-            Tensor::Gpu(t) => Tensor::Gpu(t.slice(slices)),
-        }
+        let slices_clone = slices.clone();
+        self.dispatch_ref(
+            |t| t.slice(slices).to_concrete(),
+            |t| t.slice(slices_clone),
+        )
     }
 
     /// Permute the tensor dimensions according to the given axes order.
@@ -54,10 +55,10 @@ where
     /// # Arguments
     /// * `axes` - A permutation of [0, 1, ..., R-1] specifying the new order
     pub fn permute(&self, axes: [usize; R]) -> Self {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.permute(axes).to_concrete()),
-            Tensor::Gpu(t) => Tensor::Gpu(t.permute(axes)),
-        }
+        self.dispatch_ref(
+            |t| t.permute(axes).to_concrete(),
+            |t| t.permute(axes),
+        )
     }
 
     /// Broadcast the tensor to a larger shape.
@@ -70,10 +71,10 @@ where
         &self,
         out_shape: [usize; R2],
     ) -> Tensor<R2, D, ConcreteTensor<D, R2>> {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.broadcast_as(out_shape).to_concrete()),
-            Tensor::Gpu(t) => Tensor::Gpu(t.broadcast_as(out_shape)),
-        }
+        self.dispatch_ref(
+            |t| t.broadcast_as(out_shape).to_concrete(),
+            |t| t.broadcast_as(out_shape),
+        )
     }
 
     /// Expand the tensor to a larger shape (alias for broadcast_as).
@@ -86,10 +87,10 @@ where
 
     /// Flatten the tensor to 1D.
     pub fn flatten_all(&self) -> Tensor<1, D, ConcreteTensor<D, 1>> {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.flatten_all().to_concrete()),
-            Tensor::Gpu(t) => Tensor::Gpu(t.flatten_all()),
-        }
+        self.dispatch_ref(
+            |t| t.flatten_all().to_concrete(),
+            |t| t.flatten_all(),
+        )
     }
 
     /// Narrow the tensor along a given dimension.
@@ -138,10 +139,10 @@ where
     /// # Arguments
     /// * `repeats` - Number of times to repeat along each dimension
     pub fn repeat(&self, repeats: [usize; R]) -> Self {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.repeat(repeats)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.repeat(repeats)),
-        }
+        self.dispatch_ref(
+            |t| t.repeat(repeats),
+            |t| t.repeat(repeats),
+        )
     }
 
     /// Squeeze a dimension of size 1.
@@ -153,10 +154,10 @@ where
         ConcreteTensor<D, R>: fusor_cpu::LastRank<R2, D>,
         fusor_core::Tensor<R, D>: fusor_core::LastRank<R2, D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.squeeze(dim).to_concrete()),
-            Tensor::Gpu(t) => Tensor::Gpu(t.squeeze(dim)),
-        }
+        self.dispatch_ref(
+            |t| t.squeeze(dim).to_concrete(),
+            |t| t.squeeze(dim),
+        )
     }
 
     /// Unsqueeze (add a dimension of size 1).
@@ -168,10 +169,10 @@ where
         ConcreteTensor<D, R>: fusor_cpu::NextRank<R2, D>,
         fusor_core::Tensor<R, D>: fusor_core::NextRank<R2, D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.unsqueeze(dim).to_concrete()),
-            Tensor::Gpu(t) => Tensor::Gpu(t.unsqueeze(dim)),
-        }
+        self.dispatch_ref(
+            |t| t.unsqueeze(dim).to_concrete(),
+            |t| t.unsqueeze(dim),
+        )
     }
 
     /// Squeeze multiple dimensions of size 1.
@@ -190,10 +191,10 @@ where
         ConcreteTensor<D, R>: fusor_cpu::SmallerRank<R2, DIFF, D>,
         fusor_core::Tensor<R, D>: fusor_core::SmallerRank<DIFF, R2, D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.squeeze_dims(axes).to_concrete()),
-            Tensor::Gpu(t) => Tensor::Gpu(t.squeeze_dims(axes)),
-        }
+        self.dispatch_ref(
+            |t| t.squeeze_dims(axes).to_concrete(),
+            |t| t.squeeze_dims(axes),
+        )
     }
 
     /// Unsqueeze multiple dimensions (add dimensions of size 1).
@@ -212,10 +213,10 @@ where
         ConcreteTensor<D, R>: fusor_cpu::LargerRank<R2, DIFF, D>,
         fusor_core::Tensor<R, D>: fusor_core::LargerRank<DIFF, R2, D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.unsqueeze_dims(axes).to_concrete()),
-            Tensor::Gpu(t) => Tensor::Gpu(t.unsqueeze_dims(axes)),
-        }
+        self.dispatch_ref(
+            |t| t.unsqueeze_dims(axes).to_concrete(),
+            |t| t.unsqueeze_dims(axes),
+        )
     }
 
     /// Create a sliding window view of the tensor (zero-copy).
@@ -236,10 +237,10 @@ where
         ConcreteTensor<D, R>: fusor_cpu::LargerRank<R2, DIFF, D>,
         fusor_core::Tensor<R, D>: fusor_core::LargerRank<DIFF, R2, D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.sliding_window_view(windows).to_concrete()),
-            Tensor::Gpu(t) => Tensor::Gpu(t.sliding_window_view(windows)),
-        }
+        self.dispatch_ref(
+            |t| t.sliding_window_view(windows).to_concrete(),
+            |t| t.sliding_window_view(windows),
+        )
     }
 }
 

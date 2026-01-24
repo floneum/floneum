@@ -24,10 +24,10 @@ where
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
         SumOp: SimdReduceOp<D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.sum_axis::<OUT_RANK>(axis)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.sum(axis)),
-        }
+        self.dispatch_ref(
+            |t| t.sum_axis::<OUT_RANK>(axis),
+            |t| t.sum(axis),
+        )
     }
 
     /// Maximum along a specific axis, reducing the tensor rank by 1.
@@ -40,10 +40,10 @@ where
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
         MaxOp: SimdReduceOp<D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.max_axis::<OUT_RANK>(axis)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.max(axis)),
-        }
+        self.dispatch_ref(
+            |t| t.max_axis::<OUT_RANK>(axis),
+            |t| t.max(axis),
+        )
     }
 
     /// Minimum along a specific axis, reducing the tensor rank by 1.
@@ -56,10 +56,10 @@ where
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
         MinOp: SimdReduceOp<D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.min_axis::<OUT_RANK>(axis)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.min(axis)),
-        }
+        self.dispatch_ref(
+            |t| t.min_axis::<OUT_RANK>(axis),
+            |t| t.min(axis),
+        )
     }
 
     /// Product along a specific axis, reducing the tensor rank by 1.
@@ -72,10 +72,10 @@ where
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
         ProdOp: SimdReduceOp<D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.prod_axis::<OUT_RANK>(axis)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.product(axis)),
-        }
+        self.dispatch_ref(
+            |t| t.prod_axis::<OUT_RANK>(axis),
+            |t| t.product(axis),
+        )
     }
 
     /// Product along a specific axis, broadcasting result back to original shape.

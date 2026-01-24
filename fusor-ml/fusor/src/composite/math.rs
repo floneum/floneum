@@ -1,6 +1,6 @@
 //! Math operations that work on both CPU and GPU backends.
 
-use crate::{ConcreteTensor, FloatOps, Tensor, MulOp, ResolvedTensor, SimdBinaryOp, SimdElement};
+use crate::{ConcreteTensor, Expr, FloatOps, Tensor, MulOp, ResolvedTensor, SimdBinaryOp, SimdElement};
 use fusor_core::{DataType, FloatDataType};
 
 impl<const R: usize, D> Tensor<R, D>
@@ -13,10 +13,10 @@ where
         D: std::ops::Mul<Output = D>,
         MulOp: SimdBinaryOp<D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu((t * t).to_concrete()),
-            Tensor::Gpu(t) => Tensor::Gpu(t * t),
-        }
+        self.dispatch_ref(
+            |t| (t * t).to_concrete(),
+            |t| t * t,
+        )
     }
 }
 
@@ -26,10 +26,11 @@ where
 {
     /// Element-wise power: pow(self, other) computes self^other for each element.
     pub fn pow(&self, other: &Self) -> Self {
-        match (self, other) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => {
+        self.dispatch_pair(
+            other,
+            |a, b| {
                 // Use element-wise powf via iterating
-                let shape = self.shape();
+                let shape: [usize; R] = Expr::shape(a).try_into().expect("Shape length mismatch");
                 let a_data = ResolvedTensor::data(a.inner());
                 let b_data = ResolvedTensor::data(b.inner());
                 let result: Vec<D> = a_data
@@ -37,11 +38,10 @@ where
                     .zip(b_data.iter())
                     .map(|(x, y)| x.powf(*y))
                     .collect();
-                Tensor::Cpu(fusor_cpu::Tensor::new(fusor_cpu::ConcreteTensor::from_slice(shape, &result)))
-            }
-            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a.pow(b)),
-            _ => panic!("Cannot mix CPU and GPU tensors in pow"),
-        }
+                fusor_cpu::Tensor::new(fusor_cpu::ConcreteTensor::from_slice(shape, &result))
+            },
+            |a, b| a.pow(b),
+        )
     }
 
     /// Resize tensor to new shape with padding/truncation.
