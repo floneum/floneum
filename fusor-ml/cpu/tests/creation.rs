@@ -1,6 +1,6 @@
 //! Tests for ConcreteTensor creation and basic operations
 
-use fusor_cpu::{ConcreteTensor, ResolvedTensor, TensorBacking};
+use fusor_cpu::{ConcreteTensor, ResolvedTensor};
 
 #[test]
 fn test_concrete_tensor_creation() {

@@ -54,9 +54,9 @@ impl Linear<f32> {
             // The bias is stored as 2D in GGUF, squeeze to 1D
             let shape = dequant.shape();
             if shape[1] == 1 {
-                dequant.squeeze(1)
+                dequant.squeeze(1).to_concrete()
             } else {
-                dequant.squeeze(0)
+                dequant.squeeze(0).to_concrete()
             }
         });
         Ok(Self { weight, bias })

@@ -1,6 +1,6 @@
 //! Tests for matrix multiplication operations
 
-use fusor_cpu::{ConcreteTensor, TensorBacking};
+use fusor_cpu::ConcreteTensor;
 
 #[test]
 fn test_matmul_2x3_3x2() {

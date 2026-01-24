@@ -59,7 +59,7 @@ where
         // Broadcast the mask to match the attention scores shape
         let mask_broadcast: Tensor<R, D, _> = self.mask.broadcast_as(attention_scores.shape());
         match (mask_broadcast, attention_scores) {
-            (Tensor::Cpu(m), Tensor::Cpu(a)) => Tensor::Cpu(m + a),
+            (Tensor::Cpu(m), Tensor::Cpu(a)) => Tensor::Cpu(m.to_concrete() + a),
             (Tensor::Gpu(m), Tensor::Gpu(a)) => Tensor::Gpu(m + a),
             _ => panic!("Cannot mix CPU and GPU tensors"),
         }

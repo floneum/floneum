@@ -938,13 +938,13 @@ where
     B: TensorBacking<R, Elem = D>,
 {
     /// Select elements along a dimension using indices.
-    pub fn index_select<B2>(&self, dimension: usize, indices: &Tensor<1, u32, B2>) -> Self
+    pub fn index_select<B2>(&self, dimension: usize, indices: &Tensor<1, u32, B2>) -> Tensor<R, D>
     where
         B2: TensorBacking<1, Elem = u32>,
     {
-        self.dispatch_pair(
+        self.dispatch_pair_concrete(
             indices,
-            |t, idx| t.as_ref().index_select(dimension, idx),
+            |t, idx| t.as_ref().index_select(dimension, idx.as_ref()),
             |t, idx| t.index_select(dimension, idx),
         )
     }
@@ -1013,10 +1013,7 @@ where
     /// # Panics
     /// * If attempting to mix CPU and GPU tensors (self on CPU, weights on GPU or vice versa)
     /// * If R < 2 (matrix multiplication requires at least 2 dimensions)
-    pub fn q_mat_mul<B2>(&self, weights: &crate::QMatrix<2>) -> Tensor<R, f32>
-    where
-        B2: TensorBacking<2, Elem = f32>,
-    {
+    pub fn q_mat_mul(&self, weights: &crate::QMatrix<2>) -> Tensor<R, f32> {
         use crate::QMatrix;
 
         match (self, weights) {

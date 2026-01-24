@@ -978,7 +978,7 @@ mod tests {
 
         // Create LHS: [1, 4, 384] with random-ish values
         let lhs_data: Vec<f32> = (0..(batch * seq_len * in_features))
-            .map(|x| ((x as f32 * 0.1).sin() * 2.0))
+            .map(|x| (x as f32 * 0.1).sin() * 2.0)
             .collect();
         let lhs = ConcreteTensor::<f32, 3>::from_slice([batch, seq_len, in_features], &lhs_data);
 

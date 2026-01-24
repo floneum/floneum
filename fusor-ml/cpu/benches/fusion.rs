@@ -36,7 +36,7 @@ fn bench_fusion(c: &mut Criterion) {
                 let mul = fusor_cpu::Mul::new(x_ref, y_ref);
                 let add = fusor_cpu::Add::new(mul, z_ref);
                 let sqrt = fusor_cpu::Sqrt::new(add);
-                let result: ConcreteTensor<f32, 1> = fusor_cpu::ResolveTensor::to_concrete(&sqrt);
+                let result: ConcreteTensor<f32, 1> = fusor_cpu::TensorBacking::to_concrete(&sqrt);
                 black_box(result)
             })
         });
@@ -104,7 +104,7 @@ fn bench_long_chain(c: &mut Criterion) {
                 let mul2 = fusor_cpu::Mul::new(x_ref, y_ref);
                 let add1 = fusor_cpu::Add::new(mul1, mul2);
                 let add2 = fusor_cpu::Add::new(add1, x_ref);
-                let result: ConcreteTensor<f32, 1> = fusor_cpu::ResolveTensor::to_concrete(&add2);
+                let result: ConcreteTensor<f32, 1> = fusor_cpu::TensorBacking::to_concrete(&add2);
                 black_box(result)
             })
         });
@@ -166,7 +166,7 @@ fn bench_unary_chain(c: &mut Criterion) {
                 let neg = fusor_cpu::Neg::new(x_ref);
                 let abs = fusor_cpu::Abs::new(neg);
                 let sqrt = fusor_cpu::Sqrt::new(abs);
-                let result: ConcreteTensor<f32, 1> = fusor_cpu::ResolveTensor::to_concrete(&sqrt);
+                let result: ConcreteTensor<f32, 1> = fusor_cpu::TensorBacking::to_concrete(&sqrt);
                 black_box(result)
             })
         });

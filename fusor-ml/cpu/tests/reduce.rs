@@ -1,6 +1,6 @@
 //! Tests for reduction operations: sum, max, min, prod (full tensor and axis-wise)
 
-use fusor_cpu::{TensorBacking, Tensor};
+use fusor_cpu::Tensor;
 
 // ========== Full Tensor Reduce Tests ==========
 

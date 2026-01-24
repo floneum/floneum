@@ -224,9 +224,9 @@ mod tests {
         use crate::Device;
 
         // Create random-ish weight and input data
-        let weight_data: Vec<f32> = (0..384*80*3).map(|i| ((i as f32 * 0.001).sin() * 0.1)).collect();
+        let weight_data: Vec<f32> = (0..384*80*3).map(|i| (i as f32 * 0.001).sin() * 0.1).collect();
         let bias_data: Vec<f32> = (0..384).map(|i| (i as f32 * 0.0001).cos() * 0.01).collect();
-        let input_data: Vec<f32> = (0..80*3000).map(|i| ((i as f32 * 0.0001).sin())).collect();
+        let input_data: Vec<f32> = (0..80*3000).map(|i| (i as f32 * 0.0001).sin()).collect();
 
         let config = Conv1dConfig {
             padding: 1,

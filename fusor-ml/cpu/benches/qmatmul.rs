@@ -81,7 +81,7 @@ fn bench_qmatmul(c: &mut Criterion) {
                 b.iter(|| {
                     let rhs_dequant = rhs.dequantize();
                     let rhs_tensor = Tensor::new(rhs_dequant);
-                    black_box(black_box(&lhs).matmul(black_box(&rhs_tensor)))
+                    black_box(lhs.clone().matmul(black_box(rhs_tensor)))
                 });
             },
         );

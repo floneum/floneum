@@ -139,7 +139,7 @@ fn bench_matmul(c: &mut Criterion) {
                 let rhs_data: Vec<f32> = (0..k * n).map(|i| (i as f32) * 0.01).collect();
                 let lhs = Tensor::from_slice([m, k], &lhs_data);
                 let rhs = Tensor::from_slice([k, n], &rhs_data);
-                b.iter(|| black_box(black_box(&lhs).matmul(black_box(&rhs))));
+                b.iter(|| black_box(lhs.clone().matmul(rhs.clone())));
             },
         );
 
@@ -172,7 +172,7 @@ fn bench_reduce_sum(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("fusor", size), &size, |b, &size| {
             let data: Vec<f32> = (0..size).map(|i| (i as f32) * 0.1).collect();
             let tensor = Tensor::from_slice([size], &data);
-            b.iter(|| black_box(black_box(&tensor).sum()));
+            b.iter(|| black_box(tensor.clone().sum()));
         });
 
         // Candle sum
@@ -198,7 +198,7 @@ fn bench_reduce_max(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("fusor", size), &size, |b, &size| {
             let data: Vec<f32> = (0..size).map(|i| (i as f32) * 0.1).collect();
             let tensor = Tensor::from_slice([size], &data);
-            b.iter(|| black_box(black_box(&tensor).max()));
+            b.iter(|| black_box(tensor.clone().max()));
         });
 
         // Candle max
