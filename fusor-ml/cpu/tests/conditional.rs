@@ -8,7 +8,7 @@ fn test_where_cond_basic_f32() {
     let on_true = Tensor::from_slice([4], &[10.0f32, 20.0, 30.0, 40.0]);
     let on_false = Tensor::from_slice([4], &[100.0f32, 200.0, 300.0, 400.0]);
 
-    let result = cond.where_cond(&on_true, &on_false);
+    let result = cond.where_cond(on_true, on_false);
 
     assert_eq!(result.get([0]), 10.0); // cond=1 (nonzero), select on_true
     assert_eq!(result.get([1]), 200.0); // cond=0, select on_false
@@ -23,7 +23,7 @@ fn test_where_cond_nonzero_values_f32() {
     let on_true = Tensor::from_slice([4], &[1.0f32, 1.0, 1.0, 1.0]);
     let on_false = Tensor::from_slice([4], &[0.0f32, 0.0, 0.0, 0.0]);
 
-    let result = cond.where_cond(&on_true, &on_false);
+    let result = cond.where_cond(on_true, on_false);
 
     assert_eq!(result.get([0]), 1.0); // 0.5 != 0
     assert_eq!(result.get([1]), 1.0); // -1.0 != 0
@@ -37,7 +37,7 @@ fn test_where_cond_i32() {
     let on_true = Tensor::from_slice([4], &[10i32, 20, 30, 40]);
     let on_false = Tensor::from_slice([4], &[100i32, 200, 300, 400]);
 
-    let result = cond.where_cond(&on_true, &on_false);
+    let result = cond.where_cond(on_true, on_false);
 
     assert_eq!(result.get([0]), 10); // 1 != 0
     assert_eq!(result.get([1]), 200); // 0 == 0
@@ -51,7 +51,7 @@ fn test_where_cond_2d() {
     let on_true = Tensor::from_slice([2, 2], &[1.0f32, 2.0, 3.0, 4.0]);
     let on_false = Tensor::from_slice([2, 2], &[10.0f32, 20.0, 30.0, 40.0]);
 
-    let result = cond.where_cond(&on_true, &on_false);
+    let result = cond.where_cond(on_true, on_false);
 
     assert_eq!(result.get([0, 0]), 1.0); // cond=1
     assert_eq!(result.get([0, 1]), 20.0); // cond=0
@@ -66,11 +66,11 @@ fn test_where_cond_with_comparison() {
     let b = Tensor::from_slice([4], &[2.5f32, 2.5, 2.5, 2.5]);
 
     // Compute (a > b) as mask
-    let mask = a.gt(&b);
+    let mask = a.as_ref().gt(b.as_ref());
     // mask = [0, 0, 1, 1]
 
     // Use mask to select: where a > b, return a, else return b
-    let result = mask.where_cond(&a, &b);
+    let result = mask.where_cond(a, b);
 
     assert_eq!(result.get([0]), 2.5); // 1 > 2.5 = false, select b
     assert_eq!(result.get([1]), 2.5); // 2 > 2.5 = false, select b
@@ -91,7 +91,7 @@ fn test_where_cond_large() {
     let on_true = Tensor::from_slice([size], &true_data);
     let on_false = Tensor::from_slice([size], &false_data);
 
-    let result = cond.where_cond(&on_true, &on_false);
+    let result = cond.where_cond(on_true, on_false);
 
     for i in 0..size {
         if i % 2 == 0 {

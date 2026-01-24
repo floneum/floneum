@@ -64,26 +64,26 @@ fn test_prod_2d() {
 #[test]
 fn test_reduce_i32() {
     let tensor = Tensor::from_slice([5], &[1i32, 2, 3, 4, 5]);
-    assert_eq!(tensor.sum(), 15);
-    assert_eq!(tensor.max(), 5);
+    assert_eq!(tensor.as_ref().sum(), 15);
+    assert_eq!(tensor.as_ref().max(), 5);
     assert_eq!(tensor.min(), 1);
 }
 
 #[test]
 fn test_reduce_f64() {
     let tensor = Tensor::from_slice([4], &[1.0f64, 2.0, 3.0, 4.0]);
-    assert_eq!(tensor.sum(), 10.0);
-    assert_eq!(tensor.max(), 4.0);
-    assert_eq!(tensor.min(), 1.0);
+    assert_eq!(tensor.as_ref().sum(), 10.0);
+    assert_eq!(tensor.as_ref().max(), 4.0);
+    assert_eq!(tensor.as_ref().min(), 1.0);
     assert_eq!(tensor.prod(), 24.0);
 }
 
 #[test]
 fn test_reduce_single_element() {
     let tensor = Tensor::from_slice([1], &[42.0f32]);
-    assert_eq!(tensor.sum(), 42.0);
-    assert_eq!(tensor.max(), 42.0);
-    assert_eq!(tensor.min(), 42.0);
+    assert_eq!(tensor.as_ref().sum(), 42.0);
+    assert_eq!(tensor.as_ref().max(), 42.0);
+    assert_eq!(tensor.as_ref().min(), 42.0);
     assert_eq!(tensor.prod(), 42.0);
 }
 

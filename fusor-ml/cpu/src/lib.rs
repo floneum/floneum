@@ -527,10 +527,10 @@ mod tests {
 
         // Test sum reduction
         let c: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
-        assert_eq!(c.sum(), 10.0);
+        assert_eq!(c.as_ref().sum(), 10.0);
 
         // Test max/min
-        assert_eq!(c.max(), 4.0);
+        assert_eq!(c.as_ref().max(), 4.0);
         assert_eq!(c.min(), 1.0);
     }
 

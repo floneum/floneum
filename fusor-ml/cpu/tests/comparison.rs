@@ -9,7 +9,7 @@ fn test_eq_tensor_f32() {
     let a = Tensor::from_slice([4], &[1.0f32, 2.0, 3.0, 4.0]);
     let b = Tensor::from_slice([4], &[1.0f32, 3.0, 3.0, 5.0]);
 
-    let result = a.eq(&b);
+    let result = a.eq(b);
 
     assert_eq!(result.get([0]), 1.0); // 1 == 1
     assert_eq!(result.get([1]), 0.0); // 2 != 3
@@ -22,7 +22,7 @@ fn test_ne_tensor_f32() {
     let a = Tensor::from_slice([4], &[1.0f32, 2.0, 3.0, 4.0]);
     let b = Tensor::from_slice([4], &[1.0f32, 3.0, 3.0, 5.0]);
 
-    let result = a.ne(&b);
+    let result = a.ne(b);
 
     assert_eq!(result.get([0]), 0.0); // 1 == 1 -> false
     assert_eq!(result.get([1]), 1.0); // 2 != 3 -> true
@@ -35,7 +35,7 @@ fn test_lt_tensor_f32() {
     let a = Tensor::from_slice([4], &[1.0f32, 2.0, 3.0, 4.0]);
     let b = Tensor::from_slice([4], &[2.0f32, 2.0, 2.0, 2.0]);
 
-    let result = a.lt(&b);
+    let result = a.lt(b);
 
     assert_eq!(result.get([0]), 1.0); // 1 < 2
     assert_eq!(result.get([1]), 0.0); // 2 < 2
@@ -48,7 +48,7 @@ fn test_lte_tensor_f32() {
     let a = Tensor::from_slice([4], &[1.0f32, 2.0, 3.0, 4.0]);
     let b = Tensor::from_slice([4], &[2.0f32, 2.0, 2.0, 2.0]);
 
-    let result = a.lte(&b);
+    let result = a.lte(b);
 
     assert_eq!(result.get([0]), 1.0); // 1 <= 2
     assert_eq!(result.get([1]), 1.0); // 2 <= 2
@@ -61,7 +61,7 @@ fn test_gt_tensor_f32() {
     let a = Tensor::from_slice([4], &[1.0f32, 2.0, 3.0, 4.0]);
     let b = Tensor::from_slice([4], &[2.0f32, 2.0, 2.0, 2.0]);
 
-    let result = a.gt(&b);
+    let result = a.gt(b);
 
     assert_eq!(result.get([0]), 0.0); // 1 > 2
     assert_eq!(result.get([1]), 0.0); // 2 > 2
@@ -74,7 +74,7 @@ fn test_gte_tensor_f32() {
     let a = Tensor::from_slice([4], &[1.0f32, 2.0, 3.0, 4.0]);
     let b = Tensor::from_slice([4], &[2.0f32, 2.0, 2.0, 2.0]);
 
-    let result = a.gte(&b);
+    let result = a.gte(b);
 
     assert_eq!(result.get([0]), 0.0); // 1 >= 2
     assert_eq!(result.get([1]), 1.0); // 2 >= 2
@@ -124,7 +124,7 @@ fn test_comparison_i32() {
     let a = Tensor::from_slice([4], &[1i32, 2, 3, 4]);
     let b = Tensor::from_slice([4], &[2i32, 2, 2, 2]);
 
-    let lt_result = a.lt(&b);
+    let lt_result = a.as_ref().lt(b);
     assert_eq!(lt_result.get([0]), 1); // 1 < 2
     assert_eq!(lt_result.get([1]), 0); // 2 < 2
     assert_eq!(lt_result.get([2]), 0); // 3 < 2
@@ -148,7 +148,7 @@ fn test_comparison_large_tensor() {
     let a = Tensor::from_slice([size], &a_data);
     let b = Tensor::from_slice([size], &b_data);
 
-    let result = a.lt(&b);
+    let result = a.lt(b);
 
     for i in 0..size {
         let expected = if (i as f32) < (size / 2) as f32 {

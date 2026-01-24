@@ -27,7 +27,7 @@ use crate::{
 };
 
 /// A tensor wrapper that provides a unified interface over different tensor backends.
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct Tensor<const R: usize, T: TensorBacking<R>> {
     inner: T,
 }
@@ -119,7 +119,7 @@ where
     ///
     /// Returns a view into the tensor's data with updated layout.
     pub fn slice(
-        &self,
+        self,
         slices: [Range<usize>; R],
     ) -> Tensor<R, MapLayout<E, R>> {
         let concrete = self.inner.to_concrete();
@@ -131,7 +131,7 @@ where
     ///
     /// # Arguments
     /// * `axes` - A permutation of [0, 1, ..., R-1] specifying the new order
-    pub fn permute(&self, axes: [usize; R]) -> Tensor<R, MapLayout<E, R>> {
+    pub fn permute(self, axes: [usize; R]) -> Tensor<R, MapLayout<E, R>> {
         let concrete = self.inner.to_concrete();
         let new_layout = concrete.layout().permute(&axes);
         Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
@@ -142,7 +142,7 @@ where
     /// # Arguments
     /// * `dim0` - First dimension to swap
     /// * `dim1` - Second dimension to swap
-    pub fn transpose(&self, dim0: usize, dim1: usize) -> Tensor<R, MapLayout<E, R>> {
+    pub fn transpose(self, dim0: usize, dim1: usize) -> Tensor<R, MapLayout<E, R>> {
         let concrete = self.inner.to_concrete();
         let new_layout = concrete.layout().transpose(dim0, dim1);
         Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
@@ -155,7 +155,7 @@ where
     /// - A dimension can be broadcast if it's 1 or matches the target
     /// - New dimensions can be added on the left
     pub fn broadcast_as<const R2: usize>(
-        &self,
+        self,
         out_shape: [usize; R2],
     ) -> Tensor<R2, MapLayout<E, R2>> {
         let concrete = self.inner.to_concrete();
@@ -167,7 +167,7 @@ where
     ///
     /// The total number of elements must remain the same.
     pub fn reshape<const R2: usize>(
-        &self,
+        self,
         new_shape: [usize; R2],
     ) -> Tensor<R2, MapLayout<E, R2>> {
         let concrete = self.inner.to_concrete();
@@ -177,21 +177,20 @@ where
             Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
         } else {
             // Make contiguous first, then reshape
-            let contiguous = self.make_contiguous();
+            let contiguous = Tensor::new(concrete).make_contiguous();
             let new_layout = contiguous.inner.layout().reshape(&new_shape);
             Tensor::new(MapLayout::new(contiguous.inner.into_backing(), new_layout))
         }
     }
 
     /// Flatten the tensor to 1D
-    pub fn flatten_all(&self) -> Tensor<1, MapLayout<E, 1>> {
-        let concrete = self.inner.to_concrete();
-        let total: usize = concrete.layout().num_elements();
+    pub fn flatten_all(self) -> Tensor<1, MapLayout<E, 1>> {
+        let total: usize = self.inner.layout().num_elements();
         self.reshape([total])
     }
 
     /// Make the tensor contiguous by copying data if necessary
-    pub fn make_contiguous(&self) -> Tensor<R, ConcreteTensor<E, R>> {
+    pub fn make_contiguous(self) -> Tensor<R, ConcreteTensor<E, R>> {
         let concrete = self.inner.to_concrete();
         if concrete.layout().is_contiguous() {
             return Tensor::new(concrete);
@@ -216,7 +215,7 @@ where
     /// * `dim` - The dimension to narrow
     /// * `start` - The starting index
     /// * `length` - The length of the slice
-    pub fn narrow(&self, dim: usize, start: usize, length: usize) -> Tensor<R, MapLayout<E, R>> {
+    pub fn narrow(self, dim: usize, start: usize, length: usize) -> Tensor<R, MapLayout<E, R>> {
         let concrete = self.inner.to_concrete();
         let new_layout = concrete.layout().narrow(dim, start, length);
         Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
@@ -227,12 +226,14 @@ where
     /// # Arguments
     /// * `chunks` - Number of chunks to split into
     /// * `dim` - The dimension to split along
-    pub fn chunk(&self, chunks: usize, dim: usize) -> Vec<Tensor<R, MapLayout<E, R>>> {
-        let concrete = self.inner.to_concrete();
+    pub fn chunk(self, chunks: usize, dim: usize) -> Vec<Tensor<R, MapLayout<E, R>>>
+    where
+        T: Clone,
+    {
         assert!(dim < R, "Dimension {} out of range for rank {}", dim, R);
         assert!(chunks > 0, "Number of chunks must be positive");
 
-        let dim_size = concrete.layout().shape()[dim];
+        let dim_size = self.inner.layout().shape()[dim];
         let chunk_size = (dim_size + chunks - 1) / chunks;
 
         let mut result = Vec::with_capacity(chunks);
@@ -240,7 +241,7 @@ where
 
         while start < dim_size {
             let length = chunk_size.min(dim_size - start);
-            result.push(self.narrow(dim, start, length));
+            result.push(Tensor::new(self.inner.clone()).narrow(dim, start, length));
             start += length;
         }
 
@@ -251,7 +252,7 @@ where
     ///
     /// # Arguments
     /// * `repeats` - Number of times to repeat along each dimension
-    pub fn repeat(&self, repeats: [usize; R]) -> Tensor<R, ConcreteTensor<E, R>> {
+    pub fn repeat(self, repeats: [usize; R]) -> Tensor<R, ConcreteTensor<E, R>> {
         let concrete = self.inner.to_concrete();
         let old_shape = concrete.layout().shape();
         let mut new_shape = [0usize; R];
@@ -281,7 +282,7 @@ where
     ///
     /// # Arguments
     /// * `dim` - The dimension to squeeze (must have size 1)
-    pub fn squeeze<const R2: usize>(&self, dim: usize) -> Tensor<R2, MapLayout<E, R2>> {
+    pub fn squeeze<const R2: usize>(self, dim: usize) -> Tensor<R2, MapLayout<E, R2>> {
         assert!(R2 == R - 1, "Output rank must be R - 1");
         let concrete = self.inner.to_concrete();
         let new_layout = concrete.layout().squeeze(dim);
@@ -292,7 +293,7 @@ where
     ///
     /// # Arguments
     /// * `dim` - Where to insert the new dimension
-    pub fn unsqueeze<const R2: usize>(&self, dim: usize) -> Tensor<R2, MapLayout<E, R2>> {
+    pub fn unsqueeze<const R2: usize>(self, dim: usize) -> Tensor<R2, MapLayout<E, R2>> {
         assert!(R2 == R + 1, "Output rank must be R + 1");
         let concrete = self.inner.to_concrete();
         let new_layout = concrete.layout().unsqueeze(dim);
@@ -303,7 +304,7 @@ where
     ///
     /// This is an alias for `broadcast_as` for compatibility with other tensor libraries.
     pub fn expand<const R2: usize>(
-        &self,
+        self,
         out_shape: [usize; R2],
     ) -> Tensor<R2, MapLayout<E, R2>> {
         self.broadcast_as(out_shape)
@@ -318,7 +319,7 @@ where
     /// # Example
     /// A tensor of shape [2, 3, 4] with N=2 becomes [2, 12]
     pub fn flatten_last_n<const N: usize, const R2: usize>(
-        &self,
+        self,
     ) -> Tensor<R2, MapLayout<E, R2>> {
         assert!(R2 == R - N + 1, "Output rank must be R - N + 1");
         let concrete = self.inner.to_concrete();
@@ -328,7 +329,7 @@ where
             Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
         } else {
             // Make contiguous first
-            let contiguous = self.make_contiguous();
+            let contiguous = Tensor::new(concrete).make_contiguous();
             let new_layout = contiguous.inner.layout().flatten_last_n(N);
             Tensor::new(MapLayout::new(contiguous.inner.into_backing(), new_layout))
         }
@@ -343,7 +344,7 @@ where
     /// # Example
     /// A tensor of shape [2, 3, 4] with N=1 becomes [6, 4]
     pub fn flatten_first_n<const N: usize, const R2: usize>(
-        &self,
+        self,
     ) -> Tensor<R2, MapLayout<E, R2>> {
         assert!(R2 == R - N, "Output rank must be R - N");
         let concrete = self.inner.to_concrete();
@@ -353,7 +354,7 @@ where
             Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
         } else {
             // Make contiguous first
-            let contiguous = self.make_contiguous();
+            let contiguous = Tensor::new(concrete).make_contiguous();
             let new_layout = contiguous.inner.layout().flatten_first_n(N);
             Tensor::new(MapLayout::new(contiguous.inner.into_backing(), new_layout))
         }
@@ -368,7 +369,7 @@ where
     /// # Arguments
     /// * `axes` - The dimensions to squeeze (must all have size 1)
     pub fn squeeze_dims<const DIFF: usize, const R2: usize>(
-        &self,
+        self,
         axes: [usize; DIFF],
     ) -> Tensor<R2, MapLayout<E, R2>> {
         assert!(R2 == R - DIFF, "Output rank must be R - DIFF");
@@ -386,7 +387,7 @@ where
     /// # Arguments
     /// * `axes` - Where to insert the new dimensions (positions in the output tensor)
     pub fn unsqueeze_dims<const DIFF: usize, const R2: usize>(
-        &self,
+        self,
         axes: [usize; DIFF],
     ) -> Tensor<R2, MapLayout<E, R2>> {
         assert!(R2 == R + DIFF, "Output rank must be R + DIFF");
@@ -410,7 +411,7 @@ where
     /// A 1D tensor [1, 2, 3, 4, 5, 6, 7] with window size 3 and step 2 becomes:
     /// [[1, 2, 3], [3, 4, 5], [5, 6, 7]]
     pub fn sliding_window_view<const DIFF: usize, const R2: usize>(
-        &self,
+        self,
         windows: [SlidingWindow; DIFF],
     ) -> Tensor<R2, MapLayout<E, R2>> {
         assert!(R2 == R + DIFF, "Output rank must be R + DIFF");
@@ -421,7 +422,7 @@ where
 
     /// Sum all elements in the tensor
     #[inline]
-    pub fn sum(&self) -> E
+    pub fn sum(self) -> E
     where
         SumOp: SimdReduceOp<E>,
     {
@@ -430,7 +431,7 @@ where
 
     /// Find the maximum element in the tensor
     #[inline]
-    pub fn max(&self) -> E
+    pub fn max(self) -> E
     where
         MaxOp: SimdReduceOp<E>,
     {
@@ -439,7 +440,7 @@ where
 
     /// Find the minimum element in the tensor
     #[inline]
-    pub fn min(&self) -> E
+    pub fn min(self) -> E
     where
         MinOp: SimdReduceOp<E>,
     {
@@ -448,7 +449,7 @@ where
 
     /// Multiply all elements in the tensor
     #[inline]
-    pub fn prod(&self) -> E
+    pub fn prod(self) -> E
     where
         ProdOp: SimdReduceOp<E>,
     {
@@ -458,8 +459,8 @@ where
     /// Element-wise equality comparison
     #[inline]
     pub fn eq(
-        &self,
-        rhs: &Tensor<R, impl TensorBacking<R, Elem = E>>,
+        self,
+        rhs: Tensor<R, impl TensorBacking<R, Elem = E>>,
     ) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
@@ -474,8 +475,8 @@ where
     /// Element-wise less than comparison
     #[inline]
     pub fn lt(
-        &self,
-        rhs: &Tensor<R, impl TensorBacking<R, Elem = E>>,
+        self,
+        rhs: Tensor<R, impl TensorBacking<R, Elem = E>>,
     ) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
@@ -490,8 +491,8 @@ where
     /// Element-wise greater than comparison
     #[inline]
     pub fn gt(
-        &self,
-        rhs: &Tensor<R, impl TensorBacking<R, Elem = E>>,
+        self,
+        rhs: Tensor<R, impl TensorBacking<R, Elem = E>>,
     ) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
@@ -506,8 +507,8 @@ where
     /// Element-wise not equal comparison
     #[inline]
     pub fn ne(
-        &self,
-        rhs: &Tensor<R, impl TensorBacking<R, Elem = E>>,
+        self,
+        rhs: Tensor<R, impl TensorBacking<R, Elem = E>>,
     ) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
@@ -522,8 +523,8 @@ where
     /// Element-wise less than or equal comparison
     #[inline]
     pub fn lte(
-        &self,
-        rhs: &Tensor<R, impl TensorBacking<R, Elem = E>>,
+        self,
+        rhs: Tensor<R, impl TensorBacking<R, Elem = E>>,
     ) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
@@ -538,8 +539,8 @@ where
     /// Element-wise greater than or equal comparison
     #[inline]
     pub fn gte(
-        &self,
-        rhs: &Tensor<R, impl TensorBacking<R, Elem = E>>,
+        self,
+        rhs: Tensor<R, impl TensorBacking<R, Elem = E>>,
     ) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default,
@@ -553,7 +554,7 @@ where
 
     /// Compare tensor elements with scalar for equality
     #[inline]
-    pub fn eq_scalar(&self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn eq_scalar(self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>>
     where
         EqOp: SimdComparisonOp<E>,
     {
@@ -565,7 +566,7 @@ where
 
     /// Compare tensor elements with scalar for inequality
     #[inline]
-    pub fn ne_scalar(&self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn ne_scalar(self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>>
     where
         NeOp: SimdComparisonOp<E>,
     {
@@ -577,7 +578,7 @@ where
 
     /// Compare tensor elements with scalar for less than
     #[inline]
-    pub fn lt_scalar(&self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn lt_scalar(self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>>
     where
         LtOp: SimdComparisonOp<E>,
     {
@@ -589,7 +590,7 @@ where
 
     /// Compare tensor elements with scalar for less than or equal
     #[inline]
-    pub fn lte_scalar(&self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn lte_scalar(self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>>
     where
         LteOp: SimdComparisonOp<E>,
     {
@@ -601,7 +602,7 @@ where
 
     /// Compare tensor elements with scalar for greater than
     #[inline]
-    pub fn gt_scalar(&self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn gt_scalar(self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>>
     where
         GtOp: SimdComparisonOp<E>,
     {
@@ -613,7 +614,7 @@ where
 
     /// Compare tensor elements with scalar for greater than or equal
     #[inline]
-    pub fn gte_scalar(&self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn gte_scalar(self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>>
     where
         GteOp: SimdComparisonOp<E>,
     {
@@ -626,9 +627,9 @@ where
     /// Conditional selection: where self != 0, select on_true, else on_false
     #[inline]
     pub fn where_cond(
-        &self,
-        on_true: &Tensor<R, impl TensorBacking<R, Elem = E>>,
-        on_false: &Tensor<R, impl TensorBacking<R, Elem = E>>,
+        self,
+        on_true: Tensor<R, impl TensorBacking<R, Elem = E>>,
+        on_false: Tensor<R, impl TensorBacking<R, Elem = E>>,
     ) -> Tensor<R, ConcreteTensor<E, R>>
     where
         E: Default + IsNonZero,
@@ -642,7 +643,7 @@ where
 
     /// Cast tensor to another element type
     #[inline]
-    pub fn cast<E2>(&self) -> Tensor<R, ConcreteTensor<E2, R>>
+    pub fn cast<E2>(self) -> Tensor<R, ConcreteTensor<E2, R>>
     where
         E: CastTo<E2>,
         E2: SimdElement,
@@ -654,7 +655,7 @@ where
     ///
     /// This is the CPU equivalent of fusor-core's `as_slice()` method for GPU tensors.
     /// It materializes the tensor (if lazy) and returns a slice view of the data.
-    pub fn as_slice(&self) -> TensorSlice<R, E, CpuMappedBuffer> {
+    pub fn as_slice(self) -> TensorSlice<R, E, CpuMappedBuffer> {
         let concrete = self.inner.to_concrete();
         let layout = concrete.layout().clone();
         // Convert the tensor data to raw bytes
@@ -665,9 +666,9 @@ where
     /// Select elements along a dimension using indices
     #[inline]
     pub fn index_select(
-        &self,
+        self,
         dimension: usize,
-        indices: &Tensor<1, ConcreteTensor<u32, 1>>,
+        indices: Tensor<1, ConcreteTensor<u32, 1>>,
     ) -> Tensor<R, ConcreteTensor<E, R>> {
         Tensor::new(index_select_ref(
             &self.inner.to_concrete(),
@@ -695,9 +696,9 @@ where
     /// ```
     #[inline]
     pub fn slice_assign(
-        &self,
+        self,
         slices: [Range<usize>; R],
-        value: &Tensor<R, impl TensorBacking<R, Elem = E>>,
+        value: Tensor<R, impl TensorBacking<R, Elem = E>>,
     ) -> Tensor<R, ConcreteTensor<E, R>> {
         Tensor::new(slice_assign_ref(
             &self.inner.to_concrete(),
@@ -709,7 +710,7 @@ where
     /// Sum along a specific axis, reducing the tensor rank by 1
     #[inline]
     pub fn sum_axis<const OUT_RANK: usize>(
-        &self,
+        self,
         axis: usize,
     ) -> Tensor<OUT_RANK, ConcreteTensor<E, OUT_RANK>>
     where
@@ -726,7 +727,7 @@ where
     /// Maximum along a specific axis, reducing the tensor rank by 1
     #[inline]
     pub fn max_axis<const OUT_RANK: usize>(
-        &self,
+        self,
         axis: usize,
     ) -> Tensor<OUT_RANK, ConcreteTensor<E, OUT_RANK>>
     where
@@ -743,7 +744,7 @@ where
     /// Minimum along a specific axis, reducing the tensor rank by 1
     #[inline]
     pub fn min_axis<const OUT_RANK: usize>(
-        &self,
+        self,
         axis: usize,
     ) -> Tensor<OUT_RANK, ConcreteTensor<E, OUT_RANK>>
     where
@@ -760,7 +761,7 @@ where
     /// Product along a specific axis, reducing the tensor rank by 1
     #[inline]
     pub fn prod_axis<const OUT_RANK: usize>(
-        &self,
+        self,
         axis: usize,
     ) -> Tensor<OUT_RANK, ConcreteTensor<E, OUT_RANK>>
     where
@@ -820,164 +821,164 @@ where
 {
     /// Absolute value element-wise (lazy)
     #[inline]
-    pub fn abs(&self) -> Tensor<R, elementwise::Abs<E, R, &T>>
+    pub fn abs(self) -> Tensor<R, elementwise::Abs<E, R, T>>
     where
         AbsOp: SimdUnaryOp<E>,
     {
-        Tensor::new(elementwise::Abs::new(&self.inner))
+        Tensor::new(elementwise::Abs::new(self.inner))
     }
 
     /// Square root element-wise (lazy)
     #[inline]
-    pub fn sqrt(&self) -> Tensor<R, elementwise::Sqrt<E, R, &T>>
+    pub fn sqrt(self) -> Tensor<R, elementwise::Sqrt<E, R, T>>
     where
         SqrtOp: SimdUnaryOp<E>,
     {
-        Tensor::new(elementwise::Sqrt::new(&self.inner))
+        Tensor::new(elementwise::Sqrt::new(self.inner))
     }
 
     /// Exponential (e^x) element-wise (lazy)
     #[inline]
-    pub fn exp(&self) -> Tensor<R, elementwise::Exp<E, R, &T>>
+    pub fn exp(self) -> Tensor<R, elementwise::Exp<E, R, T>>
     where
         ExpOp: SimdUnaryOp<E>,
     {
-        Tensor::new(elementwise::Exp::new(&self.inner))
+        Tensor::new(elementwise::Exp::new(self.inner))
     }
 
     /// Natural logarithm element-wise (lazy)
     #[inline]
-    pub fn log(&self) -> Tensor<R, elementwise::Log<E, R, &T>>
+    pub fn log(self) -> Tensor<R, elementwise::Log<E, R, T>>
     where
         LogOp: SimdUnaryOp<E>,
     {
-        Tensor::new(elementwise::Log::new(&self.inner))
+        Tensor::new(elementwise::Log::new(self.inner))
     }
 
     /// Sine element-wise (lazy)
     #[inline]
-    pub fn sin(&self) -> Tensor<R, elementwise::Sin<E, R, &T>>
+    pub fn sin(self) -> Tensor<R, elementwise::Sin<E, R, T>>
     where
         SinOp: SimdUnaryOp<E>,
     {
-        Tensor::new(elementwise::Sin::new(&self.inner))
+        Tensor::new(elementwise::Sin::new(self.inner))
     }
 
     /// Cosine element-wise (lazy)
     #[inline]
-    pub fn cos(&self) -> Tensor<R, elementwise::Cos<E, R, &T>>
+    pub fn cos(self) -> Tensor<R, elementwise::Cos<E, R, T>>
     where
         CosOp: SimdUnaryOp<E>,
     {
-        Tensor::new(elementwise::Cos::new(&self.inner))
+        Tensor::new(elementwise::Cos::new(self.inner))
     }
 
     /// Tangent element-wise (lazy)
     #[inline]
-    pub fn tan(&self) -> Tensor<R, elementwise::Tan<E, R, &T>>
+    pub fn tan(self) -> Tensor<R, elementwise::Tan<E, R, T>>
     where
         TanOp: SimdUnaryOp<E>,
     {
-        Tensor::new(elementwise::Tan::new(&self.inner))
+        Tensor::new(elementwise::Tan::new(self.inner))
     }
 
     /// Base-2 exponential (2^x) element-wise (lazy)
     #[inline]
-    pub fn exp2(&self) -> Tensor<R, elementwise::Exp2<E, R, &T>>
+    pub fn exp2(self) -> Tensor<R, elementwise::Exp2<E, R, T>>
     where
         Exp2Op: SimdUnaryOp<E>,
     {
-        Tensor::new(elementwise::Exp2::new(&self.inner))
+        Tensor::new(elementwise::Exp2::new(self.inner))
     }
 
     /// Base-2 logarithm element-wise (lazy)
     #[inline]
-    pub fn log2(&self) -> Tensor<R, elementwise::Log2<E, R, &T>>
+    pub fn log2(self) -> Tensor<R, elementwise::Log2<E, R, T>>
     where
         Log2Op: SimdUnaryOp<E>,
     {
-        Tensor::new(elementwise::Log2::new(&self.inner))
+        Tensor::new(elementwise::Log2::new(self.inner))
     }
 
     /// Arc sine (inverse sin) element-wise (lazy)
     #[inline]
-    pub fn asin(&self) -> Tensor<R, elementwise::Asin<E, R, &T>>
+    pub fn asin(self) -> Tensor<R, elementwise::Asin<E, R, T>>
     where
         AsinOp: SimdUnaryOp<E>,
     {
-        Tensor::new(elementwise::Asin::new(&self.inner))
+        Tensor::new(elementwise::Asin::new(self.inner))
     }
 
     /// Arc cosine (inverse cos) element-wise (lazy)
     #[inline]
-    pub fn acos(&self) -> Tensor<R, elementwise::Acos<E, R, &T>>
+    pub fn acos(self) -> Tensor<R, elementwise::Acos<E, R, T>>
     where
         AcosOp: SimdUnaryOp<E>,
     {
-        Tensor::new(elementwise::Acos::new(&self.inner))
+        Tensor::new(elementwise::Acos::new(self.inner))
     }
 
     /// Arc tangent (inverse tan) element-wise (lazy)
     #[inline]
-    pub fn atan(&self) -> Tensor<R, elementwise::Atan<E, R, &T>>
+    pub fn atan(self) -> Tensor<R, elementwise::Atan<E, R, T>>
     where
         AtanOp: SimdUnaryOp<E>,
     {
-        Tensor::new(elementwise::Atan::new(&self.inner))
+        Tensor::new(elementwise::Atan::new(self.inner))
     }
 
     /// Hyperbolic sine element-wise (lazy)
     #[inline]
-    pub fn sinh(&self) -> Tensor<R, elementwise::Sinh<E, R, &T>>
+    pub fn sinh(self) -> Tensor<R, elementwise::Sinh<E, R, T>>
     where
         SinhOp: SimdUnaryOp<E>,
     {
-        Tensor::new(elementwise::Sinh::new(&self.inner))
+        Tensor::new(elementwise::Sinh::new(self.inner))
     }
 
     /// Hyperbolic cosine element-wise (lazy)
     #[inline]
-    pub fn cosh(&self) -> Tensor<R, elementwise::Cosh<E, R, &T>>
+    pub fn cosh(self) -> Tensor<R, elementwise::Cosh<E, R, T>>
     where
         CoshOp: SimdUnaryOp<E>,
     {
-        Tensor::new(elementwise::Cosh::new(&self.inner))
+        Tensor::new(elementwise::Cosh::new(self.inner))
     }
 
     /// Hyperbolic tangent element-wise (lazy)
     #[inline]
-    pub fn tanh(&self) -> Tensor<R, elementwise::Tanh<E, R, &T>>
+    pub fn tanh(self) -> Tensor<R, elementwise::Tanh<E, R, T>>
     where
         TanhOp: SimdUnaryOp<E>,
     {
-        Tensor::new(elementwise::Tanh::new(&self.inner))
+        Tensor::new(elementwise::Tanh::new(self.inner))
     }
 
     /// Inverse hyperbolic sine element-wise (lazy)
     #[inline]
-    pub fn asinh(&self) -> Tensor<R, elementwise::Asinh<E, R, &T>>
+    pub fn asinh(self) -> Tensor<R, elementwise::Asinh<E, R, T>>
     where
         AsinhOp: SimdUnaryOp<E>,
     {
-        Tensor::new(elementwise::Asinh::new(&self.inner))
+        Tensor::new(elementwise::Asinh::new(self.inner))
     }
 
     /// Inverse hyperbolic cosine element-wise (lazy)
     #[inline]
-    pub fn acosh(&self) -> Tensor<R, elementwise::Acosh<E, R, &T>>
+    pub fn acosh(self) -> Tensor<R, elementwise::Acosh<E, R, T>>
     where
         AcoshOp: SimdUnaryOp<E>,
     {
-        Tensor::new(elementwise::Acosh::new(&self.inner))
+        Tensor::new(elementwise::Acosh::new(self.inner))
     }
 
     /// Inverse hyperbolic tangent element-wise (lazy)
     #[inline]
-    pub fn atanh(&self) -> Tensor<R, elementwise::Atanh<E, R, &T>>
+    pub fn atanh(self) -> Tensor<R, elementwise::Atanh<E, R, T>>
     where
         AtanhOp: SimdUnaryOp<E>,
     {
-        Tensor::new(elementwise::Atanh::new(&self.inner))
+        Tensor::new(elementwise::Atanh::new(self.inner))
     }
 }
 
@@ -989,7 +990,7 @@ where
 {
     /// Raise each element to a power
     #[inline]
-    pub fn pow_scalar(&self, exponent: E) -> Tensor<R, ConcreteTensor<E, R>> {
+    pub fn pow_scalar(self, exponent: E) -> Tensor<R, ConcreteTensor<E, R>> {
         let concrete = self.inner.to_concrete();
         let shape: [usize; R] = concrete.layout().shape()
             .try_into()
@@ -1003,7 +1004,7 @@ where
 
     /// Element-wise maximum with a scalar
     #[inline]
-    pub fn max_scalar(&self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>> {
+    pub fn max_scalar(self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>> {
         let concrete = self.inner.to_concrete();
         let shape: [usize; R] = concrete.layout().shape()
             .try_into()
@@ -1017,7 +1018,7 @@ where
 
     /// Element-wise minimum with a scalar
     #[inline]
-    pub fn min_scalar(&self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>> {
+    pub fn min_scalar(self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>> {
         let concrete = self.inner.to_concrete();
         let shape: [usize; R] = concrete.layout().shape()
             .try_into()
@@ -1031,7 +1032,7 @@ where
 
     /// Clamp each element to a range [min, max]
     #[inline]
-    pub fn clamp(&self, min: E, max: E) -> Tensor<R, ConcreteTensor<E, R>> {
+    pub fn clamp(self, min: E, max: E) -> Tensor<R, ConcreteTensor<E, R>> {
         let concrete = self.inner.to_concrete();
         let shape: [usize; R] = concrete.layout().shape()
             .try_into()
@@ -1056,8 +1057,8 @@ where
     /// Panics if R < 2
     #[inline]
     pub fn matmul(
-        &self,
-        rhs: &Tensor<R, impl TensorBacking<R, Elem = E>>,
+        self,
+        rhs: Tensor<R, impl TensorBacking<R, Elem = E>>,
     ) -> Tensor<R, ConcreteTensor<E, R>> {
         Tensor::new(
             self.inner
@@ -1271,53 +1272,53 @@ where
     /// Add a scalar to each element
     #[inline]
     pub fn add_scalar(
-        &self,
+        self,
         scalar_val: E,
-    ) -> Tensor<R, scalar::AddScalar<E, R, &T>>
+    ) -> Tensor<R, scalar::AddScalar<E, R, T>>
     where
         E: StdAdd<Output = E>,
         AddOp: SimdBinaryOp<E>,
     {
-        Tensor::new(scalar::AddScalar::new(&self.inner, scalar_val))
+        Tensor::new(scalar::AddScalar::new(self.inner, scalar_val))
     }
 
     /// Subtract a scalar from each element
     #[inline]
     pub fn sub_scalar(
-        &self,
+        self,
         scalar_val: E,
-    ) -> Tensor<R, scalar::SubScalar<E, R, &T>>
+    ) -> Tensor<R, scalar::SubScalar<E, R, T>>
     where
         E: StdSub<Output = E>,
         SubOp: SimdBinaryOp<E>,
     {
-        Tensor::new(scalar::SubScalar::new(&self.inner, scalar_val))
+        Tensor::new(scalar::SubScalar::new(self.inner, scalar_val))
     }
 
     /// Multiply each element by a scalar
     #[inline]
     pub fn mul_scalar(
-        &self,
+        self,
         scalar_val: E,
-    ) -> Tensor<R, scalar::MulScalar<E, R, &T>>
+    ) -> Tensor<R, scalar::MulScalar<E, R, T>>
     where
         E: StdMul<Output = E>,
         MulOp: SimdBinaryOp<E>,
     {
-        Tensor::new(scalar::MulScalar::new(&self.inner, scalar_val))
+        Tensor::new(scalar::MulScalar::new(self.inner, scalar_val))
     }
 
     /// Divide each element by a scalar
     #[inline]
     pub fn div_scalar(
-        &self,
+        self,
         scalar_val: E,
-    ) -> Tensor<R, scalar::DivScalar<E, R, &T>>
+    ) -> Tensor<R, scalar::DivScalar<E, R, T>>
     where
         E: StdDiv<Output = E>,
         DivOp: SimdBinaryOp<E>,
     {
-        Tensor::new(scalar::DivScalar::new(&self.inner, scalar_val))
+        Tensor::new(scalar::DivScalar::new(self.inner, scalar_val))
     }
 }
 
@@ -1365,8 +1366,8 @@ where
     /// Both tensors are broadcast to a common shape before multiplication.
     /// Supports tensors of different ranks.
     pub fn mul_<const R2: usize, const R3: usize, T2>(
-        &self,
-        other: &Tensor<R2, T2>,
+        self,
+        other: Tensor<R2, T2>,
     ) -> Tensor<R3, ConcreteTensor<E, R3>>
     where
         E: StdMul<Output = E>,
@@ -1389,8 +1390,8 @@ where
     /// Both tensors are broadcast to a common shape before addition.
     /// Supports tensors of different ranks.
     pub fn add_<const R2: usize, const R3: usize, T2>(
-        &self,
-        other: &Tensor<R2, T2>,
+        self,
+        other: Tensor<R2, T2>,
     ) -> Tensor<R3, ConcreteTensor<E, R3>>
     where
         E: StdAdd<Output = E>,
@@ -1413,8 +1414,8 @@ where
     /// Both tensors are broadcast to a common shape before subtraction.
     /// Supports tensors of different ranks.
     pub fn sub_<const R2: usize, const R3: usize, T2>(
-        &self,
-        other: &Tensor<R2, T2>,
+        self,
+        other: Tensor<R2, T2>,
     ) -> Tensor<R3, ConcreteTensor<E, R3>>
     where
         E: StdSub<Output = E>,
@@ -1437,8 +1438,8 @@ where
     /// Both tensors are broadcast to a common shape before division.
     /// Supports tensors of different ranks.
     pub fn div_<const R2: usize, const R3: usize, T2>(
-        &self,
-        other: &Tensor<R2, T2>,
+        self,
+        other: Tensor<R2, T2>,
     ) -> Tensor<R3, ConcreteTensor<E, R3>>
     where
         E: StdDiv<Output = E>,
@@ -1461,8 +1462,8 @@ where
     /// Both tensors are broadcast to a common shape before computing power.
     /// Supports tensors of different ranks.
     pub fn pow_<const R2: usize, const R3: usize, T2>(
-        &self,
-        other: &Tensor<R2, T2>,
+        self,
+        other: Tensor<R2, T2>,
     ) -> Tensor<R3, ConcreteTensor<E, R3>>
     where
         E: FloatOps,
@@ -1498,7 +1499,7 @@ where
     T: TensorBacking<2, Elem = E>,
 {
     /// Transpose a 2D matrix (swap dimensions 0 and 1)
-    pub fn t(&self) -> Tensor<2, MapLayout<E, 2>> {
+    pub fn t(self) -> Tensor<2, MapLayout<E, 2>> {
         self.transpose(0, 1)
     }
 }
@@ -1510,7 +1511,7 @@ where
     T: TensorBacking<3, Elem = E>,
 {
     /// Transpose last two dimensions
-    pub fn t(&self) -> Tensor<3, MapLayout<E, 3>> {
+    pub fn t(self) -> Tensor<3, MapLayout<E, 3>> {
         self.transpose(1, 2)
     }
 }
@@ -1522,7 +1523,7 @@ where
     T: TensorBacking<4, Elem = E>,
 {
     /// Transpose last two dimensions
-    pub fn t(&self) -> Tensor<4, MapLayout<E, 4>> {
+    pub fn t(self) -> Tensor<4, MapLayout<E, 4>> {
         self.transpose(2, 3)
     }
 }
