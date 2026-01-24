@@ -123,7 +123,7 @@ where
         slices: [Range<usize>; R],
     ) -> Tensor<R, MapLayout<E, R>> {
         let concrete = self.inner.to_concrete();
-        let new_layout = self.layout().slice(&slices);
+        let new_layout = concrete.layout().slice(&slices);
         Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
     }
 
@@ -133,7 +133,7 @@ where
     /// * `axes` - A permutation of [0, 1, ..., R-1] specifying the new order
     pub fn permute(self, axes: [usize; R]) -> Tensor<R, MapLayout<E, R>> {
         let concrete = self.inner.to_concrete();
-        let new_layout = self.layout().permute(&axes);
+        let new_layout = concrete.layout().permute(&axes);
         Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
     }
 
@@ -144,7 +144,7 @@ where
     /// * `dim1` - Second dimension to swap
     pub fn transpose(self, dim0: usize, dim1: usize) -> Tensor<R, MapLayout<E, R>> {
         let concrete = self.inner.to_concrete();
-        let new_layout = self.layout().transpose(dim0, dim1);
+        let new_layout = concrete.layout().transpose(dim0, dim1);
         Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
     }
 
@@ -159,7 +159,7 @@ where
         out_shape: [usize; R2],
     ) -> Tensor<R2, MapLayout<E, R2>> {
         let concrete = self.inner.to_concrete();
-        let new_layout = self.layout().broadcast_to(&out_shape);
+        let new_layout = concrete.layout().broadcast_to(&out_shape);
         Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
     }
 
