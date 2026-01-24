@@ -47,23 +47,69 @@ impl<T: TensorBacking<R>, const R: usize> WithSimd for TensorEvaluator<'_, T, R>
     }
 }
 
+/// Minimum number of elements before parallelization is used.
+/// Below this threshold, the overhead of thread spawning isn't worth it.
+const PARALLEL_THRESHOLD: usize = 4096;
+
 /// Materialize a tensor backing into a new ConcreteTensor.
 ///
 /// This evaluates the entire expression tree in a single fused SIMD loop,
 /// writing the results into a newly allocated tensor.
+///
+/// For large tensors (>4096 elements), the work is split among multiple
+/// threads using `std::thread::scope` for structured parallelism.
 #[inline]
 #[must_use = "this allocates a new tensor; discarding it wastes computation"]
-pub fn materialize_expr<T: TensorBacking<R>, const R: usize>(
+pub fn materialize_expr<T: TensorBacking<R> + Sync, const R: usize>(
     tensor: &T,
     shape: [usize; R],
 ) -> ConcreteTensor<T::Elem, R> {
     let mut output = ConcreteTensor::uninit_unchecked(shape);
+    let total_elements = output.data_mut().len();
 
-    Arch::new().dispatch(TensorEvaluator {
-        tensor,
-        output: output.data_mut(),
-        base_offset: 0,
-    });
+    let n_threads = crate::parallel::num_threads();
+
+    // Use parallel execution for large tensors
+    if total_elements >= PARALLEL_THRESHOLD && n_threads > 1 {
+        let chunk_size = (total_elements + n_threads - 1) / n_threads;
+
+        std::thread::scope(|scope| {
+            let mut remaining = output.data_mut() as &mut [T::Elem];
+            let mut base_offset = 0;
+
+            for thread_id in 0..n_threads {
+                if remaining.is_empty() {
+                    break;
+                }
+
+                let this_size = if thread_id == n_threads - 1 {
+                    remaining.len()
+                } else {
+                    chunk_size.min(remaining.len())
+                };
+
+                let (chunk, rest) = remaining.split_at_mut(this_size);
+                remaining = rest;
+                let current_offset = base_offset;
+                base_offset += this_size;
+
+                scope.spawn(move || {
+                    Arch::new().dispatch(TensorEvaluator {
+                        tensor,
+                        output: chunk,
+                        base_offset: current_offset,
+                    });
+                });
+            }
+        });
+    } else {
+        // Small tensor: single-threaded execution
+        Arch::new().dispatch(TensorEvaluator {
+            tensor,
+            output: output.data_mut(),
+            base_offset: 0,
+        });
+    }
 
     output
 }

@@ -327,17 +327,16 @@ pub fn softmax_last_dim_fused<const R: usize>(tensor: &ConcreteTensor<f32, R>) -
         let out_data = output.data_mut();
 
         // Process rows in parallel for large tensors
-        if num_rows >= 4 {
-            use rayon::prelude::*;
-
-            let in_chunks: Vec<&[f32]> = in_data.chunks(last_dim).collect();
-            let out_chunks: Vec<&mut [f32]> = out_data.chunks_mut(last_dim).collect();
-
-            in_chunks.into_par_iter()
-                .zip(out_chunks)
-                .for_each(|(in_row, out_row)| {
+        let n_threads = crate::parallel::num_threads();
+        if num_rows >= 4 && n_threads > 1 {
+            crate::parallel::parallel_zip_chunks_mut(
+                in_data,
+                out_data,
+                last_dim,
+                |_, in_row, out_row| {
                     softmax_row_simd(in_row, out_row);
-                });
+                },
+            );
         } else {
             // Sequential for small batch sizes
             for (in_row, out_row) in in_data.chunks(last_dim).zip(out_data.chunks_mut(last_dim)) {
@@ -511,17 +510,16 @@ pub fn layer_norm_last_dim_fused<const R: usize>(
         let out_data = output.data_mut();
 
         // Process rows in parallel for large tensors
-        if num_rows >= 4 {
-            use rayon::prelude::*;
-
-            let in_chunks: Vec<&[f32]> = in_data.chunks(last_dim).collect();
-            let out_chunks: Vec<&mut [f32]> = out_data.chunks_mut(last_dim).collect();
-
-            in_chunks.into_par_iter()
-                .zip(out_chunks)
-                .for_each(|(in_row, out_row)| {
+        let n_threads = crate::parallel::num_threads();
+        if num_rows >= 4 && n_threads > 1 {
+            crate::parallel::parallel_zip_chunks_mut(
+                in_data,
+                out_data,
+                last_dim,
+                |_, in_row, out_row| {
                     layer_norm_row(in_row, weight_data, bias_data, eps, out_row);
-                });
+                },
+            );
         } else {
             for (in_row, out_row) in in_data.chunks(last_dim).zip(out_data.chunks_mut(last_dim)) {
                 layer_norm_row(in_row, weight_data, bias_data, eps, out_row);

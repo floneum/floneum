@@ -16,6 +16,7 @@ mod index;
 mod map_layout;
 mod matmul;
 mod pairwise;
+mod parallel;
 mod quantized;
 mod reduce;
 mod scalar;
@@ -318,7 +319,7 @@ impl_max_rank!(8, 9);
 impl_max_rank!(8, 10);
 impl_max_rank!(9, 10);
 
-pub trait TensorBacking<const R: usize> {
+pub trait TensorBacking<const R: usize>: Sync {
     type Elem: SimdElement;
     fn layout(&self) -> Layout;
     fn to_concrete(&self) -> ConcreteTensor<Self::Elem, R>;
@@ -339,7 +340,7 @@ pub trait TensorBacking<const R: usize> {
 }
 
 // Blanket implementation for references
-impl<const R: usize, T: TensorBacking<R>> TensorBacking<R> for &T {
+impl<const R: usize, T: TensorBacking<R> + Sync> TensorBacking<R> for &T {
     type Elem = T::Elem;
 
     fn layout(&self) -> Layout {
@@ -367,7 +368,7 @@ pub trait ResolvedTensor<const R: usize>: TensorBacking<R> {
 }
 
 /// Trait for SIMD element types with associated SIMD vector type
-pub trait SimdElement: Sized + Copy + Default + Pod {
+pub trait SimdElement: Sized + Copy + Default + Pod + Sync + Send {
     /// The SIMD vector type for this element (GAT)
     type Simd<S: Simd>: Copy;
 

@@ -387,40 +387,97 @@ where
         // The vec_dot methods use NEON intrinsics for efficient i8 x i8 -> i32 computation.
         // Special fast path for m=1 (common inference case): parallelize over output columns
         if m == 1 {
-            use rayon::prelude::*;
+            let n_threads = crate::parallel::num_threads();
 
-            // For small n, don't parallelize
-            if n < 64 {
+            // For small n or single-threaded, don't parallelize
+            if n < 64 || n_threads == 1 {
                 process_row_integer_tiled::<B>(lhs_data, rhs_blocks, out_data, n, blocks_per_weight_row);
             } else {
-                // Parallelize over output column chunks
+                // Parallelize over output column chunks using scoped threads
                 const CHUNK_SIZE: usize = 32;
-                let chunks: Vec<(usize, &mut [f32])> = out_data
-                    .chunks_mut(CHUNK_SIZE)
-                    .enumerate()
-                    .collect();
+                let total_chunks = (n + CHUNK_SIZE - 1) / CHUNK_SIZE;
+                let chunks_per_thread = (total_chunks + n_threads - 1) / n_threads;
+                let elements_per_thread = chunks_per_thread * CHUNK_SIZE;
 
-                chunks.into_par_iter().for_each(|(chunk_idx, out_chunk)| {
-                    let start_n = chunk_idx * CHUNK_SIZE;
-                    let chunk_n = out_chunk.len();
-                    process_row_integer_range::<B>(
-                        lhs_data, rhs_blocks, out_chunk,
-                        start_n, chunk_n, blocks_per_weight_row
-                    );
+                std::thread::scope(|scope| {
+                    let mut remaining = out_data;
+                    let mut start_n = 0;
+
+                    for thread_id in 0..n_threads {
+                        if remaining.is_empty() {
+                            break;
+                        }
+
+                        let this_size = if thread_id == n_threads - 1 {
+                            remaining.len()
+                        } else {
+                            elements_per_thread.min(remaining.len())
+                        };
+
+                        let (thread_chunk, rest) = remaining.split_at_mut(this_size);
+                        remaining = rest;
+                        let thread_start_n = start_n;
+                        start_n += this_size;
+
+                        scope.spawn(move || {
+                            // Process each CHUNK_SIZE piece within this thread
+                            for (i, out_chunk) in thread_chunk.chunks_mut(CHUNK_SIZE).enumerate() {
+                                let chunk_start = thread_start_n + i * CHUNK_SIZE;
+                                process_row_integer_range::<B>(
+                                    lhs_data, rhs_blocks, out_chunk,
+                                    chunk_start, out_chunk.len(), blocks_per_weight_row
+                                );
+                            }
+                        });
+                    }
                 });
             }
         } else if m >= 4 {
-            use rayon::prelude::*;
+            let n_threads = crate::parallel::num_threads();
 
-            // Process rows in parallel
-            let out_chunks: Vec<&mut [f32]> = out_data.chunks_mut(n).collect();
-            out_chunks
-                .into_par_iter()
-                .enumerate()
-                .for_each(|(i, out_row)| {
+            if n_threads == 1 {
+                // Sequential processing
+                for i in 0..m {
                     let lhs_row = &lhs_data[i * k..(i + 1) * k];
+                    let out_row = &mut out_data[i * n..(i + 1) * n];
                     process_row_integer_tiled::<B>(lhs_row, rhs_blocks, out_row, n, blocks_per_weight_row);
+                }
+            } else {
+                // Process rows in parallel using scoped threads
+                let rows_per_thread = (m + n_threads - 1) / n_threads;
+
+                std::thread::scope(|scope| {
+                    let mut remaining_out = out_data;
+                    let mut row_offset = 0;
+
+                    for thread_id in 0..n_threads {
+                        if remaining_out.is_empty() {
+                            break;
+                        }
+
+                        let this_rows = if thread_id == n_threads - 1 {
+                            m - row_offset
+                        } else {
+                            rows_per_thread.min(m - row_offset)
+                        };
+
+                        let this_size = this_rows * n;
+                        let (thread_out, rest) = remaining_out.split_at_mut(this_size);
+                        remaining_out = rest;
+                        let thread_row_offset = row_offset;
+                        row_offset += this_rows;
+
+                        scope.spawn(move || {
+                            for i in 0..this_rows {
+                                let global_row = thread_row_offset + i;
+                                let lhs_row = &lhs_data[global_row * k..(global_row + 1) * k];
+                                let out_row = &mut thread_out[i * n..(i + 1) * n];
+                                process_row_integer_tiled::<B>(lhs_row, rhs_blocks, out_row, n, blocks_per_weight_row);
+                            }
+                        });
+                    }
                 });
+            }
         } else {
             // Sequential processing for small matrices (m=2,3)
             for i in 0..m {

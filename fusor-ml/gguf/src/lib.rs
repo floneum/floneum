@@ -717,7 +717,7 @@ impl GgufMetadata {
     }
 }
 
-pub trait GgufBlock: Pod + Sized {
+pub trait GgufBlock: Pod + Sized + Sync {
     const BLOCK_SIZE: usize;
 
     type Bytes: AsRef<[u8]> + Copy;
