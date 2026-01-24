@@ -13,7 +13,7 @@ use pulp::Simd;
 
 use fusor_types::Layout;
 
-use crate::expr::{materialize_expr, Expr};
+use crate::expr::materialize_expr;
 use crate::reduce::{SimdReduceOp, SumOp};
 use crate::{ConcreteTensor, MAX_SIMD_LANES, ResolvedTensor, SimdElement, TensorBacking};
 
@@ -167,13 +167,6 @@ where
         let shape: [usize; R] = self.source.element_shape.clone().try_into().expect("Shape length mismatch");
         materialize_expr(self, shape)
     }
-}
-
-impl<B: GgufBlock, const R: usize> Expr for Dequantize<'_, B, R>
-where
-    B::Dequantized: AsRef<[f32]>,
-{
-    type Elem = f32;
 
     #[inline(always)]
     fn eval_scalar(&self, idx: usize) -> f32 {

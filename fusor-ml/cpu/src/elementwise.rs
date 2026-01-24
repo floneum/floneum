@@ -5,7 +5,7 @@ use std::ops::Neg as StdNeg;
 use pulp::Simd;
 
 use crate::{
-    ConcreteTensor, Expr, SimdElement, TensorBacking, materialize_expr,
+    ConcreteTensor, SimdElement, TensorBacking, materialize_expr,
 };
 use fusor_types::Layout;
 
@@ -220,7 +220,7 @@ macro_rules! define_unary_tensor_op {
         where
             E: SimdElement + Default,
             $simd_op: SimdUnaryOp<E>,
-            T: Expr<Elem = E> + TensorBacking<R, Elem = E>,
+            T: TensorBacking<R, Elem = E>,
         {
             type Elem = E;
 
@@ -234,15 +234,6 @@ macro_rules! define_unary_tensor_op {
                     .expect("Shape length mismatch");
                 materialize_expr(self, shape)
             }
-        }
-
-        impl<E, const R: usize, T> Expr for $name<E, R, T>
-        where
-            E: SimdElement,
-            $simd_op: SimdUnaryOp<E>,
-            T: Expr<Elem = E> + TensorBacking<R, Elem = E>,
-        {
-            type Elem = E;
 
             #[inline(always)]
             fn eval_scalar(&self, idx: usize) -> E {
@@ -278,7 +269,7 @@ macro_rules! define_unary_tensor_op {
         where
             E: SimdElement + $std_trait<Output = E> + Default,
             $simd_op: SimdUnaryOp<E>,
-            T: Expr<Elem = E> + TensorBacking<R, Elem = E>,
+            T: TensorBacking<R, Elem = E>,
         {
             type Elem = E;
 
@@ -292,15 +283,6 @@ macro_rules! define_unary_tensor_op {
                     .expect("Shape length mismatch");
                 materialize_expr(self, shape)
             }
-        }
-
-        impl<E, const R: usize, T> Expr for $name<E, R, T>
-        where
-            E: SimdElement + $std_trait<Output = E>,
-            $simd_op: SimdUnaryOp<E>,
-            T: Expr<Elem = E> + TensorBacking<R, Elem = E>,
-        {
-            type Elem = E;
 
             #[inline(always)]
             fn eval_scalar(&self, idx: usize) -> E {

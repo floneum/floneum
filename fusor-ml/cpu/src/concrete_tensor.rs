@@ -6,7 +6,7 @@ use aligned_vec::{ABox, AVec};
 use fusor_types::Layout;
 use pulp::Simd;
 
-use crate::expr::{Expr, linear_to_indices};
+use crate::expr::linear_to_indices;
 use crate::{MAX_SIMD_LANES, ResolvedTensor, SimdElement, TensorBacking};
 
 /// Helper to iterate over indices of a tensor with given shape
@@ -78,22 +78,6 @@ where
     fn to_concrete(&self) -> ConcreteTensor<T, R> {
         self.clone()
     }
-}
-
-impl<T, const R: usize> ResolvedTensor<R> for ConcreteTensor<T, R>
-where
-    T: SimdElement,
-{
-    fn data(&self) -> &ABox<[Self::Elem]> {
-        &self.backing
-    }
-    fn data_mut(&mut self) -> &mut ABox<[Self::Elem]> {
-        &mut self.backing
-    }
-}
-
-impl<T: SimdElement, const R: usize> Expr for ConcreteTensor<T, R> {
-    type Elem = T;
 
     #[inline(always)]
     fn eval_scalar(&self, idx: usize) -> T {
@@ -128,6 +112,18 @@ impl<T: SimdElement, const R: usize> Expr for ConcreteTensor<T, R> {
             let (simd_vec, _) = T::as_simd::<S>(&temp[..lane_count]);
             simd_vec[0]
         }
+    }
+}
+
+impl<T, const R: usize> ResolvedTensor<R> for ConcreteTensor<T, R>
+where
+    T: SimdElement,
+{
+    fn data(&self) -> &ABox<[Self::Elem]> {
+        &self.backing
+    }
+    fn data_mut(&mut self) -> &mut ABox<[Self::Elem]> {
+        &mut self.backing
     }
 }
 

@@ -35,7 +35,7 @@ pub use elementwise::{
     Abs, Acos, Acosh, Asin, Asinh, Atan, Atanh, Cos, Cosh, Exp, Exp2, Log, Log2, Neg, Sin, Sinh,
     Sqrt, Tan, Tanh,
 };
-pub use expr::{Expr, materialize_expr};
+pub use expr::materialize_expr;
 pub use pairwise::{Add, Div, Mul, Rem, Sub};
 pub use scalar::{AddScalar, DivScalar, MulScalar, SubScalar};
 pub use quantized::{Dequantize, QuantizedTensor};
@@ -319,6 +319,20 @@ pub trait TensorBacking<const R: usize> {
     type Elem: SimdElement;
     fn layout(&self) -> Layout;
     fn to_concrete(&self) -> ConcreteTensor<Self::Elem, R>;
+
+    /// Evaluate at a single scalar index.
+    ///
+    /// This is used for:
+    /// - Tail elements that don't fill a complete SIMD vector
+    /// - Non-contiguous tensor access patterns
+    fn eval_scalar(&self, idx: usize) -> Self::Elem;
+
+    /// Evaluate a SIMD chunk starting at the given base index.
+    ///
+    /// The returned SIMD vector contains multiple consecutive elements
+    /// starting at `base_idx`. The caller must ensure that there are
+    /// enough elements remaining to fill a complete SIMD vector.
+    fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> <Self::Elem as SimdElement>::Simd<S>;
 }
 
 // Blanket implementation for references
@@ -331,6 +345,16 @@ impl<const R: usize, T: TensorBacking<R>> TensorBacking<R> for &T {
 
     fn to_concrete(&self) -> ConcreteTensor<Self::Elem, R> {
         (*self).to_concrete()
+    }
+
+    #[inline(always)]
+    fn eval_scalar(&self, idx: usize) -> Self::Elem {
+        (*self).eval_scalar(idx)
+    }
+
+    #[inline(always)]
+    fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> <Self::Elem as SimdElement>::Simd<S> {
+        (*self).eval_simd(simd, base_idx)
     }
 }
 

@@ -4,7 +4,7 @@ use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Rem as StdRem, Sub a
 
 use pulp::Simd;
 
-use crate::{ConcreteTensor, Expr, SimdElement, TensorBacking, materialize_expr};
+use crate::{ConcreteTensor, SimdElement, TensorBacking, materialize_expr};
 use fusor_types::Layout;
 
 /// Trait for binary operations that have SIMD support
@@ -163,8 +163,8 @@ macro_rules! define_binary_tensor_op {
         where
             E: SimdElement + $std_trait<Output = E> + Default,
             $simd_op: SimdBinaryOp<E>,
-            T1: Expr<Elem = E> + TensorBacking<R, Elem = E>,
-            T2: Expr<Elem = E> + TensorBacking<R, Elem = E>,
+            T1: TensorBacking<R, Elem = E>,
+            T2: TensorBacking<R, Elem = E>,
         {
             type Elem = E;
 
@@ -178,16 +178,6 @@ macro_rules! define_binary_tensor_op {
                     .expect("Shape length mismatch");
                 materialize_expr(self, shape)
             }
-        }
-
-        impl<E, const R: usize, T1, T2> Expr for $name<E, R, T1, T2>
-        where
-            E: SimdElement + $std_trait<Output = E>,
-            $simd_op: SimdBinaryOp<E>,
-            T1: Expr<Elem = E> + TensorBacking<R, Elem = E>,
-            T2: Expr<Elem = E> + TensorBacking<R, Elem = E>,
-        {
-            type Elem = E;
 
             #[inline(always)]
             fn eval_scalar(&self, idx: usize) -> E {

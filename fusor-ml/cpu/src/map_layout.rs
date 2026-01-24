@@ -8,7 +8,7 @@ use aligned_vec::ABox;
 use fusor_types::Layout;
 use pulp::Simd;
 
-use crate::expr::{linear_to_indices, materialize_expr, Expr};
+use crate::expr::{linear_to_indices, materialize_expr};
 use crate::{ConcreteTensor, ResolvedTensor, SimdElement, TensorBacking, MAX_SIMD_LANES};
 
 /// A tensor that holds backing data with a transformed layout.
@@ -75,10 +75,6 @@ impl<E: SimdElement, const R: usize> TensorBacking<R> for MapLayout<E, R> {
             .expect("Shape length mismatch");
         materialize_expr(self, shape)
     }
-}
-
-impl<E: SimdElement, const R: usize> Expr for MapLayout<E, R> {
-    type Elem = E;
 
     #[inline(always)]
     fn eval_scalar(&self, idx: usize) -> E {

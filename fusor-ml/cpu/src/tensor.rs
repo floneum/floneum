@@ -14,7 +14,6 @@ use crate::elementwise::{
     AbsOp, AcosOp, AcoshOp, AsinOp, AsinhOp, AtanOp, AtanhOp, CosOp, CoshOp, Exp2Op, ExpOp,
     Log2Op, LogOp, NegOp, SimdUnaryOp, SinOp, SinhOp, SqrtOp, TanOp, TanhOp,
 };
-use crate::expr::Expr;
 use crate::index::index_select_ref;
 use crate::matmul::MatmulImpl;
 use crate::pairwise::{AddOp, DivOp, MulOp, RemOp, SimdBinaryOp, SubOp};
@@ -817,7 +816,7 @@ impl FloatOps for f64 {
 impl<const R: usize, E, T> Tensor<R, T>
 where
     E: SimdElement,
-    T: TensorBacking<R, Elem = E> + Expr<Elem = E>,
+    T: TensorBacking<R, Elem = E>,
 {
     /// Absolute value element-wise (lazy)
     #[inline]
@@ -1078,6 +1077,16 @@ impl<const R: usize, T: TensorBacking<R>> TensorBacking<R> for Tensor<R, T> {
     fn to_concrete(&self) -> ConcreteTensor<T::Elem, R> {
         self.inner.to_concrete()
     }
+
+    #[inline(always)]
+    fn eval_scalar(&self, idx: usize) -> Self::Elem {
+        self.inner.eval_scalar(idx)
+    }
+
+    #[inline(always)]
+    fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> <Self::Elem as SimdElement>::Simd<S> {
+        self.inner.eval_simd(simd, base_idx)
+    }
 }
 
 /// Macro to implement pairwise operators for CPU Tensor.
@@ -1093,8 +1102,8 @@ macro_rules! impl_cpu_pairwise_op {
         impl<const R: usize, E, T1, T2> $std_trait<Tensor<R, T2>> for Tensor<R, T1>
         where
             E: SimdElement + $std_trait<Output = E> + Default,
-            T1: TensorBacking<R, Elem = E> + Expr<Elem = E>,
-            T2: TensorBacking<R, Elem = E> + Expr<Elem = E>,
+            T1: TensorBacking<R, Elem = E>,
+            T2: TensorBacking<R, Elem = E>,
             $simd_op: SimdBinaryOp<E>,
         {
             type Output = Tensor<R, pairwise::$pairwise_ty<E, R, T1, T2>>;
@@ -1108,8 +1117,8 @@ macro_rules! impl_cpu_pairwise_op {
         impl<'a, const R: usize, E, T1, T2> $std_trait<&'a Tensor<R, T2>> for &'a Tensor<R, T1>
         where
             E: SimdElement + $std_trait<Output = E> + Default,
-            T1: TensorBacking<R, Elem = E> + Expr<Elem = E>,
-            T2: TensorBacking<R, Elem = E> + Expr<Elem = E>,
+            T1: TensorBacking<R, Elem = E>,
+            T2: TensorBacking<R, Elem = E>,
             $simd_op: SimdBinaryOp<E>,
         {
             type Output = Tensor<R, pairwise::$pairwise_ty<E, R, &'a T1, &'a T2>>;
@@ -1123,8 +1132,8 @@ macro_rules! impl_cpu_pairwise_op {
         impl<'a, const R: usize, E, T1, T2> $std_trait<&'a Tensor<R, T2>> for Tensor<R, T1>
         where
             E: SimdElement + $std_trait<Output = E> + Default,
-            T1: TensorBacking<R, Elem = E> + Expr<Elem = E>,
-            T2: TensorBacking<R, Elem = E> + Expr<Elem = E>,
+            T1: TensorBacking<R, Elem = E>,
+            T2: TensorBacking<R, Elem = E>,
             $simd_op: SimdBinaryOp<E>,
         {
             type Output = Tensor<R, pairwise::$pairwise_ty<E, R, T1, &'a T2>>;
@@ -1138,8 +1147,8 @@ macro_rules! impl_cpu_pairwise_op {
         impl<'a, const R: usize, E, T1, T2> $std_trait<Tensor<R, T2>> for &'a Tensor<R, T1>
         where
             E: SimdElement + $std_trait<Output = E> + Default,
-            T1: TensorBacking<R, Elem = E> + Expr<Elem = E>,
-            T2: TensorBacking<R, Elem = E> + Expr<Elem = E>,
+            T1: TensorBacking<R, Elem = E>,
+            T2: TensorBacking<R, Elem = E>,
             $simd_op: SimdBinaryOp<E>,
         {
             type Output = Tensor<R, pairwise::$pairwise_ty<E, R, &'a T1, T2>>;
@@ -1160,7 +1169,7 @@ impl_cpu_pairwise_op!(StdRem, rem, Rem, RemOp);
 // Neg is unary, so handle separately
 impl<const R: usize, T> StdNeg for Tensor<R, T>
 where
-    T: TensorBacking<R> + Expr<Elem = <T as TensorBacking<R>>::Elem>,
+    T: TensorBacking<R>,
     <T as TensorBacking<R>>::Elem: SimdElement + StdNeg<Output = <T as TensorBacking<R>>::Elem> + Default,
     NegOp: SimdUnaryOp<<T as TensorBacking<R>>::Elem>,
 {
@@ -1173,7 +1182,7 @@ where
 
 impl<'a, const R: usize, T> StdNeg for &'a Tensor<R, T>
 where
-    T: TensorBacking<R> + Expr<Elem = <T as TensorBacking<R>>::Elem>,
+    T: TensorBacking<R>,
     <T as TensorBacking<R>>::Elem: SimdElement + StdNeg<Output = <T as TensorBacking<R>>::Elem> + Default,
     NegOp: SimdUnaryOp<<T as TensorBacking<R>>::Elem>,
 {
@@ -1202,7 +1211,7 @@ impl Scalar for u64 {}
 // Scalar multiplication: Tensor * scalar
 impl<const R: usize, T, E> StdMul<E> for Tensor<R, T>
 where
-    T: TensorBacking<R, Elem = E> + Expr<Elem = E>,
+    T: TensorBacking<R, Elem = E>,
     E: SimdElement + StdMul<Output = E> + Default + Scalar,
     MulOp: SimdBinaryOp<E>,
 {
@@ -1215,7 +1224,7 @@ where
 
 impl<'a, const R: usize, T, E> StdMul<E> for &'a Tensor<R, T>
 where
-    T: TensorBacking<R, Elem = E> + Expr<Elem = E>,
+    T: TensorBacking<R, Elem = E>,
     E: SimdElement + StdMul<Output = E> + Default + Scalar,
     MulOp: SimdBinaryOp<E>,
 {
@@ -1229,7 +1238,7 @@ where
 // Scalar addition: Tensor + scalar
 impl<const R: usize, T, E> StdAdd<E> for Tensor<R, T>
 where
-    T: TensorBacking<R, Elem = E> + Expr<Elem = E>,
+    T: TensorBacking<R, Elem = E>,
     E: SimdElement + StdAdd<Output = E> + Default + Scalar,
     AddOp: SimdBinaryOp<E>,
 {
@@ -1242,7 +1251,7 @@ where
 
 impl<'a, const R: usize, T, E> StdAdd<E> for &'a Tensor<R, T>
 where
-    T: TensorBacking<R, Elem = E> + Expr<Elem = E>,
+    T: TensorBacking<R, Elem = E>,
     E: SimdElement + StdAdd<Output = E> + Default + Scalar,
     AddOp: SimdBinaryOp<E>,
 {
@@ -1257,7 +1266,7 @@ where
 impl<const R: usize, E, T> Tensor<R, T>
 where
     E: SimdElement + Default,
-    T: TensorBacking<R, Elem = E> + Expr<Elem = E>,
+    T: TensorBacking<R, Elem = E>,
 {
     /// Add a scalar to each element
     #[inline]
@@ -1349,7 +1358,7 @@ fn broadcast_shapes<const R1: usize, const R2: usize, const R3: usize>(
 impl<const R: usize, E, T> Tensor<R, T>
 where
     E: SimdElement + Default,
-    T: TensorBacking<R, Elem = E> + Expr<Elem = E>,
+    T: TensorBacking<R, Elem = E>,
 {
     /// Multiply with broadcasting support (multi-rank tensors).
     ///
@@ -1362,7 +1371,7 @@ where
     where
         E: StdMul<Output = E>,
         MulOp: SimdBinaryOp<E>,
-        T2: TensorBacking<R2, Elem = E> + Expr<Elem = E>,
+        T2: TensorBacking<R2, Elem = E>,
         (ConcreteTensor<E, R>, ConcreteTensor<E, R2>): MaxRank<R3, E>,
     {
         let shape1: [usize; R] = self.layout().shape().try_into().unwrap();
@@ -1386,7 +1395,7 @@ where
     where
         E: StdAdd<Output = E>,
         AddOp: SimdBinaryOp<E>,
-        T2: TensorBacking<R2, Elem = E> + Expr<Elem = E>,
+        T2: TensorBacking<R2, Elem = E>,
         (ConcreteTensor<E, R>, ConcreteTensor<E, R2>): MaxRank<R3, E>,
     {
         let shape1: [usize; R] = self.layout().shape().try_into().unwrap();
@@ -1410,7 +1419,7 @@ where
     where
         E: StdSub<Output = E>,
         SubOp: SimdBinaryOp<E>,
-        T2: TensorBacking<R2, Elem = E> + Expr<Elem = E>,
+        T2: TensorBacking<R2, Elem = E>,
         (ConcreteTensor<E, R>, ConcreteTensor<E, R2>): MaxRank<R3, E>,
     {
         let shape1: [usize; R] = self.layout().shape().try_into().unwrap();
@@ -1434,7 +1443,7 @@ where
     where
         E: StdDiv<Output = E>,
         DivOp: SimdBinaryOp<E>,
-        T2: TensorBacking<R2, Elem = E> + Expr<Elem = E>,
+        T2: TensorBacking<R2, Elem = E>,
         (ConcreteTensor<E, R>, ConcreteTensor<E, R2>): MaxRank<R3, E>,
     {
         let shape1: [usize; R] = self.layout().shape().try_into().unwrap();
@@ -1457,7 +1466,7 @@ where
     ) -> Tensor<R3, ConcreteTensor<E, R3>>
     where
         E: FloatOps,
-        T2: TensorBacking<R2, Elem = E> + Expr<Elem = E>,
+        T2: TensorBacking<R2, Elem = E>,
         (ConcreteTensor<E, R>, ConcreteTensor<E, R2>): MaxRank<R3, E>,
     {
         let shape1: [usize; R] = self.layout().shape().try_into().unwrap();
@@ -1479,25 +1488,6 @@ where
             .collect();
 
         Tensor::new(ConcreteTensor::from_slice(out_shape, &result))
-    }
-}
-
-// Implement Expr for Tensor to enable evaluation
-impl<const R: usize, E, T> Expr for Tensor<R, T>
-where
-    E: SimdElement,
-    T: TensorBacking<R, Elem = E> + Expr<Elem = E>,
-{
-    type Elem = E;
-
-    #[inline(always)]
-    fn eval_scalar(&self, idx: usize) -> Self::Elem {
-        self.inner.eval_scalar(idx)
-    }
-
-    #[inline(always)]
-    fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> E::Simd<S> {
-        self.inner.eval_simd(simd, base_idx)
     }
 }
 

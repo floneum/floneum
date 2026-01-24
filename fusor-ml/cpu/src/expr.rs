@@ -1,52 +1,13 @@
 //! Expression template system for lazy operation fusion
 //!
-//! This module provides the `Expr` trait and related types that enable
-//! automatic fusion of elementwise operations. When multiple operations
-//! are chained (e.g., `x.mul_ref(&y).add_ref(&z).sqrt_ref()`), they are
-//! evaluated in a single SIMD loop instead of multiple passes.
+//! This module provides types that enable automatic fusion of elementwise
+//! operations. When multiple operations are chained (e.g.,
+//! `x.mul_ref(&y).add_ref(&z).sqrt_ref()`), they are evaluated in a single
+//! SIMD loop instead of multiple passes.
 
 use pulp::{Arch, Simd, WithSimd};
 
-use crate::{ConcreteTensor, ResolvedTensor, SimdElement};
-
-/// Trait for expressions that can be evaluated element-wise with SIMD.
-///
-/// This trait enables lazy evaluation and fusion of operations. Types that
-/// implement `Expr` can be composed into expression trees that are evaluated
-/// in a single pass when materialized.
-pub trait Expr {
-    /// The element type this expression produces
-    type Elem: SimdElement;
-
-    /// Evaluate at a single scalar index.
-    ///
-    /// This is used for:
-    /// - Tail elements that don't fill a complete SIMD vector
-    /// - Non-contiguous tensor access patterns
-    fn eval_scalar(&self, idx: usize) -> Self::Elem;
-
-    /// Evaluate a SIMD chunk starting at the given base index.
-    ///
-    /// The returned SIMD vector contains multiple consecutive elements
-    /// starting at `base_idx`. The caller must ensure that there are
-    /// enough elements remaining to fill a complete SIMD vector.
-    fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> <Self::Elem as SimdElement>::Simd<S>;
-}
-
-/// Implement Expr for references to Expr types
-impl<E: Expr> Expr for &E {
-    type Elem = E::Elem;
-
-    #[inline(always)]
-    fn eval_scalar(&self, idx: usize) -> Self::Elem {
-        (*self).eval_scalar(idx)
-    }
-
-    #[inline(always)]
-    fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> <Self::Elem as SimdElement>::Simd<S> {
-        (*self).eval_simd(simd, base_idx)
-    }
-}
+use crate::{ConcreteTensor, ResolvedTensor, SimdElement, TensorBacking};
 
 /// Helper to get SIMD lane count for a given element type and SIMD architecture
 #[inline(always)]
@@ -54,52 +15,52 @@ fn simd_lane_count<E: SimdElement, S: Simd>() -> usize {
     std::mem::size_of::<E::Simd<S>>() / std::mem::size_of::<E>()
 }
 
-/// Evaluates an expression into an output slice using SIMD.
+/// Evaluates a tensor backing into an output slice using SIMD.
 ///
 /// This is the core evaluation loop that fuses all operations in an
 /// expression tree into a single pass over the data.
-struct ExprEvaluator<'a, E: Expr> {
-    expr: &'a E,
-    output: &'a mut [E::Elem],
+struct TensorEvaluator<'a, T: TensorBacking<R>, const R: usize> {
+    tensor: &'a T,
+    output: &'a mut [T::Elem],
     base_offset: usize,
 }
 
-impl<E: Expr> WithSimd for ExprEvaluator<'_, E> {
+impl<T: TensorBacking<R>, const R: usize> WithSimd for TensorEvaluator<'_, T, R> {
     type Output = ();
 
     #[inline(always)]
     fn with_simd<S: Simd>(self, simd: S) -> Self::Output {
-        let lane_count = simd_lane_count::<E::Elem, S>();
-        let (out_simd, out_tail) = E::Elem::as_mut_simd::<S>(self.output);
+        let lane_count = simd_lane_count::<T::Elem, S>();
+        let (out_simd, out_tail) = T::Elem::as_mut_simd::<S>(self.output);
 
         // Main SIMD loop - evaluates full vectors
         for (i, out) in out_simd.iter_mut().enumerate() {
             let base_idx = self.base_offset + i * lane_count;
-            *out = self.expr.eval_simd(simd, base_idx);
+            *out = self.tensor.eval_simd(simd, base_idx);
         }
 
         // Scalar tail - handles remaining elements
         let simd_len = out_simd.len() * lane_count;
         for (i, out) in out_tail.iter_mut().enumerate() {
-            *out = self.expr.eval_scalar(self.base_offset + simd_len + i);
+            *out = self.tensor.eval_scalar(self.base_offset + simd_len + i);
         }
     }
 }
 
-/// Materialize an expression into a new ConcreteTensor.
+/// Materialize a tensor backing into a new ConcreteTensor.
 ///
 /// This evaluates the entire expression tree in a single fused SIMD loop,
 /// writing the results into a newly allocated tensor.
 #[inline]
 #[must_use = "this allocates a new tensor; discarding it wastes computation"]
-pub fn materialize_expr<E: Expr, const R: usize>(
-    expr: &E,
+pub fn materialize_expr<T: TensorBacking<R>, const R: usize>(
+    tensor: &T,
     shape: [usize; R],
-) -> ConcreteTensor<E::Elem, R> {
+) -> ConcreteTensor<T::Elem, R> {
     let mut output = ConcreteTensor::uninit_unchecked(shape);
 
-    Arch::new().dispatch(ExprEvaluator {
-        expr,
+    Arch::new().dispatch(TensorEvaluator {
+        tensor,
         output: output.data_mut(),
         base_offset: 0,
     });
@@ -155,11 +116,10 @@ mod tests {
     }
 
     #[test]
-    fn test_concrete_tensor_expr() {
-        use crate::TensorBacking;
+    fn test_concrete_tensor_eval() {
         let tensor = ConcreteTensor::<f32, 1>::from_slice([4], &[1.0, 2.0, 3.0, 4.0]);
 
-        // Test layout methods (moved from Expr to Layout)
+        // Test layout methods
         assert_eq!(tensor.layout().num_elements(), 4);
         assert_eq!(tensor.layout().shape(), &[4]);
         assert!(tensor.layout().is_contiguous());
@@ -183,8 +143,7 @@ mod tests {
     }
 
     #[test]
-    fn test_expr_reference_impl() {
-        use crate::TensorBacking;
+    fn test_reference_impl() {
         let tensor = ConcreteTensor::<f32, 1>::from_slice([3], &[1.0, 2.0, 3.0]);
         let tensor_ref = &tensor;
 
