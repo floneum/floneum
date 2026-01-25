@@ -92,7 +92,7 @@ where
     }
 
     #[inline(always)]
-    fn eval_simd<S: Simd>(&self, _simd: S, base_idx: usize) -> T::Simd<S> {
+    fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> T::Simd<S> {
         if self.layout.is_contiguous() {
             // Fast path: direct SIMD load from contiguous, aligned data
             // - base_idx is always aligned to SIMD width (caller guarantees this)
@@ -101,16 +101,22 @@ where
             let (simd_slice, _) = T::as_simd::<S>(&self.backing[base_idx..]);
             simd_slice[0]
         } else {
-            // Slow path: gather elements one by one
-            // For strided tensors, we fall back to scalar evaluation
-            // and construct a SIMD vector manually
+            // Optimized path: use SIMD gather for strided tensor access
+            // Precompute physical indices for all SIMD lanes
             let lane_count = std::mem::size_of::<T::Simd<S>>() / std::mem::size_of::<T>();
-            let mut temp = [T::default(); MAX_SIMD_LANES];
+            let mut phys_indices = [0usize; MAX_SIMD_LANES];
+
+            // Compute physical indices for each logical position
             for i in 0..lane_count {
-                temp[i] = self.eval_scalar(base_idx + i);
+                let indices = linear_to_indices::<R>(base_idx + i, self.layout.shape());
+                phys_indices[i] = self.layout.linear_index(&indices);
             }
-            let (simd_vec, _) = T::as_simd::<S>(&temp[..lane_count]);
-            simd_vec[0]
+
+            // Use SIMD gather instruction to load all elements at once
+            // SAFETY: All indices are computed from valid linear indices
+            // within the tensor's logical bounds, and the backing array
+            // contains all physical positions that the layout can address.
+            unsafe { T::gather_unchecked(simd, &self.backing, &phys_indices, lane_count) }
         }
     }
 }

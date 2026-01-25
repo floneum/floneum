@@ -12,6 +12,7 @@ mod concrete_tensor;
 mod conditional;
 mod elementwise;
 mod expr;
+mod gather;
 mod index;
 mod map_layout;
 mod matmul;
@@ -378,6 +379,26 @@ pub trait SimdElement: Sized + Copy + Default + Pod + Sync + Send {
 
     /// Broadcast a scalar value to all lanes of a SIMD vector
     fn splat<S: Simd>(simd: S, value: Self) -> Self::Simd<S>;
+
+    /// Gather elements from the slice at the specified indices using SIMD.
+    ///
+    /// # Safety
+    /// All indices must be valid indices into the slice.
+    ///
+    /// # Arguments
+    /// * `simd` - The SIMD context
+    /// * `slice` - The source data slice
+    /// * `indices` - Array of indices to gather from
+    /// * `lane_count` - Number of SIMD lanes to fill
+    ///
+    /// Uses hardware SIMD gather instructions (AVX2, AVX-512) when available,
+    /// falling back to scalar loads on other architectures.
+    unsafe fn gather_unchecked<S: Simd>(
+        simd: S,
+        slice: &[Self],
+        indices: &[usize; MAX_SIMD_LANES],
+        lane_count: usize,
+    ) -> Self::Simd<S>;
 }
 
 macro_rules! impl_simd_element {
@@ -398,6 +419,17 @@ macro_rules! impl_simd_element {
             #[inline(always)]
             fn splat<S: Simd>(simd: S, value: Self) -> S::$simd_ty {
                 simd.$splat(value)
+            }
+
+            #[inline(always)]
+            unsafe fn gather_unchecked<S: Simd>(
+                simd: S,
+                slice: &[Self],
+                indices: &[usize; MAX_SIMD_LANES],
+                lane_count: usize,
+            ) -> Self::Simd<S> {
+                // SAFETY: Caller guarantees all indices are valid
+                unsafe { gather::gather_impl::<Self, S>(simd, slice, indices, lane_count) }
             }
         }
     };
