@@ -121,24 +121,16 @@ where
         let max_val = concrete.max_keepdim::<OUT_RANK>(axis);
 
         // x - max(x) (broadcasts automatically since max has size 1 in reduced dim)
-        let shifted = concrete.dispatch_pair_concrete(
-            &max_val,
-            |a, b| (a - b).to_concrete(),
-            |a, b| a - b,
-        );
+        let shifted = concrete - max_val;
 
         // exp(x - max(x)) - materialize since sum_keepdim is a reduction
-        let exp_val = shifted.exp().to_concrete();
+        let exp_val = shifted.exp();
 
         // sum(exp(...)) with keepdim
         let sum_exp = exp_val.sum_keepdim::<OUT_RANK>(axis);
 
         // exp / sum (broadcasts)
-        exp_val.dispatch_pair_concrete(
-            &sum_exp,
-            |a, b| (a / b).to_concrete(),
-            |a, b| a / b,
-        )
+        (exp_val / sum_exp).to_concrete()
     }
 
     /// RMS Normalization along the last axis.
