@@ -72,6 +72,40 @@ define_scalar_tensor_op!(SubScalar, StdSub, SubOp);
 define_scalar_tensor_op!(MulScalar, StdMul, MulOp);
 define_scalar_tensor_op!(DivScalar, StdDiv, DivOp);
 
+/// A scalar value broadcasted to a tensor shape
+pub struct Broadcast<E: SimdElement, const R: usize> {
+    scalar: E,
+    shape: [usize; R],
+}
+
+impl<E: SimdElement, const R: usize> Broadcast<E, R> {
+    pub fn new(scalar: E, shape: [usize; R]) -> Self {
+        Self { scalar, shape }
+    }
+}
+
+impl<E: SimdElement + Default, const R: usize> TensorBacking<R> for Broadcast<E, R> {
+    type Elem = E;
+
+    fn layout(&self) -> Layout {
+        Layout::contiguous(&self.shape)
+    }
+
+    fn to_concrete(&self) -> ConcreteTensor<E, R> {
+        materialize_expr(self, self.shape)
+    }
+
+    #[inline(always)]
+    fn eval_scalar(&self, _idx: usize) -> E {
+        self.scalar
+    }
+
+    #[inline(always)]
+    fn eval_simd<S: Simd>(&self, simd: S, _base_idx: usize) -> E::Simd<S> {
+        E::splat(simd, self.scalar)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

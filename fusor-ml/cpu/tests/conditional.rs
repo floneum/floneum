@@ -64,13 +64,15 @@ fn test_where_cond_with_comparison() {
     // Common pattern: where_cond with comparison result
     let a = Tensor::from_slice([4], &[1.0f32, 2.0, 3.0, 4.0]);
     let b = Tensor::from_slice([4], &[2.5f32, 2.5, 2.5, 2.5]);
+    let a2 = Tensor::from_slice([4], &[1.0f32, 2.0, 3.0, 4.0]);
+    let b2 = Tensor::from_slice([4], &[2.5f32, 2.5, 2.5, 2.5]);
 
-    // Compute (a > b) as mask
-    let mask = a.as_ref().gt(b.as_ref());
+    // Compute (a > b) as mask and materialize it
+    let mask = a.gt(b).to_concrete();
     // mask = [0, 0, 1, 1]
 
     // Use mask to select: where a > b, return a, else return b
-    let result = mask.where_cond(a, b);
+    let result = Tensor::new(mask).where_cond(a2, b2);
 
     assert_eq!(result.get([0]), 2.5); // 1 > 2.5 = false, select b
     assert_eq!(result.get([1]), 2.5); // 2 > 2.5 = false, select b

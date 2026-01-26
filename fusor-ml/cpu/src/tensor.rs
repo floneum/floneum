@@ -6,7 +6,7 @@ use fusor_types::SlidingWindow;
 use pulp::Simd;
 
 use crate::cast::{CastTo, cast_tensor};
-use crate::comparison::{EqOp, GtOp, GteOp, LtOp, LteOp, NeOp, SimdComparisonOp};
+use crate::comparison::{self, EqOp, GtOp, GteOp, LtOp, LteOp, NeOp};
 use crate::concrete_tensor::IndexIterator;
 use crate::conditional::{IsNonZero, where_cond_ref};
 use crate::elementwise::{
@@ -457,169 +457,181 @@ where
 
     /// Element-wise equality comparison
     #[inline]
-    pub fn eq(
+    pub fn eq<T2: TensorBacking<R, Elem = E>>(
         self,
-        rhs: Tensor<R, impl TensorBacking<R, Elem = E>>,
-    ) -> Tensor<R, ConcreteTensor<E, R>>
+        rhs: Tensor<R, T2>,
+    ) -> Tensor<R, comparison::Eq<E, R, T, T2>>
     where
         E: Default,
-        EqOp: SimdComparisonOp<E>,
+        EqOp: SimdBinaryOp<E>,
     {
-        Tensor::new(comparison_tensor_op_ref::<E, R, EqOp>(
-            &self.inner.to_concrete(),
-            &rhs.inner.to_concrete(),
-        ))
+        Tensor::new(comparison::Eq::new(self.inner, rhs.inner))
     }
 
     /// Element-wise less than comparison
     #[inline]
-    pub fn lt(
+    pub fn lt<T2: TensorBacking<R, Elem = E>>(
         self,
-        rhs: Tensor<R, impl TensorBacking<R, Elem = E>>,
-    ) -> Tensor<R, ConcreteTensor<E, R>>
+        rhs: Tensor<R, T2>,
+    ) -> Tensor<R, comparison::Lt<E, R, T, T2>>
     where
         E: Default,
-        LtOp: SimdComparisonOp<E>,
+        LtOp: SimdBinaryOp<E>,
     {
-        Tensor::new(comparison_tensor_op_ref::<E, R, LtOp>(
-            &self.inner.to_concrete(),
-            &rhs.inner.to_concrete(),
-        ))
+        Tensor::new(comparison::Lt::new(self.inner, rhs.inner))
     }
 
     /// Element-wise greater than comparison
     #[inline]
-    pub fn gt(
+    pub fn gt<T2: TensorBacking<R, Elem = E>>(
         self,
-        rhs: Tensor<R, impl TensorBacking<R, Elem = E>>,
-    ) -> Tensor<R, ConcreteTensor<E, R>>
+        rhs: Tensor<R, T2>,
+    ) -> Tensor<R, comparison::Gt<E, R, T, T2>>
     where
         E: Default,
-        GtOp: SimdComparisonOp<E>,
+        GtOp: SimdBinaryOp<E>,
     {
-        Tensor::new(comparison_tensor_op_ref::<E, R, GtOp>(
-            &self.inner.to_concrete(),
-            &rhs.inner.to_concrete(),
-        ))
+        Tensor::new(comparison::Gt::new(self.inner, rhs.inner))
     }
 
     /// Element-wise not equal comparison
     #[inline]
-    pub fn ne(
+    pub fn ne<T2: TensorBacking<R, Elem = E>>(
         self,
-        rhs: Tensor<R, impl TensorBacking<R, Elem = E>>,
-    ) -> Tensor<R, ConcreteTensor<E, R>>
+        rhs: Tensor<R, T2>,
+    ) -> Tensor<R, comparison::Ne<E, R, T, T2>>
     where
         E: Default,
-        NeOp: SimdComparisonOp<E>,
+        NeOp: SimdBinaryOp<E>,
     {
-        Tensor::new(comparison_tensor_op_ref::<E, R, NeOp>(
-            &self.inner.to_concrete(),
-            &rhs.inner.to_concrete(),
-        ))
+        Tensor::new(comparison::Ne::new(self.inner, rhs.inner))
     }
 
     /// Element-wise less than or equal comparison
     #[inline]
-    pub fn lte(
+    pub fn lte<T2: TensorBacking<R, Elem = E>>(
         self,
-        rhs: Tensor<R, impl TensorBacking<R, Elem = E>>,
-    ) -> Tensor<R, ConcreteTensor<E, R>>
+        rhs: Tensor<R, T2>,
+    ) -> Tensor<R, comparison::Lte<E, R, T, T2>>
     where
         E: Default,
-        LteOp: SimdComparisonOp<E>,
+        LteOp: SimdBinaryOp<E>,
     {
-        Tensor::new(comparison_tensor_op_ref::<E, R, LteOp>(
-            &self.inner.to_concrete(),
-            &rhs.inner.to_concrete(),
-        ))
+        Tensor::new(comparison::Lte::new(self.inner, rhs.inner))
     }
 
     /// Element-wise greater than or equal comparison
     #[inline]
-    pub fn gte(
+    pub fn gte<T2: TensorBacking<R, Elem = E>>(
         self,
-        rhs: Tensor<R, impl TensorBacking<R, Elem = E>>,
-    ) -> Tensor<R, ConcreteTensor<E, R>>
+        rhs: Tensor<R, T2>,
+    ) -> Tensor<R, comparison::Gte<E, R, T, T2>>
     where
         E: Default,
-        GteOp: SimdComparisonOp<E>,
+        GteOp: SimdBinaryOp<E>,
     {
-        Tensor::new(comparison_tensor_op_ref::<E, R, GteOp>(
-            &self.inner.to_concrete(),
-            &rhs.inner.to_concrete(),
-        ))
+        Tensor::new(comparison::Gte::new(self.inner, rhs.inner))
     }
 
     /// Compare tensor elements with scalar for equality
     #[inline]
-    pub fn eq_scalar(self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn eq_scalar(
+        self,
+        scalar_val: E,
+    ) -> Tensor<R, comparison::Eq<E, R, T, scalar::Broadcast<E, R>>>
     where
-        EqOp: SimdComparisonOp<E>,
+        E: Default,
+        EqOp: SimdBinaryOp<E>,
     {
-        Tensor::new(comparison_scalar_op_ref::<E, R, EqOp>(
-            &self.inner.to_concrete(),
-            scalar,
+        let shape: [usize; R] = self.layout().shape().try_into().unwrap();
+        Tensor::new(comparison::Eq::new(
+            self.inner,
+            scalar::Broadcast::new(scalar_val, shape),
         ))
     }
 
     /// Compare tensor elements with scalar for inequality
     #[inline]
-    pub fn ne_scalar(self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn ne_scalar(
+        self,
+        scalar_val: E,
+    ) -> Tensor<R, comparison::Ne<E, R, T, scalar::Broadcast<E, R>>>
     where
-        NeOp: SimdComparisonOp<E>,
+        E: Default,
+        NeOp: SimdBinaryOp<E>,
     {
-        Tensor::new(comparison_scalar_op_ref::<E, R, NeOp>(
-            &self.inner.to_concrete(),
-            scalar,
+        let shape: [usize; R] = self.layout().shape().try_into().unwrap();
+        Tensor::new(comparison::Ne::new(
+            self.inner,
+            scalar::Broadcast::new(scalar_val, shape),
         ))
     }
 
     /// Compare tensor elements with scalar for less than
     #[inline]
-    pub fn lt_scalar(self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn lt_scalar(
+        self,
+        scalar_val: E,
+    ) -> Tensor<R, comparison::Lt<E, R, T, scalar::Broadcast<E, R>>>
     where
-        LtOp: SimdComparisonOp<E>,
+        E: Default,
+        LtOp: SimdBinaryOp<E>,
     {
-        Tensor::new(comparison_scalar_op_ref::<E, R, LtOp>(
-            &self.inner.to_concrete(),
-            scalar,
+        let shape: [usize; R] = self.layout().shape().try_into().unwrap();
+        Tensor::new(comparison::Lt::new(
+            self.inner,
+            scalar::Broadcast::new(scalar_val, shape),
         ))
     }
 
     /// Compare tensor elements with scalar for less than or equal
     #[inline]
-    pub fn lte_scalar(self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn lte_scalar(
+        self,
+        scalar_val: E,
+    ) -> Tensor<R, comparison::Lte<E, R, T, scalar::Broadcast<E, R>>>
     where
-        LteOp: SimdComparisonOp<E>,
+        E: Default,
+        LteOp: SimdBinaryOp<E>,
     {
-        Tensor::new(comparison_scalar_op_ref::<E, R, LteOp>(
-            &self.inner.to_concrete(),
-            scalar,
+        let shape: [usize; R] = self.layout().shape().try_into().unwrap();
+        Tensor::new(comparison::Lte::new(
+            self.inner,
+            scalar::Broadcast::new(scalar_val, shape),
         ))
     }
 
     /// Compare tensor elements with scalar for greater than
     #[inline]
-    pub fn gt_scalar(self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn gt_scalar(
+        self,
+        scalar_val: E,
+    ) -> Tensor<R, comparison::Gt<E, R, T, scalar::Broadcast<E, R>>>
     where
-        GtOp: SimdComparisonOp<E>,
+        E: Default,
+        GtOp: SimdBinaryOp<E>,
     {
-        Tensor::new(comparison_scalar_op_ref::<E, R, GtOp>(
-            &self.inner.to_concrete(),
-            scalar,
+        let shape: [usize; R] = self.layout().shape().try_into().unwrap();
+        Tensor::new(comparison::Gt::new(
+            self.inner,
+            scalar::Broadcast::new(scalar_val, shape),
         ))
     }
 
     /// Compare tensor elements with scalar for greater than or equal
     #[inline]
-    pub fn gte_scalar(self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>>
+    pub fn gte_scalar(
+        self,
+        scalar_val: E,
+    ) -> Tensor<R, comparison::Gte<E, R, T, scalar::Broadcast<E, R>>>
     where
-        GteOp: SimdComparisonOp<E>,
+        E: Default,
+        GteOp: SimdBinaryOp<E>,
     {
-        Tensor::new(comparison_scalar_op_ref::<E, R, GteOp>(
-            &self.inner.to_concrete(),
-            scalar,
+        let shape: [usize; R] = self.layout().shape().try_into().unwrap();
+        Tensor::new(comparison::Gte::new(
+            self.inner,
+            scalar::Broadcast::new(scalar_val, shape),
         ))
     }
 

@@ -38,7 +38,7 @@ pub use elementwise::{
 };
 pub use expr::materialize_expr;
 pub use pairwise::{Add, Div, Mul, Rem, Sub};
-pub use scalar::{AddScalar, DivScalar, MulScalar, SubScalar};
+pub use scalar::{AddScalar, DivScalar, MulScalar, SubScalar, Broadcast};
 pub use quantized::{Dequantize, QuantizedTensor};
 pub use tensor::{FloatOps, Scalar, Tensor};
 
@@ -84,7 +84,7 @@ impl Deref for CpuMappedBuffer {
 
 // Re-export operation traits and markers for public bounds
 pub use cast::CastTo;
-pub use comparison::{EqOp, GtOp, GteOp, LtOp, LteOp, NeOp, SimdComparisonOp};
+pub use comparison::{EqOp, GtOp, GteOp, LtOp, LteOp, NeOp, Eq, Ne, Lt, Lte, Gt, Gte};
 pub use conditional::IsNonZero;
 pub use elementwise::{
     AbsOp, AcosOp, AcoshOp, AsinOp, AsinhOp, AtanOp, AtanhOp, CosOp, CoshOp, Exp2Op, ExpOp,
