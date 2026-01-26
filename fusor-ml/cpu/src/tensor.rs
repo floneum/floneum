@@ -7,7 +7,6 @@ use pulp::Simd;
 
 use crate::cast::{CastTo, cast_tensor};
 use crate::comparison::{EqOp, GtOp, GteOp, LtOp, LteOp, NeOp, SimdComparisonOp};
-use crate::comparison::{comparison_scalar_op_ref, comparison_tensor_op_ref};
 use crate::concrete_tensor::IndexIterator;
 use crate::conditional::{IsNonZero, where_cond_ref};
 use crate::elementwise::{

@@ -15,9 +15,9 @@ fn bench_fusion(c: &mut Criterion) {
     let mut group = c.benchmark_group("fusion_mul_add_sqrt");
 
     for &size in &sizes {
-        let x = ConcreteTensor::<f32, 1>::from_slice([size], &vec![2.0f32; size]);
-        let y = ConcreteTensor::<f32, 1>::from_slice([size], &vec![3.0f32; size]);
-        let z = ConcreteTensor::<f32, 1>::from_slice([size], &vec![1.0f32; size]);
+        let x = Tensor::from_slice([size], &vec![2.0f32; size]);
+        let y = Tensor::from_slice([size], &vec![3.0f32; size]);
+        let z = Tensor::from_slice([size], &vec![1.0f32; size]);
 
         group.throughput(Throughput::Elements(size as u64));
 
@@ -33,10 +33,10 @@ fn bench_fusion(c: &mut Criterion) {
                 // This creates: Sqrt<Add<Mul<&CT, &CT>, &CT>>
                 // References avoid cloning - the expression tree holds refs to input data
                 // When to_concrete() is called, the entire tree is evaluated in one pass
-                let mul = fusor_cpu::Mul::new(x_ref, y_ref);
-                let add = fusor_cpu::Add::new(mul, z_ref);
-                let sqrt = fusor_cpu::Sqrt::new(add);
-                let result: ConcreteTensor<f32, 1> = fusor_cpu::TensorBacking::to_concrete(&sqrt);
+                let mul = (x_ref * y_ref);
+                let add = (mul + z_ref);
+                let sqrt = add.sqrt();
+                let result = sqrt.to_concrete();
                 black_box(result)
             })
         });
@@ -178,8 +178,8 @@ fn bench_unary_chain(c: &mut Criterion) {
                 let x_ref = black_box(&x_tensor);
 
                 let neg_result = (-x_ref).to_concrete(); // Pass 1
-                let abs_result = neg_result.abs(); // Pass 2
-                let sqrt_result = abs_result.sqrt(); // Pass 3
+                let abs_result = neg_result.abs().to_concrete(); // Pass 2
+                let sqrt_result = abs_result.sqrt().to_concrete(); // Pass 3
                 black_box(sqrt_result)
             })
         });

@@ -49,7 +49,9 @@ impl<T: TensorBacking<R>, const R: usize> WithSimd for TensorEvaluator<'_, T, R>
 
 /// Minimum number of elements before parallelization is used.
 /// Below this threshold, the overhead of thread spawning isn't worth it.
-const PARALLEL_THRESHOLD: usize = 65_536;
+/// Note: Set relatively high because thread::scope has non-trivial overhead
+/// and for expression trees the per-element work is light (SIMD ops).
+const PARALLEL_THRESHOLD: usize = 131_072;
 
 /// Materialize a tensor backing into a new ConcreteTensor.
 ///
@@ -119,8 +121,7 @@ pub fn materialize_expr<T: TensorBacking<R> + Sync, const R: usize>(
 /// This is used for strided tensor access where we need to map
 /// a flat iteration index to multi-dimensional tensor coordinates.
 #[inline]
-pub(crate) fn linear_to_indices<const R: usize>(mut linear: usize, shape: &[usize]) -> [usize; R] {
-    debug_assert_eq!(shape.len(), R);
+pub(crate) fn linear_to_indices<const R: usize>(mut linear: usize, shape: &[usize; R]) -> [usize; R] {
     let mut indices = [0usize; R];
 
     // Work backwards through dimensions (row-major order)

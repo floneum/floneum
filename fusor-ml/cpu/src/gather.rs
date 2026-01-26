@@ -34,7 +34,7 @@ mod x86_gather {
     /// AVX2 gather for f32 (8 lanes)
     #[inline]
     #[target_feature(enable = "avx2")]
-    pub unsafe fn gather_f32_avx2(slice: &[f32], indices: &[usize; MAX_SIMD_LANES]) -> [f32; 8] {
+    pub unsafe fn gather_f32_avx2(slice: &[f32], indices: &[usize]) -> [f32; 8] {
         let base_ptr = slice.as_ptr();
         let idx_i32: [i32; 8] = [
             indices[0] as i32,
@@ -57,7 +57,7 @@ mod x86_gather {
     /// AVX2 gather for f64 (4 lanes)
     #[inline]
     #[target_feature(enable = "avx2")]
-    pub unsafe fn gather_f64_avx2(slice: &[f64], indices: &[usize; MAX_SIMD_LANES]) -> [f64; 4] {
+    pub unsafe fn gather_f64_avx2(slice: &[f64], indices: &[usize]) -> [f64; 4] {
         let base_ptr = slice.as_ptr();
         let idx_i32: [i32; 4] = [
             indices[0] as i32,
@@ -76,7 +76,7 @@ mod x86_gather {
     /// AVX2 gather for i32 (8 lanes)
     #[inline]
     #[target_feature(enable = "avx2")]
-    pub unsafe fn gather_i32_avx2(slice: &[i32], indices: &[usize; MAX_SIMD_LANES]) -> [i32; 8] {
+    pub unsafe fn gather_i32_avx2(slice: &[i32], indices: &[usize]) -> [i32; 8] {
         let base_ptr = slice.as_ptr();
         let idx_i32: [i32; 8] = [
             indices[0] as i32,
@@ -99,7 +99,7 @@ mod x86_gather {
     /// AVX2 gather for i64 (4 lanes)
     #[inline]
     #[target_feature(enable = "avx2")]
-    pub unsafe fn gather_i64_avx2(slice: &[i64], indices: &[usize; MAX_SIMD_LANES]) -> [i64; 4] {
+    pub unsafe fn gather_i64_avx2(slice: &[i64], indices: &[usize]) -> [i64; 4] {
         let base_ptr = slice.as_ptr();
         let idx_i32: [i32; 4] = [
             indices[0] as i32,
@@ -124,7 +124,7 @@ mod x86_gather {
 pub unsafe fn gather_impl<T, S: Simd>(
     _simd: S,
     slice: &[T],
-    indices: &[usize; MAX_SIMD_LANES],
+    indices: &[usize],
     lane_count: usize,
 ) -> T::Simd<S>
 where
@@ -196,7 +196,7 @@ mod tests {
 
         struct GatherTest<'a> {
             data: &'a [f32],
-            indices: &'a [usize; MAX_SIMD_LANES],
+            indices: &'a [usize],
             result: &'a mut [f32],
             lane_count: &'a mut usize,
         }
@@ -247,7 +247,7 @@ mod tests {
 
         struct GatherTest<'a> {
             data: &'a [f32],
-            indices: &'a [usize; MAX_SIMD_LANES],
+            indices: &'a [usize],
             result: &'a mut [f32],
             lane_count: &'a mut usize,
         }

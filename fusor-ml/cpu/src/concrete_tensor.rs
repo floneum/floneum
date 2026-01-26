@@ -7,7 +7,7 @@ use fusor_types::Layout;
 use pulp::Simd;
 
 use crate::expr::linear_to_indices;
-use crate::{MAX_SIMD_LANES, ResolvedTensor, SimdElement, TensorBacking};
+use crate::{ResolvedTensor, SimdElement, TensorBacking};
 
 /// Helper to iterate over indices of a tensor with given shape
 pub struct IndexIterator {
@@ -85,8 +85,10 @@ where
             self.backing[idx]
         } else {
             // Convert linear index to logical indices for strided access
-            let indices = linear_to_indices::<R>(idx, self.layout.shape());
-            let phys_idx = self.layout.linear_index(&indices);
+            let shape: &[usize; R] =
+                    unsafe { self.layout.shape().try_into().unwrap_unchecked() };
+            let indices = linear_to_indices::<R>(idx, shape);
+            let phys_idx = unsafe { self.layout.linear_index_unchecked(&indices) };
             self.backing[phys_idx]
         }
     }
@@ -94,23 +96,20 @@ where
     #[inline(always)]
     fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> T::Simd<S> {
         if self.layout.is_contiguous() {
-            // Fast path: direct SIMD load from contiguous, aligned data
-            // - base_idx is always aligned to SIMD width (caller guarantees this)
-            // - backing is allocated with 64-byte alignment via aligned-vec
-            // - base_idx + lane_count <= len (caller guarantees this)
-            let (simd_slice, _) = T::as_simd::<S>(&self.backing[base_idx..]);
-            simd_slice[0]
+            // SAFETY: Caller guarantees base_idx is aligned to SIMD width and within bounds.
+            // The backing is allocated with 64-byte alignment via aligned-vec.
+            // ConcreteTensor is always contiguous - non-contiguous access uses MapLayout.
+            unsafe { *self.backing.as_ptr().add(base_idx).cast::<T::Simd<S>>() }
         } else {
             // Optimized path: use SIMD gather for strided tensor access
             // Precompute physical indices for all SIMD lanes
-            let lane_count = std::mem::size_of::<T::Simd<S>>() / std::mem::size_of::<T>();
-            let mut phys_indices = [0usize; MAX_SIMD_LANES];
-
-            // Compute physical indices for each logical position
-            for i in 0..lane_count {
-                let indices = linear_to_indices::<R>(base_idx + i, self.layout.shape());
-                phys_indices[i] = self.layout.linear_index(&indices);
-            }
+            let lane_count = const { std::mem::size_of::<T::Simd<S>>() / std::mem::size_of::<T>() };
+            let phys_indices: [usize; crate::MAX_SIMD_LANES] = std::array::from_fn(|i| {
+                let shape: &[usize; R] =
+                    unsafe { self.layout.shape().try_into().unwrap_unchecked() };
+                let indices = linear_to_indices::<R>(base_idx + i, shape);
+                unsafe { self.layout.linear_index_unchecked(&indices) }
+            });
 
             // Use SIMD gather instruction to load all elements at once
             // SAFETY: All indices are computed from valid linear indices
@@ -132,7 +131,6 @@ where
         &mut self.backing
     }
 }
-
 
 impl<T: SimdElement, const R: usize> ConcreteTensor<T, R> {
     /// Create a new tensor with contiguous layout from shape, filled with zeros
@@ -156,6 +154,7 @@ impl<T: SimdElement, const R: usize> ConcreteTensor<T, R> {
         // Transmute the MaybeUninit vec to T vec - this is safe because we will
         // write to all elements before reading, and MaybeUninit<T> has same layout as T
         // SAFETY: MaybeUninit<T> has same layout as T, and T is Pod so any memory layout is valid
+        // TODO: THIS IS UNSOUND - Uninit is not the same as AnyBitPattern
         let backing: ABox<[T]> = unsafe {
             // Allocate the aligned pointer
             let mut vec: AVec<MaybeUninit<T>> = AVec::with_capacity(64, num_elements);

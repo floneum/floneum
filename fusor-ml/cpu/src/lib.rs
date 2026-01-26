@@ -396,7 +396,7 @@ pub trait SimdElement: Sized + Copy + Default + Pod + Sync + Send {
     unsafe fn gather_unchecked<S: Simd>(
         simd: S,
         slice: &[Self],
-        indices: &[usize; MAX_SIMD_LANES],
+        indices: &[usize],
         lane_count: usize,
     ) -> Self::Simd<S>;
 }
@@ -425,7 +425,7 @@ macro_rules! impl_simd_element {
             unsafe fn gather_unchecked<S: Simd>(
                 simd: S,
                 slice: &[Self],
-                indices: &[usize; MAX_SIMD_LANES],
+                indices: &[usize],
                 lane_count: usize,
             ) -> Self::Simd<S> {
                 // SAFETY: Caller guarantees all indices are valid

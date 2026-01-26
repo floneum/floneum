@@ -59,8 +59,8 @@ impl<E: SimdElement, const R: usize> TensorBacking<R> for MapLayout<E, R> {
     }
 
     #[inline(always)]
-    fn eval_simd<S: Simd>(&self, _simd: S, base_idx: usize) -> E::Simd<S> {
-        self.tensor.eval_simd(_simd, base_idx)
+    fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> E::Simd<S> {
+        self.tensor.eval_simd(simd, base_idx)
     }
 }
 

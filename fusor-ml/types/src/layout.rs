@@ -127,6 +127,7 @@ impl Layout {
         }
     }
 
+    #[inline(always)]
     pub fn is_contiguous(&self) -> bool {
         self.contiguous
     }
@@ -183,6 +184,7 @@ impl Layout {
     }
 
     /// Calculate the linear index for a given set of logical indices
+    #[inline(always)]
     pub fn linear_index(&self, indices: &[usize]) -> usize {
         self.offset
             + indices
@@ -190,6 +192,19 @@ impl Layout {
                 .zip(self.strides.iter())
                 .map(|(idx, stride)| idx * stride)
                 .sum::<usize>()
+    }
+
+    /// Calculate the linear index for a given set of logical indices
+    ///
+    /// # SAFETY
+    /// the length of indices must be exactly equal to the length of the strides in the layout
+    #[inline(always)]
+    pub unsafe fn linear_index_unchecked<const R: usize>(&self, indices: &[usize; R]) -> usize {
+        let mut linear_idx = self.offset;
+        for i in 0..R {
+            linear_idx += unsafe { indices.get_unchecked(i) * self.strides.get_unchecked(i) };
+        }
+        linear_idx
     }
 
     /// Get the total number of elements in the tensor
@@ -293,9 +308,9 @@ impl Layout {
         let mut strides_iter = self.strides.iter().rev();
 
         for (new_idx, &target_dim) in target_shape.iter().enumerate().rev() {
-            let stride = if let Some(&src_dim) = shape_iter.next_if(|&&src_dim| {
-                src_dim == target_dim || (src_dim == 1 && target_dim > 1)
-            }) {
+            let stride = if let Some(&src_dim) = shape_iter
+                .next_if(|&&src_dim| src_dim == target_dim || (src_dim == 1 && target_dim > 1))
+            {
                 let stride = *strides_iter.next().unwrap();
                 // Matching dim, use the same stride
                 if src_dim == target_dim {
@@ -340,7 +355,12 @@ impl Layout {
     pub fn squeeze(&self, dim: usize) -> Self {
         let rank = self.shape.len();
         assert!(rank > 0, "Cannot squeeze a scalar layout");
-        assert!(dim < rank, "Dimension {} out of range for rank {}", dim, rank);
+        assert!(
+            dim < rank,
+            "Dimension {} out of range for rank {}",
+            dim,
+            rank
+        );
         assert!(
             self.shape[dim] == 1,
             "Cannot squeeze dimension {} of size {} (must be 1)",
@@ -376,7 +396,12 @@ impl Layout {
     /// Panics if dim is out of range
     pub fn unsqueeze(&self, dim: usize) -> Self {
         let rank = self.shape.len();
-        assert!(dim <= rank, "Dimension {} out of range for inserting into rank {}", dim, rank);
+        assert!(
+            dim <= rank,
+            "Dimension {} out of range for inserting into rank {}",
+            dim,
+            rank
+        );
 
         let new_rank = rank + 1;
         let mut new_shape = Vec::with_capacity(new_rank);
@@ -440,7 +465,12 @@ impl Layout {
     /// Panics if the slice is out of bounds
     pub fn narrow(&self, dim: usize, start: usize, length: usize) -> Self {
         let rank = self.shape.len();
-        assert!(dim < rank, "Dimension {} out of range for rank {}", dim, rank);
+        assert!(
+            dim < rank,
+            "Dimension {} out of range for rank {}",
+            dim,
+            rank
+        );
         assert!(
             start + length <= self.shape[dim],
             "Narrow out of bounds: {}..{} for dimension of size {}",
@@ -476,7 +506,12 @@ impl Layout {
     pub fn flatten_last_n(&self, n: usize) -> Self {
         let rank = self.shape.len();
         assert!(n >= 1, "n must be at least 1");
-        assert!(n <= rank, "Cannot flatten {} dimensions from rank {}", n, rank);
+        assert!(
+            n <= rank,
+            "Cannot flatten {} dimensions from rank {}",
+            n,
+            rank
+        );
         assert!(
             self.is_contiguous(),
             "Cannot flatten non-contiguous layout; make it contiguous first"
@@ -509,7 +544,12 @@ impl Layout {
     /// * If the layout is not contiguous
     pub fn flatten_first_n(&self, n: usize) -> Self {
         let rank = self.shape.len();
-        assert!(n + 1 <= rank, "Cannot flatten first {} dimensions from rank {}", n + 1, rank);
+        assert!(
+            n + 1 <= rank,
+            "Cannot flatten first {} dimensions from rank {}",
+            n + 1,
+            rank
+        );
         assert!(
             self.is_contiguous(),
             "Cannot flatten non-contiguous layout; make it contiguous first"
@@ -592,7 +632,12 @@ impl Layout {
 
         // Validate all axes
         for &axis in axes {
-            assert!(axis < new_rank, "Axis {} out of range for new rank {}", axis, new_rank);
+            assert!(
+                axis < new_rank,
+                "Axis {} out of range for new rank {}",
+                axis,
+                new_rank
+            );
         }
 
         // Sort axes
@@ -649,10 +694,17 @@ impl Layout {
 
         // Validate axes
         for window in &sorted_windows {
-            assert!(window.axis < old_rank, "Sliding window axis {} out of bounds", window.axis);
+            assert!(
+                window.axis < old_rank,
+                "Sliding window axis {} out of bounds",
+                window.axis
+            );
         }
         for pair in sorted_windows.windows(2) {
-            assert!(pair[0].axis != pair[1].axis, "Sliding window axes must be unique");
+            assert!(
+                pair[0].axis != pair[1].axis,
+                "Sliding window axes must be unique"
+            );
         }
 
         // Transform shape: original dimensions get their window positions, new dimensions get window sizes
@@ -798,7 +850,8 @@ fn test_sliding_window() {
 
     // 2D sliding window
     let layout = Layout::contiguous(&[6, 6]);
-    let windowed = layout.sliding_window(&[SlidingWindow::new(0, 3, 3), SlidingWindow::new(1, 3, 3)]);
+    let windowed =
+        layout.sliding_window(&[SlidingWindow::new(0, 3, 3), SlidingWindow::new(1, 3, 3)]);
     // (6 - 3) / 3 + 1 = 2 positions in each dimension
     assert_eq!(windowed.shape(), &[2, 2, 3, 3]);
     assert_eq!(windowed.strides(), &[18, 3, 6, 1]);
