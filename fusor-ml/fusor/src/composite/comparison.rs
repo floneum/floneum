@@ -4,7 +4,7 @@
 
 use crate::{Tensor, SimdElement};
 use fusor_core::DataType;
-use fusor_cpu::{EqOp, GtOp, GteOp, LtOp, LteOp, SimdComparisonOp};
+use fusor_cpu::{EqOp, GtOp, GteOp, LtOp, LteOp, SimdBinaryOp};
 
 impl<const R: usize, D> Tensor<R, D>
 where
@@ -16,9 +16,9 @@ where
     /// Note: GPU comparison is only available for CPU tensors at this time.
     pub fn eq_tensor(&self, rhs: &Self) -> Self
     where
-        EqOp: SimdComparisonOp<D>,
+        EqOp: SimdBinaryOp<D>,
     {
-        self.dispatch_cpu_only_pair(rhs, |a, b| a.as_ref().eq(b.as_ref()))
+        self.dispatch_cpu_only_pair(rhs, |a, b| a.as_ref().eq(b.as_ref()).to_concrete())
     }
 
     /// Element-wise less-than comparison between two tensors.
@@ -27,9 +27,9 @@ where
     /// Note: GPU comparison is only available for CPU tensors at this time.
     pub fn lt_tensor(&self, rhs: &Self) -> Self
     where
-        LtOp: SimdComparisonOp<D>,
+        LtOp: SimdBinaryOp<D>,
     {
-        self.dispatch_cpu_only_pair(rhs, |a, b| a.as_ref().lt(b.as_ref()))
+        self.dispatch_cpu_only_pair(rhs, |a, b| a.as_ref().lt(b.as_ref()).to_concrete())
     }
 
     /// Element-wise less-than-or-equal comparison between two tensors.
@@ -38,9 +38,9 @@ where
     /// Note: GPU comparison is only available for CPU tensors at this time.
     pub fn lte_tensor(&self, rhs: &Self) -> Self
     where
-        LteOp: SimdComparisonOp<D>,
+        LteOp: SimdBinaryOp<D>,
     {
-        self.dispatch_cpu_only_pair(rhs, |a, b| a.as_ref().lte(b.as_ref()))
+        self.dispatch_cpu_only_pair(rhs, |a, b| a.as_ref().lte(b.as_ref()).to_concrete())
     }
 
     /// Element-wise greater-than comparison between two tensors.
@@ -49,9 +49,9 @@ where
     /// Note: GPU comparison is only available for CPU tensors at this time.
     pub fn gt_tensor(&self, rhs: &Self) -> Self
     where
-        GtOp: SimdComparisonOp<D>,
+        GtOp: SimdBinaryOp<D>,
     {
-        self.dispatch_cpu_only_pair(rhs, |a, b| a.as_ref().gt(b.as_ref()))
+        self.dispatch_cpu_only_pair(rhs, |a, b| a.as_ref().gt(b.as_ref()).to_concrete())
     }
 
     /// Element-wise greater-than-or-equal comparison between two tensors.
@@ -60,9 +60,9 @@ where
     /// Note: GPU comparison is only available for CPU tensors at this time.
     pub fn gte_tensor(&self, rhs: &Self) -> Self
     where
-        GteOp: SimdComparisonOp<D>,
+        GteOp: SimdBinaryOp<D>,
     {
-        self.dispatch_cpu_only_pair(rhs, |a, b| a.as_ref().gte(b.as_ref()))
+        self.dispatch_cpu_only_pair(rhs, |a, b| a.as_ref().gte(b.as_ref()).to_concrete())
     }
 
     /// Element-wise equality comparison with a scalar.
@@ -70,10 +70,10 @@ where
     /// Returns 1.0 where elements equal the scalar, 0.0 otherwise.
     pub fn eq_scalar(&self, scalar: D) -> Self
     where
-        EqOp: SimdComparisonOp<D>,
+        EqOp: SimdBinaryOp<D>,
     {
         self.dispatch_ref(
-            |t| t.as_ref().eq_scalar(scalar),
+            |t| t.as_ref().eq_scalar(scalar).to_concrete(),
             |t| t.eq(scalar),
         )
     }
@@ -83,10 +83,10 @@ where
     /// Returns 1.0 where self < scalar, 0.0 otherwise.
     pub fn lt_scalar(&self, scalar: D) -> Self
     where
-        LtOp: SimdComparisonOp<D>,
+        LtOp: SimdBinaryOp<D>,
     {
         self.dispatch_ref(
-            |t| t.as_ref().lt_scalar(scalar),
+            |t| t.as_ref().lt_scalar(scalar).to_concrete(),
             |t| t.lt(scalar),
         )
     }
@@ -96,10 +96,10 @@ where
     /// Returns 1.0 where self <= scalar, 0.0 otherwise.
     pub fn lte_scalar(&self, scalar: D) -> Self
     where
-        LteOp: SimdComparisonOp<D>,
+        LteOp: SimdBinaryOp<D>,
     {
         self.dispatch_ref(
-            |t| t.as_ref().lte_scalar(scalar),
+            |t| t.as_ref().lte_scalar(scalar).to_concrete(),
             |t| t.lte(scalar),
         )
     }
@@ -109,10 +109,10 @@ where
     /// Returns 1.0 where self > scalar, 0.0 otherwise.
     pub fn gt_scalar(&self, scalar: D) -> Self
     where
-        GtOp: SimdComparisonOp<D>,
+        GtOp: SimdBinaryOp<D>,
     {
         self.dispatch_ref(
-            |t| t.as_ref().gt_scalar(scalar),
+            |t| t.as_ref().gt_scalar(scalar).to_concrete(),
             |t| t.mt(scalar),
         )
     }
@@ -122,10 +122,10 @@ where
     /// Returns 1.0 where self >= scalar, 0.0 otherwise.
     pub fn gte_scalar(&self, scalar: D) -> Self
     where
-        GteOp: SimdComparisonOp<D>,
+        GteOp: SimdBinaryOp<D>,
     {
         self.dispatch_ref(
-            |t| t.as_ref().gte_scalar(scalar),
+            |t| t.as_ref().gte_scalar(scalar).to_concrete(),
             |t| t.mte(scalar),
         )
     }
@@ -136,7 +136,7 @@ where
     /// This is an alias for `eq_scalar` to match fusor-core's API.
     pub fn eq(&self, rhs: D) -> Self
     where
-        EqOp: SimdComparisonOp<D>,
+        EqOp: SimdBinaryOp<D>,
     {
         self.eq_scalar(rhs)
     }
@@ -147,7 +147,7 @@ where
     /// This is an alias for `lt_scalar` to match fusor-core's API.
     pub fn lt(&self, rhs: D) -> Self
     where
-        LtOp: SimdComparisonOp<D>,
+        LtOp: SimdBinaryOp<D>,
     {
         self.lt_scalar(rhs)
     }
@@ -158,7 +158,7 @@ where
     /// This is an alias for `lte_scalar` to match fusor-core's API.
     pub fn lte(&self, rhs: D) -> Self
     where
-        LteOp: SimdComparisonOp<D>,
+        LteOp: SimdBinaryOp<D>,
     {
         self.lte_scalar(rhs)
     }
@@ -170,7 +170,7 @@ where
     /// Named `mt` (more than) to match fusor-core.
     pub fn mt(&self, rhs: D) -> Self
     where
-        GtOp: SimdComparisonOp<D>,
+        GtOp: SimdBinaryOp<D>,
     {
         self.gt_scalar(rhs)
     }
@@ -182,7 +182,7 @@ where
     /// Named `mte` (more than or equal) to match fusor-core.
     pub fn mte(&self, rhs: D) -> Self
     where
-        GteOp: SimdComparisonOp<D>,
+        GteOp: SimdBinaryOp<D>,
     {
         self.gte_scalar(rhs)
     }
