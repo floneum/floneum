@@ -170,24 +170,11 @@ pub struct Dequantize<'a, B: GgufBlock, const R: usize> {
     source: &'a QuantizedTensor<B>,
 }
 
-impl<B: GgufBlock, const R: usize> TensorBacking<R> for Dequantize<'_, B, R>
+impl<B: GgufBlock, const R: usize> crate::LazyBacking for Dequantize<'_, B, R>
 where
     B::Dequantized: AsRef<[f32]>,
 {
     type Elem = f32;
-
-    fn layout(&self) -> Layout {
-        // The layout of the dequantized tensor matches the source tensor's element shape
-        let shape: [usize; R] = self.source.element_shape.as_ref().try_into()
-            .expect("Shape length mismatch in Dequantize::layout");
-        Layout::contiguous(&shape)
-    }
-
-    fn to_concrete(&self) -> ConcreteTensor<f32, R> {
-        let shape: [usize; R] = self.source.element_shape.as_ref().try_into()
-            .expect("Shape length mismatch in Dequantize::to_concrete");
-        materialize_expr(self, shape)
-    }
 
     #[inline(always)]
     fn eval_scalar(&self, idx: usize) -> f32 {
@@ -208,6 +195,24 @@ where
         }
         let (simd_vec, _) = f32::as_simd::<S>(&temp[..lane_count]);
         simd_vec[0]
+    }
+}
+
+impl<B: GgufBlock, const R: usize> TensorBacking<R> for Dequantize<'_, B, R>
+where
+    B::Dequantized: AsRef<[f32]>,
+{
+    fn layout(&self) -> Layout {
+        // The layout of the dequantized tensor matches the source tensor's element shape
+        let shape: [usize; R] = self.source.element_shape.as_ref().try_into()
+            .expect("Shape length mismatch in Dequantize::layout");
+        Layout::contiguous(&shape)
+    }
+
+    fn to_concrete(&self) -> ConcreteTensor<f32, R> {
+        let shape: [usize; R] = self.source.element_shape.as_ref().try_into()
+            .expect("Shape length mismatch in Dequantize::to_concrete");
+        materialize_expr(self, shape)
     }
 }
 
@@ -710,7 +715,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::TensorBacking;
+    use crate::{LazyBacking, TensorBacking};
     use fusor_gguf::BlockQ8_0;
     use pulp::bytemuck;
 

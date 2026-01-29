@@ -5,7 +5,6 @@
 
 use crate::{ConcreteTensor, Tensor, SimdElement};
 use fusor_core::DataType;
-use fusor_cpu::MapLayout;
 use std::ops::{Range, RangeFrom, RangeFull, RangeTo};
 
 // Note: TensorIndex traits are complex and rank-dependent.
@@ -74,7 +73,7 @@ where
 {
     /// Index into a 2D tensor. Returns a 1D tensor when one index is specified,
     /// or a 2D tensor when ranges are used.
-    pub fn i<I1, I2>(&self, (i1, i2): (I1, I2)) -> Tensor<1, D, MapLayout<D, 1>>
+    pub fn i<I1, I2>(&self, (i1, i2): (I1, I2)) -> Tensor<1, D>
     where
         I1: Into<IndexOp>,
         I2: Into<IndexOp>,
@@ -87,16 +86,13 @@ where
 
         let slices = [i1.to_range(shape[0]), i2.to_range(shape[1])];
 
-        let sliced = match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().slice(slices)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.slice(slices)),
-        };
+        let sliced = self.slice(slices).to_concrete();
 
         // Squeeze dimensions that were indexed with a single value
         if i2.removes_dim() {
-            sliced.squeeze::<1>(1)
+            sliced.squeeze::<1>(1).to_concrete()
         } else if i1.removes_dim() {
-            sliced.squeeze::<1>(0)
+            sliced.squeeze::<1>(0).to_concrete()
         } else {
             panic!("i() on 2D tensor with two ranges should return 2D tensor, use slice() instead")
         }
@@ -109,7 +105,7 @@ where
     D: SimdElement + DataType + Default,
 {
     /// Index into a 3D tensor.
-    pub fn i<I1, I2, I3>(&self, (i1, i2, i3): (I1, I2, I3)) -> Tensor<2, D, MapLayout<D, 2>>
+    pub fn i<I1, I2, I3>(&self, (i1, i2, i3): (I1, I2, I3)) -> Tensor<2, D>
     where
         I1: Into<IndexOp>,
         I2: Into<IndexOp>,
@@ -128,10 +124,7 @@ where
             i3.to_range(shape[2]),
         ];
 
-        let sliced = match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().slice(slices)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.slice(slices)),
-        };
+        let sliced = self.slice(slices).to_concrete();
 
         // Count how many dimensions are being removed
         let removes = [i1.removes_dim(), i2.removes_dim(), i3.removes_dim()];
@@ -146,11 +139,11 @@ where
 
         // Squeeze from last to first to keep indices valid
         if removes[2] {
-            sliced.squeeze::<2>(2)
+            sliced.squeeze::<2>(2).to_concrete()
         } else if removes[1] {
-            sliced.squeeze::<2>(1)
+            sliced.squeeze::<2>(1).to_concrete()
         } else {
-            sliced.squeeze::<2>(0)
+            sliced.squeeze::<2>(0).to_concrete()
         }
     }
 }
@@ -164,7 +157,7 @@ where
     pub fn i<I1, I2, I3, I4>(
         &self,
         (i1, i2, i3, i4): (I1, I2, I3, I4),
-    ) -> Tensor<3, D, MapLayout<D, 3>>
+    ) -> Tensor<3, D>
     where
         I1: Into<IndexOp>,
         I2: Into<IndexOp>,
@@ -186,10 +179,7 @@ where
             i4.to_range(shape[3]),
         ];
 
-        let sliced = match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().slice(slices)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.slice(slices)),
-        };
+        let sliced = self.slice(slices).to_concrete();
 
         let removes = [
             i1.removes_dim(),
@@ -207,13 +197,13 @@ where
         }
 
         if removes[3] {
-            sliced.squeeze::<3>(3)
+            sliced.squeeze::<3>(3).to_concrete()
         } else if removes[2] {
-            sliced.squeeze::<3>(2)
+            sliced.squeeze::<3>(2).to_concrete()
         } else if removes[1] {
-            sliced.squeeze::<3>(1)
+            sliced.squeeze::<3>(1).to_concrete()
         } else {
-            sliced.squeeze::<3>(0)
+            sliced.squeeze::<3>(0).to_concrete()
         }
     }
 }

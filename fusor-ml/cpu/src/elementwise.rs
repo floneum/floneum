@@ -216,24 +216,13 @@ macro_rules! define_unary_tensor_op {
             }
         }
 
-        impl<E, const R: usize, T> TensorBacking<R> for $name<E, R, T>
+        impl<E, const R: usize, T> crate::LazyBacking for $name<E, R, T>
         where
             E: SimdElement + Default,
             $simd_op: SimdUnaryOp<E>,
             T: TensorBacking<R, Elem = E>,
         {
             type Elem = E;
-
-            fn layout(&self) -> Layout {
-                Layout::contiguous(self.input.layout().shape())
-            }
-
-            fn to_concrete(&self) -> ConcreteTensor<E, R> {
-                let shape: [usize; R] = self.input.layout().shape()
-                    .try_into()
-                    .expect("Shape length mismatch");
-                materialize_expr(self, shape)
-            }
 
             #[inline(always)]
             fn eval_scalar(&self, idx: usize) -> E {
@@ -243,6 +232,24 @@ macro_rules! define_unary_tensor_op {
             #[inline(always)]
             fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> E::Simd<S> {
                 <$simd_op>::apply_simd_vec(simd, self.input.eval_simd(simd, base_idx))
+            }
+        }
+
+        impl<E, const R: usize, T> TensorBacking<R> for $name<E, R, T>
+        where
+            E: SimdElement + Default,
+            $simd_op: SimdUnaryOp<E>,
+            T: TensorBacking<R, Elem = E>,
+        {
+            fn layout(&self) -> Layout {
+                Layout::contiguous(self.input.layout().shape())
+            }
+
+            fn to_concrete(&self) -> ConcreteTensor<E, R> {
+                let shape: [usize; R] = self.input.layout().shape()
+                    .try_into()
+                    .expect("Shape length mismatch");
+                materialize_expr(self, shape)
             }
         }
     };
@@ -265,24 +272,13 @@ macro_rules! define_unary_tensor_op {
             }
         }
 
-        impl<E, const R: usize, T> TensorBacking<R> for $name<E, R, T>
+        impl<E, const R: usize, T> crate::LazyBacking for $name<E, R, T>
         where
             E: SimdElement + $std_trait<Output = E> + Default,
             $simd_op: SimdUnaryOp<E>,
             T: TensorBacking<R, Elem = E>,
         {
             type Elem = E;
-
-            fn layout(&self) -> Layout {
-                Layout::contiguous(self.input.layout().shape())
-            }
-
-            fn to_concrete(&self) -> ConcreteTensor<E, R> {
-                let shape: [usize; R] = self.input.layout().shape()
-                    .try_into()
-                    .expect("Shape length mismatch");
-                materialize_expr(self, shape)
-            }
 
             #[inline(always)]
             fn eval_scalar(&self, idx: usize) -> E {
@@ -292,6 +288,24 @@ macro_rules! define_unary_tensor_op {
             #[inline(always)]
             fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> E::Simd<S> {
                 <$simd_op>::apply_simd_vec(simd, self.input.eval_simd(simd, base_idx))
+            }
+        }
+
+        impl<E, const R: usize, T> TensorBacking<R> for $name<E, R, T>
+        where
+            E: SimdElement + $std_trait<Output = E> + Default,
+            $simd_op: SimdUnaryOp<E>,
+            T: TensorBacking<R, Elem = E>,
+        {
+            fn layout(&self) -> Layout {
+                Layout::contiguous(self.input.layout().shape())
+            }
+
+            fn to_concrete(&self) -> ConcreteTensor<E, R> {
+                let shape: [usize; R] = self.input.layout().shape()
+                    .try_into()
+                    .expect("Shape length mismatch");
+                materialize_expr(self, shape)
             }
         }
     };
@@ -325,7 +339,7 @@ define_unary_tensor_op!(Atanh, AtanhOp);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::TensorBacking;
+    use crate::{LazyBacking, TensorBacking};
 
     #[test]
     fn test_neg_expr() {

@@ -30,24 +30,13 @@ macro_rules! define_scalar_tensor_op {
             }
         }
 
-        impl<E, const R: usize, T> TensorBacking<R> for $name<E, R, T>
+        impl<E, const R: usize, T> crate::LazyBacking for $name<E, R, T>
         where
             E: SimdElement + $std_trait<Output = E> + Default,
             $simd_op: SimdBinaryOp<E>,
             T: TensorBacking<R, Elem = E>,
         {
             type Elem = E;
-
-            fn layout(&self) -> Layout {
-                Layout::contiguous(self.tensor.layout().shape())
-            }
-
-            fn to_concrete(&self) -> ConcreteTensor<E, R> {
-                let shape: [usize; R] = self.tensor.layout().shape()
-                    .try_into()
-                    .expect("Shape length mismatch");
-                materialize_expr(self, shape)
-            }
 
             #[inline(always)]
             fn eval_scalar(&self, idx: usize) -> E {
@@ -61,6 +50,24 @@ macro_rules! define_scalar_tensor_op {
                     self.tensor.eval_simd(simd, base_idx),
                     E::splat(simd, self.scalar),
                 )
+            }
+        }
+
+        impl<E, const R: usize, T> TensorBacking<R> for $name<E, R, T>
+        where
+            E: SimdElement + $std_trait<Output = E> + Default,
+            $simd_op: SimdBinaryOp<E>,
+            T: TensorBacking<R, Elem = E>,
+        {
+            fn layout(&self) -> Layout {
+                Layout::contiguous(self.tensor.layout().shape())
+            }
+
+            fn to_concrete(&self) -> ConcreteTensor<E, R> {
+                let shape: [usize; R] = self.tensor.layout().shape()
+                    .try_into()
+                    .expect("Shape length mismatch");
+                materialize_expr(self, shape)
             }
         }
     };
@@ -84,16 +91,8 @@ impl<E: SimdElement, const R: usize> Broadcast<E, R> {
     }
 }
 
-impl<E: SimdElement + Default, const R: usize> TensorBacking<R> for Broadcast<E, R> {
+impl<E: SimdElement + Default, const R: usize> crate::LazyBacking for Broadcast<E, R> {
     type Elem = E;
-
-    fn layout(&self) -> Layout {
-        Layout::contiguous(&self.shape)
-    }
-
-    fn to_concrete(&self) -> ConcreteTensor<E, R> {
-        materialize_expr(self, self.shape)
-    }
 
     #[inline(always)]
     fn eval_scalar(&self, _idx: usize) -> E {
@@ -106,9 +105,20 @@ impl<E: SimdElement + Default, const R: usize> TensorBacking<R> for Broadcast<E,
     }
 }
 
+impl<E: SimdElement + Default, const R: usize> TensorBacking<R> for Broadcast<E, R> {
+    fn layout(&self) -> Layout {
+        Layout::contiguous(&self.shape)
+    }
+
+    fn to_concrete(&self) -> ConcreteTensor<E, R> {
+        materialize_expr(self, self.shape)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::LazyBacking;
 
     #[test]
     fn test_add_scalar() {

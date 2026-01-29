@@ -320,10 +320,10 @@ impl_max_rank!(8, 9);
 impl_max_rank!(8, 10);
 impl_max_rank!(9, 10);
 
-pub trait TensorBacking<const R: usize>: Sync {
+/// Trait for types that support scalar and SIMD evaluation without a rank parameter.
+/// This is a supertrait of `TensorBacking` that allows rank-independent access.
+pub trait LazyBacking: Sync {
     type Elem: SimdElement;
-    fn layout(&self) -> Layout;
-    fn to_concrete(&self) -> ConcreteTensor<Self::Elem, R>;
 
     /// Evaluate at a single scalar index.
     ///
@@ -340,17 +340,14 @@ pub trait TensorBacking<const R: usize>: Sync {
     fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> <Self::Elem as SimdElement>::Simd<S>;
 }
 
+pub trait TensorBacking<const R: usize>: LazyBacking {
+    fn layout(&self) -> Layout;
+    fn to_concrete(&self) -> ConcreteTensor<Self::Elem, R>;
+}
+
 // Blanket implementation for references
-impl<const R: usize, T: TensorBacking<R> + Sync> TensorBacking<R> for &T {
+impl<T: LazyBacking + Sync> LazyBacking for &T {
     type Elem = T::Elem;
-
-    fn layout(&self) -> Layout {
-        (*self).layout()
-    }
-
-    fn to_concrete(&self) -> ConcreteTensor<Self::Elem, R> {
-        (*self).to_concrete()
-    }
 
     #[inline(always)]
     fn eval_scalar(&self, idx: usize) -> Self::Elem {
@@ -360,6 +357,16 @@ impl<const R: usize, T: TensorBacking<R> + Sync> TensorBacking<R> for &T {
     #[inline(always)]
     fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> <Self::Elem as SimdElement>::Simd<S> {
         (*self).eval_simd(simd, base_idx)
+    }
+}
+
+impl<const R: usize, T: TensorBacking<R> + Sync> TensorBacking<R> for &T {
+    fn layout(&self) -> Layout {
+        (*self).layout()
+    }
+
+    fn to_concrete(&self) -> ConcreteTensor<Self::Elem, R> {
+        (*self).to_concrete()
     }
 }
 
@@ -712,13 +719,13 @@ mod tests {
             Tensor::from_slice([2, 1, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 
         // Squeeze dimension 1 to get 2x3
-        let squeezed: Tensor<2, MapLayout<f32, 2>> = t.squeeze(1);
+        let squeezed: Tensor<2, MapLayout<ConcreteTensor<f32, 3>, 2>> = t.squeeze(1);
         assert_eq!(squeezed.inner().layout().shape(), &[2, 3]);
         assert_eq!(squeezed.get([0, 0]), 1.0);
         assert_eq!(squeezed.get([1, 2]), 6.0);
 
         // Unsqueeze back to get 2x1x3
-        let unsqueezed: Tensor<3, MapLayout<f32, 3>> = squeezed.unsqueeze(1);
+        let unsqueezed: Tensor<3, MapLayout<MapLayout<ConcreteTensor<f32, 3>, 2>, 3>> = squeezed.unsqueeze(1);
         assert_eq!(unsqueezed.inner().layout().shape(), &[2, 1, 3]);
         assert_eq!(unsqueezed.get([0, 0, 0]), 1.0);
         assert_eq!(unsqueezed.get([1, 0, 2]), 6.0);

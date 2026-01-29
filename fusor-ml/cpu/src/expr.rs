@@ -136,6 +136,7 @@ pub(crate) fn linear_to_indices<const R: usize>(mut linear: usize, shape: &[usiz
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::LazyBacking;
 
     #[test]
     fn test_linear_to_indices_1d() {

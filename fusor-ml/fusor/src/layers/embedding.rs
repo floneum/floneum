@@ -2,7 +2,6 @@
 
 use crate::{ConcreteTensor, Device, QMatrix, Tensor, SimdElement, VarBuilder};
 use fusor_core::DataType;
-use fusor_cpu::MapLayout;
 
 /// Embedding layer for token/position embeddings.
 ///
@@ -55,7 +54,7 @@ where
     pub fn forward(
         &self,
         indices: &Tensor<2, u32, ConcreteTensor<u32, 2>>,
-    ) -> Tensor<3, D, MapLayout<D, 3>> {
+    ) -> Tensor<3, D> {
         let [batch, seq_len] = indices.shape();
 
         // Flatten indices to 1D
@@ -65,7 +64,7 @@ where
         let values = self.embeddings.index_select(0, &indices_flat);
 
         // Reshape to (batch, seq_len, embedding_dim)
-        values.reshape([batch, seq_len, self.embedding_dim])
+        values.reshape([batch, seq_len, self.embedding_dim]).to_concrete()
     }
 
     /// Get the dequantized embedding table.

@@ -18,7 +18,7 @@ where
     pub fn reshape<const R2: usize>(
         &self,
         new_shape: impl ShapeWithOneHole<R2>,
-    ) -> Tensor<R2, D, MapLayout<D, R2>> {
+    ) -> Tensor<R2, D, MapLayout<&B, R2>> {
         match self {
             Tensor::Cpu(t) => {
                 let resolved_shape = new_shape.resolve_shape(&t.shape());
@@ -33,27 +33,32 @@ where
     /// # Arguments
     /// * `dim0` - First dimension to swap
     /// * `dim1` - Second dimension to swap
-    pub fn transpose(&self, dim0: usize, dim1: usize) -> Tensor<R, D, MapLayout<D, R>> {
-        self.dispatch_ref(
-            |t| t.as_ref().transpose(dim0, dim1),
-            |t| t.transpose(dim0, dim1),
-        )
+    pub fn transpose(&self, dim0: usize, dim1: usize) -> Tensor<R, D, MapLayout<&B, R>> {
+        match self {
+            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().transpose(dim0, dim1)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.transpose(dim0, dim1)),
+        }
     }
 
     /// Slice the tensor along all dimensions.
     ///
     /// Returns a view into the tensor's data with updated layout.
-    pub fn slice(&self, slices: [Range<usize>; R]) -> Tensor<R, D, MapLayout<D, R>> {
-        let slices_clone = slices.clone();
-        self.dispatch_ref(|t| t.as_ref().slice(slices), |t| t.slice(slices_clone))
+    pub fn slice(&self, slices: [Range<usize>; R]) -> Tensor<R, D, MapLayout<&B, R>> {
+        match self {
+            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().slice(slices)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.slice(slices)),
+        }
     }
 
     /// Permute the tensor dimensions according to the given axes order.
     ///
     /// # Arguments
     /// * `axes` - A permutation of [0, 1, ..., R-1] specifying the new order
-    pub fn permute(&self, axes: [usize; R]) -> Tensor<R, D, MapLayout<D, R>> {
-        self.dispatch_ref(|t| t.as_ref().permute(axes), |t| t.permute(axes))
+    pub fn permute(&self, axes: [usize; R]) -> Tensor<R, D, MapLayout<&B, R>> {
+        match self {
+            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().permute(axes)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.permute(axes)),
+        }
     }
 
     /// Broadcast the tensor to a larger shape.
@@ -65,24 +70,27 @@ where
     pub fn broadcast_as<const R2: usize>(
         &self,
         out_shape: [usize; R2],
-    ) -> Tensor<R2, D, MapLayout<D, R2>> {
-        self.dispatch_ref(
-            |t| t.as_ref().broadcast_as(out_shape),
-            |t| t.broadcast_as(out_shape),
-        )
+    ) -> Tensor<R2, D, MapLayout<&B, R2>> {
+        match self {
+            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().broadcast_as(out_shape)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.broadcast_as(out_shape)),
+        }
     }
 
     /// Expand the tensor to a larger shape (alias for broadcast_as).
     pub fn expand<const R2: usize>(
         &self,
         out_shape: [usize; R2],
-    ) -> Tensor<R2, D, MapLayout<D, R2>> {
+    ) -> Tensor<R2, D, MapLayout<&B, R2>> {
         self.broadcast_as(out_shape)
     }
 
     /// Flatten the tensor to 1D.
-    pub fn flatten_all(&self) -> Tensor<1, D, MapLayout<D, 1>> {
-        self.dispatch_ref(|t| t.as_ref().flatten_all(), |t| t.flatten_all())
+    pub fn flatten_all(&self) -> Tensor<1, D, MapLayout<&B, 1>> {
+        match self {
+            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().flatten_all()),
+            Tensor::Gpu(t) => Tensor::Gpu(t.flatten_all()),
+        }
     }
 
     /// Narrow the tensor along a given dimension.
@@ -91,7 +99,7 @@ where
     /// * `dim` - The dimension to narrow
     /// * `start` - The starting index
     /// * `length` - The length of the slice
-    pub fn narrow(&self, dim: usize, start: usize, length: usize) -> Tensor<R, D, MapLayout<D, R>> {
+    pub fn narrow(&self, dim: usize, start: usize, length: usize) -> Tensor<R, D, MapLayout<&B, R>> {
         match self {
             Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().narrow(dim, start, length)),
             Tensor::Gpu(t) => Tensor::Gpu(t.narrow(dim, start, length)),
@@ -103,7 +111,7 @@ where
     /// # Arguments
     /// * `chunks` - Number of chunks to split into
     /// * `dim` - The dimension to split along
-    pub fn chunk(&self, chunks: usize, dim: usize) -> Vec<Tensor<R, D, MapLayout<D, R>>> {
+    pub fn chunk(&self, chunks: usize, dim: usize) -> Vec<Tensor<R, D, MapLayout<&B, R>>> {
         let shape = self.shape();
         let dim_size = shape[dim];
         let chunk_size = (dim_size + chunks - 1) / chunks;
@@ -132,30 +140,30 @@ where
     ///
     /// # Arguments
     /// * `dim` - The dimension to squeeze (must have size 1)
-    pub fn squeeze<const R2: usize>(&self, dim: usize) -> Tensor<R2, D, MapLayout<D, R2>>
+    pub fn squeeze<const R2: usize>(&self, dim: usize) -> Tensor<R2, D, MapLayout<&B, R2>>
     where
         ConcreteTensor<D, R>: fusor_cpu::LastRank<R2, D>,
         fusor_core::Tensor<R, D>: fusor_core::LastRank<R2, D>,
     {
-        self.dispatch_ref(
-            |t| t.as_ref().squeeze(dim),
-            |t| t.squeeze(dim),
-        )
+        match self {
+            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().squeeze(dim)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.squeeze(dim)),
+        }
     }
 
     /// Unsqueeze (add a dimension of size 1).
     ///
     /// # Arguments
     /// * `dim` - Where to insert the new dimension
-    pub fn unsqueeze<const R2: usize>(&self, dim: usize) -> Tensor<R2, D, MapLayout<D, R2>>
+    pub fn unsqueeze<const R2: usize>(&self, dim: usize) -> Tensor<R2, D, MapLayout<&B, R2>>
     where
         ConcreteTensor<D, R>: fusor_cpu::NextRank<R2, D>,
         fusor_core::Tensor<R, D>: fusor_core::NextRank<R2, D>,
     {
-        self.dispatch_ref(
-            |t| t.as_ref().unsqueeze(dim),
-            |t| t.unsqueeze(dim),
-        )
+        match self {
+            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().unsqueeze(dim)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.unsqueeze(dim)),
+        }
     }
 
     /// Squeeze multiple dimensions of size 1.
@@ -169,15 +177,15 @@ where
     pub fn squeeze_dims<const DIFF: usize, const R2: usize>(
         &self,
         axes: [usize; DIFF],
-    ) -> Tensor<R2, D, MapLayout<D, R2>>
+    ) -> Tensor<R2, D, MapLayout<&B, R2>>
     where
         ConcreteTensor<D, R>: fusor_cpu::SmallerRank<R2, DIFF, D>,
         fusor_core::Tensor<R, D>: fusor_core::SmallerRank<DIFF, R2, D>,
     {
-        self.dispatch_ref(
-            |t| t.as_ref().squeeze_dims(axes),
-            |t| t.squeeze_dims(axes),
-        )
+        match self {
+            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().squeeze_dims(axes)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.squeeze_dims(axes)),
+        }
     }
 
     /// Unsqueeze multiple dimensions (add dimensions of size 1).
@@ -191,15 +199,15 @@ where
     pub fn unsqueeze_dims<const DIFF: usize, const R2: usize>(
         &self,
         axes: [usize; DIFF],
-    ) -> Tensor<R2, D, MapLayout<D, R2>>
+    ) -> Tensor<R2, D, MapLayout<&B, R2>>
     where
         ConcreteTensor<D, R>: fusor_cpu::LargerRank<R2, DIFF, D>,
         fusor_core::Tensor<R, D>: fusor_core::LargerRank<DIFF, R2, D>,
     {
-        self.dispatch_ref(
-            |t| t.as_ref().unsqueeze_dims(axes),
-            |t| t.unsqueeze_dims(axes),
-        )
+        match self {
+            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().unsqueeze_dims(axes)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.unsqueeze_dims(axes)),
+        }
     }
 
     /// Create a sliding window view of the tensor (zero-copy).
@@ -215,15 +223,15 @@ where
     pub fn sliding_window_view<const DIFF: usize, const R2: usize>(
         &self,
         windows: [SlidingWindow; DIFF],
-    ) -> Tensor<R2, D, MapLayout<D, R2>>
+    ) -> Tensor<R2, D, MapLayout<&B, R2>>
     where
         ConcreteTensor<D, R>: fusor_cpu::LargerRank<R2, DIFF, D>,
         fusor_core::Tensor<R, D>: fusor_core::LargerRank<DIFF, R2, D>,
     {
-        self.dispatch_ref(
-            |t| t.as_ref().sliding_window_view(windows),
-            |t| t.sliding_window_view(windows),
-        )
+        match self {
+            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().sliding_window_view(windows)),
+            Tensor::Gpu(t) => Tensor::Gpu(t.sliding_window_view(windows)),
+        }
     }
 }
 
@@ -271,7 +279,7 @@ where
     B: TensorBacking<R, Elem = D>,
 {
     /// Transpose a ND tensor (swap the last two dimensions).
-    pub fn t(&self) -> Tensor<R, D, MapLayout<D, R>> {
+    pub fn t(&self) -> Tensor<R, D, MapLayout<&B, R>> {
         self.transpose(R - 2, R - 1)
     }
 }

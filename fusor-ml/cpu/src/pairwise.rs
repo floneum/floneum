@@ -159,7 +159,7 @@ macro_rules! define_binary_tensor_op {
             }
         }
 
-        impl<E, const R: usize, T1, T2> TensorBacking<R> for $name<E, R, T1, T2>
+        impl<E, const R: usize, T1, T2> crate::LazyBacking for $name<E, R, T1, T2>
         where
             E: SimdElement + $std_trait<Output = E> + Default,
             $simd_op: SimdBinaryOp<E>,
@@ -167,17 +167,6 @@ macro_rules! define_binary_tensor_op {
             T2: TensorBacking<R, Elem = E>,
         {
             type Elem = E;
-
-            fn layout(&self) -> Layout {
-                Layout::contiguous(self.lhs.layout().shape())
-            }
-
-            fn to_concrete(&self) -> ConcreteTensor<E, R> {
-                let shape: [usize; R] = self.lhs.layout().shape()
-                    .try_into()
-                    .expect("Shape length mismatch");
-                materialize_expr(self, shape)
-            }
 
             #[inline(always)]
             fn eval_scalar(&self, idx: usize) -> E {
@@ -193,6 +182,25 @@ macro_rules! define_binary_tensor_op {
                 )
             }
         }
+
+        impl<E, const R: usize, T1, T2> TensorBacking<R> for $name<E, R, T1, T2>
+        where
+            E: SimdElement + $std_trait<Output = E> + Default,
+            $simd_op: SimdBinaryOp<E>,
+            T1: TensorBacking<R, Elem = E>,
+            T2: TensorBacking<R, Elem = E>,
+        {
+            fn layout(&self) -> Layout {
+                Layout::contiguous(self.lhs.layout().shape())
+            }
+
+            fn to_concrete(&self) -> ConcreteTensor<E, R> {
+                let shape: [usize; R] = self.lhs.layout().shape()
+                    .try_into()
+                    .expect("Shape length mismatch");
+                materialize_expr(self, shape)
+            }
+        }
     };
 }
 
@@ -206,7 +214,7 @@ define_binary_tensor_op!(Rem, StdRem, RemOp, "Tensor rank mismatch in Rem");
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::TensorBacking;
+    use crate::{LazyBacking, TensorBacking};
 
     #[test]
     fn test_add_expr() {

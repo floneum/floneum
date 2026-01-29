@@ -169,15 +169,15 @@ impl LayerNorm<1, f32> {
         let bias = vb.get("bias", device).ok().map(|b| {
             let bias_2d: Tensor<2, f32> = b.dequantize();
             if bias_2d.shape()[0] == 1 {
-                bias_2d.squeeze(0)
+                bias_2d.squeeze(0).to_concrete()
             } else {
-                bias_2d.squeeze(1)
+                bias_2d.squeeze(1).to_concrete()
             }
         });
 
         Ok(Self::new(
             weight.to_concrete(),
-            bias.map(|t| t.to_concrete()),
+            bias,
             eps,
         ))
     }

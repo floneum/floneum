@@ -52,11 +52,13 @@ where
         let cos = crate::cat([cos.clone(), cos.clone()], 1);
         let sin = crate::cat([sin.clone(), sin.clone()], 1);
 
-        let cos = cos.narrow(0, 0, sequence_length);
-        let sin = sin.narrow(0, 0, sequence_length);
+        let cos = cos.narrow(0, 0, sequence_length).to_concrete();
+        let sin = sin.narrow(0, 0, sequence_length).to_concrete();
 
-        let cos: Tensor<4, D, _> = cos.unsqueeze(0).unsqueeze(0);
-        let sin: Tensor<4, D, _> = sin.unsqueeze(0).unsqueeze(0);
+        let cos_unsqueezed = cos.unsqueeze(0).to_concrete();
+        let cos: Tensor<4, D, _> = cos_unsqueezed.unsqueeze(0);
+        let sin_unsqueezed = sin.unsqueeze(0).to_concrete();
+        let sin: Tensor<4, D, _> = sin_unsqueezed.unsqueeze(0);
 
         let rotated = rotate_half(self);
         self.dispatch_quad(
@@ -87,14 +89,12 @@ where
     ) -> Self {
         let [bz, n_head, sequence_length, embed] = self.shape();
 
-        let cos: Tensor<5, D, _> = cos
-            .narrow(0, 0, sequence_length)
-            .reshape([sequence_length, embed / 2, 1])
-            .broadcast_as([bz, 1, sequence_length, embed / 2, 1]);
-        let sin: Tensor<5, D, _> = sin
-            .narrow(0, 0, sequence_length)
-            .reshape([sequence_length, embed / 2, 1])
-            .broadcast_as([bz, 1, sequence_length, embed / 2, 1]);
+        let cos_narrow = cos.narrow(0, 0, sequence_length);
+        let cos_reshape = cos_narrow.reshape([sequence_length, embed / 2, 1]).to_concrete();
+        let cos: Tensor<5, D, _> = cos_reshape.broadcast_as([bz, 1, sequence_length, embed / 2, 1]);
+        let sin_narrow = sin.narrow(0, 0, sequence_length);
+        let sin_reshape = sin_narrow.reshape([sequence_length, embed / 2, 1]).to_concrete();
+        let sin: Tensor<5, D, _> = sin_reshape.broadcast_as([bz, 1, sequence_length, embed / 2, 1]);
         let x: Tensor<5, D, _> = self.reshape([bz, n_head, sequence_length, embed / 2, 2]);
 
         let x0 = x.narrow(4, 0, 1);

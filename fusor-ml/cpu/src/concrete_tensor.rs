@@ -65,19 +65,11 @@ pub struct ConcreteTensor<T: SimdElement, const R: usize> {
     backing: ABox<[T]>,
 }
 
-impl<T, const R: usize> TensorBacking<R> for ConcreteTensor<T, R>
+impl<T, const R: usize> crate::LazyBacking for ConcreteTensor<T, R>
 where
     T: SimdElement,
 {
     type Elem = T;
-
-    fn layout(&self) -> Layout {
-        self.layout.clone()
-    }
-
-    fn to_concrete(&self) -> ConcreteTensor<T, R> {
-        self.clone()
-    }
 
     #[inline(always)]
     fn eval_scalar(&self, idx: usize) -> T {
@@ -117,6 +109,19 @@ where
             // contains all physical positions that the layout can address.
             unsafe { T::gather_unchecked(simd, &self.backing, &phys_indices, lane_count) }
         }
+    }
+}
+
+impl<T, const R: usize> TensorBacking<R> for ConcreteTensor<T, R>
+where
+    T: SimdElement,
+{
+    fn layout(&self) -> Layout {
+        self.layout.clone()
+    }
+
+    fn to_concrete(&self) -> ConcreteTensor<T, R> {
+        self.clone()
     }
 }
 

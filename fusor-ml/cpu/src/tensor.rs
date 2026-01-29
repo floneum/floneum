@@ -2,7 +2,7 @@
 
 use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Neg as StdNeg, Range, Rem as StdRem, Sub as StdSub};
 
-use fusor_types::SlidingWindow;
+use fusor_types::{Layout, SlidingWindow};
 use pulp::Simd;
 
 use crate::cast::{CastTo, cast_tensor};
@@ -87,9 +87,9 @@ impl<const R: usize, E: SimdElement> Tensor<R, ConcreteTensor<E, R>> {
 }
 
 // Methods for Tensor with MapLayout backing
-impl<const R: usize, E: SimdElement> Tensor<R, MapLayout<E, R>> {
+impl<const R: usize, T: crate::LazyBacking> Tensor<R, MapLayout<T, R>> {
     /// Get element at logical indices
-    pub fn get(&self, indices: [usize; R]) -> E {
+    pub fn get(&self, indices: [usize; R]) -> T::Elem {
         self.inner.get(indices)
     }
 }
@@ -117,23 +117,25 @@ where
     /// Slice the tensor along all dimensions
     ///
     /// Returns a view into the tensor's data with updated layout.
+    /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn slice(
         self,
         slices: [Range<usize>; R],
-    ) -> Tensor<R, MapLayout<E, R>> {
-        let concrete = self.inner.to_concrete();
-        let new_layout = concrete.layout().slice(&slices);
-        Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
+    ) -> Tensor<R, MapLayout<T, R>> {
+        let current_layout = self.inner.layout();
+        let new_layout = current_layout.slice(&slices);
+        Tensor::new(MapLayout::new(self.inner, new_layout))
     }
 
     /// Permute the tensor dimensions according to the given axes order
     ///
     /// # Arguments
     /// * `axes` - A permutation of [0, 1, ..., R-1] specifying the new order
-    pub fn permute(self, axes: [usize; R]) -> Tensor<R, MapLayout<E, R>> {
-        let concrete = self.inner.to_concrete();
-        let new_layout = concrete.layout().permute(&axes);
-        Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
+    /// This operation is lazy and preserves laziness of the inner tensor.
+    pub fn permute(self, axes: [usize; R]) -> Tensor<R, MapLayout<T, R>> {
+        let current_layout = self.inner.layout();
+        let new_layout = current_layout.permute(&axes);
+        Tensor::new(MapLayout::new(self.inner, new_layout))
     }
 
     /// Transpose two dimensions of the tensor
@@ -141,10 +143,11 @@ where
     /// # Arguments
     /// * `dim0` - First dimension to swap
     /// * `dim1` - Second dimension to swap
-    pub fn transpose(self, dim0: usize, dim1: usize) -> Tensor<R, MapLayout<E, R>> {
-        let concrete = self.inner.to_concrete();
-        let new_layout = concrete.layout().transpose(dim0, dim1);
-        Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
+    /// This operation is lazy and preserves laziness of the inner tensor.
+    pub fn transpose(self, dim0: usize, dim1: usize) -> Tensor<R, MapLayout<T, R>> {
+        let current_layout = self.inner.layout();
+        let new_layout = current_layout.transpose(dim0, dim1);
+        Tensor::new(MapLayout::new(self.inner, new_layout))
     }
 
     /// Broadcast the tensor to a larger shape
@@ -153,37 +156,32 @@ where
     /// - Dimensions are aligned from the right
     /// - A dimension can be broadcast if it's 1 or matches the target
     /// - New dimensions can be added on the left
+    ///
+    /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn broadcast_as<const R2: usize>(
         self,
         out_shape: [usize; R2],
-    ) -> Tensor<R2, MapLayout<E, R2>> {
-        let concrete = self.inner.to_concrete();
-        let new_layout = concrete.layout().broadcast_to(&out_shape);
-        Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
+    ) -> Tensor<R2, MapLayout<T, R2>> {
+        let current_layout = self.inner.layout();
+        let new_layout = current_layout.broadcast_to(&out_shape);
+        Tensor::new(MapLayout::new(self.inner, new_layout))
     }
 
     /// Reshape the tensor to a new shape
     ///
     /// The total number of elements must remain the same.
+    /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn reshape<const R2: usize>(
         self,
         new_shape: [usize; R2],
-    ) -> Tensor<R2, MapLayout<E, R2>> {
-        let concrete = self.inner.to_concrete();
-
-        if concrete.layout().is_contiguous() {
-            let new_layout = concrete.layout().reshape(&new_shape);
-            Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
-        } else {
-            // Make contiguous first, then reshape
-            let contiguous = Tensor::new(concrete).make_contiguous();
-            let new_layout = contiguous.inner.layout().reshape(&new_shape);
-            Tensor::new(MapLayout::new(contiguous.inner.into_backing(), new_layout))
-        }
+    ) -> Tensor<R2, MapLayout<T, R2>> {
+        let new_layout = Layout::contiguous(&new_shape);
+        Tensor::new(MapLayout::new(self.inner, new_layout))
     }
 
     /// Flatten the tensor to 1D
-    pub fn flatten_all(self) -> Tensor<1, MapLayout<E, 1>> {
+    /// This operation is lazy and preserves laziness of the inner tensor.
+    pub fn flatten_all(self) -> Tensor<1, MapLayout<T, 1>> {
         let total: usize = self.inner.layout().num_elements();
         self.reshape([total])
     }
@@ -214,10 +212,11 @@ where
     /// * `dim` - The dimension to narrow
     /// * `start` - The starting index
     /// * `length` - The length of the slice
-    pub fn narrow(self, dim: usize, start: usize, length: usize) -> Tensor<R, MapLayout<E, R>> {
-        let concrete = self.inner.to_concrete();
-        let new_layout = concrete.layout().narrow(dim, start, length);
-        Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
+    /// This operation is lazy and preserves laziness of the inner tensor.
+    pub fn narrow(self, dim: usize, start: usize, length: usize) -> Tensor<R, MapLayout<T, R>> {
+        let current_layout = self.inner.layout();
+        let new_layout = current_layout.narrow(dim, start, length);
+        Tensor::new(MapLayout::new(self.inner, new_layout))
     }
 
     /// Split the tensor into chunks along a given dimension
@@ -225,7 +224,8 @@ where
     /// # Arguments
     /// * `chunks` - Number of chunks to split into
     /// * `dim` - The dimension to split along
-    pub fn chunk(self, chunks: usize, dim: usize) -> Vec<Tensor<R, MapLayout<E, R>>>
+    /// This operation is lazy and preserves laziness of the inner tensor.
+    pub fn chunk(self, chunks: usize, dim: usize) -> Vec<Tensor<R, MapLayout<T, R>>>
     where
         T: Clone,
     {
@@ -281,31 +281,34 @@ where
     ///
     /// # Arguments
     /// * `dim` - The dimension to squeeze (must have size 1)
-    pub fn squeeze<const R2: usize>(self, dim: usize) -> Tensor<R2, MapLayout<E, R2>> {
+    /// This operation is lazy and preserves laziness of the inner tensor.
+    pub fn squeeze<const R2: usize>(self, dim: usize) -> Tensor<R2, MapLayout<T, R2>> {
         assert!(R2 == R - 1, "Output rank must be R - 1");
-        let concrete = self.inner.to_concrete();
-        let new_layout = concrete.layout().squeeze(dim);
-        Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
+        let current_layout = self.inner.layout();
+        let new_layout = current_layout.squeeze(dim);
+        Tensor::new(MapLayout::new(self.inner, new_layout))
     }
 
     /// Unsqueeze (add a dimension of size 1)
     ///
     /// # Arguments
     /// * `dim` - Where to insert the new dimension
-    pub fn unsqueeze<const R2: usize>(self, dim: usize) -> Tensor<R2, MapLayout<E, R2>> {
+    /// This operation is lazy and preserves laziness of the inner tensor.
+    pub fn unsqueeze<const R2: usize>(self, dim: usize) -> Tensor<R2, MapLayout<T, R2>> {
         assert!(R2 == R + 1, "Output rank must be R + 1");
-        let concrete = self.inner.to_concrete();
-        let new_layout = concrete.layout().unsqueeze(dim);
-        Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
+        let current_layout = self.inner.layout();
+        let new_layout = current_layout.unsqueeze(dim);
+        Tensor::new(MapLayout::new(self.inner, new_layout))
     }
 
     /// Expand the tensor to a larger shape (alias for broadcast_as)
     ///
     /// This is an alias for `broadcast_as` for compatibility with other tensor libraries.
+    /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn expand<const R2: usize>(
         self,
         out_shape: [usize; R2],
-    ) -> Tensor<R2, MapLayout<E, R2>> {
+    ) -> Tensor<R2, MapLayout<T, R2>> {
         self.broadcast_as(out_shape)
     }
 
@@ -317,21 +320,14 @@ where
     ///
     /// # Example
     /// A tensor of shape [2, 3, 4] with N=2 becomes [2, 12]
+    /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn flatten_last_n<const N: usize, const R2: usize>(
         self,
-    ) -> Tensor<R2, MapLayout<E, R2>> {
+    ) -> Tensor<R2, MapLayout<T, R2>> {
         assert!(R2 == R - N + 1, "Output rank must be R - N + 1");
-        let concrete = self.inner.to_concrete();
-
-        if concrete.layout().is_contiguous() {
-            let new_layout = concrete.layout().flatten_last_n(N);
-            Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
-        } else {
-            // Make contiguous first
-            let contiguous = Tensor::new(concrete).make_contiguous();
-            let new_layout = contiguous.inner.layout().flatten_last_n(N);
-            Tensor::new(MapLayout::new(contiguous.inner.into_backing(), new_layout))
-        }
+        let current_layout = self.inner.layout();
+        let new_layout = current_layout.flatten_last_n(N);
+        Tensor::new(MapLayout::new(self.inner, new_layout))
     }
 
     /// Flatten the first N+1 dimensions into one
@@ -342,21 +338,14 @@ where
     ///
     /// # Example
     /// A tensor of shape [2, 3, 4] with N=1 becomes [6, 4]
+    /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn flatten_first_n<const N: usize, const R2: usize>(
         self,
-    ) -> Tensor<R2, MapLayout<E, R2>> {
+    ) -> Tensor<R2, MapLayout<T, R2>> {
         assert!(R2 == R - N, "Output rank must be R - N");
-        let concrete = self.inner.to_concrete();
-
-        if concrete.layout().is_contiguous() {
-            let new_layout = concrete.layout().flatten_first_n(N);
-            Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
-        } else {
-            // Make contiguous first
-            let contiguous = Tensor::new(concrete).make_contiguous();
-            let new_layout = contiguous.inner.layout().flatten_first_n(N);
-            Tensor::new(MapLayout::new(contiguous.inner.into_backing(), new_layout))
-        }
+        let current_layout = self.inner.layout();
+        let new_layout = current_layout.flatten_first_n(N);
+        Tensor::new(MapLayout::new(self.inner, new_layout))
     }
 
     /// Squeeze (remove) multiple dimensions of size 1 at once
@@ -367,14 +356,15 @@ where
     ///
     /// # Arguments
     /// * `axes` - The dimensions to squeeze (must all have size 1)
+    /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn squeeze_dims<const DIFF: usize, const R2: usize>(
         self,
         axes: [usize; DIFF],
-    ) -> Tensor<R2, MapLayout<E, R2>> {
+    ) -> Tensor<R2, MapLayout<T, R2>> {
         assert!(R2 == R - DIFF, "Output rank must be R - DIFF");
-        let concrete = self.inner.to_concrete();
-        let new_layout = concrete.layout().squeeze_dims(&axes);
-        Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
+        let current_layout = self.inner.layout();
+        let new_layout = current_layout.squeeze_dims(&axes);
+        Tensor::new(MapLayout::new(self.inner, new_layout))
     }
 
     /// Unsqueeze (add) multiple dimensions of size 1 at specified positions
@@ -385,14 +375,15 @@ where
     ///
     /// # Arguments
     /// * `axes` - Where to insert the new dimensions (positions in the output tensor)
+    /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn unsqueeze_dims<const DIFF: usize, const R2: usize>(
         self,
         axes: [usize; DIFF],
-    ) -> Tensor<R2, MapLayout<E, R2>> {
+    ) -> Tensor<R2, MapLayout<T, R2>> {
         assert!(R2 == R + DIFF, "Output rank must be R + DIFF");
-        let concrete = self.inner.to_concrete();
-        let new_layout = concrete.layout().unsqueeze_dims(&axes);
-        Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
+        let current_layout = self.inner.layout();
+        let new_layout = current_layout.unsqueeze_dims(&axes);
+        Tensor::new(MapLayout::new(self.inner, new_layout))
     }
 
     /// Create a sliding window view of the tensor (zero-copy)
@@ -409,14 +400,15 @@ where
     /// # Example
     /// A 1D tensor [1, 2, 3, 4, 5, 6, 7] with window size 3 and step 2 becomes:
     /// [[1, 2, 3], [3, 4, 5], [5, 6, 7]]
+    /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn sliding_window_view<const DIFF: usize, const R2: usize>(
         self,
         windows: [SlidingWindow; DIFF],
-    ) -> Tensor<R2, MapLayout<E, R2>> {
+    ) -> Tensor<R2, MapLayout<T, R2>> {
         assert!(R2 == R + DIFF, "Output rank must be R + DIFF");
-        let concrete = self.inner.to_concrete();
-        let new_layout = concrete.layout().sliding_window(&windows);
-        Tensor::new(MapLayout::new(concrete.into_backing(), new_layout))
+        let current_layout = self.inner.layout();
+        let new_layout = current_layout.sliding_window(&windows);
+        Tensor::new(MapLayout::new(self.inner, new_layout))
     }
 
     /// Sum all elements in the tensor
@@ -1079,16 +1071,8 @@ where
     }
 }
 
-impl<const R: usize, T: TensorBacking<R>> TensorBacking<R> for Tensor<R, T> {
+impl<const R: usize, T: TensorBacking<R>> crate::LazyBacking for Tensor<R, T> {
     type Elem = T::Elem;
-
-    fn layout(&self) -> fusor_types::Layout {
-        self.inner.layout()
-    }
-
-    fn to_concrete(&self) -> ConcreteTensor<T::Elem, R> {
-        self.inner.to_concrete()
-    }
 
     #[inline(always)]
     fn eval_scalar(&self, idx: usize) -> Self::Elem {
@@ -1098,6 +1082,16 @@ impl<const R: usize, T: TensorBacking<R>> TensorBacking<R> for Tensor<R, T> {
     #[inline(always)]
     fn eval_simd<S: Simd>(&self, simd: S, base_idx: usize) -> <Self::Elem as SimdElement>::Simd<S> {
         self.inner.eval_simd(simd, base_idx)
+    }
+}
+
+impl<const R: usize, T: TensorBacking<R>> TensorBacking<R> for Tensor<R, T> {
+    fn layout(&self) -> fusor_types::Layout {
+        self.inner.layout()
+    }
+
+    fn to_concrete(&self) -> ConcreteTensor<T::Elem, R> {
+        self.inner.to_concrete()
     }
 }
 
@@ -1182,10 +1176,10 @@ impl_cpu_pairwise_op!(StdRem, rem, Rem, RemOp);
 impl<const R: usize, T> StdNeg for Tensor<R, T>
 where
     T: TensorBacking<R>,
-    <T as TensorBacking<R>>::Elem: SimdElement + StdNeg<Output = <T as TensorBacking<R>>::Elem> + Default,
-    NegOp: SimdUnaryOp<<T as TensorBacking<R>>::Elem>,
+    <T as crate::LazyBacking>::Elem: SimdElement + StdNeg<Output = <T as crate::LazyBacking>::Elem> + Default,
+    NegOp: SimdUnaryOp<<T as crate::LazyBacking>::Elem>,
 {
-    type Output = Tensor<R, elementwise::Neg<<T as TensorBacking<R>>::Elem, R, T>>;
+    type Output = Tensor<R, elementwise::Neg<<T as crate::LazyBacking>::Elem, R, T>>;
 
     fn neg(self) -> Self::Output {
         Tensor::new(elementwise::Neg::new(self.inner))
@@ -1195,10 +1189,10 @@ where
 impl<'a, const R: usize, T> StdNeg for &'a Tensor<R, T>
 where
     T: TensorBacking<R>,
-    <T as TensorBacking<R>>::Elem: SimdElement + StdNeg<Output = <T as TensorBacking<R>>::Elem> + Default,
-    NegOp: SimdUnaryOp<<T as TensorBacking<R>>::Elem>,
+    <T as crate::LazyBacking>::Elem: SimdElement + StdNeg<Output = <T as crate::LazyBacking>::Elem> + Default,
+    NegOp: SimdUnaryOp<<T as crate::LazyBacking>::Elem>,
 {
-    type Output = Tensor<R, elementwise::Neg<<T as TensorBacking<R>>::Elem, R, &'a T>>;
+    type Output = Tensor<R, elementwise::Neg<<T as crate::LazyBacking>::Elem, R, &'a T>>;
 
     fn neg(self) -> Self::Output {
         Tensor::new(elementwise::Neg::new(&self.inner))
@@ -1390,8 +1384,8 @@ where
         let shape2: [usize; R2] = other.layout().shape().try_into().unwrap();
         let out_shape: [usize; R3] = broadcast_shapes(&shape1, &shape2);
 
-        let a: Tensor<R3, MapLayout<E, R3>> = self.to_concrete().broadcast_as(out_shape);
-        let b: Tensor<R3, MapLayout<E, R3>> = other.to_concrete().broadcast_as(out_shape);
+        let a = self.broadcast_as(out_shape);
+        let b = other.broadcast_as(out_shape);
 
         (&a * &b).to_concrete()
     }
@@ -1414,8 +1408,8 @@ where
         let shape2: [usize; R2] = other.layout().shape().try_into().unwrap();
         let out_shape: [usize; R3] = broadcast_shapes(&shape1, &shape2);
 
-        let a: Tensor<R3, MapLayout<E, R3>> = self.to_concrete().broadcast_as(out_shape);
-        let b: Tensor<R3, MapLayout<E, R3>> = other.to_concrete().broadcast_as(out_shape);
+        let a = self.broadcast_as(out_shape);
+        let b = other.broadcast_as(out_shape);
 
         (&a + &b).to_concrete()
     }
@@ -1438,8 +1432,8 @@ where
         let shape2: [usize; R2] = other.layout().shape().try_into().unwrap();
         let out_shape: [usize; R3] = broadcast_shapes(&shape1, &shape2);
 
-        let a: Tensor<R3, MapLayout<E, R3>> = self.to_concrete().broadcast_as(out_shape);
-        let b: Tensor<R3, MapLayout<E, R3>> = other.to_concrete().broadcast_as(out_shape);
+        let a = self.broadcast_as(out_shape);
+        let b = other.broadcast_as(out_shape);
 
         (&a - &b).to_concrete()
     }
@@ -1462,8 +1456,8 @@ where
         let shape2: [usize; R2] = other.layout().shape().try_into().unwrap();
         let out_shape: [usize; R3] = broadcast_shapes(&shape1, &shape2);
 
-        let a: Tensor<R3, MapLayout<E, R3>> = self.to_concrete().broadcast_as(out_shape);
-        let b: Tensor<R3, MapLayout<E, R3>> = other.to_concrete().broadcast_as(out_shape);
+        let a = self.broadcast_as(out_shape);
+        let b = other.broadcast_as(out_shape);
 
         (&a / &b).to_concrete()
     }
@@ -1486,9 +1480,9 @@ where
         let out_shape: [usize; R3] = broadcast_shapes(&shape1, &shape2);
 
         let a: Tensor<R3, ConcreteTensor<E, R3>> =
-            self.to_concrete().broadcast_as(out_shape).to_concrete();
+            self.broadcast_as(out_shape).to_concrete();
         let b: Tensor<R3, ConcreteTensor<E, R3>> =
-            other.to_concrete().broadcast_as(out_shape).to_concrete();
+            other.broadcast_as(out_shape).to_concrete();
 
         // Compute power element-wise
         let a_data = ResolvedTensor::data(a.inner());
@@ -1510,7 +1504,7 @@ where
     T: TensorBacking<2, Elem = E>,
 {
     /// Transpose a 2D matrix (swap dimensions 0 and 1)
-    pub fn t(self) -> Tensor<2, MapLayout<E, 2>> {
+    pub fn t(self) -> Tensor<2, MapLayout<T, 2>> {
         self.transpose(0, 1)
     }
 }
@@ -1522,7 +1516,7 @@ where
     T: TensorBacking<3, Elem = E>,
 {
     /// Transpose last two dimensions
-    pub fn t(self) -> Tensor<3, MapLayout<E, 3>> {
+    pub fn t(self) -> Tensor<3, MapLayout<T, 3>> {
         self.transpose(1, 2)
     }
 }
@@ -1534,7 +1528,7 @@ where
     T: TensorBacking<4, Elem = E>,
 {
     /// Transpose last two dimensions
-    pub fn t(self) -> Tensor<4, MapLayout<E, 4>> {
+    pub fn t(self) -> Tensor<4, MapLayout<T, 4>> {
         self.transpose(2, 3)
     }
 }
