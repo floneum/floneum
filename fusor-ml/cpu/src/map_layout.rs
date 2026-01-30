@@ -106,7 +106,7 @@ impl<T: LazyBacking, const R: usize> LazyBacking for MapLayout<T, R> {
 
 impl<T: LazyBacking, const R: usize> TensorBacking<R> for MapLayout<T, R> {
     fn layout(&self) -> Layout {
-        self.layout.clone()
+        Layout::contiguous(self.layout.shape())
     }
 
     fn to_concrete(&self) -> ConcreteTensor<Self::Elem, R> {
