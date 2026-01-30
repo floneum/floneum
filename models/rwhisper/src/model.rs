@@ -400,7 +400,8 @@ impl Decoder {
                 }
             };
             let logits_2d = logits.i((.., 0, ..));
-            let logits_1d = logits_2d.narrow(0, 0, 1).squeeze(0);
+            let logits_2d_narrowed = logits_2d.narrow(0, 0, 1);
+            let logits_1d = logits_2d_narrowed.squeeze(0);
 
             // TODO: Besides suppress tokens, we should apply the heuristics from
             // ApplyTimestampRules, i.e.:
@@ -448,10 +449,9 @@ impl Decoder {
             }
             tokens.push(next_token);
             queued_tokens.push(next_token);
-            let prob_tensor = logits
-                .softmax_last_dim()
-                .narrow(0, next_token as usize, 1)
-                .squeeze(0);
+            let prob_softmax = logits.softmax_last_dim();
+            let prob_narrowed = prob_softmax.narrow(0, next_token as usize, 1);
+            let prob_tensor = prob_narrowed.squeeze(0);
             let prob: f64 = prob_tensor
                 .to_scalar()
                 .await

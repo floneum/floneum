@@ -16,15 +16,17 @@ pub(super) async fn extract_timestamps(
     mask: Vec<Vec<bool>>,
 ) -> fusor::Result<Vec<Vec<crate::WhisperDType>>> {
     // Select relevant cross-attention heads
-    let weights = Tensor::stack(
-        alignment_heads.iter().copied().filter_map(|[layer, head]| {
-            let attn = cross_attentions.get(layer)?;
-            Some(attn.narrow(1, head, 1).squeeze(1))
-        }),
-        0,
-    )
-    .permute([1, 0, 2, 3])
-    .narrow(3, 0, n_frames.min(N_FRAMES) / 2);
+    let mut tensors_to_stack = Vec::new();
+    for [layer, head] in alignment_heads.iter().copied() {
+        if let Some(attn) = cross_attentions.get(layer) {
+            let narrowed = attn.narrow(1, head, 1);
+            let squeezed = narrowed.squeeze(1);
+            tensors_to_stack.push(squeezed.to_concrete());
+        }
+    }
+    let stacked = Tensor::stack(tensors_to_stack.into_iter(), 0);
+    let permuted = stacked.permute([1, 0, 2, 3]);
+    let weights = permuted.narrow(3, 0, n_frames.min(N_FRAMES) / 2);
 
     if weights.shape().contains(&0) {
         // No tokens to be aligned

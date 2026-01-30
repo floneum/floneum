@@ -3,7 +3,7 @@
 use std::{num::NonZeroUsize, sync::Arc};
 
 use fusor::{
-    Device, Error, MapLayout, Result, Tensor, VarBuilder, cache::{AttentionMask, KvCache, MaskCache, TensorCache}, layers::{Conv1d, Conv1dConfig, Embedding, LayerNorm, Linear}
+    Device, Error, Result, Tensor, VarBuilder, cache::{AttentionMask, KvCache, MaskCache, TensorCache}, layers::{Conv1d, Conv1dConfig, Embedding, LayerNorm, Linear}
 };
 use timestamps::extract_timestamps;
 
@@ -124,15 +124,6 @@ impl MultiHeadAttention {
         Ok(self.out.forward(&wv))
     }
 
-    fn reshape_head(
-        &self,
-        x: &Tensor<3, crate::WhisperDType>,
-    ) -> Tensor<4, crate::WhisperDType, MapLayout<crate::WhisperDType, 4>> {
-        let [n_batch, n_ctx, n_state] = x.shape();
-        let target_dims = [n_batch, n_ctx, self.n_head, n_state / self.n_head];
-        x.reshape(target_dims).transpose(1, 2)
-    }
-
     fn qkv_attention(
         &self,
         q: &Tensor<3, crate::WhisperDType>,
@@ -142,11 +133,21 @@ impl MultiHeadAttention {
         attention_output: Option<&mut TensorCache<4, crate::WhisperDType>>,
     ) -> Result<Tensor<3, crate::WhisperDType>> {
         let device = q.device();
-        let [_, _, n_state] = q.shape();
-        let scale = crate::WhisperDType::from(((n_state / self.n_head) as f32).powf(-0.25));
-        let q = self.reshape_head(q).mul_scalar(scale);
-        let k = self.reshape_head(k).transpose(2, 3).mul_scalar(scale);
-        let v = self.reshape_head(v);
+        let [n_batch, n_ctx, n_state] = q.shape();
+        let head_dim = n_state / self.n_head;
+        let scale = crate::WhisperDType::from((head_dim as f32).powf(-0.25));
+
+        // Reshape [n_batch, n_ctx, n_state] -> [n_batch, n_head, n_ctx, head_dim]
+        let target_dims = [n_batch, n_ctx, self.n_head, head_dim];
+        let q_reshaped = q.reshape(target_dims);
+        let q_transposed = q_reshaped.transpose(1, 2);
+        let q = q_transposed.mul_scalar(scale);
+        let k_reshaped = k.reshape(target_dims);
+        let k_transposed = k_reshaped.transpose(1, 2);
+        let k_transposed2 = k_transposed.transpose(2, 3);
+        let k = k_transposed2.mul_scalar(scale);
+        let v_reshaped = v.reshape(target_dims);
+        let v = v_reshaped.transpose(1, 2);
 
         let mut qk = {
             let _enter = self.matmul_span.enter();
@@ -265,12 +266,15 @@ fn sinusoids(length: usize, channels: usize, device: &Device) -> Tensor<2, crate
     let inv_timescales: Vec<_> = (0..channels / 2)
         .map(|i| (crate::WhisperDType::from(i as f32) * (-log_timescale_increment)).exp())
         .collect();
-    let inv_timescales = Tensor::new(device, inv_timescales.as_slice()).unsqueeze(0);
-    let arange = fusor::arange(device, 0u32, length as u32)
-        .cast::<crate::WhisperDType>()
-        .unsqueeze(1);
+    let inv_timescales_1d = Tensor::new(device, inv_timescales.as_slice());
+    let inv_timescales = inv_timescales_1d.unsqueeze(0);
+    let arange_u32 = fusor::arange(device, 0u32, length as u32);
+    let arange_cast = arange_u32.cast::<crate::WhisperDType>();
+    let arange = arange_cast.unsqueeze(1);
     let sh = [length, channels / 2];
-    let scaled_time = (&arange.broadcast_as(sh) * &inv_timescales.broadcast_as(sh)).to_concrete();
+    let arange_broadcast = arange.broadcast_as(sh);
+    let inv_timescales_broadcast = inv_timescales.broadcast_as(sh);
+    let scaled_time = (&arange_broadcast * &inv_timescales_broadcast).to_concrete();
     Tensor::cat(
         [
             scaled_time.sin().to_concrete(),
