@@ -1,6 +1,9 @@
+use std::marker::PhantomData;
+
 use crate::raw::cache::LlamaCache;
 use crate::raw::LlamaConfig;
 use fusor::FloatDataType;
+use fusor::SimdElement;
 use kalosm_language_model::TextCompletionSession;
 use std::sync::{Arc, RwLock};
 
@@ -20,11 +23,12 @@ pub enum LlamaSessionLoadingError {
 
 /// A Llama session with cached state for the current fed prompt
 #[derive(Clone)]
-pub struct LlamaSession<F: FloatDataType = f32> {
-    pub(crate) cache: Arc<RwLock<LlamaCache<F>>>,
+pub struct LlamaSession<F: FloatDataType + SimdElement = f32> {
+    pub(crate) cache: Arc<RwLock<LlamaCache>>,
+    _marker: PhantomData<F>,
 }
 
-impl<F: FloatDataType> TextCompletionSession for LlamaSession<F> {
+impl<F: FloatDataType + SimdElement> TextCompletionSession for LlamaSession<F> {
     type Error = LlamaSessionLoadingError;
 
     fn try_clone(&self) -> Result<Self, Self::Error>
@@ -35,11 +39,12 @@ impl<F: FloatDataType> TextCompletionSession for LlamaSession<F> {
     }
 }
 
-impl<F: FloatDataType> LlamaSession<F> {
+impl<F: FloatDataType + SimdElement> LlamaSession<F> {
     /// Create a new session
     pub(crate) fn new(cache: &LlamaConfig<F>) -> Self {
         Self {
             cache: Arc::new(RwLock::new(LlamaCache::new(cache))),
+            _marker: PhantomData,
         }
     }
 

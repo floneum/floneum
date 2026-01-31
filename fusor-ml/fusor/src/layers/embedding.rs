@@ -1,26 +1,22 @@
 //! Embedding layer implementation.
 
-use crate::{ConcreteTensor, Device, QMatrix, Tensor, SimdElement, VarBuilder};
-use fusor_core::DataType;
+use crate::{CastTensor, CastTo, DataType, Device, QMatrix, SimdElement, Tensor, VarBuilder};
 
 /// Embedding layer for token/position embeddings.
 ///
 /// Maps integer indices to dense vectors.
 /// Embedding table shape: (num_embeddings, embedding_dim)
 #[derive(Clone)]
-pub struct Embedding<D: SimdElement> {
+pub struct Embedding<T: SimdElement> {
     embeddings_quantized: Option<QMatrix>,
-    embeddings: Tensor<2, D, ConcreteTensor<D, 2>>,
+    embeddings: Tensor<2, T>,
     num_embeddings: usize,
     embedding_dim: usize,
 }
 
-impl<D> Embedding<D>
-where
-    D: SimdElement + DataType + Default,
-{
+impl<T: DataType + SimdElement + Default> Embedding<T> {
     /// Create a new embedding layer with the given embedding table (no quantization).
-    pub fn new_from_tensor(embeddings: Tensor<2, D, ConcreteTensor<D, 2>>) -> Self {
+    pub fn new_from_tensor(embeddings: Tensor<2, T>) -> Self {
         let shape = embeddings.shape();
         let num_embeddings = shape[0];
         let embedding_dim = shape[1];
@@ -35,40 +31,49 @@ where
 
     /// Forward pass: lookup embeddings for the given indices.
     ///
-    /// Input: indices tensor of shape (batch,) or (batch, seq_len)
-    /// Output: embeddings tensor with an additional dimension for embedding_dim
+    /// Input: indices tensor of rank N
+    /// Output: embeddings tensor of rank M = N + 1
     ///
-    /// For 1D indices (batch,): returns (batch, embedding_dim)
-    /// For 2D indices (batch, seq_len): returns (batch, seq_len, embedding_dim)
-    pub fn forward_1d(
+    /// Example:
+    /// - Input: [batch, seq_len] with indices
+    /// - Output: [batch, seq_len, embedding_dim] with embeddings
+    pub fn forward<const N: usize, const M: usize, B>(
         &self,
-        indices: &Tensor<1, u32, ConcreteTensor<u32, 1>>,
-    ) -> Tensor<2, D, ConcreteTensor<D, 2>> {
-        self.embeddings.index_select(0, indices)
-    }
+        indices: &Tensor<N, u32, B>,
+    ) -> Tensor<M, T>
+    where
+        B: fusor_cpu::TensorBacking<N, Elem = u32>,
+        fusor_core::Tensor<N, u32>: fusor_core::NextRank<M, u32>,
+    {
+        // Calculate final output dimensions: input_dims + [embedding_dim]
+        let input_shape = indices.shape();
+        let final_dims: [usize; M] = std::array::from_fn(|i| {
+            if i < N {
+                input_shape[i]
+            } else {
+                self.embedding_dim
+            }
+        });
 
-    /// Forward pass for 2D indices.
-    ///
-    /// Input shape: (batch, seq_len)
-    /// Output shape: (batch, seq_len, embedding_dim)
-    pub fn forward(
-        &self,
-        indices: &Tensor<2, u32, ConcreteTensor<u32, 2>>,
-    ) -> Tensor<3, D> {
-        let [batch, seq_len] = indices.shape();
-
-        // Flatten indices to 1D
-        let indices_flat: Tensor<1, u32, _> = indices.flatten_all();
-
-        // Lookup
-        let values = self.embeddings.index_select(0, &indices_flat);
-
-        // Reshape to (batch, seq_len, embedding_dim)
-        values.reshape([batch, seq_len, self.embedding_dim]).to_concrete()
+        match (indices, &self.embeddings) {
+            (Tensor::Cpu(cpu_indices), Tensor::Cpu(cpu_embeddings)) => {
+                // CPU path
+                let indices_flat = cpu_indices.as_ref().flatten_all();
+                let values = cpu_embeddings.as_ref().index_select(0, indices_flat);
+                Tensor::Cpu(values.reshape(final_dims).to_concrete())
+            }
+            (Tensor::Gpu(gpu_indices), Tensor::Gpu(gpu_embeddings)) => {
+                // GPU path
+                let indices_flat = gpu_indices.flatten_all();
+                let values = gpu_embeddings.index_select(0, &indices_flat);
+                Tensor::Gpu(values.reshape(final_dims))
+            }
+            _ => panic!("Indices and embeddings must be on the same device"),
+        }
     }
 
     /// Get the dequantized embedding table.
-    pub fn embeddings(&self) -> &Tensor<2, D, ConcreteTensor<D, 2>> {
+    pub fn embeddings(&self) -> &Tensor<2, T> {
         &self.embeddings
     }
 
@@ -81,14 +86,26 @@ where
     pub fn embedding_dim(&self) -> usize {
         self.embedding_dim
     }
+
+    /// Cast the Embedding layer to a different data type
+    pub fn cast<U: DataType + SimdElement + Default>(self) -> Embedding<U>
+    where
+        T: CastTensor<U> + CastTo<U>,
+    {
+        Embedding {
+            embeddings_quantized: self.embeddings_quantized,
+            embeddings: self.embeddings.cast(),
+            num_embeddings: self.num_embeddings,
+            embedding_dim: self.embedding_dim,
+        }
+    }
 }
 
+// f32-specific implementations for loading from quantized data
 impl Embedding<f32> {
-    /// Create a new embedding layer from a quantized matrix.
-    ///
-    /// The quantized matrix is dequantized to f32 for efficient lookup.
+    /// Create a new embedding layer with the given quantized embedding table.
     pub fn new(embeddings_quantized: QMatrix) -> Self {
-        let embeddings: Tensor<2, f32> = embeddings_quantized.dequantize::<2>();
+        let embeddings: Tensor<2, f32> = embeddings_quantized.dequantize();
         let shape = embeddings.shape();
         let num_embeddings = shape[0];
         let embedding_dim = shape[1];
@@ -133,7 +150,9 @@ impl Embedding<f32> {
 
     /// Get the quantized embedding table if available.
     pub fn embeddings_quantized(&self) -> &QMatrix {
-        self.embeddings_quantized.as_ref().expect("No quantized embeddings available")
+        self.embeddings_quantized
+            .as_ref()
+            .expect("No quantized embeddings available")
     }
 }
 
@@ -155,7 +174,7 @@ mod tests {
         let indices: Tensor<1, u32> =
             Tensor::Cpu(fusor_cpu::Tensor::from_slice([3], &indices_data));
 
-        let result = embedding_layer.forward_1d(&indices);
+        let result: Tensor<2, f32> = embedding_layer.forward(&indices);
 
         assert_eq!(result.shape(), [3, 2]);
 
@@ -186,7 +205,7 @@ mod tests {
         let indices: Tensor<2, u32> =
             Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 2], &indices_data));
 
-        let result = embedding_layer.forward(&indices);
+        let result: Tensor<3, f32> = embedding_layer.forward(&indices);
 
         assert_eq!(result.shape(), [2, 2, 2]);
 

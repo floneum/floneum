@@ -35,6 +35,14 @@ impl Device {
         pollster::block_on(Self::gpu())
     }
 
+    /// Create a device, preferring GPU if available, otherwise falling back to CPU.
+    pub async fn auto() -> Self {
+        match Self::gpu().await {
+            Ok(gpu) => gpu,
+            Err(_) => Device::Cpu,
+        }
+    }
+
     /// Returns true if this is a CPU device.
     #[inline]
     pub fn is_cpu(&self) -> bool {

@@ -3,7 +3,7 @@
 use std::ops::Range;
 
 use crate::{ConcreteTensor, Device, SimdElement, Tensor};
-use fusor_core::{DataType, ShapeWithOneHole};
+use fusor_core::{DataType, Dim, ShapeWithOneHole};
 use fusor_cpu::{MapLayout, TensorBacking};
 use fusor_types::SlidingWindow;
 
@@ -96,10 +96,11 @@ where
     /// Narrow the tensor along a given dimension.
     ///
     /// # Arguments
-    /// * `dim` - The dimension to narrow
+    /// * `dim` - The dimension to narrow (can be `usize` or `D::Minus1`, etc.)
     /// * `start` - The starting index
     /// * `length` - The length of the slice
-    pub fn narrow(&self, dim: usize, start: usize, length: usize) -> Tensor<R, D, MapLayout<&B, R>> {
+    pub fn narrow(&self, dim: impl Dim<R>, start: usize, length: usize) -> Tensor<R, D, MapLayout<&B, R>> {
+        let dim = dim.resolve();
         match self {
             Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().narrow(dim, start, length)),
             Tensor::Gpu(t) => Tensor::Gpu(t.narrow(dim, start, length)),
@@ -110,8 +111,9 @@ where
     ///
     /// # Arguments
     /// * `chunks` - Number of chunks to split into
-    /// * `dim` - The dimension to split along
-    pub fn chunk(&self, chunks: usize, dim: usize) -> Vec<Tensor<R, D, MapLayout<&B, R>>> {
+    /// * `dim` - The dimension to split along (can be `usize` or `D::Minus1`, etc.)
+    pub fn chunk(&self, chunks: usize, dim: impl Dim<R>) -> Vec<Tensor<R, D, MapLayout<&B, R>>> {
+        let dim = dim.resolve();
         let shape = self.shape();
         let dim_size = shape[dim];
         let chunk_size = (dim_size + chunks - 1) / chunks;

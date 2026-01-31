@@ -453,6 +453,47 @@ impl_simd_element!(u16, u16s, as_simd_u16s, as_mut_simd_u16s, splat_u16s);
 impl_simd_element!(u32, u32s, as_simd_u32s, as_mut_simd_u32s, splat_u32s);
 impl_simd_element!(u64, u64s, as_simd_u64s, as_mut_simd_u64s, splat_u64s);
 
+/// Wrapper type for f16 "SIMD" operations.
+///
+/// Since pulp doesn't have native f16 SIMD support, we use a scalar fallback.
+/// This type wraps a single f16 value and presents itself as a "SIMD vector"
+/// with one lane. Operations fall back to scalar code.
+#[derive(Copy, Clone)]
+pub struct F16Scalar(pub half::f16);
+
+impl SimdElement for half::f16 {
+    /// The "SIMD" type for f16 is just a scalar wrapper since pulp lacks f16 SIMD.
+    type Simd<S: Simd> = F16Scalar;
+
+    #[inline(always)]
+    fn as_simd<S: Simd>(_slice: &[Self]) -> (&[Self::Simd<S>], &[Self]) {
+        // No SIMD for f16, return empty SIMD slice and all elements as remainder
+        (&[], _slice)
+    }
+
+    #[inline(always)]
+    fn as_mut_simd<S: Simd>(_slice: &mut [Self]) -> (&mut [Self::Simd<S>], &mut [Self]) {
+        // No SIMD for f16, return empty SIMD slice and all elements as remainder
+        (&mut [], _slice)
+    }
+
+    #[inline(always)]
+    fn splat<S: Simd>(_simd: S, value: Self) -> Self::Simd<S> {
+        F16Scalar(value)
+    }
+
+    #[inline(always)]
+    unsafe fn gather_unchecked<S: Simd>(
+        _simd: S,
+        slice: &[Self],
+        indices: &[usize],
+        _lane_count: usize,
+    ) -> Self::Simd<S> {
+        // Scalar fallback: just return the first element
+        F16Scalar(slice[indices[0]])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

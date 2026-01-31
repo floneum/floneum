@@ -29,11 +29,14 @@ pub use error::Error;
 /// Result type for fusor operations.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 use fusor_core::TensorSlice;
-use fusor_cpu::TensorBacking;
 
 // Re-export from fusor-cpu
 pub use fusor_cpu::{
     Abs,
+    // Cast trait
+    CastTo,
+    // Backing trait for generic tensor type parameters
+    TensorBacking,
     // Op types for bounds
     AbsOp,
     Acos,
@@ -50,8 +53,6 @@ pub use fusor_cpu::{
     AtanOp,
     Atanh,
     AtanhOp,
-    // Cast operations
-    CastTo,
     ConcreteTensor,
     Cos,
     CosOp,
@@ -105,7 +106,11 @@ pub use fusor_cpu::{
 pub use fusor_core::Tensor as GpuTensor;
 
 // Re-export from fusor-core for GPU types
-pub use fusor_core::{DataType, FloatDataType, GgufReadError};
+pub use fusor_core::{
+    CastTensor, D, DataType, Dim, FloatDataType, GgufReadError,
+    LastRank, LastRankInner, MaxRank, NextRank, NextRankInner, SmallerRank,
+    WasmNotSend, WasmNotSync,
+};
 
 /// Runtime dispatch wrapper - holds either CPU or GPU version of an operation/tensor type.
 ///

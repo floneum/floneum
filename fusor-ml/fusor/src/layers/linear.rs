@@ -1,6 +1,6 @@
 //! Linear layer implementation.
 
-use crate::{ConcreteTensor, Device, QMatrix, Tensor, SimdElement, VarBuilder};
+use crate::{CastTensor, CastTo, DataType, Device, QMatrix, SimdElement, Tensor, VarBuilder};
 use fusor_cpu::GgmlType;
 
 /// A linear (fully connected) layer with quantized weights.
@@ -11,7 +11,7 @@ pub struct Linear<T: SimdElement> {
     bias: Option<Tensor<1, T>>,
 }
 
-impl<T: SimdElement> Linear<T> {
+impl<T: DataType + SimdElement + Default> Linear<T> {
     /// Create a new Linear layer with the given quantized weight and optional bias.
     ///
     /// Weight shape: (out_features, in_features)
@@ -39,8 +39,20 @@ impl<T: SimdElement> Linear<T> {
     pub fn out_features(&self) -> usize {
         self.weight.shape()[0]
     }
+
+    /// Cast the Linear layer to a different data type
+    pub fn cast<U: DataType + SimdElement + Default>(self) -> Linear<U>
+    where
+        T: CastTensor<U> + CastTo<U>,
+    {
+        Linear {
+            weight: self.weight,
+            bias: self.bias.map(|b| b.cast()),
+        }
+    }
 }
 
+// f32-specific implementations for loading and forward
 impl Linear<f32> {
     /// Load a Linear layer from a VarBuilder.
     ///
@@ -49,16 +61,7 @@ impl Linear<f32> {
     /// - bias (optional): Tensor with shape (out_features,)
     pub fn load(device: &Device, vb: &mut VarBuilder) -> crate::Result<Self> {
         let weight = vb.get("weight", device)?;
-        let bias: Option<Tensor<1, f32>> = vb.get("bias", device).ok().map(|b| {
-            let dequant: Tensor<2, f32> = b.dequantize::<2>();
-            // The bias is stored as 2D in GGUF, squeeze to 1D
-            let shape = dequant.shape();
-            if shape[1] == 1 {
-                dequant.squeeze(1).to_concrete()
-            } else {
-                dequant.squeeze(0).to_concrete()
-            }
-        });
+        let bias: Option<Tensor<1, f32>> = vb.get("bias", device).ok().map(|b| b.dequantize());
         Ok(Self { weight, bias })
     }
 
@@ -66,10 +69,10 @@ impl Linear<f32> {
     ///
     /// Input shape: (batch, seq_len, in_features)
     /// Output shape: (batch, seq_len, out_features)
-    pub fn forward(
-        &self,
-        input: &Tensor<3, f32, ConcreteTensor<f32, 3>>,
-    ) -> Tensor<3, f32, ConcreteTensor<f32, 3>> {
+    pub fn forward<B>(&self, input: &Tensor<3, f32, B>) -> Tensor<3, f32>
+    where
+        B: fusor_cpu::TensorBacking<3, Elem = f32>,
+    {
         let output = input.q_mat_mul(&self.weight);
 
         if let Some(bias) = &self.bias {
@@ -77,5 +80,37 @@ impl Linear<f32> {
         } else {
             output
         }
+    }
+}
+
+// Generic forward implementations for Linear<T> where T can be cast to/from f32
+// This enables f16 and other types to use Linear by converting to f32 for computation
+impl<T: DataType + SimdElement + Default> Linear<T>
+where
+    T: CastTo<f32> + CastTensor<f32>,
+    f32: CastTo<T> + CastTensor<T>,
+{
+    /// Forward pass for 3D input with generic type.
+    /// Converts input to f32 for computation, then converts back.
+    pub fn forward_generic<B>(&self, input: &Tensor<3, T, B>) -> Tensor<3, T>
+    where
+        B: fusor_cpu::TensorBacking<3, Elem = T>,
+    {
+        // Cast input to f32
+        let input_f32 = input.cast::<f32>();
+
+        // Do quantized matmul in f32
+        let output_f32 = input_f32.q_mat_mul(&self.weight);
+
+        // Add bias if present (in f32)
+        let output_f32 = if let Some(bias) = &self.bias {
+            let bias_f32: Tensor<1, f32> = bias.cast();
+            output_f32.add_(&bias_f32)
+        } else {
+            output_f32
+        };
+
+        // Cast back to T
+        output_f32.cast()
     }
 }

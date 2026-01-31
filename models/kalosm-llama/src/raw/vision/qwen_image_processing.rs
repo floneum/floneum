@@ -27,9 +27,11 @@ pub(crate) fn process_image(
     assert!(resized.width().is_multiple_of(merge_patch));
     let rgb = image_to_rgb(&resized, device)?;
     // Normalize the image
-    let required_rgb_mean = Tensor::new(device, image_mean).reshape([1, 3, 1, 1]);
-    let required_rgb_std = Tensor::new(device, image_std).reshape([1, 3, 1, 1]);
-    let rgb = rgb.sub_(&required_rgb_mean).div_(&required_rgb_std);
+    let mean_tensor = Tensor::new(device, image_mean);
+    let required_rgb_mean = mean_tensor.reshape([1, 3, 1, 1]);
+    let std_tensor = Tensor::new(device, image_std);
+    let required_rgb_std = std_tensor.reshape([1, 3, 1, 1]);
+    let rgb = rgb.sub_(&required_rgb_mean).div_(&required_rgb_std).to_concrete();
 
     let grid_t = 1;
     let grid_h = resized.height() as usize / patch_size;
@@ -57,7 +59,7 @@ pub(crate) fn process_image(
         // patch data
         3 * patch_size * patch_size * temporal_patch_size,
     ]);
-    Ok((rgb, [grid_t as u32, grid_h as u32, grid_w as u32]))
+    Ok((rgb.to_concrete(), [grid_t as u32, grid_h as u32, grid_w as u32]))
 }
 
 fn normalize_image_shape(
@@ -108,10 +110,11 @@ fn image_to_rgb(
         .into_iter()
         .map(|x| x as u32)
         .collect::<Vec<_>>();
-    let data = Tensor::new(device, &as_u32).reshape([height, width, 3]);
-    let img = data.permute([2, 0, 1]).cast::<f32>() / 255.0;
+    let data_tensor = Tensor::new(device, &as_u32);
+    let data = data_tensor.reshape([height, width, 3]);
+    let img = data.permute([2, 0, 1]).cast::<f32>() * (1.0 / 255.0);
 
-    Ok(img.unsqueeze(0))
+    Ok(img.unsqueeze(0).to_concrete())
 }
 
 #[cfg(test)]
