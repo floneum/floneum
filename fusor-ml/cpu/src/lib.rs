@@ -890,6 +890,53 @@ mod tests {
     }
 
     #[test]
+    fn test_transpose_then_flatten_attention_pattern() {
+        // This tests the exact pattern used in attention output:
+        // wv_raw.transpose(1, 2).flatten_last_n::<1, _>()
+        // wv_raw shape: [batch, n_head, n_ctx, head_dim]
+        // After transpose(1,2): [batch, n_ctx, n_head, head_dim]
+        // After flatten_last_n: [batch, n_ctx, n_state] where n_state = n_head * head_dim
+
+        // Create a [1, 2, 3, 4] tensor representing [batch=1, n_head=2, n_ctx=3, head_dim=4]
+        let t: Tensor<4, ConcreteTensor<f32, 4>> =
+            Tensor::from_slice([1, 2, 3, 4], &(0..24).map(|i| i as f32).collect::<Vec<_>>());
+
+        // Original layout: t[0, head, ctx, dim] at position head*12 + ctx*4 + dim
+        // t[0,0,0,0] = 0, t[0,0,0,1] = 1, ..., t[0,0,2,3] = 11
+        // t[0,1,0,0] = 12, t[0,1,0,1] = 13, ..., t[0,1,2,3] = 23
+
+        // Transpose(1,2) swaps n_head and n_ctx dimensions
+        // Result shape: [1, 3, 2, 4]
+        // transposed[0, ctx, head, dim] = original[0, head, ctx, dim]
+        let transposed = t.transpose(1, 2);
+        assert_eq!(transposed.inner().layout().shape(), &[1, 3, 2, 4]);
+
+        // transposed[0,0,0,0] should be t[0,0,0,0] = 0
+        assert_eq!(transposed.get([0, 0, 0, 0]), 0.0);
+        // transposed[0,0,1,0] should be t[0,1,0,0] = 12
+        assert_eq!(transposed.get([0, 0, 1, 0]), 12.0);
+        // transposed[0,1,0,0] should be t[0,0,1,0] = 4
+        assert_eq!(transposed.get([0, 1, 0, 0]), 4.0);
+        // transposed[0,2,1,3] should be t[0,1,2,3] = 23
+        assert_eq!(transposed.get([0, 2, 1, 3]), 23.0);
+
+        // Flatten last 2 dimensions (n_head and head_dim) into n_state
+        // Result shape: [1, 3, 8]
+        let flattened = transposed.flatten_last_n::<2, 3>();
+        assert_eq!(flattened.inner().layout().shape(), &[1, 3, 8]);
+
+        // flattened[0, ctx, state] where state = head*4 + dim
+        // flattened[0,0,0] = transposed[0,0,0,0] = 0
+        assert_eq!(flattened.get([0, 0, 0]), 0.0);
+        // flattened[0,0,4] = transposed[0,0,1,0] = 12
+        assert_eq!(flattened.get([0, 0, 4]), 12.0);
+        // flattened[0,1,0] = transposed[0,1,0,0] = 4
+        assert_eq!(flattened.get([0, 1, 0]), 4.0);
+        // flattened[0,2,7] = transposed[0,2,1,3] = 23
+        assert_eq!(flattened.get([0, 2, 7]), 23.0);
+    }
+
+    #[test]
     fn test_squeeze_dims() {
         // Squeeze two dimensions at once
         let t: Tensor<4, ConcreteTensor<f32, 4>> =

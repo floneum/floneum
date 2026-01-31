@@ -133,20 +133,25 @@ impl MultiHeadAttention {
         attention_output: Option<&mut TensorCache<4, crate::WhisperDType>>,
     ) -> Result<Tensor<3, crate::WhisperDType>> {
         let device = q.device();
-        let [n_batch, n_ctx, n_state] = q.shape();
+        let [n_batch, n_ctx_q, n_state] = q.shape();
+        let [_, n_ctx_kv, _] = k.shape();
         let head_dim = n_state / self.n_head;
         let scale = crate::WhisperDType::from((head_dim as f32).powf(-0.25));
 
-        // Reshape [n_batch, n_ctx, n_state] -> [n_batch, n_head, n_ctx, head_dim]
-        let target_dims = [n_batch, n_ctx, self.n_head, head_dim];
-        let q_reshaped = q.reshape(target_dims);
+        // Reshape Q: [n_batch, n_ctx_q, n_state] -> [n_batch, n_head, n_ctx_q, head_dim]
+        let q_target_dims = [n_batch, n_ctx_q, self.n_head, head_dim];
+        let q_reshaped = q.reshape(q_target_dims);
         let q_transposed = q_reshaped.transpose(1, 2);
         let q = q_transposed.mul_scalar(scale);
-        let k_reshaped = k.reshape(target_dims);
+
+        // Reshape K/V: [n_batch, n_ctx_kv, n_state] -> [n_batch, n_head, n_ctx_kv, head_dim]
+        // For self-attention n_ctx_kv == n_ctx_q, for cross-attention they differ
+        let kv_target_dims = [n_batch, n_ctx_kv, self.n_head, head_dim];
+        let k_reshaped = k.reshape(kv_target_dims);
         let k_transposed = k_reshaped.transpose(1, 2);
         let k_transposed2 = k_transposed.transpose(2, 3);
         let k = k_transposed2.mul_scalar(scale);
-        let v_reshaped = v.reshape(target_dims);
+        let v_reshaped = v.reshape(kv_target_dims);
         let v = v_reshaped.transpose(1, 2);
 
         let mut qk = {
