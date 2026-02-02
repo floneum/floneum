@@ -136,9 +136,7 @@ where
             // Cast logits back to f32 for sampling
             let logits: fusor::Tensor<1, f32> = logits.cast();
             let len = logits.shape()[0];
-            let logits = logits
-                .as_slice()
-                .await?;
+            let logits = logits.as_slice().await?;
             let mut logits_vec = Vec::with_capacity(len);
             for i in 0..len {
                 let logit = logits[[i]];
@@ -498,6 +496,20 @@ where
             }
             logits = Logits::try_from_iter_top_k(logit_probs, 512)
                 .expect("model output should be valid logits");
+            // Yield control to allow the stream to deliver tokens
+            {
+                use std::sync::atomic::{AtomicBool, Ordering};
+                let yielded = AtomicBool::new(false);
+                std::future::poll_fn(|cx| {
+                    if yielded.load(Ordering::Relaxed) {
+                        std::task::Poll::Ready(())
+                    } else {
+                        yielded.store(true, Ordering::Relaxed);
+                        cx.waker().wake_by_ref();
+                        std::task::Poll::Pending
+                    }
+                }).await;
+            }
         }
 
         // Flush the queued text

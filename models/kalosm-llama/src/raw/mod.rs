@@ -134,8 +134,16 @@ where
         f32: CastTensor<F> + CastTo<F>,
         F: CastTensor<f32> + CastTo<f32>,
     {
+        // Helper to dequantize a QMatrix to 1D tensor
+        // VarBuilder normalizes all tensors to 2D, so a 1D weight [N] becomes [N, 1]
+        // We need to dequantize as 2D and then reshape to 1D
+        let dequantize_1d = |qmatrix: QMatrix| -> Tensor<1, F> {
+            let w2d: Tensor<2, f32> = qmatrix.dequantize();
+            w2d.reshape([w2d.shape()[0]]).to_concrete().cast()
+        };
+
         let decode_norm = |qmatrix: QMatrix, eps: f64| -> Result<RmsNorm<1, F>> {
-            let weight: Tensor<1, F> = qmatrix.dequantize().cast();
+            let weight = dequantize_1d(qmatrix);
             Ok(RmsNorm::new(weight, None, eps as f32))
         };
 
@@ -228,7 +236,7 @@ where
         let rope_freq_weight: Option<Tensor<1, F>> = source
             .tensor("rope_freqs.weight", device)
             .ok()
-            .map(|q| q.dequantize().cast());
+            .map(&dequantize_1d);
 
         let config = LlamaConfig {
             rope_freq_weight,
@@ -311,9 +319,9 @@ where
                     source.tensor(&format!("{prefix}.attn_v.bias"), device),
                 ) {
                     Some(AttentionBias::new(
-                        bias_q.dequantize().cast(),
-                        bias_k.dequantize().cast(),
-                        bias_v.dequantize().cast(),
+                        dequantize_1d(bias_q),
+                        dequantize_1d(bias_k),
+                        dequantize_1d(bias_v),
                     ))
                 } else {
                     None

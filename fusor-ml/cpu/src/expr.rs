@@ -49,9 +49,11 @@ impl<T: TensorBacking<R>, const R: usize> WithSimd for TensorEvaluator<'_, T, R>
 
 /// Minimum number of elements before parallelization is used.
 /// Below this threshold, the overhead of thread spawning isn't worth it.
-/// Note: Set relatively high because thread::scope has non-trivial overhead
-/// and for expression trees the per-element work is light (SIMD ops).
-const PARALLEL_THRESHOLD: usize = 131_072;
+/// Note: Set very high because std::thread::scope has significant overhead
+/// (spawns new threads each time). For repeated operations like in transformer
+/// layers, the thread spawn/join cost dominates. A thread pool would be better
+/// but for now we avoid parallelization for typical LLM tensor sizes.
+const PARALLEL_THRESHOLD: usize = 16_777_216; // 16M elements (~64MB for f32)
 
 /// Materialize a tensor backing into a new ConcreteTensor.
 ///
