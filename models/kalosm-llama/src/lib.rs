@@ -40,7 +40,7 @@ mod token_stream;
 pub use crate::chat::LlamaChatSession;
 use crate::model::LlamaModel;
 pub use crate::session::LlamaSession;
-use fusor::{AddOp, CastTo, Device, FloatOps, MatmulImpl, MulOp, SimdBinaryOp, SimdReduceOp, SumOp, WasmNotSend, WasmNotSync};
+use fusor::{AddOp, CastTo, FloatOps, MatmulImpl, MulOp, SimdBinaryOp, SimdReduceOp, SumOp, WasmNotSend, WasmNotSync};
 use futures::FutureExt;
 use kalosm_language_model::{MediaHints, TextCompletionBuilder, TextCompletionModelExt};
 pub use kalosm_model_types::FileSource;
@@ -61,7 +61,7 @@ use tokenizers::Tokenizer;
 pub use half::f16;
 
 /// Re-export fusor types needed for the activation type generic
-pub use fusor::{CastTensor, FloatDataType, SimdElement};
+pub use fusor::{CastTensor, Device, FloatDataType, SimdElement};
 
 /// A prelude of commonly used items in kalosm-llama.
 pub mod prelude {

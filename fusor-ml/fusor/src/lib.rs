@@ -1058,6 +1058,9 @@ where
             (Tensor::Cpu(lhs), QMatrix::CpuQ4K(rhs)) => Tensor::Cpu(fusor_cpu::Tensor::new(
                 lhs.to_concrete().inner().q_mat_mul(rhs),
             )),
+            (Tensor::Cpu(lhs), QMatrix::CpuQ5K(rhs)) => Tensor::Cpu(fusor_cpu::Tensor::new(
+                lhs.to_concrete().inner().q_mat_mul(rhs),
+            )),
             (Tensor::Cpu(lhs), QMatrix::CpuQ6K(rhs)) => Tensor::Cpu(fusor_cpu::Tensor::new(
                 lhs.to_concrete().inner().q_mat_mul(rhs),
             )),

@@ -5,7 +5,7 @@ use crate::{
     },
 };
 use fusor_gguf::{
-    BlockQ4_0, BlockQ4K, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, GgufBlock, GgufMetadata,
+    BlockQ4_0, BlockQ4K, BlockQ5K, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, GgufBlock, GgufMetadata,
     GgufReadError, GgufTensorMetadata,
 };
 use std::{
@@ -127,6 +127,22 @@ impl QMatrix {
                         .iter()
                         .copied()
                         .flat_map(BlockQ4K::into_wgsl_bytes_f32)
+                        .collect()
+                }
+            }
+            GgmlType::Q5K => {
+                let slice = bytemuck::cast_slice::<_, BlockQ5K>(bytes);
+                if use_f16 {
+                    slice
+                        .iter()
+                        .copied()
+                        .flat_map(BlockQ5K::into_wgsl_bytes)
+                        .collect()
+                } else {
+                    slice
+                        .iter()
+                        .copied()
+                        .flat_map(BlockQ5K::into_wgsl_bytes_f32)
                         .collect()
                 }
             }

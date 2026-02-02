@@ -5,7 +5,7 @@
 
 use crate::{Device, Tensor};
 use fusor_core::QMatrix as GpuQMatrix;
-use fusor_cpu::{ABox, AVec, BlockQ4K, BlockQ4_0, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, Layout, QuantizedTensor};
+use fusor_cpu::{ABox, AVec, BlockQ4K, BlockQ4_0, BlockQ5K, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, Layout, QuantizedTensor};
 use half::f16;
 
 /// CPU tensor with F32 data (not quantized).
@@ -83,6 +83,8 @@ pub enum QMatrix {
     CpuQ8_0(QuantizedTensor<BlockQ8_0>),
     /// CPU quantized tensor with Q4K quantization (4-bit, block size 256)
     CpuQ4K(QuantizedTensor<BlockQ4K>),
+    /// CPU quantized tensor with Q5K quantization (5-bit, block size 256)
+    CpuQ5K(QuantizedTensor<BlockQ5K>),
     /// CPU quantized tensor with Q6K quantization (6-bit, block size 256)
     CpuQ6K(QuantizedTensor<BlockQ6K>),
     /// CPU tensor with F32 data (not quantized)
@@ -101,6 +103,7 @@ impl QMatrix {
             QMatrix::CpuQ5_0(_) => GgmlType::Q5_0,
             QMatrix::CpuQ8_0(_) => GgmlType::Q8_0,
             QMatrix::CpuQ4K(_) => GgmlType::Q4K,
+            QMatrix::CpuQ5K(_) => GgmlType::Q5K,
             QMatrix::CpuQ6K(_) => GgmlType::Q6K,
             QMatrix::CpuF32(_) => GgmlType::F32,
             QMatrix::CpuF16(_) => GgmlType::F16,
@@ -127,6 +130,7 @@ impl QMatrix {
             QMatrix::CpuQ5_0(t) => t.element_shape(),
             QMatrix::CpuQ8_0(t) => t.element_shape(),
             QMatrix::CpuQ4K(t) => t.element_shape(),
+            QMatrix::CpuQ5K(t) => t.element_shape(),
             QMatrix::CpuQ6K(t) => t.element_shape(),
             QMatrix::CpuF32(t) => t.shape(),
             QMatrix::CpuF16(t) => t.shape(),
@@ -141,6 +145,7 @@ impl QMatrix {
             | QMatrix::CpuQ5_0(_)
             | QMatrix::CpuQ8_0(_)
             | QMatrix::CpuQ4K(_)
+            | QMatrix::CpuQ5K(_)
             | QMatrix::CpuQ6K(_)
             | QMatrix::CpuF32(_)
             | QMatrix::CpuF16(_) => Device::Cpu,
@@ -180,6 +185,9 @@ impl QMatrix {
                 }
                 GgmlType::Q4K => {
                     QMatrix::CpuQ4K(QuantizedTensor::from_raw_bytes(shape, bytes))
+                }
+                GgmlType::Q5K => {
+                    QMatrix::CpuQ5K(QuantizedTensor::from_raw_bytes(shape, bytes))
                 }
                 GgmlType::Q6K => {
                     QMatrix::CpuQ6K(QuantizedTensor::from_raw_bytes(shape, bytes))
@@ -225,6 +233,7 @@ impl QMatrix {
             QMatrix::CpuQ5_0(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize::<R>())),
             QMatrix::CpuQ8_0(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize::<R>())),
             QMatrix::CpuQ4K(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize::<R>())),
+            QMatrix::CpuQ5K(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize::<R>())),
             QMatrix::CpuQ6K(t) => Tensor::Cpu(fusor_cpu::Tensor::new(t.dequantize::<R>())),
             QMatrix::CpuF32(t) => {
                 let shape = t.shape();

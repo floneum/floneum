@@ -112,6 +112,7 @@ impl GgmlType {
             Self::F32 => std::mem::size_of::<f32>(),
             Self::F16 => std::mem::size_of::<half::f16>(),
             Self::Q4K => std::mem::size_of::<BlockQ4K>(),
+            Self::Q5K => std::mem::size_of::<BlockQ5K>(),
             Self::Q6K => std::mem::size_of::<BlockQ6K>(),
             Self::Q4_0 => std::mem::size_of::<BlockQ4_0>(),
             Self::Q5_0 => std::mem::size_of::<BlockQ5_0>(),
@@ -1519,6 +1520,238 @@ impl GgufBlock for BlockQ4K {
 
                 sum += w_lo * y_lo + w_hi * y_hi;
             }
+        }
+
+        sum
+    }
+
+    fn quantize_activation(data: &[f32]) -> Self::ActivationBlock {
+        let arr: &[f32; K_BLOCK_SIZE] = data.try_into().expect("data must have 256 elements");
+        BlockQ8K::quantize(arr)
+    }
+}
+
+#[derive(AnyBitPattern, Clone, Copy)]
+#[repr(C)]
+pub struct BlockQ5KWgsl {
+    scale: half::f16,
+    min: half::f16,
+    scales: [u32; 12 / 4],
+    qh: [u32; (K_BLOCK_SIZE / 8) / 4],
+    qs: [u32; (K_BLOCK_SIZE / 2) / 4],
+}
+
+#[derive(AnyBitPattern, Clone, Copy)]
+#[repr(C)]
+pub struct BlockQ5KWgslF32 {
+    scale: f32,
+    min: f32,
+    scales: [u32; 12 / 4],
+    qh: [u32; (K_BLOCK_SIZE / 8) / 4],
+    qs: [u32; (K_BLOCK_SIZE / 2) / 4],
+}
+
+#[derive(Zeroable, Pod, Clone, Copy, PartialEq, Debug)]
+#[repr(C)]
+pub struct BlockQ5K {
+    scale: half::f16,
+    min: half::f16,
+    scales: [u8; 12],
+    qh: [u8; K_BLOCK_SIZE / 8],
+    qs: [u8; K_BLOCK_SIZE / 2],
+}
+
+impl BlockQ5K {
+    pub const BLOCK_SIZE: usize = K_BLOCK_SIZE;
+    pub const SCALES_SIZE: usize = 12;
+    pub const QH_SIZE: usize = K_BLOCK_SIZE / 8;
+    pub const QS_SIZE: usize = K_BLOCK_SIZE / 2;
+
+    pub fn scale(&self) -> f32 {
+        self.scale.to_f32()
+    }
+
+    pub fn min(&self) -> f32 {
+        self.min.to_f32()
+    }
+}
+
+impl GgufBlock for BlockQ5K {
+    const BLOCK_SIZE: usize = K_BLOCK_SIZE;
+
+    type Bytes = [u8; std::mem::size_of::<BlockQ5KWgsl>()];
+    type BytesF32 = [u8; std::mem::size_of::<BlockQ5KWgslF32>()];
+    type AsBytes = [u8; std::mem::size_of::<Self>()];
+    type Dequantized = [f32; K_BLOCK_SIZE];
+    type ActivationBlock = BlockQ8K;
+
+    fn finite(&self) -> bool {
+        self.scale.is_finite() && self.min.is_finite()
+    }
+
+    fn into_wgsl_bytes_f32(self) -> Self::BytesF32 {
+        let mut bytes = [0; std::mem::size_of::<BlockQ5KWgslF32>()];
+        let scale_offset = offset_of!(BlockQ5KWgslF32, scale);
+        let scale_f32 = self.scale.to_f32();
+        let scale_bytes = bytemuck::bytes_of(&scale_f32);
+        bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(scale_bytes);
+        let min_offset = offset_of!(BlockQ5KWgslF32, min);
+        let min_f32 = self.min.to_f32();
+        let min_bytes = bytemuck::bytes_of(&min_f32);
+        bytes[min_offset..min_offset + min_bytes.len()].copy_from_slice(min_bytes);
+        let scales_offset = offset_of!(BlockQ5KWgslF32, scales);
+        let scales_bytes = bytemuck::bytes_of(&self.scales);
+        bytes[scales_offset..scales_offset + scales_bytes.len()].copy_from_slice(scales_bytes);
+        let qh_offset = offset_of!(BlockQ5KWgslF32, qh);
+        let qh_bytes = bytemuck::bytes_of(&self.qh);
+        bytes[qh_offset..qh_offset + qh_bytes.len()].copy_from_slice(qh_bytes);
+        let qs_offset = offset_of!(BlockQ5KWgslF32, qs);
+        let qs_bytes = bytemuck::cast_slice(&self.qs);
+        bytes[qs_offset..qs_offset + qs_bytes.len()].copy_from_slice(qs_bytes);
+        bytes
+    }
+
+    fn into_wgsl_bytes(self) -> Self::Bytes {
+        let mut bytes = [0; std::mem::size_of::<BlockQ5KWgsl>()];
+        let scale_offset = offset_of!(BlockQ5KWgsl, scale);
+        let scale_bytes = bytemuck::bytes_of(&self.scale);
+        bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(scale_bytes);
+        let min_offset = offset_of!(BlockQ5KWgsl, min);
+        let min_bytes = bytemuck::bytes_of(&self.min);
+        bytes[min_offset..min_offset + min_bytes.len()].copy_from_slice(min_bytes);
+        let scales_offset = offset_of!(BlockQ5KWgsl, scales);
+        let scales_bytes = bytemuck::cast_slice(&self.scales);
+        bytes[scales_offset..scales_offset + scales_bytes.len()].copy_from_slice(scales_bytes);
+        let qh_offset = offset_of!(BlockQ5KWgsl, qh);
+        let qh_bytes = bytemuck::cast_slice(&self.qh);
+        bytes[qh_offset..qh_offset + qh_bytes.len()].copy_from_slice(qh_bytes);
+        let qs_offset = offset_of!(BlockQ5KWgsl, qs);
+        let qs_bytes = bytemuck::cast_slice(&self.qs);
+        bytes[qs_offset..qs_offset + qs_bytes.len()].copy_from_slice(qs_bytes);
+        bytes
+    }
+
+    fn from_wgsl_bytes(bytes: Self::Bytes) -> Self {
+        let scale_offset = offset_of!(BlockQ5KWgsl, scale);
+        let scale_bytes = &bytes[scale_offset..scale_offset + std::mem::size_of::<half::f16>()];
+        let scale = *bytemuck::from_bytes(scale_bytes);
+        let min_offset = offset_of!(BlockQ5KWgsl, min);
+        let min_bytes = &bytes[min_offset..min_offset + std::mem::size_of::<half::f16>()];
+        let min = *bytemuck::from_bytes(min_bytes);
+        let scales_offset = offset_of!(BlockQ5KWgsl, scales);
+        let scales_bytes = &bytes[scales_offset..scales_offset + std::mem::size_of::<[u8; 12]>()];
+        let scales = *bytemuck::from_bytes(scales_bytes);
+        let qh_offset = offset_of!(BlockQ5KWgsl, qh);
+        let qh_bytes =
+            &bytes[qh_offset..qh_offset + std::mem::size_of::<[u8; K_BLOCK_SIZE / 8]>()];
+        let qh = *bytemuck::from_bytes(qh_bytes);
+        let qs_offset = offset_of!(BlockQ5KWgsl, qs);
+        let qs_bytes =
+            &bytes[qs_offset..qs_offset + std::mem::size_of::<[u32; K_BLOCK_SIZE / 2 / 4]>()];
+        let qs = *bytemuck::from_bytes(qs_bytes);
+        Self {
+            scale,
+            min,
+            scales,
+            qh,
+            qs,
+        }
+    }
+
+    // https://github.com/ggml-org/llama.cpp/blob/master/ggml/src/ggml-quants.c
+    fn dequantize(&self) -> [f32; K_BLOCK_SIZE] {
+        let super_block_scale = self.scale.to_f32();
+        let super_block_min = self.min.to_f32();
+        let scales = bytemuck::cast_slice(&self.scales);
+
+        let mut data = [0.0; K_BLOCK_SIZE];
+        let (first_scales, first_offset) = first_scales_min_k4(scales);
+        let (second_scales, second_offset) = second_scales_min_k4(scales);
+        let scales: [u8; 8] = bytemuck::cast([first_scales, second_scales]);
+        let offsets: [u8; 8] = bytemuck::cast([first_offset, second_offset]);
+
+        let mut ql_offset = 0usize;
+        let mut scale_idx = 0usize;
+        let mut u1 = 1u8;
+        let mut u2 = 2u8;
+
+        for chunk in 0..4 {
+            let out_offset = chunk * 64;
+
+            let d1 = scales[scale_idx] as f32 * super_block_scale;
+            let m1 = offsets[scale_idx] as f32 * super_block_min;
+            scale_idx += 1;
+            let d2 = scales[scale_idx] as f32 * super_block_scale;
+            let m2 = offsets[scale_idx] as f32 * super_block_min;
+            scale_idx += 1;
+
+            for l in 0..32 {
+                let ql = self.qs[ql_offset + l];
+                let qh = self.qh[l];
+                let q_lo = (ql & 0xF) + if (qh & u1) != 0 { 16 } else { 0 };
+                data[out_offset + l] = d1 * q_lo as f32 - m1;
+            }
+
+            for l in 0..32 {
+                let ql = self.qs[ql_offset + l];
+                let qh = self.qh[l];
+                let q_hi = (ql >> 4) + if (qh & u2) != 0 { 16 } else { 0 };
+                data[out_offset + 32 + l] = d2 * q_hi as f32 - m2;
+            }
+
+            ql_offset += 32;
+            u1 <<= 2;
+            u2 <<= 2;
+        }
+
+        data
+    }
+
+    fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
+        let super_scale = self.scale.to_f32() * y.scale.to_f32();
+        let super_min = self.min.to_f32() * y.scale.to_f32();
+
+        let scales_bytes = bytemuck::cast_slice(&self.scales);
+        let (first_scales, first_offset) = first_scales_min_k4(scales_bytes);
+        let (second_scales, second_offset) = second_scales_min_k4(scales_bytes);
+        let scales: [u8; 8] = bytemuck::cast([first_scales, second_scales]);
+        let offsets: [u8; 8] = bytemuck::cast([first_offset, second_offset]);
+
+        let mut sum = 0.0f32;
+        let mut ql_offset = 0usize;
+        let mut scale_idx = 0usize;
+        let mut u1 = 1u8;
+        let mut u2 = 2u8;
+
+        for chunk in 0..4 {
+            let out_offset = chunk * 64;
+
+            let d1 = scales[scale_idx] as f32 * super_scale;
+            let m1 = offsets[scale_idx] as f32 * super_min;
+            scale_idx += 1;
+            let d2 = scales[scale_idx] as f32 * super_scale;
+            let m2 = offsets[scale_idx] as f32 * super_min;
+            scale_idx += 1;
+
+            for l in 0..32 {
+                let ql = self.qs[ql_offset + l];
+                let qh = self.qh[l];
+                let q_lo = (ql & 0xF) + if (qh & u1) != 0 { 16 } else { 0 };
+                let w = d1 * q_lo as f32 - m1;
+                sum += w * y.data[out_offset + l] as f32;
+            }
+
+            for l in 0..32 {
+                let ql = self.qs[ql_offset + l];
+                let qh = self.qh[l];
+                let q_hi = (ql >> 4) + if (qh & u2) != 0 { 16 } else { 0 };
+                let w = d2 * q_hi as f32 - m2;
+                sum += w * y.data[out_offset + 32 + l] as f32;
+            }
+
+            ql_offset += 32;
+            u1 <<= 2;
+            u2 <<= 2;
         }
 
         sum

@@ -53,7 +53,7 @@ pub use aligned_vec::ABox;
 pub use aligned_vec::AVec;
 
 // Re-export GGUF types for convenience
-pub use fusor_gguf::{BlockQ4_0, BlockQ4K, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, GgufBlock};
+pub use fusor_gguf::{BlockQ4_0, BlockQ4K, BlockQ5K, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, GgufBlock};
 
 // Re-export TensorSlice from fusor-types
 pub use fusor_types::TensorSlice;
