@@ -8,7 +8,8 @@ use crate::mir::inputs::{
     KernelInputValue, QBufferInput, QInfoInput, TensorBufferInput, TensorInfoInput,
 };
 use crate::quantized_types_wgsl::{
-    write_q4_0_type, write_q4_k_type, write_q5_0_type, write_q6_k_type, write_q8_0_type,
+    write_q4_0_type, write_q4_k_type, write_q5_0_type, write_q5_k_type, write_q6_k_type,
+    write_q8_0_type,
 };
 use crate::{DataTypeEnum, Device};
 
@@ -569,6 +570,11 @@ impl GenericKernel {
         let q4_k = GgmlType::Q4K;
         if self.quantized_type_definitions.contains(q4_k) {
             write_q4_k_type(f, use_f16)?;
+        }
+
+        let q5_k = GgmlType::Q5K;
+        if self.quantized_type_definitions.contains(q5_k) {
+            write_q5_k_type(f, use_f16)?;
         }
 
         let q6_k = GgmlType::Q6K;

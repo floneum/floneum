@@ -2,12 +2,7 @@ use kalosm::language::*;
 
 #[tokio::main]
 async fn main() {
-    let model = Llama::builder()
-        .with_source(LlamaSource::phi_3_5_mini_4k_instruct())
-        .with_device(Device::Cpu)
-        .build()
-        .await
-        .unwrap();
+    let model = Llama::phi_3().await.unwrap();
     let mut chat = model
         .chat()
         .with_system_prompt("You will act like a pirate");

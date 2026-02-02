@@ -2129,6 +2129,120 @@ mod vec_dot_tests {
             tolerance
         );
     }
+
+    #[test]
+    fn test_q5_k_vec_dot_vs_dequantize() {
+        // Create a Q5_K block with known pattern
+        let block = BlockQ5K {
+            scale: half::f16::from_f32(0.1),
+            min: half::f16::from_f32(0.05),
+            scales: [8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96],
+            qh: std::array::from_fn(|i| ((i * 7) % 256) as u8), // high bits pattern
+            qs: std::array::from_fn(|i| ((i * 3) % 256) as u8), // low 4-bit values
+        };
+
+        // Create Q8_K activation block
+        let act_data: [f32; 256] = std::array::from_fn(|i| ((i as f32) - 128.0) * 0.01);
+        let act_block = BlockQ8K::quantize(&act_data);
+
+        // Compute expected using dequantize
+        let dequant_weights = block.dequantize();
+        let dequant_acts = act_block.dequantize();
+        let expected: f32 = dequant_weights
+            .iter()
+            .zip(&dequant_acts)
+            .map(|(w, a)| w * a)
+            .sum();
+
+        // Compute using vec_dot
+        let actual = block.vec_dot(&act_block);
+
+        // Allow for quantization error (Q5 has similar error to Q4)
+        let tolerance = expected.abs().max(1.0) * 0.10; // 10% tolerance for Q5_K
+        assert!(
+            (actual - expected).abs() < tolerance,
+            "Q5_K vec_dot mismatch: expected {}, got {}, diff {} (tolerance {})",
+            expected,
+            actual,
+            (actual - expected).abs(),
+            tolerance
+        );
+    }
+
+    #[test]
+    fn test_q5_k_dequantize_basic() {
+        // Test that Q5K dequantization produces sensible values
+        let block = BlockQ5K {
+            scale: half::f16::from_f32(1.0),
+            min: half::f16::from_f32(0.0),
+            scales: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], // Unit scales
+            qh: [0; 32],  // No high bits set
+            qs: std::array::from_fn(|i| {
+                // Pack values: low nibble = i%16, high nibble = (i+1)%16
+                let lo = (i % 16) as u8;
+                let hi = ((i + 1) % 16) as u8;
+                lo | (hi << 4)
+            }),
+        };
+
+        let dequant = block.dequantize();
+
+        // Verify first few values make sense
+        // With scale=1, min=0, scales[0]=1, and qh=0:
+        // value[i] = (qs[i] & 0xF) * scale - min = (i % 16) * 1 - 0 = i % 16
+        for i in 0..16 {
+            let expected = (i % 16) as f32;
+            assert!(
+                (dequant[i] - expected).abs() < 0.01,
+                "Q5K dequantize[{}]: expected {}, got {}",
+                i, expected, dequant[i]
+            );
+        }
+    }
+
+    #[test]
+    fn test_q5_k_high_bits() {
+        // Test that the high bits (qh) are properly handled
+        let block = BlockQ5K {
+            scale: half::f16::from_f32(1.0),
+            min: half::f16::from_f32(0.0),
+            scales: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            qh: [0xFF; 32],  // All high bits set (adds 16 to each value)
+            qs: [0; 128],    // All low bits zero
+        };
+
+        let dequant = block.dequantize();
+
+        // With qh bits set, value = (0 + 16) * scale - min = 16
+        for i in 0..32 {
+            assert!(
+                (dequant[i] - 16.0).abs() < 0.01,
+                "Q5K with high bits dequantize[{}]: expected 16, got {}",
+                i, dequant[i]
+            );
+        }
+    }
+
+    #[test]
+    fn test_q5_k_wgsl_bytes_roundtrip() {
+        let original = BlockQ5K {
+            scale: half::f16::from_f32(0.123),
+            min: half::f16::from_f32(0.456),
+            scales: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+            qh: std::array::from_fn(|i| i as u8),
+            qs: std::array::from_fn(|i| (i * 2) as u8),
+        };
+
+        // Round-trip through WGSL bytes
+        let wgsl_bytes = original.into_wgsl_bytes();
+        let reconstructed = BlockQ5K::from_wgsl_bytes(wgsl_bytes);
+
+        assert_eq!(original.scale, reconstructed.scale);
+        assert_eq!(original.min, reconstructed.min);
+        assert_eq!(original.scales, reconstructed.scales);
+        assert_eq!(original.qh, reconstructed.qh);
+        assert_eq!(original.qs, reconstructed.qs);
+    }
 }
 
 #[cfg(test)]
