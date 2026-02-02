@@ -1097,6 +1097,46 @@ where
                 Tensor::Cpu(result)
             }
 
+            // F16 is not quantized, convert to f32 and use regular matmul with transpose
+            (Tensor::Cpu(lhs), QMatrix::CpuF16(t)) => {
+                let shape = t.shape();
+                let n = shape[0]; // out_features
+                let k = shape[1]; // in_features
+
+                // Convert f16 data to f32
+                let f32_data: Vec<f32> = t.data().iter().map(|v| v.to_f32()).collect();
+                let mut data = fusor_cpu::AVec::<f32>::with_capacity(64, f32_data.len());
+                data.extend_from_slice(&f32_data);
+
+                // Create 2D ConcreteTensor from data and shape
+                let rhs_concrete: fusor_cpu::ConcreteTensor<f32, 2> =
+                    fusor_cpu::ConcreteTensor::from_parts(
+                        fusor_cpu::Layout::contiguous(&[n, k]),
+                        data.into_boxed_slice(),
+                    );
+
+                // Transpose weight from [N, K] to [K, N]
+                let rhs_tensor = fusor_cpu::Tensor::new(rhs_concrete);
+                let rhs_transposed = rhs_tensor.transpose(0, 1);
+
+                // Reshape to R dimensions: [1, 1, ..., K, N]
+                let weight_shape: [usize; R] = std::array::from_fn(|i| {
+                    if i < R - 2 {
+                        1 // Broadcast batch dimensions
+                    } else if i == R - 2 {
+                        k // K dimension
+                    } else {
+                        n // N dimension
+                    }
+                });
+                let rhs_broadcast = rhs_transposed.reshape(weight_shape);
+
+                // Do regular matmul
+                let lhs_eval = lhs.to_concrete();
+                let result = lhs_eval.matmul(rhs_broadcast);
+                Tensor::Cpu(result)
+            }
+
             // GPU path
             (Tensor::Gpu(lhs), QMatrix::Gpu(rhs)) => Tensor::Gpu(lhs.q_mat_mul(rhs)),
 

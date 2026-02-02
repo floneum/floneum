@@ -97,23 +97,13 @@ impl<'a> VarBuilder<'a> {
 
         // Calculate size and read bytes
         let ggml_type = tensor_info.ty;
-        // Handle 1D, 2D, or 3D tensors by flattening to 2D
-        let shape: [usize; 2] = if tensor_info.shape.len() == 1 {
-            [tensor_info.shape[0] as usize, 1]
-        } else if tensor_info.shape.len() == 2 {
-            [tensor_info.shape[0] as usize, tensor_info.shape[1] as usize]
-        } else if tensor_info.shape.len() == 3 {
-            // Flatten last two dimensions: [a, b, c] -> [a, b*c]
-            let a = tensor_info.shape[0] as usize;
-            let b = tensor_info.shape[1] as usize;
-            let c = tensor_info.shape[2] as usize;
-            [a, b * c]
-        } else {
-            return Err(crate::Error::VarBuilder(format!(
-                "Expected 1D, 2D, or 3D tensor, got {}D",
-                tensor_info.shape.len()
-            )));
-        };
+        // Preserve the original shape
+        let shape: Box<[usize]> = tensor_info
+            .shape
+            .iter()
+            .map(|&d| d as usize)
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
 
         let num_elements: usize = shape.iter().product();
         let byte_size = tensor_byte_size(ggml_type, num_elements);
@@ -202,23 +192,13 @@ impl<R: std::io::Read + std::io::Seek> ShardedVarBuilder<R> {
 
                 // Calculate size and read bytes
                 let ggml_type = tensor_info.ty;
-                // Handle 1D, 2D, or 3D tensors by flattening to 2D
-                let shape: [usize; 2] = if tensor_info.shape.len() == 1 {
-                    [tensor_info.shape[0] as usize, 1]
-                } else if tensor_info.shape.len() == 2 {
-                    [tensor_info.shape[0] as usize, tensor_info.shape[1] as usize]
-                } else if tensor_info.shape.len() == 3 {
-                    // Flatten last two dimensions: [a, b, c] -> [a, b*c]
-                    let a = tensor_info.shape[0] as usize;
-                    let b = tensor_info.shape[1] as usize;
-                    let c = tensor_info.shape[2] as usize;
-                    [a, b * c]
-                } else {
-                    return Err(crate::Error::VarBuilder(format!(
-                        "Expected 1D, 2D, or 3D tensor, got {}D",
-                        tensor_info.shape.len()
-                    )));
-                };
+                // Preserve the original shape
+                let shape: Box<[usize]> = tensor_info
+                    .shape
+                    .iter()
+                    .map(|&d| d as usize)
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice();
 
                 let num_elements: usize = shape.iter().product();
                 let byte_size = tensor_byte_size(ggml_type, num_elements);

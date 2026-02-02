@@ -148,25 +148,29 @@ where
         let sin = freqs.sin().to_concrete();
 
         // Resolve dimension for cat
-        let last_dim = cos.shape().len() - 1;
+        // cos/sin are 4D: [3, batch, seq, head_dim]
+        // After i(m, (i % 3, .., .., ..)), result is 3D: [batch, seq, split_size]
+        // So we cat on dimension 2 (the last dimension of the 3D result)
+        let last_dim_4d = cos.shape().len() - 1; // dimension 3 for splitting the 4D tensor
+        let last_dim_3d = last_dim_4d - 1; // dimension 2 for concatenating the 3D results
 
         let cos = Tensor::cat(
-            split(&cos, last_dim, &self.mrope_sections)
+            split(&cos, last_dim_4d, &self.mrope_sections)
                 .iter()
                 .enumerate()
                 .map(|(i, m)| Tensor::<4, f32>::i(m, (i % 3, .., .., ..)).to_concrete())
                 .collect::<Vec<_>>(),
-            last_dim,
+            last_dim_3d,
         )
         .squeeze(0)
         .to_concrete();
         let sin = Tensor::cat(
-            split(&sin, last_dim, &self.mrope_sections)
+            split(&sin, last_dim_4d, &self.mrope_sections)
                 .iter()
                 .enumerate()
                 .map(|(i, m)| Tensor::<4, f32>::i(m, (i % 3, .., .., ..)).to_concrete())
                 .collect::<Vec<_>>(),
-            last_dim,
+            last_dim_3d,
         )
         .squeeze(0)
         .to_concrete();

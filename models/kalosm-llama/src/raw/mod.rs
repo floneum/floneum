@@ -135,11 +135,20 @@ where
         F: CastTensor<f32> + CastTo<f32>,
     {
         // Helper to dequantize a QMatrix to 1D tensor
-        // VarBuilder normalizes all tensors to 2D, so a 1D weight [N] becomes [N, 1]
-        // We need to dequantize as 2D and then reshape to 1D
+        // VarBuilder preserves original shapes, so 1D tensors stay 1D
         let dequantize_1d = |qmatrix: QMatrix| -> Tensor<1, F> {
-            let w2d: Tensor<2, f32> = qmatrix.dequantize();
-            w2d.reshape([w2d.shape()[0]]).to_concrete().cast()
+            let shape = qmatrix.shape();
+            if shape.len() == 1 {
+                // Already 1D, dequantize directly
+                let w1d: Tensor<1, f32> = qmatrix.dequantize();
+                w1d.cast()
+            } else if shape.len() == 2 {
+                // 2D tensor, reshape to 1D (for backwards compatibility)
+                let w2d: Tensor<2, f32> = qmatrix.dequantize();
+                w2d.reshape([w2d.shape()[0] * w2d.shape()[1]]).to_concrete().cast()
+            } else {
+                panic!("Expected 1D or 2D tensor for dequantize_1d, got {}D", shape.len())
+            }
         };
 
         let decode_norm = |qmatrix: QMatrix, eps: f64| -> Result<RmsNorm<1, F>> {
