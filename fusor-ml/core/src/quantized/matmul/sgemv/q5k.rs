@@ -278,10 +278,11 @@ pub(crate) fn q5k_sgemv(
 
                     // Keep values in their bit positions and shift qh UP to match, then normalize with shift_right_16
                     // Bit positions: 0x000F0000 (16), 0x0F000000 (24), 0x00F00000 (20), 0xF0000000 (28)
+                    // NOTE: For the << 28 shift, we compute in f32 to avoid u32 overflow (16 << 28 = 2^32 overflows)
                     let shift_right_16 = shift_right_scale(16);
                     writeln!(
                         kernel,
-                        "{sum} += vec4<f32>(first_four_values_{values}_{j}.z * f32((value_u32_{values}_{j} & 0x000F0000) + (qh_unpacked_lo_{values}_{j}.z << 16)), first_four_values_{values}_{j}.w * f32((value_u32_{values}_{j} & 0x0F000000) + (qh_unpacked_lo_{values}_{j}.w << 24)), second_four_values_{values}_{j}.z * f32((value_u32_{values}_{j} & 0x00F00000) + (qh_unpacked_hi_{values}_{j}.z << 20)), second_four_values_{values}_{j}.w * f32((value_u32_{values}_{j} & 0xF0000000) + (qh_unpacked_hi_{values}_{j}.w << 28))) * f32({shift_right_16});"
+                        "{sum} += vec4<f32>(first_four_values_{values}_{j}.z * f32((value_u32_{values}_{j} & 0x000F0000) + (qh_unpacked_lo_{values}_{j}.z << 16)), first_four_values_{values}_{j}.w * f32((value_u32_{values}_{j} & 0x0F000000) + (qh_unpacked_lo_{values}_{j}.w << 24)), second_four_values_{values}_{j}.z * f32((value_u32_{values}_{j} & 0x00F00000) + (qh_unpacked_hi_{values}_{j}.z << 20)), second_four_values_{values}_{j}.w * (f32(value_u32_{values}_{j} & 0xF0000000) + f32(qh_unpacked_hi_{values}_{j}.w) * 268435456.0)) * f32({shift_right_16});"
                     )
                     .unwrap();
                 }
@@ -363,10 +364,11 @@ pub(crate) fn q5k_sgemv(
                 "let shift_4 = vec4<f32>(1.0, {shift_right_4}, 1.0, {shift_right_4});"
             )
             .unwrap();
+            // Add the final weighted sum (same structure as Q4K - without the Q5K -16 offset for now)
             writeln!(
                 kernel,
                 r#"{indexed_sum} += block_scale * dot((small_shift_sums + f32({shift_right_8}) * large_shift_sums) * odd_scales_unpacked, shift_4) -
-                                                            block_min * dot(vector_sum, even_scales_unpacked);"#
+                                   block_min * dot(vector_sum, even_scales_unpacked);"#
             )
             .unwrap();
             // Move forward the block offset by one row
