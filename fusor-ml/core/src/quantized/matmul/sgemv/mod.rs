@@ -13,7 +13,7 @@ use crate::{
         QMatMulOperation,
         sgemv::{
             general::general_sgemv, q_8_0::q_8_0_sgemv, q_n::q_n_sgemv, q4k::q4k_sgemv,
-            q6k::q6k_sgemv,
+            q5k::q5k_sgemv, q6k::q6k_sgemv,
         },
     },
 };
@@ -21,13 +21,14 @@ use crate::{
     QMatrix,
     quantized::matmul::sgemv::{
         q_8_0::Q_8_0_SGEMV_CHUNK_SIZE, q_n::Q_N_SGEMV_CHUNK_SIZE, q4k::Q4K_SGEMV_CHUNK_SIZE,
-        q6k::Q6K_SGEMV_CHUNK_SIZE,
+        q5k::Q5K_SGEMV_CHUNK_SIZE, q6k::Q6K_SGEMV_CHUNK_SIZE,
     },
     visit_tiled::distribute_workgroups,
 };
 
 mod general;
 pub mod q4k;
+pub mod q5k;
 pub mod q6k;
 pub mod q_8_0;
 pub mod q_n;
@@ -115,6 +116,20 @@ pub(crate) fn sgemv(
             _m_size,
             k_size,
         ),
+        // Q5K specialized kernel has a bug with scale application for multi-chunk processing
+        // Using general path for now which works correctly
+        // TODO: Fix the specialized Q5K kernel to apply correct scales for each chunk
+        // GgmlType::Q5K if use_specialized => q5k_sgemv(
+        //     op,
+        //     generic_kernel,
+        //     workgroup_size,
+        //     input_a,
+        //     input_b,
+        //     output,
+        //     _n_size,
+        //     _m_size,
+        //     k_size,
+        // ),
         GgmlType::Q4_0 | GgmlType::Q5_0 if use_specialized => q_n_sgemv(
             op,
             generic_kernel,
@@ -160,6 +175,9 @@ pub(crate) fn n_workgroups(matrix: &QMatrix, n: u32) -> u32 {
             n.div_ceil(Q6K_SGEMV_CHUNK_SIZE * 2)
         } else if matrix.datatype == GgmlType::Q4K {
             n.div_ceil(Q4K_SGEMV_CHUNK_SIZE * 2)
+        // Temporarily use general path for Q5K
+        // } else if matrix.datatype == GgmlType::Q5K {
+        //     n.div_ceil(Q5K_SGEMV_CHUNK_SIZE * 2)
         } else if matches!(matrix.datatype, GgmlType::Q4_0 | GgmlType::Q5_0) {
             n.div_ceil(Q_N_SGEMV_CHUNK_SIZE * 2)
         } else if matches!(matrix.datatype, GgmlType::Q8_0) {
