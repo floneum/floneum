@@ -25,7 +25,8 @@ where
     }
 }
 
-impl<'a, I, I2, D: DataType + SimdElement + Default + Copy> FromArray<2, D, I, Device> for Tensor<2, D>
+impl<'a, I, I2, D: DataType + SimdElement + Default + Copy> FromArray<2, D, I, Device>
+    for Tensor<2, D>
 where
     I: IntoIterator<Item = I2, IntoIter: ExactSizeIterator>,
     I2: IntoIterator<Item = &'a D, IntoIter: ExactSizeIterator>,
@@ -38,7 +39,8 @@ where
     }
 }
 
-impl<'a, I, I2, I3, D: DataType + SimdElement + Default + Copy> FromArray<3, D, I, Device> for Tensor<3, D>
+impl<'a, I, I2, I3, D: DataType + SimdElement + Default + Copy> FromArray<3, D, I, Device>
+    for Tensor<3, D>
 where
     I: IntoIterator<Item = I2, IntoIter: ExactSizeIterator>,
     I2: IntoIterator<Item = I3, IntoIter: ExactSizeIterator>,
@@ -52,7 +54,8 @@ where
     }
 }
 
-impl<'a, I, I2, I3, I4, D: DataType + SimdElement + Default + Copy> FromArray<4, D, I, Device> for Tensor<4, D>
+impl<'a, I, I2, I3, I4, D: DataType + SimdElement + Default + Copy> FromArray<4, D, I, Device>
+    for Tensor<4, D>
 where
     I: IntoIterator<Item = I2, IntoIter: ExactSizeIterator>,
     I2: IntoIterator<Item = I3, IntoIter: ExactSizeIterator>,
@@ -67,7 +70,8 @@ where
     }
 }
 
-impl<'a, I, I2, I3, I4, I5, D: DataType + SimdElement + Default + Copy> FromArray<5, D, I, Device> for Tensor<5, D>
+impl<'a, I, I2, I3, I4, I5, D: DataType + SimdElement + Default + Copy> FromArray<5, D, I, Device>
+    for Tensor<5, D>
 where
     I: IntoIterator<Item = I2, IntoIter: ExactSizeIterator>,
     I2: IntoIterator<Item = I3, IntoIter: ExactSizeIterator>,

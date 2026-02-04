@@ -23,9 +23,9 @@ pub use quantized::{CpuF32Tensor, QMatrix};
 use std::ops::{Deref, Range};
 
 pub use composite::{ToVec1, ToVec2, ToVec3, arange, arange_step, cat, stack};
-pub use fusor_types::FromArray;
 pub use device::Device;
 pub use error::Error;
+pub use fusor_types::FromArray;
 
 /// Result type for fusor operations.
 pub type Result<T, E = Error> = std::result::Result<T, E>;

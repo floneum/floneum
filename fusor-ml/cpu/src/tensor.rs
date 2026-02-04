@@ -1676,13 +1676,16 @@ impl<E: SimdElement> Tensor<1, ConcreteTensor<E, 1>> {
 }
 
 // FromArray implementations for CPU tensors (using () as device type since CPU has no device)
-impl<E: SimdElement + Default> fusor_types::FromArray<0, E, (), ()> for Tensor<0, ConcreteTensor<E, 0>> {
+impl<E: SimdElement + Default> fusor_types::FromArray<0, E, (), ()>
+    for Tensor<0, ConcreteTensor<E, 0>>
+{
     fn from_array(_data: (), _device: &()) -> Self {
         Tensor::from_slice([], &[])
     }
 }
 
-impl<'a, I, E: SimdElement + Default + Copy> fusor_types::FromArray<1, E, I, ()> for Tensor<1, ConcreteTensor<E, 1>>
+impl<'a, I, E: SimdElement + Default + Copy> fusor_types::FromArray<1, E, I, ()>
+    for Tensor<1, ConcreteTensor<E, 1>>
 where
     I: IntoIterator<Item = &'a E, IntoIter: ExactSizeIterator>,
 {
@@ -1693,7 +1696,8 @@ where
     }
 }
 
-impl<'a, I, I2, E: SimdElement + Default + Copy> fusor_types::FromArray<2, E, I, ()> for Tensor<2, ConcreteTensor<E, 2>>
+impl<'a, I, I2, E: SimdElement + Default + Copy> fusor_types::FromArray<2, E, I, ()>
+    for Tensor<2, ConcreteTensor<E, 2>>
 where
     I: IntoIterator<Item = I2, IntoIter: ExactSizeIterator>,
     I2: IntoIterator<Item = &'a E, IntoIter: ExactSizeIterator>,
@@ -1715,7 +1719,8 @@ where
     }
 }
 
-impl<'a, I, I2, I3, E: SimdElement + Default + Copy> fusor_types::FromArray<3, E, I, ()> for Tensor<3, ConcreteTensor<E, 3>>
+impl<'a, I, I2, I3, E: SimdElement + Default + Copy> fusor_types::FromArray<3, E, I, ()>
+    for Tensor<3, ConcreteTensor<E, 3>>
 where
     I: IntoIterator<Item = I2, IntoIter: ExactSizeIterator>,
     I2: IntoIterator<Item = I3, IntoIter: ExactSizeIterator>,
@@ -1758,7 +1763,8 @@ where
     }
 }
 
-impl<'a, I, I2, I3, I4, E: SimdElement + Default + Copy> fusor_types::FromArray<4, E, I, ()> for Tensor<4, ConcreteTensor<E, 4>>
+impl<'a, I, I2, I3, I4, E: SimdElement + Default + Copy> fusor_types::FromArray<4, E, I, ()>
+    for Tensor<4, ConcreteTensor<E, 4>>
 where
     I: IntoIterator<Item = I2, IntoIter: ExactSizeIterator>,
     I2: IntoIterator<Item = I3, IntoIter: ExactSizeIterator>,
@@ -1817,7 +1823,8 @@ where
     }
 }
 
-impl<'a, I, I2, I3, I4, I5, E: SimdElement + Default + Copy> fusor_types::FromArray<5, E, I, ()> for Tensor<5, ConcreteTensor<E, 5>>
+impl<'a, I, I2, I3, I4, I5, E: SimdElement + Default + Copy> fusor_types::FromArray<5, E, I, ()>
+    for Tensor<5, ConcreteTensor<E, 5>>
 where
     I: IntoIterator<Item = I2, IntoIter: ExactSizeIterator>,
     I2: IntoIterator<Item = I3, IntoIter: ExactSizeIterator>,
