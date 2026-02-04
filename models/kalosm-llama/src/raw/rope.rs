@@ -2,7 +2,7 @@ use super::{LlamaConfig, RopeScalingConfig};
 use fusor::{arange, CastTensor, CastTo, DataType, Device, FloatDataType, SimdElement, Tensor};
 use std::f32::consts::PI;
 
-pub(crate) fn create_inverse_frequency<F: FloatDataType + SimdElement>(
+pub(crate) fn create_inverse_frequency<F>(
     rope_scaling: Option<&RopeScalingConfig>,
     rope_freq_weight: Option<&Tensor<1, F>>,
     dim: usize,
@@ -10,7 +10,7 @@ pub(crate) fn create_inverse_frequency<F: FloatDataType + SimdElement>(
     device: &Device,
 ) -> Tensor<2, F>
 where
-    F: CastTo<f32> + CastTensor<f32>,
+    F: FloatDataType + SimdElement + CastTo<f32> + CastTensor<f32>,
     f32: CastTo<F> + CastTensor<F>,
 {
     let mut inverse_frequency = (0..dim)

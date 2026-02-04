@@ -83,10 +83,10 @@ impl<T: LazyBacking, const R: usize> LazyBacking for MapLayout<T, R> {
             let shape: &[usize; R] = unsafe { self.layout.shape().try_into().unwrap_unchecked() };
 
             let mut temp = [Self::Elem::default(); MAX_SIMD_LANES];
-            for i in 0..lane_count {
+            for (i, temp_elem) in temp.iter_mut().enumerate().take(lane_count) {
                 let logical_indices = linear_to_indices::<R>(base_idx + i, shape);
                 let physical_idx = unsafe { self.layout.linear_index_unchecked(&logical_indices) };
-                temp[i] = self.backing.eval_scalar(physical_idx);
+                *temp_elem = self.backing.eval_scalar(physical_idx);
             }
 
             let (simd_slice, _) = Self::Elem::as_simd::<S>(&temp[..lane_count]);

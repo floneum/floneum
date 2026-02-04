@@ -193,8 +193,8 @@ where
         let lane_count =
             std::mem::size_of::<<f32 as SimdElement>::Simd<S>>() / std::mem::size_of::<f32>();
         let mut temp = [0.0f32; MAX_SIMD_LANES];
-        for i in 0..lane_count {
-            temp[i] = self.eval_scalar(base_idx + i);
+        for (i, temp_elem) in temp.iter_mut().enumerate().take(lane_count) {
+            *temp_elem = self.eval_scalar(base_idx + i);
         }
         let (simd_vec, _) = f32::as_simd::<S>(&temp[..lane_count]);
         simd_vec[0]
@@ -414,8 +414,8 @@ where
             } else {
                 // Parallelize over output column chunks using scoped threads
                 const CHUNK_SIZE: usize = 32;
-                let total_chunks = (n + CHUNK_SIZE - 1) / CHUNK_SIZE;
-                let chunks_per_thread = (total_chunks + n_threads - 1) / n_threads;
+                let total_chunks = n.div_ceil(CHUNK_SIZE);
+                let chunks_per_thread = total_chunks.div_ceil(n_threads);
                 let elements_per_thread = chunks_per_thread * CHUNK_SIZE;
 
                 std::thread::scope(|scope| {
@@ -473,7 +473,7 @@ where
                 }
             } else {
                 // Process rows in parallel using scoped threads
-                let rows_per_thread = (m + n_threads - 1) / n_threads;
+                let rows_per_thread = m.div_ceil(n_threads);
 
                 std::thread::scope(|scope| {
                     let mut remaining_out = out_data;
@@ -544,21 +544,22 @@ fn process_row_integer_range<B: GgufBlock>(
     B::ActivationBlock: Pod,
 {
     // Quantize activations once for all output columns
-    let mut act_blocks: Vec<B::ActivationBlock> = Vec::with_capacity(blocks_per_weight_row);
-    for block_idx in 0..blocks_per_weight_row {
-        let start = block_idx * B::BLOCK_SIZE;
-        let chunk = &lhs_row[start..start + B::BLOCK_SIZE];
-        act_blocks.push(B::quantize_activation(chunk));
-    }
+    let act_blocks: Vec<B::ActivationBlock> = (0..blocks_per_weight_row)
+        .map(|block_idx| {
+            let start = block_idx * B::BLOCK_SIZE;
+            let chunk = &lhs_row[start..start + B::BLOCK_SIZE];
+            B::quantize_activation(chunk)
+        })
+        .collect();
 
-    for i in 0..chunk_n {
+    for (i, out_elem) in out_chunk.iter_mut().enumerate().take(chunk_n) {
         let n_out = start_n + i;
         let mut sum = 0.0f32;
-        for block_idx in 0..blocks_per_weight_row {
+        for (block_idx, act_block) in act_blocks.iter().enumerate() {
             let weight_block_idx = n_out * blocks_per_weight_row + block_idx;
-            sum += rhs_blocks[weight_block_idx].vec_dot(&act_blocks[block_idx]);
+            sum += rhs_blocks[weight_block_idx].vec_dot(act_block);
         }
-        out_chunk[i] = sum;
+        *out_elem = sum;
     }
 }
 
@@ -576,9 +577,9 @@ fn process_row_simd_range<B: GgufBlock, S: Simd>(
 ) where
     B::Dequantized: AsRef<[f32]>,
 {
-    for i in 0..chunk_n {
+    for (i, out_elem) in out_chunk.iter_mut().enumerate().take(chunk_n) {
         let n_out = start_n + i;
-        out_chunk[i] =
+        *out_elem =
             compute_dot_product::<B, S>(simd, lhs_row, rhs_blocks, n_out, blocks_per_weight_row);
     }
 }
@@ -615,7 +616,7 @@ fn process_row_integer_tiled<B: GgufBlock>(
             let act = &act_blocks[block_idx];
 
             // Compute 4 dot products
-            acc[0] += rhs_blocks[(base + 0) * blocks_per_weight_row + block_idx].vec_dot(act);
+            acc[0] += rhs_blocks[base * blocks_per_weight_row + block_idx].vec_dot(act);
             acc[1] += rhs_blocks[(base + 1) * blocks_per_weight_row + block_idx].vec_dot(act);
             acc[2] += rhs_blocks[(base + 2) * blocks_per_weight_row + block_idx].vec_dot(act);
             acc[3] += rhs_blocks[(base + 3) * blocks_per_weight_row + block_idx].vec_dot(act);
@@ -670,7 +671,7 @@ fn process_row_simd_tiled<B: GgufBlock, S: Simd>(
             let (inp_simd, inp_tail) = S::as_simd_f32s(input_block);
 
             // Dequantize and accumulate for each of the 4 output columns
-            let deq0 = rhs_blocks[(base + 0) * blocks_per_weight_row + block_idx].dequantize();
+            let deq0 = rhs_blocks[base * blocks_per_weight_row + block_idx].dequantize();
             let deq1 = rhs_blocks[(base + 1) * blocks_per_weight_row + block_idx].dequantize();
             let deq2 = rhs_blocks[(base + 2) * blocks_per_weight_row + block_idx].dequantize();
             let deq3 = rhs_blocks[(base + 3) * blocks_per_weight_row + block_idx].dequantize();
@@ -698,7 +699,7 @@ fn process_row_simd_tiled<B: GgufBlock, S: Simd>(
         }
 
         // Reduce and store results
-        out_row[base + 0] =
+        out_row[base] =
             <SumOp as SimdReduceOp<f32>>::reduce_simd_vec(simd, acc0) + scalar_acc[0];
         out_row[base + 1] =
             <SumOp as SimdReduceOp<f32>>::reduce_simd_vec(simd, acc1) + scalar_acc[1];

@@ -18,18 +18,31 @@ pub trait MatmulImpl:
     );
 }
 
-/// Optimized matmul for contiguous tensors using gemm crate
-#[inline(always)]
-fn matmul_contiguous_gemm<T: 'static>(
-    lhs: &[T],
-    rhs: &[T],
-    out: &mut [T],
+/// Parameters for matrix multiplication
+struct MatmulParams<'a, T> {
+    lhs: &'a [T],
+    rhs: &'a [T],
+    out: &'a mut [T],
     m: usize,
     k: usize,
     n: usize,
     zero: T,
     one: T,
-) {
+}
+
+/// Optimized matmul for contiguous tensors using gemm crate
+#[inline(always)]
+fn matmul_contiguous_gemm<T: 'static>(params: MatmulParams<'_, T>) {
+    let MatmulParams {
+        lhs,
+        rhs,
+        out,
+        m,
+        k,
+        n,
+        zero,
+        one,
+    } = params;
     // gemm computes: dst := alpha×dst + beta×lhs×rhs
     // We want: out = lhs × rhs
     // So: read_dst = false (ignore existing dst), beta = 1.0
@@ -87,7 +100,16 @@ impl MatmulImpl for f32 {
         k: usize,
         n: usize,
     ) {
-        matmul_contiguous_gemm(lhs, rhs, out, m, k, n, 0.0, 1.0);
+        matmul_contiguous_gemm(MatmulParams {
+            lhs,
+            rhs,
+            out,
+            m,
+            k,
+            n,
+            zero: 0.0,
+            one: 1.0,
+        });
     }
 }
 
@@ -101,7 +123,16 @@ impl MatmulImpl for f64 {
         k: usize,
         n: usize,
     ) {
-        matmul_contiguous_gemm(lhs, rhs, out, m, k, n, 0.0, 1.0);
+        matmul_contiguous_gemm(MatmulParams {
+            lhs,
+            rhs,
+            out,
+            m,
+            k,
+            n,
+            zero: 0.0,
+            one: 1.0,
+        });
     }
 }
 

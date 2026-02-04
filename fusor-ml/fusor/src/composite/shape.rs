@@ -121,7 +121,7 @@ where
         let dim = dim.resolve();
         let shape = self.shape();
         let dim_size = shape[dim];
-        let chunk_size = (dim_size + chunks - 1) / chunks;
+        let chunk_size = dim_size.div_ceil(chunks);
 
         let mut result = Vec::with_capacity(chunks);
         let mut start = 0;

@@ -56,28 +56,29 @@ where
                     std::array::from_fn(|i| old_shape[i].min(new_shape[i]));
 
                 // Copy elements using nested iteration
+                struct CopyContext<'a, D, const R: usize> {
+                    src: &'a [D],
+                    old_shape: &'a [usize; R],
+                    new_shape: &'a [usize; R],
+                    copy_shape: &'a [usize; R],
+                }
+
                 fn copy_recursive<D: Copy, const R: usize>(
-                    src: &[D],
+                    ctx: &CopyContext<'_, D, R>,
                     dst: &mut [D],
-                    old_shape: &[usize; R],
-                    new_shape: &[usize; R],
-                    copy_shape: &[usize; R],
                     dim: usize,
                     src_offset: usize,
                     dst_offset: usize,
                 ) {
                     if dim == R {
-                        dst[dst_offset] = src[src_offset];
+                        dst[dst_offset] = ctx.src[src_offset];
                     } else {
-                        let old_stride: usize = old_shape[dim + 1..].iter().product();
-                        let new_stride: usize = new_shape[dim + 1..].iter().product();
-                        for i in 0..copy_shape[dim] {
+                        let old_stride: usize = ctx.old_shape[dim + 1..].iter().product();
+                        let new_stride: usize = ctx.new_shape[dim + 1..].iter().product();
+                        for i in 0..ctx.copy_shape[dim] {
                             copy_recursive(
-                                src,
+                                ctx,
                                 dst,
-                                old_shape,
-                                new_shape,
-                                copy_shape,
                                 dim + 1,
                                 src_offset + i * old_stride,
                                 dst_offset + i * new_stride,
@@ -86,16 +87,13 @@ where
                     }
                 }
 
-                copy_recursive(
-                    src_data.as_ref(),
-                    &mut result,
-                    &old_shape,
-                    &new_shape,
-                    &copy_shape,
-                    0,
-                    0,
-                    0,
-                );
+                let ctx = CopyContext {
+                    src: src_data.as_ref(),
+                    old_shape: &old_shape,
+                    new_shape: &new_shape,
+                    copy_shape: &copy_shape,
+                };
+                copy_recursive(&ctx, &mut result, 0, 0, 0);
 
                 Tensor::Cpu(fusor_cpu::Tensor::new(
                     fusor_cpu::ConcreteTensor::from_slice(new_shape, &result),

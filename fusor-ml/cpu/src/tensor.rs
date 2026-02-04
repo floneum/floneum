@@ -130,6 +130,7 @@ where
     ///
     /// # Arguments
     /// * `axes` - A permutation of [0, 1, ..., R-1] specifying the new order
+    ///
     /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn permute(self, axes: [usize; R]) -> Tensor<R, MapLayout<T, R>> {
         let current_layout = self.inner.layout();
@@ -142,6 +143,7 @@ where
     /// # Arguments
     /// * `dim0` - First dimension to swap
     /// * `dim1` - Second dimension to swap
+    ///
     /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn transpose(self, dim0: usize, dim1: usize) -> Tensor<R, MapLayout<T, R>> {
         let current_layout = self.inner.layout();
@@ -212,6 +214,7 @@ where
     /// * `dim` - The dimension to narrow
     /// * `start` - The starting index
     /// * `length` - The length of the slice
+    ///
     /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn narrow(self, dim: usize, start: usize, length: usize) -> Tensor<R, MapLayout<T, R>> {
         let current_layout = self.inner.layout();
@@ -224,6 +227,7 @@ where
     /// # Arguments
     /// * `chunks` - Number of chunks to split into
     /// * `dim` - The dimension to split along
+    ///
     /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn chunk(self, chunks: usize, dim: usize) -> Vec<Tensor<R, MapLayout<T, R>>>
     where
@@ -233,7 +237,7 @@ where
         assert!(chunks > 0, "Number of chunks must be positive");
 
         let dim_size = self.inner.layout().shape()[dim];
-        let chunk_size = (dim_size + chunks - 1) / chunks;
+        let chunk_size = dim_size.div_ceil(chunks);
 
         let mut result = Vec::with_capacity(chunks);
         let mut start = 0;
@@ -281,6 +285,7 @@ where
     ///
     /// # Arguments
     /// * `dim` - The dimension to squeeze (must have size 1)
+    ///
     /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn squeeze<const R2: usize>(self, dim: usize) -> Tensor<R2, MapLayout<T, R2>> {
         assert!(R2 == R - 1, "Output rank must be R - 1");
@@ -293,6 +298,7 @@ where
     ///
     /// # Arguments
     /// * `dim` - Where to insert the new dimension
+    ///
     /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn unsqueeze<const R2: usize>(self, dim: usize) -> Tensor<R2, MapLayout<T, R2>> {
         assert!(R2 == R + 1, "Output rank must be R + 1");
@@ -349,6 +355,7 @@ where
     ///
     /// # Arguments
     /// * `axes` - The dimensions to squeeze (must all have size 1)
+    ///
     /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn squeeze_dims<const DIFF: usize, const R2: usize>(
         self,
@@ -368,6 +375,7 @@ where
     ///
     /// # Arguments
     /// * `axes` - Where to insert the new dimensions (positions in the output tensor)
+    ///
     /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn unsqueeze_dims<const DIFF: usize, const R2: usize>(
         self,
@@ -1328,9 +1336,9 @@ fn broadcast_shapes<const R1: usize, const R2: usize, const R3: usize>(
     let mut result = [1usize; R3];
 
     // Align shapes from the right
-    for i in 0..R1 {
+    for (i, &dim) in shape1.iter().enumerate().take(R1) {
         let idx = R3 - R1 + i;
-        result[idx] = shape1[i];
+        result[idx] = dim;
     }
 
     for i in 0..R2 {

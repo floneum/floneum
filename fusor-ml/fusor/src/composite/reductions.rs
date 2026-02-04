@@ -288,9 +288,9 @@ where
             // Map to reduced tensor indices (skip axis dimension)
             let mut reduced_idx = [0usize; OUT_RANK];
             let mut j = 0;
-            for dim in 0..R {
+            for (dim, &idx) in indices.iter().enumerate().take(R) {
                 if dim != axis {
-                    reduced_idx[j] = indices[dim];
+                    reduced_idx[j] = idx;
                     j += 1;
                 }
             }

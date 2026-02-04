@@ -388,10 +388,10 @@ pub fn softmax_last_dim_fused<const R: usize>(
                     remaining /= dim_size;
                 }
 
-                for i in 0..last_dim {
+                for (i, row_elem) in row_buffer.iter_mut().enumerate().take(last_dim) {
                     base_indices[R - 1] = i;
                     let idx = tensor.layout().linear_index(&base_indices);
-                    row_buffer[i] = in_data[idx];
+                    *row_elem = in_data[idx];
                 }
 
                 let out_row = &mut out_data[row_idx * last_dim..(row_idx + 1) * last_dim];
@@ -546,7 +546,7 @@ pub fn layer_norm_last_dim_fused<const R: usize>(
         let mut row_buffer = vec![0.0f32; last_dim];
         for row_idx in 0..num_rows {
             // Extract row
-            for i in 0..last_dim {
+            for (i, row_elem) in row_buffer.iter_mut().enumerate().take(last_dim) {
                 let mut indices = [0usize; R];
                 let mut remaining = row_idx;
                 for dim in (0..R - 1).rev() {
@@ -556,7 +556,7 @@ pub fn layer_norm_last_dim_fused<const R: usize>(
                 }
                 indices[R - 1] = i;
                 let idx = tensor.layout().linear_index(&indices);
-                row_buffer[i] = in_data[idx];
+                *row_elem = in_data[idx];
             }
 
             let out_row = &mut out_data[row_idx * last_dim..(row_idx + 1) * last_dim];
@@ -719,9 +719,9 @@ where
     let in_shape = tensor.layout().shape();
     let mut out_shape = [0usize; OUT_RANK];
     let mut j = 0;
-    for i in 0..R {
+    for (i, &in_dim) in in_shape.iter().enumerate().take(R) {
         if i != axis {
-            out_shape[j] = in_shape[i];
+            out_shape[j] = in_dim;
             j += 1;
         }
     }
@@ -738,11 +738,11 @@ where
     for out_indices in IndexIterator::new(&out_shape) {
         // Build base input indices (with axis = 0)
         let mut j = 0;
-        for i in 0..R {
+        for (i, in_idx) in in_indices.iter_mut().enumerate().take(R) {
             if i == axis {
-                in_indices[i] = 0;
+                *in_idx = 0;
             } else {
-                in_indices[i] = out_indices[j];
+                *in_idx = out_indices[j];
                 j += 1;
             }
         }

@@ -3,9 +3,10 @@
 use crate::Error;
 
 /// Represents a compute device (CPU or GPU).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum Device {
     /// CPU device - uses fusor-cpu for SIMD-accelerated operations.
+    #[default]
     Cpu,
     /// GPU device - uses fusor-core (wgpu) for GPU-accelerated operations.
     Gpu(fusor_core::Device),
@@ -62,12 +63,6 @@ impl Device {
             Device::Gpu(d) => Some(d),
             _ => None,
         }
-    }
-}
-
-impl Default for Device {
-    fn default() -> Self {
-        Device::Cpu
     }
 }
 

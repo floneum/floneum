@@ -390,7 +390,7 @@ impl Decoder {
                 no_speech_prob = token_prob
                     .to_scalar()
                     .await
-                    .map_err(|e: fusor::Error| WhisperError::Fusor(e.into()))?
+                    .map_err(|e: fusor::Error| WhisperError::Fusor(e))?
                     .into();
             }
 
@@ -447,7 +447,7 @@ impl Decoder {
                 let mut indexed: Vec<(usize, f32)> = logits_data
                     .iter()
                     .enumerate()
-                    .map(|(i, v)| (i, (*v).into()))
+                    .map(|(i, v)| (i, *v))
                     .collect();
                 indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
             }
@@ -463,7 +463,7 @@ impl Decoder {
             let prob: f64 = prob_tensor
                 .to_scalar()
                 .await
-                .map_err(|e| WhisperError::Fusor(e.into()))?
+                .map_err(WhisperError::Fusor)?
                 .into();
             // If we have read the maximum number of tokens, stop regardless of the eot token
             // Or if word level timestamps are disabled, stop as soon was we reach the eot token

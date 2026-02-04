@@ -75,7 +75,7 @@ pub fn materialize_expr<T: TensorBacking<R> + Sync, const R: usize>(
 
     // Use parallel execution for large tensors
     if total_elements >= PARALLEL_THRESHOLD && n_threads > 1 {
-        let chunk_size = (total_elements + n_threads - 1) / n_threads;
+        let chunk_size = total_elements.div_ceil(n_threads);
 
         std::thread::scope(|scope| {
             let mut remaining = output.data_mut() as &mut [T::Elem];

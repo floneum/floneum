@@ -373,11 +373,11 @@ where
                 let feed_forward_w2 =
                     source.tensor(&format!("{prefix}.ffn_down.weight"), device)?;
                 let feed_forward_w3 = source.tensor(&format!("{prefix}.ffn_up.weight"), device)?;
-                FeedForwardVariant::Llama(LlamaFeedForward::new(
+                FeedForwardVariant::Llama(Box::new(LlamaFeedForward::new(
                     feed_forward_w1,
                     feed_forward_w2,
                     feed_forward_w3,
-                ))
+                )))
             } else {
                 // Otherwise, try to read from the up, and down weights
                 let up = source.tensor(&format!("{prefix}.ffn_up.weight"), device)?;

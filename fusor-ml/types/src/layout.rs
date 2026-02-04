@@ -545,7 +545,7 @@ impl Layout {
     pub fn flatten_first_n(&self, n: usize) -> Self {
         let rank = self.shape.len();
         assert!(
-            n + 1 <= rank,
+            n < rank,
             "Cannot flatten first {} dimensions from rank {}",
             n + 1,
             rank

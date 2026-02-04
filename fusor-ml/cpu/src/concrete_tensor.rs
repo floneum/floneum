@@ -18,7 +18,7 @@ pub struct IndexIterator {
 
 impl IndexIterator {
     pub fn new(shape: &[usize]) -> Self {
-        let done = shape.iter().any(|&s| s == 0);
+        let done = shape.contains(&0);
         Self {
             shape: shape.into(),
             indices: vec![0; shape.len()],
@@ -219,6 +219,7 @@ impl<T: SimdElement, const R: usize> ConcreteTensor<T, R> {
     ///
     /// This is used by layout operations to move ownership of the backing data
     /// into a `MapLayout` without cloning.
+    #[allow(dead_code)]
     pub(crate) fn into_backing(self) -> ABox<[T]> {
         self.backing
     }

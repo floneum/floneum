@@ -32,7 +32,7 @@ where
 
 pub enum FeedForwardVariant<F: FloatDataType + SimdElement = f32> {
     // Used by the Llama, Qwen, and Gemma models
-    Llama(LlamaFeedForward<F>),
+    Llama(Box<LlamaFeedForward<F>>),
     // Used by the Phi models
     Phi(PhiFeedForward),
 }
@@ -424,7 +424,7 @@ where
 /// Forward attention QKV computation in f32 for SIMD compatibility.
 /// All intermediate computation happens in f32, with the final result cast back to F.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn forward_attention_qkv_f32<F: FloatDataType + SimdElement + Default>(
+pub(crate) fn forward_attention_qkv_f32<F>(
     query_states: &Tensor<4, f32>,
     key_states: &Tensor<4, f32>,
     value_states: &Tensor<4, f32>,
@@ -436,7 +436,7 @@ pub(crate) fn forward_attention_qkv_f32<F: FloatDataType + SimdElement + Default
     hidden_size: usize,
 ) -> Tensor<3, F>
 where
-    F: CastTo<f32> + CastTensor<f32>,
+    F: FloatDataType + SimdElement + Default + CastTo<f32> + CastTensor<f32>,
     f32: CastTo<F> + CastTensor<F>,
 {
     let scale = 1. / (head_dim as f64).sqrt();

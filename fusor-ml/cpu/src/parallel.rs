@@ -37,6 +37,7 @@ pub fn num_threads() -> usize {
 /// If the data length is not evenly divisible by chunk_size, the last
 /// thread will process the remaining elements.
 #[inline]
+#[allow(dead_code)]
 pub fn parallel_chunks_mut<T, F>(data: &mut [T], chunk_size: usize, f: F)
 where
     T: Send,
@@ -47,7 +48,7 @@ where
     }
 
     let n_threads = num_threads();
-    let total_chunks = (data.len() + chunk_size - 1) / chunk_size;
+    let total_chunks = data.len().div_ceil(chunk_size);
 
     // If single-threaded or very small workload, run sequentially
     if n_threads == 1 || total_chunks <= 1 {
@@ -58,7 +59,7 @@ where
     }
 
     // Distribute chunks evenly among threads
-    let chunks_per_thread = (total_chunks + n_threads - 1) / n_threads;
+    let chunks_per_thread = total_chunks.div_ceil(n_threads);
     let elements_per_thread = chunks_per_thread * chunk_size;
 
     std::thread::scope(|scope| {
@@ -80,7 +81,7 @@ where
             remaining = rest;
 
             let current_chunk_offset = chunk_offset;
-            chunk_offset += (this_size + chunk_size - 1) / chunk_size;
+            chunk_offset += this_size.div_ceil(chunk_size);
 
             let f_ref = &f;
             scope.spawn(move || {
@@ -119,7 +120,7 @@ where
     }
 
     let n_threads = num_threads();
-    let total_chunks = (input.len() + chunk_size - 1) / chunk_size;
+    let total_chunks = input.len().div_ceil(chunk_size);
 
     // If single-threaded or very small workload, run sequentially
     if n_threads == 1 || total_chunks <= 1 {
@@ -134,7 +135,7 @@ where
     }
 
     // Distribute chunks evenly among threads
-    let chunks_per_thread = (total_chunks + n_threads - 1) / n_threads;
+    let chunks_per_thread = total_chunks.div_ceil(n_threads);
     let elements_per_thread = chunks_per_thread * chunk_size;
 
     std::thread::scope(|scope| {
@@ -159,7 +160,7 @@ where
             remaining_out = rest_out;
 
             let current_chunk_offset = chunk_offset;
-            chunk_offset += (this_size + chunk_size - 1) / chunk_size;
+            chunk_offset += this_size.div_ceil(chunk_size);
 
             let f_ref = &f;
             scope.spawn(move || {
