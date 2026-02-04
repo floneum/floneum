@@ -1,12 +1,12 @@
 //! Rotary Position Embeddings (RoPE) that work on both CPU and GPU backends.
 
-use crate::{AddOp, ConcreteTensor, Tensor, MulOp, NegOp, SimdBinaryOp, SimdElement, SimdUnaryOp, SubOp};
+use crate::{
+    AddOp, ConcreteTensor, MulOp, NegOp, SimdBinaryOp, SimdElement, SimdUnaryOp, SubOp, Tensor,
+};
 use fusor_core::{DataType, FloatDataType};
 use fusor_cpu::FloatOps;
 
-fn rotate_half<D>(
-    xs: &Tensor<4, D, ConcreteTensor<D, 4>>,
-) -> Tensor<4, D, ConcreteTensor<D, 4>>
+fn rotate_half<D>(xs: &Tensor<4, D, ConcreteTensor<D, 4>>) -> Tensor<4, D, ConcreteTensor<D, 4>>
 where
     D: SimdElement + DataType + FloatDataType + FloatOps + Default + std::ops::Neg<Output = D>,
     NegOp: SimdUnaryOp<D>,
@@ -90,10 +90,14 @@ where
         let [bz, n_head, sequence_length, embed] = self.shape();
 
         let cos_narrow = cos.narrow(0, 0, sequence_length);
-        let cos_reshape = cos_narrow.reshape([sequence_length, embed / 2, 1]).to_concrete();
+        let cos_reshape = cos_narrow
+            .reshape([sequence_length, embed / 2, 1])
+            .to_concrete();
         let cos: Tensor<5, D, _> = cos_reshape.broadcast_as([bz, 1, sequence_length, embed / 2, 1]);
         let sin_narrow = sin.narrow(0, 0, sequence_length);
-        let sin_reshape = sin_narrow.reshape([sequence_length, embed / 2, 1]).to_concrete();
+        let sin_reshape = sin_narrow
+            .reshape([sequence_length, embed / 2, 1])
+            .to_concrete();
         let sin: Tensor<5, D, _> = sin_reshape.broadcast_as([bz, 1, sequence_length, embed / 2, 1]);
         let x: Tensor<5, D, _> = self.reshape([bz, n_head, sequence_length, embed / 2, 2]);
 
@@ -143,9 +147,7 @@ where
                 Tensor::Gpu(x.rope_fused(cos, sin))
             }
             // CPU path - use composite operations
-            (Tensor::Cpu(_), Tensor::Cpu(_), Tensor::Cpu(_)) => {
-                self.rope_interleaved(cos, sin)
-            }
+            (Tensor::Cpu(_), Tensor::Cpu(_), Tensor::Cpu(_)) => self.rope_interleaved(cos, sin),
             _ => panic!("All tensors must be on the same device"),
         }
     }
@@ -165,9 +167,7 @@ where
                 Tensor::Gpu(x.rope_normal_fused(cos, sin))
             }
             // CPU path - use composite operations
-            (Tensor::Cpu(_), Tensor::Cpu(_), Tensor::Cpu(_)) => {
-                self.rope(cos, sin)
-            }
+            (Tensor::Cpu(_), Tensor::Cpu(_), Tensor::Cpu(_)) => self.rope(cos, sin),
             _ => panic!("All tensors must be on the same device"),
         }
     }

@@ -1,6 +1,6 @@
 //! Conv1d layer implementation.
 
-use crate::{ConcreteTensor, Tensor, MatmulImpl, SimdElement};
+use crate::{ConcreteTensor, MatmulImpl, SimdElement, Tensor};
 use fusor_core::{DataType, FloatDataType};
 use fusor_cpu::FloatOps;
 
@@ -31,7 +31,7 @@ impl Default for Conv1dConfig {
 /// Output shape: (batch, out_channels, out_length)
 /// where out_length = (length + 2*padding - kernel_size) / stride + 1
 pub struct Conv1d<D: SimdElement> {
-    weight: Tensor<3, D, ConcreteTensor<D, 3>>,       // (out_channels, in_channels, kernel_size)
+    weight: Tensor<3, D, ConcreteTensor<D, 3>>, // (out_channels, in_channels, kernel_size)
     bias: Option<Tensor<1, D, ConcreteTensor<D, 1>>>, // (out_channels,)
     config: Conv1dConfig,
     in_channels: usize,
@@ -141,8 +141,7 @@ mod tests {
 
         // Bias: (1,)
         let bias_data = [0.1f32];
-        let bias: Tensor<1, f32> =
-            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1], &bias_data));
+        let bias: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1], &bias_data));
 
         let config = Conv1dConfig::default();
         let conv = Conv1d::new(weight, Some(bias), config);
@@ -224,9 +223,11 @@ mod tests {
         use crate::Device;
 
         // Create random-ish weight and input data
-        let weight_data: Vec<f32> = (0..384*80*3).map(|i| (i as f32 * 0.001).sin() * 0.1).collect();
+        let weight_data: Vec<f32> = (0..384 * 80 * 3)
+            .map(|i| (i as f32 * 0.001).sin() * 0.1)
+            .collect();
         let bias_data: Vec<f32> = (0..384).map(|i| (i as f32 * 0.0001).cos() * 0.01).collect();
-        let input_data: Vec<f32> = (0..80*3000).map(|i| (i as f32 * 0.0001).sin()).collect();
+        let input_data: Vec<f32> = (0..80 * 3000).map(|i| (i as f32 * 0.0001).sin()).collect();
 
         let config = Conv1dConfig {
             padding: 1,
@@ -236,16 +237,20 @@ mod tests {
         };
 
         // CPU version
-        let weight_cpu: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([384, 80, 3], &weight_data));
-        let bias_cpu: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([384], &bias_data));
-        let input_cpu: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 80, 3000], &input_data));
+        let weight_cpu: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([384, 80, 3], &weight_data));
+        let bias_cpu: Tensor<1, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([384], &bias_data));
+        let input_cpu: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 80, 3000], &input_data));
         let conv_cpu = Conv1d::new(weight_cpu, Some(bias_cpu), config);
         let output_cpu = conv_cpu.forward(&input_cpu);
         let result_cpu = output_cpu.as_slice().await.unwrap();
 
         // GPU version
         let gpu_device = Device::new().await.expect("GPU required for this test");
-        let weight_gpu: Tensor<3, f32> = Tensor::from_slice(&gpu_device, [384, 80, 3], &weight_data);
+        let weight_gpu: Tensor<3, f32> =
+            Tensor::from_slice(&gpu_device, [384, 80, 3], &weight_data);
         let bias_gpu: Tensor<1, f32> = Tensor::from_slice(&gpu_device, [384], &bias_data);
         let input_gpu: Tensor<3, f32> = Tensor::from_slice(&gpu_device, [1, 80, 3000], &input_data);
         let conv_gpu = Conv1d::new(weight_gpu, Some(bias_gpu), config);
@@ -260,7 +265,8 @@ mod tests {
         let mut count = 0;
         for i in 0..result_cpu.shape()[0] {
             for j in 0..result_cpu.shape()[1] {
-                for k in 0..result_cpu.shape()[2].min(100) {  // Sample first 100 positions
+                for k in 0..result_cpu.shape()[2].min(100) {
+                    // Sample first 100 positions
                     let cpu_val: f32 = result_cpu[[i, j, k]].into();
                     let gpu_val: f32 = result_gpu[[i, j, k]].into();
                     let diff = (cpu_val - gpu_val).abs();
@@ -271,10 +277,24 @@ mod tests {
             }
         }
 
-        eprintln!("Conv1d CPU vs GPU: max_diff={}, mean_diff={}", max_diff, sum_diff / count as f32);
-        eprintln!("CPU[0,0,0..5]: {:?}", (0..5).map(|i| result_cpu[[0, 0, i]]).collect::<Vec<f32>>());
-        eprintln!("GPU[0,0,0..5]: {:?}", (0..5).map(|i| result_gpu[[0, 0, i]]).collect::<Vec<f32>>());
+        eprintln!(
+            "Conv1d CPU vs GPU: max_diff={}, mean_diff={}",
+            max_diff,
+            sum_diff / count as f32
+        );
+        eprintln!(
+            "CPU[0,0,0..5]: {:?}",
+            (0..5).map(|i| result_cpu[[0, 0, i]]).collect::<Vec<f32>>()
+        );
+        eprintln!(
+            "GPU[0,0,0..5]: {:?}",
+            (0..5).map(|i| result_gpu[[0, 0, i]]).collect::<Vec<f32>>()
+        );
 
-        assert!(max_diff < 0.01, "Conv1d CPU and GPU outputs differ too much: max_diff={}", max_diff);
+        assert!(
+            max_diff < 0.01,
+            "Conv1d CPU and GPU outputs differ too much: max_diff={}",
+            max_diff
+        );
     }
 }

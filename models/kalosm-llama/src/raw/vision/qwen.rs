@@ -1,5 +1,6 @@
 use fusor::{
-    arange, cache::KvCache, CastTensor, CastTo, Device, FloatDataType, FloatOps, MatmulImpl, Result, SimdElement, Tensor, VarBuilder,
+    arange, cache::KvCache, CastTensor, CastTo, Device, FloatDataType, FloatOps, MatmulImpl,
+    Result, SimdElement, Tensor, VarBuilder,
 };
 use fusor_gguf::GgufMetadata;
 
@@ -230,7 +231,9 @@ where
                 .flatten_all()
                 .to_concrete();
             // Stack along last dimension (dimension 1 for 2D result)
-            let pos_id = Tensor::stack([hpos_ids, wpos_ids], 1).repeat([*t as usize, 1]).to_concrete();
+            let pos_id = Tensor::stack([hpos_ids, wpos_ids], 1)
+                .repeat([*t as usize, 1])
+                .to_concrete();
             pos_ids.push(pos_id);
         }
         let pos_ids = Tensor::cat(pos_ids, 0);
@@ -241,9 +244,11 @@ where
             .unwrap_or_default();
         let rotary_pos_emb_full = self.rotary_pos_emb.make_embeds(max_grid_size)?;
 
-        let rotary_pos_emb_0 = rotary_pos_emb_full.index_select(0, &pos_ids.i((.., 0)).to_concrete());
+        let rotary_pos_emb_0 =
+            rotary_pos_emb_full.index_select(0, &pos_ids.i((.., 0)).to_concrete());
 
-        let rotary_pos_emb_1 = rotary_pos_emb_full.index_select(0, &pos_ids.i((.., 1)).to_concrete());
+        let rotary_pos_emb_1 =
+            rotary_pos_emb_full.index_select(0, &pos_ids.i((.., 1)).to_concrete());
 
         // Cat along last dimension (dimension 1 for 2D result)
         let rotary_pos_emb = Tensor::cat([rotary_pos_emb_0, rotary_pos_emb_1], 1);
@@ -342,13 +347,20 @@ where
         let dim2 = self.spacial_merge_unit;
         let hidden_states = hidden_states.reshape([dim1, dim2, hidden_states.shape()[1]]);
         let hidden_states = hidden_states.index_select(0, &window_index);
-        let mut hidden_states = hidden_states.reshape([seq_len, hidden_states.shape()[2]]).to_concrete();
+        let mut hidden_states = hidden_states
+            .reshape([seq_len, hidden_states.shape()[2]])
+            .to_concrete();
         let rotary_pos_emb = rotary_pos_emb.reshape([dim1, dim2, rotary_pos_emb.shape()[1]]);
         let rotary_pos_emb = rotary_pos_emb.index_select(0, &window_index);
-        let rotary_pos_emb = rotary_pos_emb.reshape([seq_len, rotary_pos_emb.shape()[2]]).to_concrete();
+        let rotary_pos_emb = rotary_pos_emb
+            .reshape([seq_len, rotary_pos_emb.shape()[2]])
+            .to_concrete();
         // Work in f32 for cos/sin operations
         let rotary_pos_emb_f32: Tensor<2, f32> = rotary_pos_emb.cast();
-        let rope_cache = RopeCache::from_parts(rotary_pos_emb_f32.cos().cast(), rotary_pos_emb_f32.sin().cast());
+        let rope_cache = RopeCache::from_parts(
+            rotary_pos_emb_f32.cos().cast(),
+            rotary_pos_emb_f32.sin().cast(),
+        );
 
         let cu_seqlens = grid_thw
             .iter()
@@ -380,7 +392,9 @@ where
         let hidden_states = self.merger.forward(&hidden_states);
         let reverse_indices = {
             // Get indices as flat slice using tensor access
-            let indices_flat = window_index.reshape([window_index.shape().iter().product::<usize>()]).to_concrete();
+            let indices_flat = window_index
+                .reshape([window_index.shape().iter().product::<usize>()])
+                .to_concrete();
             let slice = pollster::block_on(indices_flat.as_slice())?;
             let indices: Vec<u32> = slice.as_slice().to_vec();
             let mut indices_with_pos: Vec<_> = indices.iter().enumerate().collect();
@@ -474,7 +488,9 @@ async fn test_loading_qwen_vision() {
 
     // Create random tensor using fusor-core
     let hidden_states_data: Vec<f32> = (0..1944 * 1176).map(|_| rand::random()).collect();
-    let hidden_states: Tensor<2, f32> = Tensor::new(&device, &hidden_states_data).reshape([1944, 1176]).to_concrete();
+    let hidden_states: Tensor<2, f32> = Tensor::new(&device, &hidden_states_data)
+        .reshape([1944, 1176])
+        .to_concrete();
 
     let grid_thw = vec![[1, 36, 54]];
     let out = qwen_vision

@@ -31,15 +31,15 @@ pub(crate) const MAX_SIMD_LANES: usize = 64;
 
 // Re-export public types
 pub use concrete_tensor::ConcreteTensor;
-pub use map_layout::MapLayout;
 pub use elementwise::{
     Abs, Acos, Acosh, Asin, Asinh, Atan, Atanh, Cos, Cosh, Exp, Exp2, Log, Log2, Neg, Sin, Sinh,
     Sqrt, Tan, Tanh,
 };
 pub use expr::materialize_expr;
+pub use map_layout::MapLayout;
 pub use pairwise::{Add, Div, Mul, Rem, Sub};
-pub use scalar::{AddScalar, DivScalar, MulScalar, SubScalar, Broadcast};
 pub use quantized::{Dequantize, QuantizedTensor};
+pub use scalar::{AddScalar, Broadcast, DivScalar, MulScalar, SubScalar};
 pub use tensor::{FloatOps, Scalar, Tensor};
 
 // Re-export SlidingWindow from fusor-types
@@ -53,7 +53,9 @@ pub use aligned_vec::ABox;
 pub use aligned_vec::AVec;
 
 // Re-export GGUF types for convenience
-pub use fusor_gguf::{BlockQ4_0, BlockQ4K, BlockQ5K, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, GgufBlock};
+pub use fusor_gguf::{
+    BlockQ4_0, BlockQ4K, BlockQ5_0, BlockQ5K, BlockQ6K, BlockQ8_0, GgmlType, GgufBlock,
+};
 
 // Re-export TensorSlice from fusor-types
 pub use fusor_types::TensorSlice;
@@ -84,15 +86,17 @@ impl Deref for CpuMappedBuffer {
 
 // Re-export operation traits and markers for public bounds
 pub use cast::CastTo;
-pub use comparison::{EqOp, GtOp, GteOp, LtOp, LteOp, NeOp, Eq, Ne, Lt, Lte, Gt, Gte};
+pub use comparison::{Eq, EqOp, Gt, GtOp, Gte, GteOp, Lt, LtOp, Lte, LteOp, Ne, NeOp};
 pub use conditional::IsNonZero;
 pub use elementwise::{
-    AbsOp, AcosOp, AcoshOp, AsinOp, AsinhOp, AtanOp, AtanhOp, CosOp, CoshOp, Exp2Op, ExpOp,
-    Log2Op, LogOp, NegOp, SimdUnaryOp, SinOp, SinhOp, SqrtOp, TanOp, TanhOp,
+    AbsOp, AcosOp, AcoshOp, AsinOp, AsinhOp, AtanOp, AtanhOp, CosOp, CoshOp, Exp2Op, ExpOp, Log2Op,
+    LogOp, NegOp, SimdUnaryOp, SinOp, SinhOp, SqrtOp, TanOp, TanhOp,
 };
 pub use matmul::MatmulImpl;
 pub use pairwise::{AddOp, DivOp, MulOp, RemOp, SimdBinaryOp, SubOp};
-pub use reduce::{MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp, softmax_last_dim_fused, layer_norm_last_dim_fused};
+pub use reduce::{
+    MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp, layer_norm_last_dim_fused, softmax_last_dim_fused,
+};
 
 // Re-export internal types used by other modules
 pub(crate) use concrete_tensor::IndexIterator;
@@ -628,12 +632,12 @@ mod tests {
     #[test]
     fn test_slice_2d() {
         // Create a 3x4 tensor
-        let t: Tensor<2, ConcreteTensor<f32, 2>> =
-            Tensor::from_slice([3, 4], &[
-                1.0, 2.0, 3.0, 4.0,
-                5.0, 6.0, 7.0, 8.0,
-                9.0, 10.0, 11.0, 12.0
-            ]);
+        let t: Tensor<2, ConcreteTensor<f32, 2>> = Tensor::from_slice(
+            [3, 4],
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
+        );
 
         // Slice to get a 2x2 sub-tensor starting at [1, 1]
         let sliced = t.slice([1..3, 1..3]);
@@ -674,8 +678,7 @@ mod tests {
     #[test]
     fn test_broadcast_as() {
         // Create a 1x3 tensor
-        let t: Tensor<1, ConcreteTensor<f32, 1>> =
-            Tensor::from_slice([3], &[1.0, 2.0, 3.0]);
+        let t: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([3], &[1.0, 2.0, 3.0]);
 
         // Broadcast to 2x3
         let broadcasted = t.broadcast_as([2, 3]);
@@ -713,12 +716,12 @@ mod tests {
 
     #[test]
     fn test_narrow() {
-        let t: Tensor<2, ConcreteTensor<f32, 2>> =
-            Tensor::from_slice([3, 4], &[
-                1.0, 2.0, 3.0, 4.0,
-                5.0, 6.0, 7.0, 8.0,
-                9.0, 10.0, 11.0, 12.0
-            ]);
+        let t: Tensor<2, ConcreteTensor<f32, 2>> = Tensor::from_slice(
+            [3, 4],
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
+        );
 
         // Narrow dimension 0, starting at 1, length 2
         let narrowed = t.narrow(0, 1, 2);
@@ -748,9 +751,9 @@ mod tests {
         let repeated = t.repeat([2, 3]);
         assert_eq!(repeated.inner().layout().shape(), &[4, 6]);
         assert_eq!(repeated.get([0, 0]), 1.0);
-        assert_eq!(repeated.get([0, 2]), 1.0);  // Repeated column
-        assert_eq!(repeated.get([2, 0]), 1.0);  // Repeated row
-        assert_eq!(repeated.get([3, 5]), 4.0);  // Last element repeated
+        assert_eq!(repeated.get([0, 2]), 1.0); // Repeated column
+        assert_eq!(repeated.get([2, 0]), 1.0); // Repeated row
+        assert_eq!(repeated.get([3, 5]), 4.0); // Last element repeated
     }
 
     #[test]
@@ -766,7 +769,8 @@ mod tests {
         assert_eq!(squeezed.get([1, 2]), 6.0);
 
         // Unsqueeze back to get 2x1x3
-        let unsqueezed: Tensor<3, MapLayout<MapLayout<ConcreteTensor<f32, 3>, 2>, 3>> = squeezed.unsqueeze(1);
+        let unsqueezed: Tensor<3, MapLayout<MapLayout<ConcreteTensor<f32, 3>, 2>, 3>> =
+            squeezed.unsqueeze(1);
         assert_eq!(unsqueezed.inner().layout().shape(), &[2, 1, 3]);
         assert_eq!(unsqueezed.get([0, 0, 0]), 1.0);
         assert_eq!(unsqueezed.get([1, 0, 2]), 6.0);
@@ -799,10 +803,8 @@ mod tests {
 
     #[test]
     fn test_stack() {
-        let a: Tensor<1, ConcreteTensor<f32, 1>> =
-            Tensor::from_slice([3], &[1.0, 2.0, 3.0]);
-        let b: Tensor<1, ConcreteTensor<f32, 1>> =
-            Tensor::from_slice([3], &[4.0, 5.0, 6.0]);
+        let a: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([3], &[1.0, 2.0, 3.0]);
+        let b: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([3], &[4.0, 5.0, 6.0]);
 
         // Stack along dim 0 to get 2x3
         let stacked: Tensor<2, ConcreteTensor<f32, 2>> =
@@ -833,23 +835,23 @@ mod tests {
     #[test]
     fn test_slice_then_arithmetic() {
         // Test SIMD on non-contiguous sliced tensor
-        let a: Tensor<2, ConcreteTensor<f32, 2>> =
-            Tensor::from_slice([4, 4], &[
-                1.0, 2.0, 3.0, 4.0,
-                5.0, 6.0, 7.0, 8.0,
-                9.0, 10.0, 11.0, 12.0,
-                13.0, 14.0, 15.0, 16.0
-            ]);
+        let a: Tensor<2, ConcreteTensor<f32, 2>> = Tensor::from_slice(
+            [4, 4],
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+                16.0,
+            ],
+        );
 
         // Slice to get a 2x2 sub-tensor
         let sliced = a.slice([1..3, 1..3]);
 
         // Add scalar to sliced tensor
         let result = sliced.add_scalar(10.0).to_concrete();
-        assert_eq!(result.get([0, 0]), 16.0);  // 6 + 10
-        assert_eq!(result.get([0, 1]), 17.0);  // 7 + 10
-        assert_eq!(result.get([1, 0]), 20.0);  // 10 + 10
-        assert_eq!(result.get([1, 1]), 21.0);  // 11 + 10
+        assert_eq!(result.get([0, 0]), 16.0); // 6 + 10
+        assert_eq!(result.get([0, 1]), 17.0); // 7 + 10
+        assert_eq!(result.get([1, 0]), 20.0); // 10 + 10
+        assert_eq!(result.get([1, 1]), 21.0); // 11 + 10
     }
 
     #[test]
@@ -873,11 +875,7 @@ mod tests {
     #[test]
     fn test_make_contiguous() {
         let t: Tensor<2, ConcreteTensor<f32, 2>> =
-            Tensor::from_slice([3, 3], &[
-                1.0, 2.0, 3.0,
-                4.0, 5.0, 6.0,
-                7.0, 8.0, 9.0
-            ]);
+            Tensor::from_slice([3, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
 
         // Slice to make non-contiguous
         let sliced = t.slice([0..2, 1..3]);
@@ -895,8 +893,7 @@ mod tests {
     #[test]
     fn test_expand() {
         // Test expand (alias for broadcast_as)
-        let t: Tensor<1, ConcreteTensor<f32, 1>> =
-            Tensor::from_slice([3], &[1.0, 2.0, 3.0]);
+        let t: Tensor<1, ConcreteTensor<f32, 1>> = Tensor::from_slice([3], &[1.0, 2.0, 3.0]);
 
         let expanded = t.expand([2, 3]);
         assert_eq!(expanded.inner().layout().shape(), &[2, 3]);
@@ -1032,21 +1029,20 @@ mod tests {
     fn test_sliding_window_view_2d() {
         // Test 2D sliding window
         let data: Vec<f32> = (1..=36).map(|i| i as f32).collect();
-        let t: Tensor<2, ConcreteTensor<f32, 2>> =
-            Tensor::from_slice([6, 6], &data);
+        let t: Tensor<2, ConcreteTensor<f32, 2>> = Tensor::from_slice([6, 6], &data);
 
         let windows = t.sliding_window_view::<2, 4>([
             SlidingWindow::new(0, 3, 3),
-            SlidingWindow::new(1, 3, 3)
+            SlidingWindow::new(1, 3, 3),
         ]);
 
         // (6 - 3) / 3 + 1 = 2 positions in each dimension
         assert_eq!(windows.inner().layout().shape(), &[2, 2, 3, 3]);
 
         // Verify some values
-        assert_eq!(windows.get([0, 0, 0, 0]), 1.0);  // Top-left of first window
+        assert_eq!(windows.get([0, 0, 0, 0]), 1.0); // Top-left of first window
         assert_eq!(windows.get([0, 0, 2, 2]), 15.0); // Bottom-right of first 3x3 window
-        assert_eq!(windows.get([0, 1, 0, 0]), 4.0);  // Top-left of second window (row 0, col 1)
+        assert_eq!(windows.get([0, 1, 0, 0]), 4.0); // Top-left of second window (row 0, col 1)
         assert_eq!(windows.get([1, 0, 0, 0]), 19.0); // Top-left of window at (1, 0)
     }
 }

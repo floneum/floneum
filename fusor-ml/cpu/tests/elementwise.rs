@@ -1,8 +1,8 @@
 //! Tests for elementwise (unary) tensor operations: Neg, Abs, Sqrt, transcendentals
 
 use fusor_cpu::{
-    Abs, ConcreteTensor, Cos, Exp, Exp2, Log, Log2, Neg, TensorBacking, Sin, Sqrt, Tan, Tanh,
-    Tensor,
+    Abs, ConcreteTensor, Cos, Exp, Exp2, Log, Log2, Neg, Sin, Sqrt, Tan, Tanh, Tensor,
+    TensorBacking,
 };
 
 // ========== Neg Tests ==========

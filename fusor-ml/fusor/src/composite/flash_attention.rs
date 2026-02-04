@@ -148,7 +148,11 @@ where
         let max_scores = scores_masked.max_keepdim::<3>(3);
         let scores_shifted = scores_masked - max_scores;
         // Materialize exp_scores since sum_keepdim is a reduction that needs concrete data
-        let exp_scores: Tensor<4, D, fusor_cpu::Exp<D, 4, &fusor_cpu::Sub<D, 4, ConcreteTensor<D, 4>, ConcreteTensor<D, 4>>>> = scores_shifted.exp();
+        let exp_scores: Tensor<
+            4,
+            D,
+            fusor_cpu::Exp<D, 4, &fusor_cpu::Sub<D, 4, ConcreteTensor<D, 4>, ConcreteTensor<D, 4>>>,
+        > = scores_shifted.exp();
         let sum_exp = exp_scores.sum_keepdim::<3>(3);
         let attn_weights = exp_scores / sum_exp;
 

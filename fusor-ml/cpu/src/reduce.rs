@@ -312,8 +312,14 @@ pub(crate) fn reduce_tensor_op<E: SimdElement, const R: usize, Op: SimdReduceOp<
 /// 3. Normalize by dividing by sum
 ///
 /// For attention matrices, this is significantly faster than separate max/sub/exp/sum/div operations.
-pub fn softmax_last_dim_fused<const R: usize>(tensor: &ConcreteTensor<f32, R>) -> ConcreteTensor<f32, R> {
-    let shape: [usize; R] = tensor.layout().shape().try_into().expect("Shape length mismatch");
+pub fn softmax_last_dim_fused<const R: usize>(
+    tensor: &ConcreteTensor<f32, R>,
+) -> ConcreteTensor<f32, R> {
+    let shape: [usize; R] = tensor
+        .layout()
+        .shape()
+        .try_into()
+        .expect("Shape length mismatch");
     let last_dim = shape[R - 1];
 
     // Total number of rows (product of all dims except last)
@@ -497,7 +503,11 @@ pub fn layer_norm_last_dim_fused<const R: usize>(
     bias: Option<&ConcreteTensor<f32, R>>,
     eps: f32,
 ) -> ConcreteTensor<f32, R> {
-    let shape: [usize; R] = tensor.layout().shape().try_into().expect("Shape length mismatch");
+    let shape: [usize; R] = tensor
+        .layout()
+        .shape()
+        .try_into()
+        .expect("Shape length mismatch");
     let last_dim = shape[R - 1];
     let num_rows: usize = shape[..R - 1].iter().product();
 
@@ -559,8 +569,20 @@ pub fn layer_norm_last_dim_fused<const R: usize>(
 
 /// SIMD-optimized layer normalization for a single row
 #[inline(always)]
-fn layer_norm_row(input: &[f32], weight: &[f32], bias: Option<&[f32]>, eps: f32, output: &mut [f32]) {
-    Arch::new().dispatch(LayerNormRowDispatch { input, weight, bias, eps, output });
+fn layer_norm_row(
+    input: &[f32],
+    weight: &[f32],
+    bias: Option<&[f32]>,
+    eps: f32,
+    output: &mut [f32],
+) {
+    Arch::new().dispatch(LayerNormRowDispatch {
+        input,
+        weight,
+        bias,
+        eps,
+        output,
+    });
 }
 
 struct LayerNormRowDispatch<'a> {
@@ -576,7 +598,13 @@ impl WithSimd for LayerNormRowDispatch<'_> {
 
     #[inline(always)]
     fn with_simd<S: Simd>(self, simd: S) -> Self::Output {
-        let Self { input, weight, bias, eps, output } = self;
+        let Self {
+            input,
+            weight,
+            bias,
+            eps,
+            output,
+        } = self;
         let n = input.len() as f32;
         let inv_n = 1.0 / n;
 
@@ -627,7 +655,8 @@ impl WithSimd for LayerNormRowDispatch<'_> {
             Some(bias) => {
                 let (bias_simd, bias_tail) = S::as_simd_f32s(bias);
 
-                for (((out_vec, &in_vec), &w_vec), &b_vec) in out_simd.iter_mut()
+                for (((out_vec, &in_vec), &w_vec), &b_vec) in out_simd
+                    .iter_mut()
                     .zip(in_simd.iter())
                     .zip(weight_simd.iter())
                     .zip(bias_simd.iter())
@@ -645,7 +674,8 @@ impl WithSimd for LayerNormRowDispatch<'_> {
                 }
             }
             None => {
-                for ((out_vec, &in_vec), &w_vec) in out_simd.iter_mut()
+                for ((out_vec, &in_vec), &w_vec) in out_simd
+                    .iter_mut()
                     .zip(in_simd.iter())
                     .zip(weight_simd.iter())
                 {
@@ -677,7 +707,12 @@ pub(crate) fn reduce_tensor_axis_dyn<
 where
     ConcreteTensor<E, R>: LastRank<OUT_RANK, E>,
 {
-    assert!(axis < R, "Axis {} out of bounds for tensor with rank {}", axis, R);
+    assert!(
+        axis < R,
+        "Axis {} out of bounds for tensor with rank {}",
+        axis,
+        R
+    );
     assert_eq!(OUT_RANK, R - 1, "Output rank must be input rank - 1");
 
     // Compute output shape (remove axis dimension)

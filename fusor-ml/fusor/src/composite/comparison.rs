@@ -2,7 +2,7 @@
 //!
 //! These operations return tensors with 1.0 for true and 0.0 for false.
 
-use crate::{Tensor, SimdElement};
+use crate::{SimdElement, Tensor};
 use fusor_core::DataType;
 use fusor_cpu::{EqOp, GtOp, GteOp, LtOp, LteOp, SimdBinaryOp};
 
@@ -194,8 +194,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_eq_tensor_cpu() {
-        let a: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
-        let b: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 3.0, 3.0, 5.0]));
+        let a: Tensor<1, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
+        let b: Tensor<1, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 3.0, 3.0, 5.0]));
 
         let result = a.eq_tensor(&b);
         let slice = result.as_slice().await.unwrap();
@@ -208,8 +210,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_lt_tensor_cpu() {
-        let a: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
-        let b: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]));
+        let a: Tensor<1, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
+        let b: Tensor<1, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]));
 
         let result = a.lt_tensor(&b);
         let slice = result.as_slice().await.unwrap();
@@ -222,8 +226,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_gt_tensor_cpu() {
-        let a: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
-        let b: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]));
+        let a: Tensor<1, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
+        let b: Tensor<1, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]));
 
         let result = a.gt_tensor(&b);
         let slice = result.as_slice().await.unwrap();
@@ -236,8 +242,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_lte_tensor_cpu() {
-        let a: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
-        let b: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]));
+        let a: Tensor<1, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
+        let b: Tensor<1, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]));
 
         let result = a.lte_tensor(&b);
         let slice = result.as_slice().await.unwrap();
@@ -250,8 +258,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_gte_tensor_cpu() {
-        let a: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
-        let b: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]));
+        let a: Tensor<1, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
+        let b: Tensor<1, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[2.0, 2.0, 2.0, 2.0]));
 
         let result = a.gte_tensor(&b);
         let slice = result.as_slice().await.unwrap();
@@ -264,7 +274,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_eq_scalar_cpu() {
-        let a: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 2.0, 4.0]));
+        let a: Tensor<1, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 2.0, 4.0]));
 
         let result = a.eq_scalar(2.0);
         let slice = result.as_slice().await.unwrap();
@@ -277,7 +288,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_lt_scalar_cpu() {
-        let a: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
+        let a: Tensor<1, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([4], &[1.0, 2.0, 3.0, 4.0]));
 
         let result = a.lt_scalar(2.5);
         let slice = result.as_slice().await.unwrap();

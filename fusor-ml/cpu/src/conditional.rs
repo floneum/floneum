@@ -122,7 +122,9 @@ pub(crate) fn where_cond_ref<E, const R: usize>(
 where
     E: SimdElement + IsNonZero,
 {
-    let shape: [usize; R] = cond.layout().shape()
+    let shape: [usize; R] = cond
+        .layout()
+        .shape()
         .try_into()
         .expect("Shape length mismatch");
     let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);

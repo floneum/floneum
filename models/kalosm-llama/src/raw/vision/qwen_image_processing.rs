@@ -31,7 +31,10 @@ pub(crate) fn process_image(
     let required_rgb_mean = mean_tensor.reshape([1, 3, 1, 1]);
     let std_tensor = Tensor::new(device, image_std);
     let required_rgb_std = std_tensor.reshape([1, 3, 1, 1]);
-    let rgb = rgb.sub_(&required_rgb_mean).div_(&required_rgb_std).to_concrete();
+    let rgb = rgb
+        .sub_(&required_rgb_mean)
+        .div_(&required_rgb_std)
+        .to_concrete();
 
     let grid_t = 1;
     let grid_h = resized.height() as usize / patch_size;
@@ -59,7 +62,10 @@ pub(crate) fn process_image(
         // patch data
         3 * patch_size * patch_size * temporal_patch_size,
     ]);
-    Ok((rgb.to_concrete(), [grid_t as u32, grid_h as u32, grid_w as u32]))
+    Ok((
+        rgb.to_concrete(),
+        [grid_t as u32, grid_h as u32, grid_w as u32],
+    ))
 }
 
 fn normalize_image_shape(
@@ -98,10 +104,7 @@ fn normalize_image_shape(
     image.resize_exact(width, height, image::imageops::FilterType::CatmullRom)
 }
 
-fn image_to_rgb(
-    image: &DynamicImage,
-    device: &Device,
-) -> Result<Tensor<4, f32>, fusor::Error> {
+fn image_to_rgb(image: &DynamicImage, device: &Device) -> Result<Tensor<4, f32>, fusor::Error> {
     let height = image.height() as usize;
     let width = image.width() as usize;
     let rgb = image.to_rgb8();

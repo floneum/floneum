@@ -1,6 +1,6 @@
 //! Convolution operations that work on both CPU and GPU backends.
 
-use crate::{ConcreteTensor, FloatOps, Tensor, MatmulImpl, SimdElement};
+use crate::{ConcreteTensor, FloatOps, MatmulImpl, SimdElement, Tensor};
 use fusor_core::{DataType, FloatDataType};
 use fusor_types::SlidingWindow;
 
@@ -111,7 +111,6 @@ where
         });
         let windows_tensor: Tensor<R2, D, _> = padded.sliding_window_view(windows);
 
-
         // Step 3: Prepare for matmul by reshaping and transposing
         let kernel_size: usize = weight_shape[spatial_start..].iter().product();
 
@@ -167,11 +166,13 @@ mod tests {
     async fn test_conv_1d_cpu() {
         // Input: (batch=1, in_channels=1, length=5)
         let input_data = [1.0f32, 2.0, 3.0, 4.0, 5.0];
-        let input: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 5], &input_data));
+        let input: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 5], &input_data));
 
         // Weight: (out_channels=1, in_channels=1, kernel_size=3)
         let weight_data = [0.2f32, 0.5, 0.3];
-        let weight: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &weight_data));
+        let weight: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &weight_data));
 
         let bias_val = 0.1f32;
         let bias: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1], &[bias_val]));
@@ -213,11 +214,13 @@ mod tests {
     async fn test_conv_1d_strided_cpu() {
         // Input: (batch=1, in_channels=1, length=5)
         let input_data = [1.0f32, 2.0, 3.0, 4.0, 5.0];
-        let input: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 5], &input_data));
+        let input: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 5], &input_data));
 
         // Weight: (out_channels=1, in_channels=1, kernel_size=3)
         let weight_data = [0.2f32, 0.5, 0.3];
-        let weight: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &weight_data));
+        let weight: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &weight_data));
 
         let bias_val = 0.1f32;
         let bias: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1], &[bias_val]));
@@ -259,11 +262,13 @@ mod tests {
     async fn test_conv_1d_with_padding_cpu() {
         // Input: (1, 1, 3)
         let input_data = [1.0f32, 2.0, 3.0];
-        let input: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &input_data));
+        let input: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &input_data));
 
         // Weight: (1, 1, 3)
         let weight_data = [1.0f32, 1.0, 1.0];
-        let weight: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &weight_data));
+        let weight: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 3], &weight_data));
 
         let output = input.conv(&weight, None, [1], [1]);
 
@@ -288,7 +293,8 @@ mod tests {
         // Input: (1, 2, 4) - 2 input channels
         // Channel 0: [1, 2, 3, 4], Channel 1: [5, 6, 7, 8]
         let input_data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-        let input: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 2, 4], &input_data));
+        let input: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 2, 4], &input_data));
 
         // Weight: (3, 2, 2) - 3 output channels, 2 input channels, kernel size 2
         // out_ch 0: [[1, 0], [0, 1]]
@@ -296,10 +302,11 @@ mod tests {
         // out_ch 2: [[1, 1], [1, 1]]
         let weight_data = [
             1.0f32, 0.0, 0.0, 1.0, // out_channel 0
-            0.5, 0.5, 0.5, 0.5,     // out_channel 1
-            1.0, 1.0, 1.0, 1.0,     // out_channel 2
+            0.5, 0.5, 0.5, 0.5, // out_channel 1
+            1.0, 1.0, 1.0, 1.0, // out_channel 2
         ];
-        let weight: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([3, 2, 2], &weight_data));
+        let weight: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([3, 2, 2], &weight_data));
 
         let output = input.conv(&weight, None, [0], [1]);
 

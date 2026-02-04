@@ -5,7 +5,10 @@
 
 use crate::{Device, Tensor};
 use fusor_core::QMatrix as GpuQMatrix;
-use fusor_cpu::{ABox, AVec, BlockQ4K, BlockQ4_0, BlockQ5K, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, Layout, QuantizedTensor};
+use fusor_cpu::{
+    ABox, AVec, BlockQ4_0, BlockQ4K, BlockQ5_0, BlockQ5K, BlockQ6K, BlockQ8_0, GgmlType, Layout,
+    QuantizedTensor,
+};
 use half::f16;
 
 /// CPU tensor with F32 data (not quantized).
@@ -174,24 +177,12 @@ impl QMatrix {
         let shape = shape.into();
         match device {
             Device::Cpu => Ok(match ty {
-                GgmlType::Q4_0 => {
-                    QMatrix::CpuQ4_0(QuantizedTensor::from_raw_bytes(shape, bytes))
-                }
-                GgmlType::Q5_0 => {
-                    QMatrix::CpuQ5_0(QuantizedTensor::from_raw_bytes(shape, bytes))
-                }
-                GgmlType::Q8_0 => {
-                    QMatrix::CpuQ8_0(QuantizedTensor::from_raw_bytes(shape, bytes))
-                }
-                GgmlType::Q4K => {
-                    QMatrix::CpuQ4K(QuantizedTensor::from_raw_bytes(shape, bytes))
-                }
-                GgmlType::Q5K => {
-                    QMatrix::CpuQ5K(QuantizedTensor::from_raw_bytes(shape, bytes))
-                }
-                GgmlType::Q6K => {
-                    QMatrix::CpuQ6K(QuantizedTensor::from_raw_bytes(shape, bytes))
-                }
+                GgmlType::Q4_0 => QMatrix::CpuQ4_0(QuantizedTensor::from_raw_bytes(shape, bytes)),
+                GgmlType::Q5_0 => QMatrix::CpuQ5_0(QuantizedTensor::from_raw_bytes(shape, bytes)),
+                GgmlType::Q8_0 => QMatrix::CpuQ8_0(QuantizedTensor::from_raw_bytes(shape, bytes)),
+                GgmlType::Q4K => QMatrix::CpuQ4K(QuantizedTensor::from_raw_bytes(shape, bytes)),
+                GgmlType::Q5K => QMatrix::CpuQ5K(QuantizedTensor::from_raw_bytes(shape, bytes)),
+                GgmlType::Q6K => QMatrix::CpuQ6K(QuantizedTensor::from_raw_bytes(shape, bytes)),
                 GgmlType::F32 => {
                     // F32 is not quantized, load directly as f32 tensor
                     let f32_data: Vec<f32> = bytes

@@ -6,8 +6,8 @@ use crate::{
     },
 };
 use fusor_gguf::{
-    BlockQ4_0, BlockQ4K, BlockQ5K, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, GgufBlock, GgufMetadata,
-    GgufReadError, GgufTensorMetadata,
+    BlockQ4_0, BlockQ4K, BlockQ5_0, BlockQ5K, BlockQ6K, BlockQ8_0, GgmlType, GgufBlock,
+    GgufMetadata, GgufReadError, GgufTensorMetadata,
 };
 use std::{
     fmt::{Display, Write},
@@ -1318,7 +1318,11 @@ impl WgslQuantizedType for BlockQ5K {
         // Process each of the 4 chunks
         // Each chunk uses a pair of bits from qh:
         // Chunk 0: bits 0,1; Chunk 1: bits 2,3; Chunk 2: bits 4,5; Chunk 3: bits 6,7
-        let mut run_single_chunk = |scales: &str, offsets: &str, suffix: &str, bit_pos_low: u32, bit_pos_high: u32| {
+        let mut run_single_chunk = |scales: &str,
+                                    offsets: &str,
+                                    suffix: &str,
+                                    bit_pos_low: u32,
+                                    bit_pos_high: u32| {
             writeln!(code, "{{").unwrap();
             writeln!(
                 code,
@@ -1344,20 +1348,48 @@ impl WgslQuantizedType for BlockQ5K {
             // Extract low 4 bits and high 4 bits from qs
             writeln!(code, "let qs_low = unpack4xU8(qs_chunk & {LOW_FOUR_BITS});").unwrap();
             // High nibbles need to be shifted right by 4 to get values 0-15
-            writeln!(code, "let qs_high = unpack4xU8(qs_chunk & {HIGH_FOUR_BITS}) >> vec4<u32>(4u);").unwrap();
+            writeln!(
+                code,
+                "let qs_high = unpack4xU8(qs_chunk & {HIGH_FOUR_BITS}) >> vec4<u32>(4u);"
+            )
+            .unwrap();
 
             // Extract high bits from qh for low and high nibbles
             // Each byte's bit at position bit_pos_* determines if we add 16
             writeln!(code, "let qh_bytes = unpack4xU8(qh_chunk);").unwrap();
-            writeln!(code, "let qh_low = ((qh_bytes >> vec4<u32>({bit_pos_low}u)) & vec4<u32>(1u)) * 16u;").unwrap();
-            writeln!(code, "let qh_high = ((qh_bytes >> vec4<u32>({bit_pos_high}u)) & vec4<u32>(1u)) * 16u;").unwrap();
+            writeln!(
+                code,
+                "let qh_low = ((qh_bytes >> vec4<u32>({bit_pos_low}u)) & vec4<u32>(1u)) * 16u;"
+            )
+            .unwrap();
+            writeln!(
+                code,
+                "let qh_high = ((qh_bytes >> vec4<u32>({bit_pos_high}u)) & vec4<u32>(1u)) * 16u;"
+            )
+            .unwrap();
 
             // Combine: value = (qs_nibble + high_bit * 16)
-            writeln!(code, "let weight_chunk_low = vec4<{datatype}>(qs_low + qh_low);").unwrap();
-            writeln!(code, "let weight_chunk_high = vec4<{datatype}>(qs_high + qh_high);").unwrap();
+            writeln!(
+                code,
+                "let weight_chunk_low = vec4<{datatype}>(qs_low + qh_low);"
+            )
+            .unwrap();
+            writeln!(
+                code,
+                "let weight_chunk_high = vec4<{datatype}>(qs_high + qh_high);"
+            )
+            .unwrap();
 
-            writeln!(code, "let low_result = weight_chunk_low * low_scale - low_offset;").unwrap();
-            writeln!(code, "let high_result = weight_chunk_high * high_scale - high_offset;").unwrap();
+            writeln!(
+                code,
+                "let low_result = weight_chunk_low * low_scale - low_offset;"
+            )
+            .unwrap();
+            writeln!(
+                code,
+                "let high_result = weight_chunk_high * high_scale - high_offset;"
+            )
+            .unwrap();
             for i in 0..4 {
                 process_element(
                     format!("output_index + i + {i}u"),
@@ -1636,7 +1668,11 @@ impl WgslQuantizedType for BlockQ5K {
         // scale_group 1: low=bit 2, high=bit 3
         // scale_group 2: low=bit 4, high=bit 5
         // scale_group 3: low=bit 6, high=bit 7
-        writeln!(code, "let qh_bit_pos = scale_group * 2u + select(0u, 1u, is_high);").unwrap();
+        writeln!(
+            code,
+            "let qh_bit_pos = scale_group * 2u + select(0u, 1u, is_high);"
+        )
+        .unwrap();
 
         // Load and process each of the 4 u32 values from qs and qh
         for i in 0..4 {
@@ -1646,8 +1682,16 @@ impl WgslQuantizedType for BlockQ5K {
             writeln!(code, "let qs_nibble_{i} = select(qs_val_{i} & {LOW_FOUR_BITS}u, (qs_val_{i} & {HIGH_FOUR_BITS}u) >> 4u, is_high);").unwrap();
             // Extract qh bits per byte: unpack to get individual bytes, then extract the specific bit
             writeln!(code, "let qh_bytes_{i} = unpack4xU8(qh_val_{i});").unwrap();
-            writeln!(code, "let qh_bits_{i} = ((qh_bytes_{i} >> vec4<u32>(qh_bit_pos)) & vec4<u32>(1u)) * 16u;").unwrap();
-            writeln!(code, "let vec_{i} = vec4<{datatype}>(unpack4xU8(qs_nibble_{i}) + qh_bits_{i});").unwrap();
+            writeln!(
+                code,
+                "let qh_bits_{i} = ((qh_bytes_{i} >> vec4<u32>(qh_bit_pos)) & vec4<u32>(1u)) * 16u;"
+            )
+            .unwrap();
+            writeln!(
+                code,
+                "let vec_{i} = vec4<{datatype}>(unpack4xU8(qs_nibble_{i}) + qh_bits_{i});"
+            )
+            .unwrap();
             writeln!(code, "let result_{i} = vec_{i} * scale - offset;").unwrap();
         }
 

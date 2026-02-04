@@ -31,7 +31,11 @@ async fn main() -> Result<(), anyhow::Error> {
     while let Some(segment) = text.next().await {
         segment_count += 1;
         let chunks: Vec<_> = segment.chunks().collect();
-        eprintln!("Received segment {}: {} chunks", segment_count, chunks.len());
+        eprintln!(
+            "Received segment {}: {} chunks",
+            segment_count,
+            chunks.len()
+        );
         for chunk in chunks {
             eprintln!("Chunk: {:?}", chunk);
             print!("{chunk}");

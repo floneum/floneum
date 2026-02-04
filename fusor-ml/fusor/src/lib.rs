@@ -33,10 +33,6 @@ use fusor_core::TensorSlice;
 // Re-export from fusor-cpu
 pub use fusor_cpu::{
     Abs,
-    // Cast trait
-    CastTo,
-    // Backing trait for generic tensor type parameters
-    TensorBacking,
     // Op types for bounds
     AbsOp,
     Acos,
@@ -53,6 +49,8 @@ pub use fusor_cpu::{
     AtanOp,
     Atanh,
     AtanhOp,
+    // Cast trait
+    CastTo,
     ConcreteTensor,
     Cos,
     CosOp,
@@ -72,6 +70,7 @@ pub use fusor_cpu::{
     Log2,
     Log2Op,
     LogOp,
+    MapLayout,
     // Matmul
     MatmulImpl,
     // Reduction ops
@@ -100,16 +99,16 @@ pub use fusor_cpu::{
     Tanh,
     TanhOp,
     Tensor as CpuTensor,
-    MapLayout
+    // Backing trait for generic tensor type parameters
+    TensorBacking,
 };
 
 pub use fusor_core::Tensor as GpuTensor;
 
 // Re-export from fusor-core for GPU types
 pub use fusor_core::{
-    CastTensor, D, DataType, Dim, FloatDataType, GgufReadError,
-    LastRank, LastRankInner, MaxRank, NextRank, NextRankInner, SmallerRank,
-    WasmNotSend, WasmNotSync,
+    CastTensor, D, DataType, Dim, FloatDataType, GgufReadError, LastRank, LastRankInner, MaxRank,
+    NextRank, NextRankInner, SmallerRank, WasmNotSend, WasmNotSync,
 };
 
 /// Runtime dispatch wrapper - holds either CPU or GPU version of an operation/tensor type.
@@ -814,7 +813,11 @@ where
     B: TensorBacking<R, Elem = D>,
 {
     /// Conditional selection: where self != 0, select on_true, else on_false.
-    pub fn where_cond<B2, B3>(&self, on_true: &Tensor<R, D, B2>, on_false: &Tensor<R, D, B3>) -> Tensor<R, D>
+    pub fn where_cond<B2, B3>(
+        &self,
+        on_true: &Tensor<R, D, B2>,
+        on_false: &Tensor<R, D, B3>,
+    ) -> Tensor<R, D>
     where
         B2: TensorBacking<R, Elem = D>,
         B3: TensorBacking<R, Elem = D>,
@@ -972,7 +975,11 @@ where
     B: TensorBacking<R, Elem = D>,
 {
     /// Returns a new tensor with the slice region replaced by values from the value tensor.
-    pub fn slice_assign<B2>(&self, slices: [Range<usize>; R], value: &Tensor<R, D, B2>) -> Tensor<R, D>
+    pub fn slice_assign<B2>(
+        &self,
+        slices: [Range<usize>; R],
+        value: &Tensor<R, D, B2>,
+    ) -> Tensor<R, D>
     where
         B2: TensorBacking<R, Elem = D>,
     {

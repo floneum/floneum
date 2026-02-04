@@ -175,11 +175,7 @@ impl LayerNorm<1, f32> {
             }
         });
 
-        Ok(Self::new(
-            weight.to_concrete(),
-            bias,
-            eps,
-        ))
+        Ok(Self::new(weight.to_concrete(), bias, eps))
     }
 }
 

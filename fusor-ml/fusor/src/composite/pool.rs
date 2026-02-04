@@ -1,6 +1,6 @@
 //! Pooling operations that work on both CPU and GPU backends.
 
-use crate::{ConcreteTensor, FloatOps, Tensor, SimdElement};
+use crate::{ConcreteTensor, FloatOps, SimdElement, Tensor};
 use fusor_core::{DataType, FloatDataType};
 use fusor_types::SlidingWindow;
 
@@ -130,8 +130,11 @@ mod tests {
     async fn test_pool_1d_cpu() {
         // Test 1D pooling with batch and channel dimensions (3D input like fusor-core)
         // Input: (1, 1, 12) - batch=1, channels=1, length=12
-        let input_data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 3.0, 12.0, 3.0, 5.0, 39.0, 29.0, 1.0];
-        let input: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 12], &input_data));
+        let input_data = [
+            1.0f32, 2.0, 3.0, 4.0, 5.0, 3.0, 12.0, 3.0, 5.0, 39.0, 29.0, 1.0,
+        ];
+        let input: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 12], &input_data));
 
         for (pool_size, stride) in [(2, 2), (3, 1), (4, 2)] {
             let output = input.pool_max([(pool_size, stride)]);
@@ -218,7 +221,8 @@ mod tests {
     async fn test_pool_min_cpu() {
         // Input: (1, 1, 6) - batch=1, channels=1, length=6
         let input_data = [5.0f32, 2.0, 8.0, 1.0, 9.0, 3.0];
-        let input: Tensor<3, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 6], &input_data));
+        let input: Tensor<3, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 1, 6], &input_data));
 
         let output = input.pool_min([(2, 2)]);
         let output_data = output.as_slice().await.unwrap();

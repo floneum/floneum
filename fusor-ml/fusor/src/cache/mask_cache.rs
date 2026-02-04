@@ -1,6 +1,6 @@
 //! Mask cache implementation for efficient attention mask management.
 
-use crate::{ConcreteTensor, Device, Tensor, SimdElement};
+use crate::{ConcreteTensor, Device, SimdElement, Tensor};
 use fusor_core::FloatDataType;
 
 use super::AttentionMask;
@@ -103,7 +103,10 @@ where
         }
 
         let mask: Tensor<2, D, ConcreteTensor<D, 2>> = match device {
-            Device::Cpu => Tensor::Cpu(fusor_cpu::Tensor::from_slice([seq_len, seq_len], &mask_data)),
+            Device::Cpu => Tensor::Cpu(fusor_cpu::Tensor::from_slice(
+                [seq_len, seq_len],
+                &mask_data,
+            )),
             Device::Gpu(gpu) => {
                 let data_chunks: Vec<&[D]> = mask_data.chunks(seq_len).collect();
                 Tensor::Gpu(fusor_core::Tensor::new(gpu, data_chunks))

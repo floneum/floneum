@@ -4,9 +4,7 @@ use std::ops::Neg as StdNeg;
 
 use pulp::Simd;
 
-use crate::{
-    ConcreteTensor, SimdElement, TensorBacking, materialize_expr,
-};
+use crate::{ConcreteTensor, SimdElement, TensorBacking, materialize_expr};
 use fusor_types::Layout;
 
 /// Trait for unary operations that have SIMD support
@@ -28,8 +26,8 @@ macro_rules! define_op_marker {
     };
 }
 define_op_marker!(
-    NegOp, AbsOp, SqrtOp, ExpOp, Exp2Op, LogOp, Log2Op, SinOp, CosOp, TanOp, TanhOp,
-    AsinOp, AcosOp, AtanOp, SinhOp, CoshOp, AsinhOp, AcoshOp, AtanhOp
+    NegOp, AbsOp, SqrtOp, ExpOp, Exp2Op, LogOp, Log2Op, SinOp, CosOp, TanOp, TanhOp, AsinOp,
+    AcosOp, AtanOp, SinhOp, CoshOp, AsinhOp, AcoshOp, AtanhOp
 );
 
 // Macro for unary ops with SIMD support
@@ -246,7 +244,10 @@ macro_rules! define_unary_tensor_op {
             }
 
             fn to_concrete(&self) -> ConcreteTensor<E, R> {
-                let shape: [usize; R] = self.input.layout().shape()
+                let shape: [usize; R] = self
+                    .input
+                    .layout()
+                    .shape()
                     .try_into()
                     .expect("Shape length mismatch");
                 materialize_expr(self, shape)
@@ -302,7 +303,10 @@ macro_rules! define_unary_tensor_op {
             }
 
             fn to_concrete(&self) -> ConcreteTensor<E, R> {
-                let shape: [usize; R] = self.input.layout().shape()
+                let shape: [usize; R] = self
+                    .input
+                    .layout()
+                    .shape()
                     .try_into()
                     .expect("Shape length mismatch");
                 materialize_expr(self, shape)

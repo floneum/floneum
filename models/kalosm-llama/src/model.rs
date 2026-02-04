@@ -508,7 +508,8 @@ where
                         cx.waker().wake_by_ref();
                         std::task::Poll::Pending
                     }
-                }).await;
+                })
+                .await;
             }
         }
 

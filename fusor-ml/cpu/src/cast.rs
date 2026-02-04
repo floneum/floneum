@@ -95,7 +95,9 @@ where
     T: SimdElement + CastTo<T2>,
     T2: SimdElement,
 {
-    let shape: [usize; R] = input.layout().shape()
+    let shape: [usize; R] = input
+        .layout()
+        .shape()
         .try_into()
         .expect("Shape length mismatch");
     let mut output = ConcreteTensor::<T2, R>::uninit_unchecked(shape);

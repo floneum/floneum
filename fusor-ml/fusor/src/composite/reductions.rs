@@ -1,8 +1,12 @@
 //! Axis reduction operations that work on both CPU and GPU backends.
 
-use crate::{AddOp, ConcreteTensor, DivOp, FloatOps, Tensor, SimdBinaryOp, SimdElement};
-use fusor_core::{DataType, FloatDataType, LastRank as GpuLastRank, NextRankInner as GpuNextRankInner};
-use fusor_cpu::{LastRank as CpuLastRank, MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp, TensorBacking};
+use crate::{AddOp, ConcreteTensor, DivOp, FloatOps, SimdBinaryOp, SimdElement, Tensor};
+use fusor_core::{
+    DataType, FloatDataType, LastRank as GpuLastRank, NextRankInner as GpuNextRankInner,
+};
+use fusor_cpu::{
+    LastRank as CpuLastRank, MaxOp, MinOp, ProdOp, SimdReduceOp, SumOp, TensorBacking,
+};
 
 impl<const R: usize, D, B> Tensor<R, D, B>
 where
@@ -25,10 +29,7 @@ where
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
         SumOp: SimdReduceOp<D>,
     {
-        self.dispatch_ref(
-            |t| t.as_ref().sum_axis::<OUT_RANK>(axis),
-            |t| t.sum(axis),
-        )
+        self.dispatch_ref(|t| t.as_ref().sum_axis::<OUT_RANK>(axis), |t| t.sum(axis))
     }
 
     /// Maximum along a specific axis, reducing the tensor rank by 1.
@@ -41,10 +42,7 @@ where
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
         MaxOp: SimdReduceOp<D>,
     {
-        self.dispatch_ref(
-            |t| t.as_ref().max_axis::<OUT_RANK>(axis),
-            |t| t.max(axis),
-        )
+        self.dispatch_ref(|t| t.as_ref().max_axis::<OUT_RANK>(axis), |t| t.max(axis))
     }
 
     /// Minimum along a specific axis, reducing the tensor rank by 1.
@@ -57,10 +55,7 @@ where
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,
         MinOp: SimdReduceOp<D>,
     {
-        self.dispatch_ref(
-            |t| t.as_ref().min_axis::<OUT_RANK>(axis),
-            |t| t.min(axis),
-        )
+        self.dispatch_ref(|t| t.as_ref().min_axis::<OUT_RANK>(axis), |t| t.min(axis))
     }
 
     /// Product along a specific axis, reducing the tensor rank by 1.

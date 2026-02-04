@@ -1,4 +1,6 @@
-use crate::{DataType, LargerRank, LargerRankInner, SlidingWindow, Tensor, map_layout::MapLayoutOperation};
+use crate::{
+    DataType, LargerRank, LargerRankInner, SlidingWindow, Tensor, map_layout::MapLayoutOperation,
+};
 
 impl<const R: usize, D: DataType> Tensor<R, D> {
     /// Create a sliding window view of a tensor using strided views (zero-copy)

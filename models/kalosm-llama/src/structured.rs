@@ -1,4 +1,7 @@
-use fusor::{AddOp, CastTensor, CastTo, FloatDataType, FloatOps, MatmulImpl, MulOp, SimdBinaryOp, SimdElement, SimdReduceOp, SumOp, WasmNotSend, WasmNotSync};
+use fusor::{
+    AddOp, CastTensor, CastTo, FloatDataType, FloatOps, MatmulImpl, MulOp, SimdBinaryOp,
+    SimdElement, SimdReduceOp, SumOp, WasmNotSend, WasmNotSync,
+};
 use kalosm_language_model::{ContentChunk, MessageContent};
 use kalosm_sample::CreateParserState;
 use kalosm_sample::{LiteralParser, ParseStatus, Parser, ParserExt};
@@ -29,7 +32,16 @@ pub(crate) async fn generate_structured<F, P: Parser>(
     seed: Option<u64>,
 ) -> Result<P::Output, LlamaModelError>
 where
-    F: FloatDataType + SimdElement + Default + CastTo<f32> + CastTensor<f32> + WasmNotSend + WasmNotSync + FloatOps + MatmulImpl + 'static,
+    F: FloatDataType
+        + SimdElement
+        + Default
+        + CastTo<f32>
+        + CastTensor<f32>
+        + WasmNotSend
+        + WasmNotSync
+        + FloatOps
+        + MatmulImpl
+        + 'static,
     f32: CastTo<F> + CastTensor<F>,
     MulOp: SimdBinaryOp<F>,
     AddOp: SimdBinaryOp<F>,

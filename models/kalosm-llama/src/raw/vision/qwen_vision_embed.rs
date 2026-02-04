@@ -1,4 +1,7 @@
-use fusor::{AddOp, CastTensor, CastTo, Device, FloatDataType, FloatOps, MatmulImpl, MulOp, SimdBinaryOp, SimdElement, SimdReduceOp, SumOp, Tensor, VarBuilder};
+use fusor::{
+    AddOp, CastTensor, CastTo, Device, FloatDataType, FloatOps, MatmulImpl, MulOp, SimdBinaryOp,
+    SimdElement, SimdReduceOp, SumOp, Tensor, VarBuilder,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Conv3dConfig {
@@ -116,16 +119,23 @@ where
 
         // Input: (num_patches, in_channels * temporal * patch * patch)
         // Reshape to (num_patches, in_channels, temporal, patch, patch)
-        let x = hidden_states.reshape([
-            num_patches,
-            self.in_channels,
-            self.temporal_patch_size,
-            self.patch_size,
-            self.patch_size,
-        ]).to_concrete();
+        let x = hidden_states
+            .reshape([
+                num_patches,
+                self.in_channels,
+                self.temporal_patch_size,
+                self.patch_size,
+                self.patch_size,
+            ])
+            .to_concrete();
 
         let out = self.conv.forward(&x);
-        Ok(out.reshape([out.shape().iter().product::<usize>() / self.embed_dim, self.embed_dim]).to_concrete())
+        Ok(out
+            .reshape([
+                out.shape().iter().product::<usize>() / self.embed_dim,
+                self.embed_dim,
+            ])
+            .to_concrete())
     }
 }
 

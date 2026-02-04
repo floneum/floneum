@@ -1,6 +1,6 @@
 //! Construction operations that work on both CPU and GPU backends.
 
-use crate::{Device, Tensor, SimdElement};
+use crate::{Device, SimdElement, Tensor};
 use fusor_core::DataType;
 
 impl<D> Tensor<1, D>
@@ -71,7 +71,9 @@ where
                 let data = vec![value; shape.iter().product()];
                 Tensor::Cpu(fusor_cpu::Tensor::from_slice(shape, &data))
             }
-            Device::Gpu(gpu_device) => Tensor::Gpu(fusor_core::Tensor::splat(gpu_device, value, shape)),
+            Device::Gpu(gpu_device) => {
+                Tensor::Gpu(fusor_core::Tensor::splat(gpu_device, value, shape))
+            }
         }
     }
 

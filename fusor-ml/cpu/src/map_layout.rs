@@ -8,7 +8,7 @@ use fusor_types::Layout;
 use pulp::Simd;
 
 use crate::expr::{linear_to_indices, materialize_expr};
-use crate::{ConcreteTensor, LazyBacking, SimdElement, TensorBacking, MAX_SIMD_LANES};
+use crate::{ConcreteTensor, LazyBacking, MAX_SIMD_LANES, SimdElement, TensorBacking};
 
 /// A tensor that holds backing data with a transformed layout.
 ///
@@ -64,13 +64,9 @@ impl<T: LazyBacking, const R: usize> LazyBacking for MapLayout<T, R> {
         if self.layout.is_contiguous() {
             self.backing.eval_scalar(idx)
         } else {
-            let shape: &[usize; R] = unsafe {
-                self.layout.shape().try_into().unwrap_unchecked()
-            };
+            let shape: &[usize; R] = unsafe { self.layout.shape().try_into().unwrap_unchecked() };
             let logical_indices = linear_to_indices::<R>(idx, shape);
-            let physical_idx = unsafe {
-                self.layout.linear_index_unchecked(&logical_indices)
-            };
+            let physical_idx = unsafe { self.layout.linear_index_unchecked(&logical_indices) };
             self.backing.eval_scalar(physical_idx)
         }
     }
@@ -81,20 +77,15 @@ impl<T: LazyBacking, const R: usize> LazyBacking for MapLayout<T, R> {
             self.backing.eval_simd(simd, base_idx)
         } else {
             // Gather elements via scalar evaluation for strided access
-            let lane_count = std::mem::size_of::<
-                <Self::Elem as SimdElement>::Simd<S>
-            >() / std::mem::size_of::<Self::Elem>();
+            let lane_count = std::mem::size_of::<<Self::Elem as SimdElement>::Simd<S>>()
+                / std::mem::size_of::<Self::Elem>();
 
-            let shape: &[usize; R] = unsafe {
-                self.layout.shape().try_into().unwrap_unchecked()
-            };
+            let shape: &[usize; R] = unsafe { self.layout.shape().try_into().unwrap_unchecked() };
 
             let mut temp = [Self::Elem::default(); MAX_SIMD_LANES];
             for i in 0..lane_count {
                 let logical_indices = linear_to_indices::<R>(base_idx + i, shape);
-                let physical_idx = unsafe {
-                    self.layout.linear_index_unchecked(&logical_indices)
-                };
+                let physical_idx = unsafe { self.layout.linear_index_unchecked(&logical_indices) };
                 temp[i] = self.backing.eval_scalar(physical_idx);
             }
 

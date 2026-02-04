@@ -41,7 +41,8 @@ where
         .to_concrete();
     if let Some(weight) = &rope_freq_weight {
         let weight_f32: Tensor<1, f32> = weight.cast();
-        inverse_frequency_f32 = (inverse_frequency_f32 * weight_f32.reshape((1, ())).to_concrete()).to_concrete();
+        inverse_frequency_f32 =
+            (inverse_frequency_f32 * weight_f32.reshape((1, ())).to_concrete()).to_concrete();
     }
 
     inverse_frequency_f32.cast()
@@ -58,11 +59,7 @@ where
     F: CastTo<f32> + CastTensor<f32>,
     f32: CastTo<F> + CastTensor<F>,
 {
-    pub fn new(
-        config: &LlamaConfig<F>,
-        rope_theta: f32,
-        device: &Device,
-    ) -> fusor::Result<Self> {
+    pub fn new(config: &LlamaConfig<F>, rope_theta: f32, device: &Device) -> fusor::Result<Self> {
         if let Some(mrope_sections) = &config.mrope_sections {
             let cache = QwenVLRopeCache::new(config, rope_theta, mrope_sections, device)?;
             Ok(Self::QwenVL(cache))
@@ -133,12 +130,11 @@ where
         let inv_freq_f32: Tensor<2, f32> = self.inverse_frequency.cast();
         let position_ids_f32: Tensor<2, f32> = position_ids.cast();
 
-        let inv_freq_expanded =
-            inv_freq_f32
-                .reshape(((),))
-                .repeat([3])
-                .reshape((3, 1, (), 1))
-                .to_concrete();
+        let inv_freq_expanded = inv_freq_f32
+            .reshape(((),))
+            .repeat([3])
+            .reshape((3, 1, (), 1))
+            .to_concrete();
         let position_ids_expanded = position_ids_f32.unsqueeze(1).unsqueeze(1).to_concrete();
         let freqs = inv_freq_expanded
             .mat_mul(&position_ids_expanded)
@@ -220,11 +216,7 @@ where
     F: CastTo<f32> + CastTensor<f32>,
     f32: CastTo<F> + CastTensor<F>,
 {
-    pub fn new(
-        config: &LlamaConfig<F>,
-        rope_theta: f32,
-        device: &Device,
-    ) -> fusor::Result<Self> {
+    pub fn new(config: &LlamaConfig<F>, rope_theta: f32, device: &Device) -> fusor::Result<Self> {
         let inverse_frequency: Tensor<2, F> = create_inverse_frequency(
             config.rope_scaling.as_ref(),
             config.rope_freq_weight.as_ref(),
@@ -265,12 +257,13 @@ where
         let sin_f32: Tensor<2, f32> = self.sin.cast();
         let cos_f32: Tensor<2, f32> = self.cos.cast();
 
-        let apply_fn = |sin: &Tensor<2, f32>, cos: &Tensor<2, f32>, x: &Tensor<4, f32>, index_pos| {
-            let [_b_sz, _n_head, seq_len, _n_embd] = x.shape();
-            let cos = cos.narrow(0, index_pos, seq_len).to_concrete();
-            let sin = sin.narrow(0, index_pos, seq_len).to_concrete();
-            apply_rotary_emb(x, &cos, &sin)
-        };
+        let apply_fn =
+            |sin: &Tensor<2, f32>, cos: &Tensor<2, f32>, x: &Tensor<4, f32>, index_pos| {
+                let [_b_sz, _n_head, seq_len, _n_embd] = x.shape();
+                let cos = cos.narrow(0, index_pos, seq_len).to_concrete();
+                let sin = sin.narrow(0, index_pos, seq_len).to_concrete();
+                apply_rotary_emb(x, &cos, &sin)
+            };
         let q_out = apply_fn(&sin_f32, &cos_f32, &q_f32, start_pos);
         let k_out = apply_fn(&sin_f32, &cos_f32, &k_f32, start_pos);
 
@@ -315,13 +308,17 @@ async fn test_rope_cache() {
 
     let expected_cos: Tensor<2, f32> = Tensor::new(
         &device,
-        &[1.0000f32, 0.5403f32, -0.4161f32, -0.9900f32, -0.6536f32, 0.2837f32],
+        &[
+            1.0000f32, 0.5403f32, -0.4161f32, -0.9900f32, -0.6536f32, 0.2837f32,
+        ],
     )
     .reshape([6, 1])
     .to_concrete();
     let expected_sin: Tensor<2, f32> = Tensor::new(
         &device,
-        &[0.0000f32, 0.8415f32, 0.9093f32, 0.1411f32, -0.7568f32, -0.9589f32],
+        &[
+            0.0000f32, 0.8415f32, 0.9093f32, 0.1411f32, -0.7568f32, -0.9589f32,
+        ],
     )
     .reshape([6, 1])
     .to_concrete();

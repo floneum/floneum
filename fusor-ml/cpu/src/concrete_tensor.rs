@@ -77,8 +77,7 @@ where
             self.backing[idx]
         } else {
             // Convert linear index to logical indices for strided access
-            let shape: &[usize; R] =
-                    unsafe { self.layout.shape().try_into().unwrap_unchecked() };
+            let shape: &[usize; R] = unsafe { self.layout.shape().try_into().unwrap_unchecked() };
             let indices = linear_to_indices::<R>(idx, shape);
             let phys_idx = unsafe { self.layout.linear_index_unchecked(&indices) };
             self.backing[phys_idx]

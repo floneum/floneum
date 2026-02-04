@@ -123,7 +123,10 @@ pub fn materialize_expr<T: TensorBacking<R> + Sync, const R: usize>(
 /// This is used for strided tensor access where we need to map
 /// a flat iteration index to multi-dimensional tensor coordinates.
 #[inline]
-pub(crate) fn linear_to_indices<const R: usize>(mut linear: usize, shape: &[usize; R]) -> [usize; R] {
+pub(crate) fn linear_to_indices<const R: usize>(
+    mut linear: usize,
+    shape: &[usize; R],
+) -> [usize; R] {
     let mut indices = [0usize; R];
 
     // Work backwards through dimensions (row-major order)

@@ -145,9 +145,14 @@ where
             } else if shape.len() == 2 {
                 // 2D tensor, reshape to 1D (for backwards compatibility)
                 let w2d: Tensor<2, f32> = qmatrix.dequantize();
-                w2d.reshape([w2d.shape()[0] * w2d.shape()[1]]).to_concrete().cast()
+                w2d.reshape([w2d.shape()[0] * w2d.shape()[1]])
+                    .to_concrete()
+                    .cast()
             } else {
-                panic!("Expected 1D or 2D tensor for dequantize_1d, got {}D", shape.len())
+                panic!(
+                    "Expected 1D or 2D tensor for dequantize_1d, got {}D",
+                    shape.len()
+                )
             }
         };
 
@@ -289,7 +294,8 @@ where
         };
         let config = Arc::new(config);
 
-        let rope: RopeImplementation<F> = rope::RopeImplementation::new(&config, config.rope_theta, device)?;
+        let rope: RopeImplementation<F> =
+            rope::RopeImplementation::new(&config, config.rope_theta, device)?;
         let sliding_rope: Option<RopeImplementation<F>> = rope_freq_base_sliding
             .map(|rope_freq_base_sliding| {
                 RopeImplementation::new(&config, rope_freq_base_sliding, device)

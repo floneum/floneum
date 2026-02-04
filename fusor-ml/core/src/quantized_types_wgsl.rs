@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use fusor_gguf::{BlockQ4_0, BlockQ4K, BlockQ5K, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType};
+use fusor_gguf::{BlockQ4_0, BlockQ4K, BlockQ5_0, BlockQ5K, BlockQ6K, BlockQ8_0, GgmlType};
 
 fn byte_array_array_u32<W: Write>(f: &mut W, name: &str, byte_size: usize) -> std::fmt::Result {
     assert!(byte_size.is_multiple_of(4));

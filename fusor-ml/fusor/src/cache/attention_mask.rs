@@ -1,6 +1,6 @@
 //! Attention mask implementation.
 
-use crate::{ConcreteTensor, Device, Tensor, SimdElement};
+use crate::{ConcreteTensor, Device, SimdElement, Tensor};
 use fusor_core::FloatDataType;
 
 /// Attention mask for causal (decoder) attention
@@ -33,7 +33,10 @@ where
         }
 
         let mask: Tensor<2, D> = match device {
-            Device::Cpu => Tensor::Cpu(fusor_cpu::Tensor::from_slice([seq_len, seq_len], &mask_data)),
+            Device::Cpu => Tensor::Cpu(fusor_cpu::Tensor::from_slice(
+                [seq_len, seq_len],
+                &mask_data,
+            )),
             Device::Gpu(gpu) => {
                 let data_chunks: Vec<&[D]> = mask_data.chunks(seq_len).collect();
                 Tensor::Gpu(fusor_core::Tensor::new(gpu, data_chunks))
@@ -65,10 +68,8 @@ where
         }
     }
 
-    pub fn forward<const R: usize>(
-        &self,
-        attention_scores: &mut Tensor<R, D>,
-    ) where
+    pub fn forward<const R: usize>(&self, attention_scores: &mut Tensor<R, D>)
+    where
         D: std::ops::Add<Output = D>,
         (fusor_core::Tensor<2, D>, fusor_core::Tensor<R, D>): fusor_core::MaxRank<R, D>,
     {

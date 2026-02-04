@@ -40,7 +40,10 @@ mod token_stream;
 pub use crate::chat::LlamaChatSession;
 use crate::model::LlamaModel;
 pub use crate::session::LlamaSession;
-use fusor::{AddOp, CastTo, FloatOps, MatmulImpl, MulOp, SimdBinaryOp, SimdReduceOp, SumOp, WasmNotSend, WasmNotSync};
+use fusor::{
+    AddOp, CastTo, FloatOps, MatmulImpl, MulOp, SimdBinaryOp, SimdReduceOp, SumOp, WasmNotSend,
+    WasmNotSync,
+};
 use futures::FutureExt;
 use kalosm_language_model::{MediaHints, TextCompletionBuilder, TextCompletionModelExt};
 pub use kalosm_model_types::FileSource;
@@ -186,7 +189,16 @@ impl Llama {
 
 impl<F> Llama<F>
 where
-    F: FloatDataType + SimdElement + Default + CastTo<f32> + CastTensor<f32> + WasmNotSend + WasmNotSync + FloatOps + MatmulImpl + 'static,
+    F: FloatDataType
+        + SimdElement
+        + Default
+        + CastTo<f32>
+        + CastTensor<f32>
+        + WasmNotSend
+        + WasmNotSync
+        + FloatOps
+        + MatmulImpl
+        + 'static,
     f32: CastTo<F> + CastTensor<F>,
     MulOp: SimdBinaryOp<F>,
     AddOp: SimdBinaryOp<F>,
@@ -254,7 +266,16 @@ where
 
 impl<F> Deref for Llama<F>
 where
-    F: FloatDataType + SimdElement + Default + CastTo<f32> + CastTensor<f32> + WasmNotSend + WasmNotSync + FloatOps + MatmulImpl + 'static,
+    F: FloatDataType
+        + SimdElement
+        + Default
+        + CastTo<f32>
+        + CastTensor<f32>
+        + WasmNotSend
+        + WasmNotSync
+        + FloatOps
+        + MatmulImpl
+        + 'static,
     f32: CastTo<F> + CastTensor<F>,
     MulOp: SimdBinaryOp<F>,
     AddOp: SimdBinaryOp<F>,

@@ -93,7 +93,9 @@ impl<'a> VarBuilder<'a> {
         // Seek to tensor data
         self.reader
             .seek(std::io::SeekFrom::Start(offset))
-            .map_err(|e| crate::Error::VarBuilder(format!("Failed to seek to tensor data: {}", e)))?;
+            .map_err(|e| {
+                crate::Error::VarBuilder(format!("Failed to seek to tensor data: {}", e))
+            })?;
 
         // Calculate size and read bytes
         let ggml_type = tensor_info.ty;
@@ -207,8 +209,9 @@ impl<R: std::io::Read + std::io::Seek> ShardedVarBuilder<R> {
                 r.read_exact(&mut bytes)
                     .map_err(|e| crate::Error::VarBuilder(format!("Failed to read: {}", e)))?;
 
-                return QMatrix::from_raw_bytes(device, shape, &bytes, ggml_type)
-                    .map_err(|e| crate::Error::VarBuilder(format!("Failed to create QMatrix: {}", e)));
+                return QMatrix::from_raw_bytes(device, shape, &bytes, ggml_type).map_err(|e| {
+                    crate::Error::VarBuilder(format!("Failed to create QMatrix: {}", e))
+                });
             }
         }
         Err(crate::Error::VarBuilder(format!(

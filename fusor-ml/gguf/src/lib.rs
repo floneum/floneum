@@ -1642,8 +1642,7 @@ impl GgufBlock for BlockQ5K {
         let scales_bytes = &bytes[scales_offset..scales_offset + std::mem::size_of::<[u8; 12]>()];
         let scales = *bytemuck::from_bytes(scales_bytes);
         let qh_offset = offset_of!(BlockQ5KWgsl, qh);
-        let qh_bytes =
-            &bytes[qh_offset..qh_offset + std::mem::size_of::<[u8; K_BLOCK_SIZE / 8]>()];
+        let qh_bytes = &bytes[qh_offset..qh_offset + std::mem::size_of::<[u8; K_BLOCK_SIZE / 8]>()];
         let qh = *bytemuck::from_bytes(qh_bytes);
         let qs_offset = offset_of!(BlockQ5KWgsl, qs);
         let qs_bytes =
@@ -1953,7 +1952,8 @@ impl GgufBlock for BlockQ6K {
 
                 // Reconstruct 6-bit values
                 let q1 = ((high_byte & TWO_BITS) << 4 | (first_low & FOUR_BITS)) as i8 - CENTER;
-                let q2 = (((high_byte >> 2) & TWO_BITS) << 4 | (second_low & FOUR_BITS)) as i8 - CENTER;
+                let q2 =
+                    (((high_byte >> 2) & TWO_BITS) << 4 | (second_low & FOUR_BITS)) as i8 - CENTER;
                 let q3 = (((high_byte >> 4) & TWO_BITS) << 4 | (first_low >> 4)) as i8 - CENTER;
                 let q4 = (((high_byte >> 6) & TWO_BITS) << 4 | (second_low >> 4)) as i8 - CENTER;
 
@@ -1963,9 +1963,12 @@ impl GgufBlock for BlockQ6K {
                 let s4 = self.scales[sc_idx + 6] as f32;
 
                 sum += scale * s1 * (q1 as f32) * (y.data[output_index + high_byte_index] as f32);
-                sum += scale * s2 * (q2 as f32) * (y.data[output_index + high_byte_index + 32] as f32);
-                sum += scale * s3 * (q3 as f32) * (y.data[output_index + high_byte_index + 64] as f32);
-                sum += scale * s4 * (q4 as f32) * (y.data[output_index + high_byte_index + 96] as f32);
+                sum +=
+                    scale * s2 * (q2 as f32) * (y.data[output_index + high_byte_index + 32] as f32);
+                sum +=
+                    scale * s3 * (q3 as f32) * (y.data[output_index + high_byte_index + 64] as f32);
+                sum +=
+                    scale * s4 * (q4 as f32) * (y.data[output_index + high_byte_index + 96] as f32);
             }
         }
 
@@ -2176,7 +2179,7 @@ mod vec_dot_tests {
             scale: half::f16::from_f32(1.0),
             min: half::f16::from_f32(0.0),
             scales: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], // Unit scales
-            qh: [0; 32],  // No high bits set
+            qh: [0; 32],                                  // No high bits set
             qs: std::array::from_fn(|i| {
                 // Pack values: low nibble = i%16, high nibble = (i+1)%16
                 let lo = (i % 16) as u8;
@@ -2195,7 +2198,9 @@ mod vec_dot_tests {
             assert!(
                 (dequant[i] - expected).abs() < 0.01,
                 "Q5K dequantize[{}]: expected {}, got {}",
-                i, expected, dequant[i]
+                i,
+                expected,
+                dequant[i]
             );
         }
     }
@@ -2207,8 +2212,8 @@ mod vec_dot_tests {
             scale: half::f16::from_f32(1.0),
             min: half::f16::from_f32(0.0),
             scales: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-            qh: [0xFF; 32],  // All high bits set (adds 16 to each value)
-            qs: [0; 128],    // All low bits zero
+            qh: [0xFF; 32], // All high bits set (adds 16 to each value)
+            qs: [0; 128],   // All low bits zero
         };
 
         let dequant = block.dequantize();
@@ -2218,7 +2223,8 @@ mod vec_dot_tests {
             assert!(
                 (dequant[i] - 16.0).abs() < 0.01,
                 "Q5K with high bits dequantize[{}]: expected 16, got {}",
-                i, dequant[i]
+                i,
+                dequant[i]
             );
         }
     }
@@ -2450,7 +2456,12 @@ fn test_q8_0_quantize_roundtrip() {
     let dequant = block.dequantize();
     for (a, b) in data.iter().zip(&dequant) {
         // Quantization to 8-bit introduces ~1% error
-        assert!((a - b).abs() < 0.02, "Mismatch: original={}, dequantized={}", a, b);
+        assert!(
+            (a - b).abs() < 0.02,
+            "Mismatch: original={}, dequantized={}",
+            a,
+            b
+        );
     }
 }
 
@@ -2462,7 +2473,12 @@ fn test_q8_k_quantize_roundtrip() {
     let dequant = block.dequantize();
     for (a, b) in data.iter().zip(&dequant) {
         // Quantization to 8-bit introduces ~1% error
-        assert!((a - b).abs() < 0.02, "Mismatch: original={}, dequantized={}", a, b);
+        assert!(
+            (a - b).abs() < 0.02,
+            "Mismatch: original={}, dequantized={}",
+            a,
+            b
+        );
     }
 }
 
@@ -2482,13 +2498,19 @@ fn test_vec_dot_q8_0_matches_dequantize() {
     // Compute dequantize-then-dot
     let weight_dequant = weight_block.dequantize();
     let act_dequant = activation_block.dequantize();
-    let dequant_dot: f32 = weight_dequant.iter().zip(&act_dequant).map(|(w, a)| w * a).sum();
+    let dequant_dot: f32 = weight_dequant
+        .iter()
+        .zip(&act_dequant)
+        .map(|(w, a)| w * a)
+        .sum();
 
     // Results should be very close (within quantization error)
     assert!(
         (vec_dot_result - dequant_dot).abs() < 0.5,
         "vec_dot={}, dequant_dot={}, diff={}",
-        vec_dot_result, dequant_dot, (vec_dot_result - dequant_dot).abs()
+        vec_dot_result,
+        dequant_dot,
+        (vec_dot_result - dequant_dot).abs()
     );
 }
 
@@ -2500,7 +2522,7 @@ fn test_vec_dot_q4_0_matches_dequantize() {
     raw_bytes.extend_from_slice(&scale_f16.to_le_bytes());
     // Pack 32 4-bit values: indices 0-15 in low nibble, 16-31 in high nibble
     for i in 0..16 {
-        let low_val = (i % 16) as u8;  // indices 0-15
+        let low_val = (i % 16) as u8; // indices 0-15
         let high_val = ((i + 8) % 16) as u8; // indices 16-31
         let packed = low_val | (high_val << 4);
         raw_bytes.push(packed);
@@ -2517,12 +2539,18 @@ fn test_vec_dot_q4_0_matches_dequantize() {
     // Compute dequantize-then-dot
     let weight_dequant = weight_block.dequantize();
     let act_dequant = activation_block.dequantize();
-    let dequant_dot: f32 = weight_dequant.iter().zip(&act_dequant).map(|(w, a)| w * a).sum();
+    let dequant_dot: f32 = weight_dequant
+        .iter()
+        .zip(&act_dequant)
+        .map(|(w, a)| w * a)
+        .sum();
 
     // Results should be close (within quantization error)
     assert!(
         (vec_dot_result - dequant_dot).abs() < 1.0,
         "vec_dot={}, dequant_dot={}, diff={}",
-        vec_dot_result, dequant_dot, (vec_dot_result - dequant_dot).abs()
+        vec_dot_result,
+        dequant_dot,
+        (vec_dot_result - dequant_dot).abs()
     );
 }

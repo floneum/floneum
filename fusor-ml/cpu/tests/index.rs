@@ -215,9 +215,18 @@ fn test_sliding_window_with_cat_padding() {
     // Window 2 for channel 1: [5, 6, 0]
     // So row 2 should be [2, 3, 0, 5, 6, 0]
 
-    println!("Row 0: {:?}", (0..6).map(|i| reshaped.get([0, i])).collect::<Vec<_>>());
-    println!("Row 1: {:?}", (0..6).map(|i| reshaped.get([1, i])).collect::<Vec<_>>());
-    println!("Row 2: {:?}", (0..6).map(|i| reshaped.get([2, i])).collect::<Vec<_>>());
+    println!(
+        "Row 0: {:?}",
+        (0..6).map(|i| reshaped.get([0, i])).collect::<Vec<_>>()
+    );
+    println!(
+        "Row 1: {:?}",
+        (0..6).map(|i| reshaped.get([1, i])).collect::<Vec<_>>()
+    );
+    println!(
+        "Row 2: {:?}",
+        (0..6).map(|i| reshaped.get([2, i])).collect::<Vec<_>>()
+    );
 
     assert_eq!(reshaped.get([0, 0]), 0.0, "row 0, col 0 (pad)");
     assert_eq!(reshaped.get([0, 1]), 1.0, "row 0, col 1");

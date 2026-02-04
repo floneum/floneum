@@ -3,7 +3,9 @@
 use std::{num::NonZeroUsize, sync::Arc};
 
 use fusor::{
-    Device, Error, Result, Tensor, VarBuilder, cache::{AttentionMask, KvCache, MaskCache, TensorCache}, layers::{Conv1d, Conv1dConfig, Embedding, LayerNorm, Linear}
+    cache::{AttentionMask, KvCache, MaskCache, TensorCache},
+    layers::{Conv1d, Conv1dConfig, Embedding, LayerNorm, Linear},
+    Device, Error, Result, Tensor, VarBuilder,
 };
 use timestamps::extract_timestamps;
 

@@ -10,13 +10,16 @@ use fusor::FloatDataType;
 use fusor::QMatrix;
 use fusor::SimdElement;
 use fusor::Tensor;
-use fusor::D;
 use fusor::TensorBacking;
+use fusor::D;
 
 /// Helper function to do quantized matmul with a generic type F.
 /// Converts F -> f32, performs q_mat_mul, then converts f32 -> F.
 #[allow(dead_code)]
-fn q_mat_mul_generic<const R: usize, F, B>(input: &Tensor<R, F, B>, weight: &QMatrix) -> Tensor<R, F>
+fn q_mat_mul_generic<const R: usize, F, B>(
+    input: &Tensor<R, F, B>,
+    weight: &QMatrix,
+) -> Tensor<R, F>
 where
     F: FloatDataType + SimdElement + Default + CastTo<f32> + CastTensor<f32>,
     f32: CastTo<F> + CastTensor<F>,
@@ -66,12 +69,16 @@ impl PhiFeedForward {
         // All computation happens in f32 for compatibility with SIMD ops
         let x_f32 = x.cast::<f32>();
         let up_states = x_f32.q_mat_mul(&self.up);
-        let gate = up_states.narrow(D::Minus1, 0, self.feed_forward_length).to_concrete();
-        let up_states = up_states.narrow(
-            D::Minus1,
-            self.feed_forward_length,
-            self.feed_forward_length,
-        ).to_concrete();
+        let gate = up_states
+            .narrow(D::Minus1, 0, self.feed_forward_length)
+            .to_concrete();
+        let up_states = up_states
+            .narrow(
+                D::Minus1,
+                self.feed_forward_length,
+                self.feed_forward_length,
+            )
+            .to_concrete();
         let gate = gate.silu();
         let up_states = up_states * gate;
         let result = up_states.q_mat_mul(&self.down);

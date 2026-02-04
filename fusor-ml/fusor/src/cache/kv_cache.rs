@@ -1,6 +1,6 @@
 //! KV cache implementation for attention layers.
 
-use crate::{ConcreteTensor, Device, Tensor, SimdElement};
+use crate::{ConcreteTensor, Device, SimdElement, Tensor};
 use fusor_core::DataType;
 
 use super::TensorCache;

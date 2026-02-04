@@ -1,6 +1,6 @@
 //! Math operations that work on both CPU and GPU backends.
 
-use crate::{ConcreteTensor, FloatOps, Tensor, MulOp, ResolvedTensor, SimdBinaryOp, SimdElement};
+use crate::{ConcreteTensor, FloatOps, MulOp, ResolvedTensor, SimdBinaryOp, SimdElement, Tensor};
 use fusor_core::{DataType, FloatDataType};
 use fusor_cpu::Mul;
 
@@ -52,7 +52,8 @@ where
                 let mut result = vec![D::default(); new_shape.iter().product()];
 
                 // Calculate how many elements to copy per dimension
-                let copy_shape: [usize; R] = std::array::from_fn(|i| old_shape[i].min(new_shape[i]));
+                let copy_shape: [usize; R] =
+                    std::array::from_fn(|i| old_shape[i].min(new_shape[i]));
 
                 // Copy elements using nested iteration
                 fn copy_recursive<D: Copy, const R: usize>(
@@ -96,7 +97,9 @@ where
                     0,
                 );
 
-                Tensor::Cpu(fusor_cpu::Tensor::new(fusor_cpu::ConcreteTensor::from_slice(new_shape, &result)))
+                Tensor::Cpu(fusor_cpu::Tensor::new(
+                    fusor_cpu::ConcreteTensor::from_slice(new_shape, &result),
+                ))
             }
             Tensor::Gpu(t) => Tensor::Gpu(t.resize(new_shape)),
         }
@@ -116,7 +119,11 @@ mod tests {
 
         for i in 0..6 {
             let expected = data[i] * data[i];
-            assert!((slice[[i]] - expected).abs() < 0.001, "Mismatch at index {}", i);
+            assert!(
+                (slice[[i]] - expected).abs() < 0.001,
+                "Mismatch at index {}",
+                i
+            );
         }
     }
 }

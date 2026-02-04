@@ -92,13 +92,15 @@ impl WhisperInner {
         config: &[u8],
     ) -> Result<Self, WhisperLoadingError> {
         // Set FUSOR_USE_GPU=1 to use GPU, otherwise CPU
-        let use_gpu = std::env::var("FUSOR_USE_GPU").map(|v| v == "1").unwrap_or(false);
+        let use_gpu = std::env::var("FUSOR_USE_GPU")
+            .map(|v| v == "1")
+            .unwrap_or(false);
         let device = if use_gpu {
             Device::new().await?
         } else {
             Device::cpu()
         };
-        
+
         let tokenizer =
             Tokenizer::from_bytes(tokenizer).map_err(WhisperLoadingError::LoadTokenizer)?;
         let config: Config =
@@ -412,7 +414,9 @@ impl Decoder {
             // https://github.com/openai/whisper/blob/e8622f9afc4eba139bf796c210f5c01081000472/whisper/decoding.py#L439
             let logits = (&logits_1d + &self.suppress_tokens).to_concrete();
             let next_token = if temperature > 0f64 {
-                let prs = logits.clone().div_scalar(crate::WhisperDType::from(temperature as f32));
+                let prs = logits
+                    .clone()
+                    .div_scalar(crate::WhisperDType::from(temperature as f32));
                 let prs = prs.softmax(0);
                 let logits_v = self
                     .apply_timestamp_rules(prs, &tokens, task.without_timestamps)
@@ -439,8 +443,12 @@ impl Decoder {
                 let logits_sm = logits.softmax(0);
                 let logits_slice = logits_sm.as_slice().await.unwrap();
                 let logits_data = logits_slice.as_slice();
-                
-                let mut indexed: Vec<(usize, f32)> = logits_data.iter().enumerate().map(|(i, v)| (i, (*v).into())).collect();
+
+                let mut indexed: Vec<(usize, f32)> = logits_data
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| (i, (*v).into()))
+                    .collect();
                 indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
             }
             // After the final pass if word level timestamps are requested, we stop decoding
@@ -640,9 +648,9 @@ impl Decoder {
             // Encode all of the chunks
             let batched_mel_segment: Tensor<3, crate::WhisperDType> =
                 Tensor::stack(chunked.iter().cloned(), 0);
-            
+
             let batched_audio_features = self.encode(&batched_mel_segment)?;
-            
+
             let split = batched_audio_features.chunk(chunk_indices.len(), 0);
 
             // Tokens that are remaining in the last chunk's sentence fragment

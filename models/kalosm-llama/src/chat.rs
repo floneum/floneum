@@ -4,7 +4,10 @@ use std::{
 };
 
 use crate::{model::LlamaModelError, session::LlamaSessionLoadingError, Llama, LlamaSession};
-use fusor::{AddOp, CastTensor, CastTo, FloatDataType, FloatOps, MatmulImpl, MulOp, SimdBinaryOp, SimdElement, SimdReduceOp, SumOp};
+use fusor::{
+    AddOp, CastTensor, CastTo, FloatDataType, FloatOps, MatmulImpl, MulOp, SimdBinaryOp,
+    SimdElement, SimdReduceOp, SumOp,
+};
 use kalosm_language_model::{
     ChatMessage, ChatModel, ChatSession, ContentChunk, CreateChatSession,
     CreateTextCompletionSession, MessageContent, MessageType, StructuredChatModel,
@@ -50,7 +53,8 @@ fn get_new_tokens<F: FloatDataType + SimdElement>(
     Ok(new_text.to_string())
 }
 
-impl<F: FloatDataType + SimdElement + Default + FloatOps + MatmulImpl> CreateChatSession for Llama<F>
+impl<F: FloatDataType + SimdElement + Default + FloatOps + MatmulImpl> CreateChatSession
+    for Llama<F>
 where
     F: CastTo<f32> + CastTensor<f32> + WasmNotSendSync + 'static,
     f32: CastTo<F> + CastTensor<F>,
@@ -66,7 +70,8 @@ where
     }
 }
 
-impl<F: FloatDataType + SimdElement + Default + FloatOps + MatmulImpl, S: Sampler + 'static> ChatModel<S> for Llama<F>
+impl<F: FloatDataType + SimdElement + Default + FloatOps + MatmulImpl, S: Sampler + 'static>
+    ChatModel<S> for Llama<F>
 where
     F: CastTo<f32> + CastTensor<f32> + WasmNotSendSync + 'static,
     f32: CastTo<F> + CastTensor<F>,
@@ -114,7 +119,8 @@ where
     }
 }
 
-impl<F: FloatDataType + SimdElement + Default + FloatOps + MatmulImpl, S, Constraints> StructuredChatModel<Constraints, S> for Llama<F>
+impl<F: FloatDataType + SimdElement + Default + FloatOps + MatmulImpl, S, Constraints>
+    StructuredChatModel<Constraints, S> for Llama<F>
 where
     F: CastTo<f32> + CastTensor<f32> + WasmNotSendSync + 'static,
     f32: CastTo<F> + CastTensor<F>,

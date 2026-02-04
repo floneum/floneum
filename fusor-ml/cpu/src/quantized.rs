@@ -128,7 +128,10 @@ impl<B: GgufBlock> QuantizedTensor<B> {
     /// # Panics
     /// Panics if the tensor's rank doesn't match R.
     pub fn dequantize<const R: usize>(&self) -> ConcreteTensor<f32, R> {
-        let shape: [usize; R] = self.element_shape.as_ref().try_into()
+        let shape: [usize; R] = self
+            .element_shape
+            .as_ref()
+            .try_into()
             .expect("Shape length mismatch in dequantize");
         let mut output = ConcreteTensor::<f32, R>::uninit_unchecked(shape);
         let out_data = output.data_mut();
@@ -204,13 +207,21 @@ where
 {
     fn layout(&self) -> Layout {
         // The layout of the dequantized tensor matches the source tensor's element shape
-        let shape: [usize; R] = self.source.element_shape.as_ref().try_into()
+        let shape: [usize; R] = self
+            .source
+            .element_shape
+            .as_ref()
+            .try_into()
             .expect("Shape length mismatch in Dequantize::layout");
         Layout::contiguous(&shape)
     }
 
     fn to_concrete(&self) -> ConcreteTensor<f32, R> {
-        let shape: [usize; R] = self.source.element_shape.as_ref().try_into()
+        let shape: [usize; R] = self
+            .source
+            .element_shape
+            .as_ref()
+            .try_into()
             .expect("Shape length mismatch in Dequantize::to_concrete");
         materialize_expr(self, shape)
     }
@@ -232,10 +243,7 @@ impl<const R: usize> ConcreteTensor<f32, R> {
     ///
     /// # Panics
     /// Panics if rhs is not 2D.
-    pub fn q_mat_mul<B: GgufBlock + Sync>(
-        &self,
-        rhs: &QuantizedTensor<B>,
-    ) -> ConcreteTensor<f32, R>
+    pub fn q_mat_mul<B: GgufBlock + Sync>(&self, rhs: &QuantizedTensor<B>) -> ConcreteTensor<f32, R>
     where
         B::Dequantized: AsRef<[f32]>,
         B::ActivationBlock: Pod + Send + Sync,
@@ -254,7 +262,7 @@ impl<const R: usize> ConcreteTensor<f32, R> {
         let m = lhs_shape[R - 2];
         let k = lhs_shape[R - 1];
         // Weight is stored as [out_features, in_features] to match GPU convention
-        let n = rhs_shape[0];  // out_features
+        let n = rhs_shape[0]; // out_features
         let k2 = rhs_shape[1]; // in_features
 
         assert_eq!(
@@ -396,7 +404,13 @@ where
 
             // For small n or single-threaded, don't parallelize
             if n < 64 || n_threads == 1 {
-                process_row_integer_tiled::<B>(lhs_data, rhs_blocks, out_data, n, blocks_per_weight_row);
+                process_row_integer_tiled::<B>(
+                    lhs_data,
+                    rhs_blocks,
+                    out_data,
+                    n,
+                    blocks_per_weight_row,
+                );
             } else {
                 // Parallelize over output column chunks using scoped threads
                 const CHUNK_SIZE: usize = 32;
@@ -429,8 +443,12 @@ where
                             for (i, out_chunk) in thread_chunk.chunks_mut(CHUNK_SIZE).enumerate() {
                                 let chunk_start = thread_start_n + i * CHUNK_SIZE;
                                 process_row_integer_range::<B>(
-                                    lhs_data, rhs_blocks, out_chunk,
-                                    chunk_start, out_chunk.len(), blocks_per_weight_row
+                                    lhs_data,
+                                    rhs_blocks,
+                                    out_chunk,
+                                    chunk_start,
+                                    out_chunk.len(),
+                                    blocks_per_weight_row,
                                 );
                             }
                         });
@@ -445,7 +463,13 @@ where
                 for i in 0..m {
                     let lhs_row = &lhs_data[i * k..(i + 1) * k];
                     let out_row = &mut out_data[i * n..(i + 1) * n];
-                    process_row_integer_tiled::<B>(lhs_row, rhs_blocks, out_row, n, blocks_per_weight_row);
+                    process_row_integer_tiled::<B>(
+                        lhs_row,
+                        rhs_blocks,
+                        out_row,
+                        n,
+                        blocks_per_weight_row,
+                    );
                 }
             } else {
                 // Process rows in parallel using scoped threads
@@ -477,7 +501,13 @@ where
                                 let global_row = thread_row_offset + i;
                                 let lhs_row = &lhs_data[global_row * k..(global_row + 1) * k];
                                 let out_row = &mut thread_out[i * n..(i + 1) * n];
-                                process_row_integer_tiled::<B>(lhs_row, rhs_blocks, out_row, n, blocks_per_weight_row);
+                                process_row_integer_tiled::<B>(
+                                    lhs_row,
+                                    rhs_blocks,
+                                    out_row,
+                                    n,
+                                    blocks_per_weight_row,
+                                );
                             }
                         });
                     }
@@ -488,7 +518,13 @@ where
             for i in 0..m {
                 let lhs_row = &lhs_data[i * k..(i + 1) * k];
                 let out_row = &mut out_data[i * n..(i + 1) * n];
-                process_row_integer_tiled::<B>(lhs_row, rhs_blocks, out_row, n, blocks_per_weight_row);
+                process_row_integer_tiled::<B>(
+                    lhs_row,
+                    rhs_blocks,
+                    out_row,
+                    n,
+                    blocks_per_weight_row,
+                );
             }
         }
     }
@@ -542,7 +578,8 @@ fn process_row_simd_range<B: GgufBlock, S: Simd>(
 {
     for i in 0..chunk_n {
         let n_out = start_n + i;
-        out_chunk[i] = compute_dot_product::<B, S>(simd, lhs_row, rhs_blocks, n_out, blocks_per_weight_row);
+        out_chunk[i] =
+            compute_dot_product::<B, S>(simd, lhs_row, rhs_blocks, n_out, blocks_per_weight_row);
     }
 }
 
@@ -591,7 +628,8 @@ fn process_row_integer_tiled<B: GgufBlock>(
     for j in (n_tiles * TILE)..n {
         let mut sum = 0.0f32;
         for block_idx in 0..blocks_per_weight_row {
-            sum += rhs_blocks[j * blocks_per_weight_row + block_idx].vec_dot(&act_blocks[block_idx]);
+            sum +=
+                rhs_blocks[j * blocks_per_weight_row + block_idx].vec_dot(&act_blocks[block_idx]);
         }
         out_row[j] = sum;
     }
@@ -660,16 +698,21 @@ fn process_row_simd_tiled<B: GgufBlock, S: Simd>(
         }
 
         // Reduce and store results
-        out_row[base + 0] = <SumOp as SimdReduceOp<f32>>::reduce_simd_vec(simd, acc0) + scalar_acc[0];
-        out_row[base + 1] = <SumOp as SimdReduceOp<f32>>::reduce_simd_vec(simd, acc1) + scalar_acc[1];
-        out_row[base + 2] = <SumOp as SimdReduceOp<f32>>::reduce_simd_vec(simd, acc2) + scalar_acc[2];
-        out_row[base + 3] = <SumOp as SimdReduceOp<f32>>::reduce_simd_vec(simd, acc3) + scalar_acc[3];
+        out_row[base + 0] =
+            <SumOp as SimdReduceOp<f32>>::reduce_simd_vec(simd, acc0) + scalar_acc[0];
+        out_row[base + 1] =
+            <SumOp as SimdReduceOp<f32>>::reduce_simd_vec(simd, acc1) + scalar_acc[1];
+        out_row[base + 2] =
+            <SumOp as SimdReduceOp<f32>>::reduce_simd_vec(simd, acc2) + scalar_acc[2];
+        out_row[base + 3] =
+            <SumOp as SimdReduceOp<f32>>::reduce_simd_vec(simd, acc3) + scalar_acc[3];
     }
 
     // Handle remainder
     for i in 0..n_remainder {
         let n_out = n_tiles * TILE + i;
-        out_row[n_out] = compute_dot_product::<B, S>(simd, lhs_row, rhs_blocks, n_out, blocks_per_weight_row);
+        out_row[n_out] =
+            compute_dot_product::<B, S>(simd, lhs_row, rhs_blocks, n_out, blocks_per_weight_row);
     }
 }
 
@@ -980,9 +1023,7 @@ mod tests {
         let n = 32;
 
         // Create batched LHS: [2, 3, 64]
-        let lhs_data: Vec<f32> = (0..(batch * m * k))
-            .map(|x| (x as f32) * 0.01)
-            .collect();
+        let lhs_data: Vec<f32> = (0..(batch * m * k)).map(|x| (x as f32) * 0.01).collect();
         let lhs = ConcreteTensor::<f32, 3>::from_slice([batch, m, k], &lhs_data);
 
         // Create quantized RHS: [N, K] = [32, 64] (out_features, in_features)
@@ -1018,11 +1059,16 @@ mod tests {
                     }
                     let actual = result.get([b, i, j]);
                     // Combined error from Q8_0 weights + Q8_0 activation quantization
-                    let tolerance = expected.abs().max(1.0) * 0.03;  // 3% relative error
+                    let tolerance = expected.abs().max(1.0) * 0.03; // 3% relative error
                     assert!(
                         (actual - expected).abs() < tolerance,
                         "Mismatch at [{}, {}, {}]: expected={}, actual={}, diff={}",
-                        b, i, j, expected, actual, (actual - expected).abs()
+                        b,
+                        i,
+                        j,
+                        expected,
+                        actual,
+                        (actual - expected).abs()
                     );
                 }
             }
@@ -1040,9 +1086,7 @@ mod tests {
         let n = 32;
 
         // Create batched LHS: [2, 3, 2, 32]
-        let lhs_data: Vec<f32> = (0..(b1 * b2 * m * k))
-            .map(|x| (x as f32) * 0.02)
-            .collect();
+        let lhs_data: Vec<f32> = (0..(b1 * b2 * m * k)).map(|x| (x as f32) * 0.02).collect();
         let lhs = ConcreteTensor::<f32, 4>::from_slice([b1, b2, m, k], &lhs_data);
 
         // Create quantized RHS: [N, K] = [32, 32] (out_features, in_features)
@@ -1079,11 +1123,17 @@ mod tests {
                         }
                         let actual = result.get([bi, bj, i, j]);
                         // Combined error from Q8_0 weights + Q8_0 activation quantization
-                        let tolerance = expected.abs().max(1.0) * 0.06;  // 6% relative error
+                        let tolerance = expected.abs().max(1.0) * 0.06; // 6% relative error
                         assert!(
                             (actual - expected).abs() < tolerance,
                             "Mismatch at [{}, {}, {}, {}]: expected={}, actual={}, diff={}",
-                            bi, bj, i, j, expected, actual, (actual - expected).abs()
+                            bi,
+                            bj,
+                            i,
+                            j,
+                            expected,
+                            actual,
+                            (actual - expected).abs()
                         );
                     }
                 }
@@ -1102,9 +1152,7 @@ mod tests {
         let n = 32;
 
         // Create LHS: [2, 64]
-        let lhs_data: Vec<f32> = (0..(m * k))
-            .map(|x| (x as f32) * 0.01 - 0.5)
-            .collect();
+        let lhs_data: Vec<f32> = (0..(m * k)).map(|x| (x as f32) * 0.01 - 0.5).collect();
         let lhs = ConcreteTensor::<f32, 2>::from_slice([m, k], &lhs_data);
 
         // Create quantized RHS using Q4_0: [N, K] = [32, 64]
@@ -1122,7 +1170,7 @@ mod tests {
             // Pack 32 4-bit values: low nibble (indices 0-15), high nibble (indices 16-31)
             // Create a simple pattern where values are (block_idx + i) % 16 centered at 8
             for i in 0..16 {
-                let low_val = ((block_idx + i) % 16) as u8;   // indices 0-15
+                let low_val = ((block_idx + i) % 16) as u8; // indices 0-15
                 let high_val = ((block_idx + i + 8) % 16) as u8; // indices 16-31
                 let packed = low_val | (high_val << 4);
                 raw_bytes.push(packed);
@@ -1149,11 +1197,15 @@ mod tests {
                 let actual = result.get([i, j]);
                 // Combined error from Q4_0 weights + Q8_0 activation quantization
                 // is higher than just dequantizing weights (~1-2% error is expected)
-                let tolerance = expected.abs().max(1.0) * 0.02;  // 2% relative error
+                let tolerance = expected.abs().max(1.0) * 0.02; // 2% relative error
                 assert!(
                     (actual - expected).abs() < tolerance,
                     "Q4_0 mismatch at [{}, {}]: expected={}, actual={}, diff={}",
-                    i, j, expected, actual, (actual - expected).abs()
+                    i,
+                    j,
+                    expected,
+                    actual,
+                    (actual - expected).abs()
                 );
             }
         }
@@ -1218,7 +1270,12 @@ mod tests {
                     assert!(
                         (actual - expected).abs() < 0.1,
                         "Realistic Q4_0 mismatch at [{}, {}, {}]: expected={}, actual={}, diff={}",
-                        b, s, o, expected, actual, (actual - expected).abs()
+                        b,
+                        s,
+                        o,
+                        expected,
+                        actual,
+                        (actual - expected).abs()
                     );
                 }
             }
@@ -1278,7 +1335,10 @@ mod tests {
                 assert!(
                     (v1 - v1_batched).abs() < 1e-6,
                     "Batch 0 mismatch at [{}, {}]: unbatched={}, batched={}",
-                    i, j, v1, v1_batched
+                    i,
+                    j,
+                    v1,
+                    v1_batched
                 );
 
                 let v2 = result2.get([i, j]);
@@ -1286,7 +1346,10 @@ mod tests {
                 assert!(
                     (v2 - v2_batched).abs() < 1e-6,
                     "Batch 1 mismatch at [{}, {}]: unbatched={}, batched={}",
-                    i, j, v2, v2_batched
+                    i,
+                    j,
+                    v2,
+                    v2_batched
                 );
             }
         }

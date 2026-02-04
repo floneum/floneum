@@ -18,13 +18,9 @@ where
 
     pub(crate) fn make_embeds(&self, sequence_length: u32) -> fusor::Result<Tensor<2, F>> {
         // Work in f32 for mat_mul
-        let seq_f32: Tensor<2, f32> = arange(
-            &self.inv_freq.device(),
-            0f32,
-            sequence_length as f32,
-        )
-        .reshape([sequence_length as usize, 1])
-        .to_concrete();
+        let seq_f32: Tensor<2, f32> = arange(&self.inv_freq.device(), 0f32, sequence_length as f32)
+            .reshape([sequence_length as usize, 1])
+            .to_concrete();
         let inv_freq_f32: Tensor<2, f32> = self.inv_freq.cast();
         let result_f32 = seq_f32.mat_mul(&inv_freq_f32);
         Ok(result_f32.cast())

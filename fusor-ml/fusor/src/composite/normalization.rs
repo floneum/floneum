@@ -139,7 +139,11 @@ where
     ///
     /// Note: This is a simplified implementation that assumes weight has the same
     /// rank as input. For more complex broadcasting, use the GPU's optimized kernels directly.
-    pub fn rms_norm<const OUT_RANK: usize, B2>(&self, weight: &Tensor<R, D, B2>, eps: D) -> Tensor<R, D>
+    pub fn rms_norm<const OUT_RANK: usize, B2>(
+        &self,
+        weight: &Tensor<R, D, B2>,
+        eps: D,
+    ) -> Tensor<R, D>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
         fusor_core::Tensor<R, D>: GpuLastRank<OUT_RANK, D>,

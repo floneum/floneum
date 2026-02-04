@@ -1,6 +1,8 @@
 //! RMS normalization implementation.
 
-use crate::{CastTensor, CastTo, ConcreteTensor, DataType, Device, SimdElement, Tensor, VarBuilder};
+use crate::{
+    CastTensor, CastTo, ConcreteTensor, DataType, Device, SimdElement, Tensor, VarBuilder,
+};
 
 /// Root Mean Square Normalization.
 ///
@@ -20,7 +22,7 @@ impl<const N: usize, T: DataType + SimdElement + Default> RmsNorm<N, T> {
         Self {
             weight: weight.to_concrete(),
             bias: bias.map(|b| b.to_concrete()),
-            eps
+            eps,
         }
     }
 
@@ -138,15 +140,13 @@ mod tests {
     async fn test_rms_norm_2d() {
         // Weight: (3,)
         let weight_data = [1.0f32, 1.0, 1.0];
-        let weight: Tensor<1, f32> =
-            Tensor::Cpu(fusor_cpu::Tensor::from_slice([3], &weight_data));
+        let weight: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([3], &weight_data));
 
         let rms_norm = RmsNorm::new(weight, None, 1e-5);
 
         // Input: (2, 3)
         let input_data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let input: Tensor<2, f32> =
-            Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &input_data));
+        let input: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &input_data));
 
         let output = rms_norm.forward_2d(&input);
         let result = output.as_slice().await.unwrap();
@@ -163,8 +163,7 @@ mod tests {
     #[tokio::test]
     async fn test_rms_norm_3d() {
         let weight_data = [2.0f32, 2.0];
-        let weight: Tensor<1, f32> =
-            Tensor::Cpu(fusor_cpu::Tensor::from_slice([2], &weight_data));
+        let weight: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2], &weight_data));
 
         let rms_norm = RmsNorm::new(weight, None, 1e-5);
 

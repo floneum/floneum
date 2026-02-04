@@ -4,18 +4,14 @@ use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Sub as StdSub};
 
 use pulp::Simd;
 
+use crate::pairwise::{AddOp, DivOp, MulOp, SimdBinaryOp, SubOp};
 use crate::{ConcreteTensor, SimdElement, TensorBacking, materialize_expr};
 use fusor_types::Layout;
-use crate::pairwise::{AddOp, DivOp, MulOp, SimdBinaryOp, SubOp};
 
 /// Macro to define scalar tensor operations (AddScalar, SubScalar, MulScalar, DivScalar)
 macro_rules! define_scalar_tensor_op {
     ($name:ident, $std_trait:ident, $simd_op:ty) => {
-        pub struct $name<
-            E: SimdElement,
-            const R: usize,
-            T: TensorBacking<R, Elem = E>,
-        > {
+        pub struct $name<E: SimdElement, const R: usize, T: TensorBacking<R, Elem = E>> {
             tensor: T,
             scalar: E,
         }
@@ -64,7 +60,10 @@ macro_rules! define_scalar_tensor_op {
             }
 
             fn to_concrete(&self) -> ConcreteTensor<E, R> {
-                let shape: [usize; R] = self.tensor.layout().shape()
+                let shape: [usize; R] = self
+                    .tensor
+                    .layout()
+                    .shape()
                     .try_into()
                     .expect("Shape length mismatch");
                 materialize_expr(self, shape)

@@ -163,11 +163,7 @@ pub(crate) fn q5k_sgemv(
         // qh bit positions depend on which chunks we're processing:
         // half_subgroup_id=0: chunks 0,2 (low nibbles at bits 0,4; high nibbles at bits 1,5)
         // half_subgroup_id=1: chunks 1,3 (low nibbles at bits 2,6; high nibbles at bits 3,7)
-        writeln!(
-            kernel,
-            "let qh_bit_low_first = half_subgroup_id * 2u;"
-        )
-        .unwrap(); // 0 or 2
+        writeln!(kernel, "let qh_bit_low_first = half_subgroup_id * 2u;").unwrap(); // 0 or 2
         writeln!(
             kernel,
             "let qh_bit_high_first = half_subgroup_id * 2u + 1u;"

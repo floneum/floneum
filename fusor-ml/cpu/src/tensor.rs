@@ -1,6 +1,8 @@
 //! Tensor - the unified interface over different tensor backends
 
-use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Neg as StdNeg, Range, Rem as StdRem, Sub as StdSub};
+use std::ops::{
+    Add as StdAdd, Div as StdDiv, Mul as StdMul, Neg as StdNeg, Range, Rem as StdRem, Sub as StdSub,
+};
 
 use fusor_types::{Layout, SlidingWindow};
 use pulp::Simd;
@@ -10,8 +12,8 @@ use crate::comparison::{self, EqOp, GtOp, GteOp, LtOp, LteOp, NeOp};
 use crate::concrete_tensor::IndexIterator;
 use crate::conditional::{IsNonZero, where_cond_ref};
 use crate::elementwise::{
-    AbsOp, AcosOp, AcoshOp, AsinOp, AsinhOp, AtanOp, AtanhOp, CosOp, CoshOp, Exp2Op, ExpOp,
-    Log2Op, LogOp, NegOp, SimdUnaryOp, SinOp, SinhOp, SqrtOp, TanOp, TanhOp,
+    AbsOp, AcosOp, AcoshOp, AsinOp, AsinhOp, AtanOp, AtanhOp, CosOp, CoshOp, Exp2Op, ExpOp, Log2Op,
+    LogOp, NegOp, SimdUnaryOp, SinOp, SinhOp, SqrtOp, TanOp, TanhOp,
 };
 use crate::index::index_select_ref;
 use crate::matmul::MatmulImpl;
@@ -21,8 +23,8 @@ use crate::reduce::{
 };
 use crate::slice_assign::slice_assign_ref;
 use crate::{
-    ConcreteTensor, CpuMappedBuffer, LastRank, MapLayout, MaxRank, ResolvedTensor,
-    SimdElement, TensorBacking, TensorSlice, elementwise, pairwise, scalar,
+    ConcreteTensor, CpuMappedBuffer, LastRank, MapLayout, MaxRank, ResolvedTensor, SimdElement,
+    TensorBacking, TensorSlice, elementwise, pairwise, scalar,
 };
 
 /// A tensor wrapper that provides a unified interface over different tensor backends.
@@ -118,10 +120,7 @@ where
     ///
     /// Returns a view into the tensor's data with updated layout.
     /// This operation is lazy and preserves laziness of the inner tensor.
-    pub fn slice(
-        self,
-        slices: [Range<usize>; R],
-    ) -> Tensor<R, MapLayout<T, R>> {
+    pub fn slice(self, slices: [Range<usize>; R]) -> Tensor<R, MapLayout<T, R>> {
         let current_layout = self.inner.layout();
         let new_layout = current_layout.slice(&slices);
         Tensor::new(MapLayout::new(self.inner, new_layout))
@@ -171,10 +170,7 @@ where
     ///
     /// The total number of elements must remain the same.
     /// This operation is lazy and preserves laziness of the inner tensor.
-    pub fn reshape<const R2: usize>(
-        self,
-        new_shape: [usize; R2],
-    ) -> Tensor<R2, MapLayout<T, R2>> {
+    pub fn reshape<const R2: usize>(self, new_shape: [usize; R2]) -> Tensor<R2, MapLayout<T, R2>> {
         let new_layout = Layout::contiguous(&new_shape);
         Tensor::new(MapLayout::new(self.inner, new_layout))
     }
@@ -193,7 +189,11 @@ where
             return Tensor::new(concrete);
         }
 
-        let shape: [usize; R] = concrete.layout().shape().try_into().expect("Shape length mismatch");
+        let shape: [usize; R] = concrete
+            .layout()
+            .shape()
+            .try_into()
+            .expect("Shape length mismatch");
         let mut output = ConcreteTensor::<E, R>::zeros(shape);
 
         for indices in IndexIterator::new(concrete.layout().shape()) {
@@ -305,10 +305,7 @@ where
     ///
     /// This is an alias for `broadcast_as` for compatibility with other tensor libraries.
     /// This operation is lazy and preserves laziness of the inner tensor.
-    pub fn expand<const R2: usize>(
-        self,
-        out_shape: [usize; R2],
-    ) -> Tensor<R2, MapLayout<T, R2>> {
+    pub fn expand<const R2: usize>(self, out_shape: [usize; R2]) -> Tensor<R2, MapLayout<T, R2>> {
         self.broadcast_as(out_shape)
     }
 
@@ -321,9 +318,7 @@ where
     /// # Example
     /// A tensor of shape [2, 3, 4] with N=2 becomes [2, 12]
     /// This operation is lazy and preserves laziness of the inner tensor.
-    pub fn flatten_last_n<const N: usize, const R2: usize>(
-        self,
-    ) -> Tensor<R2, MapLayout<T, R2>> {
+    pub fn flatten_last_n<const N: usize, const R2: usize>(self) -> Tensor<R2, MapLayout<T, R2>> {
         assert!(R2 == R - N + 1, "Output rank must be R - N + 1");
         let current_layout = self.inner.layout();
         let new_layout = current_layout.flatten_last_n(N);
@@ -339,9 +334,7 @@ where
     /// # Example
     /// A tensor of shape [2, 3, 4] with N=1 becomes [6, 4]
     /// This operation is lazy and preserves laziness of the inner tensor.
-    pub fn flatten_first_n<const N: usize, const R2: usize>(
-        self,
-    ) -> Tensor<R2, MapLayout<T, R2>> {
+    pub fn flatten_first_n<const N: usize, const R2: usize>(self) -> Tensor<R2, MapLayout<T, R2>> {
         assert!(R2 == R - N, "Output rank must be R - N");
         let current_layout = self.inner.layout();
         let new_layout = current_layout.flatten_first_n(N);
@@ -995,7 +988,9 @@ where
     #[inline]
     pub fn pow_scalar(self, exponent: E) -> Tensor<R, ConcreteTensor<E, R>> {
         let concrete = self.inner.to_concrete();
-        let shape: [usize; R] = concrete.layout().shape()
+        let shape: [usize; R] = concrete
+            .layout()
+            .shape()
             .try_into()
             .expect("Shape length mismatch");
         let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
@@ -1009,7 +1004,9 @@ where
     #[inline]
     pub fn max_scalar(self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>> {
         let concrete = self.inner.to_concrete();
-        let shape: [usize; R] = concrete.layout().shape()
+        let shape: [usize; R] = concrete
+            .layout()
+            .shape()
             .try_into()
             .expect("Shape length mismatch");
         let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
@@ -1023,7 +1020,9 @@ where
     #[inline]
     pub fn min_scalar(self, scalar: E) -> Tensor<R, ConcreteTensor<E, R>> {
         let concrete = self.inner.to_concrete();
-        let shape: [usize; R] = concrete.layout().shape()
+        let shape: [usize; R] = concrete
+            .layout()
+            .shape()
             .try_into()
             .expect("Shape length mismatch");
         let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
@@ -1037,7 +1036,9 @@ where
     #[inline]
     pub fn clamp(self, min: E, max: E) -> Tensor<R, ConcreteTensor<E, R>> {
         let concrete = self.inner.to_concrete();
-        let shape: [usize; R] = concrete.layout().shape()
+        let shape: [usize; R] = concrete
+            .layout()
+            .shape()
             .try_into()
             .expect("Shape length mismatch");
         let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
@@ -1176,7 +1177,8 @@ impl_cpu_pairwise_op!(StdRem, rem, Rem, RemOp);
 impl<const R: usize, T> StdNeg for Tensor<R, T>
 where
     T: TensorBacking<R>,
-    <T as crate::LazyBacking>::Elem: SimdElement + StdNeg<Output = <T as crate::LazyBacking>::Elem> + Default,
+    <T as crate::LazyBacking>::Elem:
+        SimdElement + StdNeg<Output = <T as crate::LazyBacking>::Elem> + Default,
     NegOp: SimdUnaryOp<<T as crate::LazyBacking>::Elem>,
 {
     type Output = Tensor<R, elementwise::Neg<<T as crate::LazyBacking>::Elem, R, T>>;
@@ -1189,7 +1191,8 @@ where
 impl<'a, const R: usize, T> StdNeg for &'a Tensor<R, T>
 where
     T: TensorBacking<R>,
-    <T as crate::LazyBacking>::Elem: SimdElement + StdNeg<Output = <T as crate::LazyBacking>::Elem> + Default,
+    <T as crate::LazyBacking>::Elem:
+        SimdElement + StdNeg<Output = <T as crate::LazyBacking>::Elem> + Default,
     NegOp: SimdUnaryOp<<T as crate::LazyBacking>::Elem>,
 {
     type Output = Tensor<R, elementwise::Neg<<T as crate::LazyBacking>::Elem, R, &'a T>>;
@@ -1276,10 +1279,7 @@ where
 {
     /// Add a scalar to each element
     #[inline]
-    pub fn add_scalar(
-        self,
-        scalar_val: E,
-    ) -> Tensor<R, scalar::AddScalar<E, R, T>>
+    pub fn add_scalar(self, scalar_val: E) -> Tensor<R, scalar::AddScalar<E, R, T>>
     where
         E: StdAdd<Output = E>,
         AddOp: SimdBinaryOp<E>,
@@ -1289,10 +1289,7 @@ where
 
     /// Subtract a scalar from each element
     #[inline]
-    pub fn sub_scalar(
-        self,
-        scalar_val: E,
-    ) -> Tensor<R, scalar::SubScalar<E, R, T>>
+    pub fn sub_scalar(self, scalar_val: E) -> Tensor<R, scalar::SubScalar<E, R, T>>
     where
         E: StdSub<Output = E>,
         SubOp: SimdBinaryOp<E>,
@@ -1302,10 +1299,7 @@ where
 
     /// Multiply each element by a scalar
     #[inline]
-    pub fn mul_scalar(
-        self,
-        scalar_val: E,
-    ) -> Tensor<R, scalar::MulScalar<E, R, T>>
+    pub fn mul_scalar(self, scalar_val: E) -> Tensor<R, scalar::MulScalar<E, R, T>>
     where
         E: StdMul<Output = E>,
         MulOp: SimdBinaryOp<E>,
@@ -1315,10 +1309,7 @@ where
 
     /// Divide each element by a scalar
     #[inline]
-    pub fn div_scalar(
-        self,
-        scalar_val: E,
-    ) -> Tensor<R, scalar::DivScalar<E, R, T>>
+    pub fn div_scalar(self, scalar_val: E) -> Tensor<R, scalar::DivScalar<E, R, T>>
     where
         E: StdDiv<Output = E>,
         DivOp: SimdBinaryOp<E>,
@@ -1479,10 +1470,8 @@ where
         let shape2: [usize; R2] = other.layout().shape().try_into().unwrap();
         let out_shape: [usize; R3] = broadcast_shapes(&shape1, &shape2);
 
-        let a: Tensor<R3, ConcreteTensor<E, R3>> =
-            self.broadcast_as(out_shape).to_concrete();
-        let b: Tensor<R3, ConcreteTensor<E, R3>> =
-            other.broadcast_as(out_shape).to_concrete();
+        let a: Tensor<R3, ConcreteTensor<E, R3>> = self.broadcast_as(out_shape).to_concrete();
+        let b: Tensor<R3, ConcreteTensor<E, R3>> = other.broadcast_as(out_shape).to_concrete();
 
         // Compute power element-wise
         let a_data = ResolvedTensor::data(a.inner());
@@ -1540,10 +1529,15 @@ impl<const R: usize, T: TensorBacking<R>> Tensor<R, T> {
     /// # Arguments
     /// * `tensors` - Iterator of tensors to concatenate
     /// * `dim` - The dimension to concatenate along
-    pub fn cat(tensors: impl IntoIterator<Item = Self>, dim: usize) -> Tensor<R, ConcreteTensor<T::Elem, R>>
-    {
+    pub fn cat(
+        tensors: impl IntoIterator<Item = Self>,
+        dim: usize,
+    ) -> Tensor<R, ConcreteTensor<T::Elem, R>> {
         let tensors: Vec<_> = tensors.into_iter().map(|t| t.to_concrete()).collect();
-        assert!(!tensors.is_empty(), "Cannot concatenate empty list of tensors");
+        assert!(
+            !tensors.is_empty(),
+            "Cannot concatenate empty list of tensors"
+        );
         assert!(dim < R, "Dimension {} out of range for rank {}", dim, R);
 
         let first_shape = tensors[0].inner.layout().shape();
@@ -1556,7 +1550,11 @@ impl<const R: usize, T: TensorBacking<R>> Tensor<R, T> {
                 if i == dim {
                     cat_dim_size += s2;
                 } else {
-                    assert_eq!(s1, s2, "Shape mismatch at dimension {}: {} vs {}", i, s1, s2);
+                    assert_eq!(
+                        s1, s2,
+                        "Shape mismatch at dimension {}: {} vs {}",
+                        i, s1, s2
+                    );
                 }
             }
         }
@@ -1575,7 +1573,8 @@ impl<const R: usize, T: TensorBacking<R>> Tensor<R, T> {
             let tensor_dim_size = tensor_shape[dim];
 
             for indices in IndexIterator::new(tensor_shape) {
-                let src_arr: [usize; R] = indices.clone().try_into().expect("Indices length mismatch");
+                let src_arr: [usize; R] =
+                    indices.clone().try_into().expect("Indices length mismatch");
 
                 let mut dst_arr = src_arr;
                 dst_arr[dim] += offset_in_dim;
@@ -1599,10 +1598,14 @@ impl<const R: usize, T: TensorBacking<R>> Tensor<R, T> {
     pub fn stack<const R2: usize>(
         tensors: impl IntoIterator<Item = Self>,
         dim: usize,
-    ) -> Tensor<R2, ConcreteTensor<T::Elem, R2>>
-    {
+    ) -> Tensor<R2, ConcreteTensor<T::Elem, R2>> {
         assert!(R2 == R + 1, "Output rank must be R + 1");
-        assert!(dim <= R, "Stack dimension {} out of range for rank {}", dim, R);
+        assert!(
+            dim <= R,
+            "Stack dimension {} out of range for rank {}",
+            dim,
+            R
+        );
 
         let tensors: Vec<_> = tensors.into_iter().map(|t| t.to_concrete()).collect();
         assert!(!tensors.is_empty(), "Cannot stack empty list of tensors");
@@ -1612,7 +1615,8 @@ impl<const R: usize, T: TensorBacking<R>> Tensor<R, T> {
         // Validate all tensors have same shape
         for tensor in &tensors {
             assert_eq!(
-                tensor.inner.layout().shape(), first_shape,
+                tensor.inner.layout().shape(),
+                first_shape,
                 "All tensors must have same shape for stacking"
             );
         }

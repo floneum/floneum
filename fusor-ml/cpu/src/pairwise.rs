@@ -195,7 +195,10 @@ macro_rules! define_binary_tensor_op {
             }
 
             fn to_concrete(&self) -> ConcreteTensor<E, R> {
-                let shape: [usize; R] = self.lhs.layout().shape()
+                let shape: [usize; R] = self
+                    .lhs
+                    .layout()
+                    .shape()
                     .try_into()
                     .expect("Shape length mismatch");
                 materialize_expr(self, shape)
@@ -298,9 +301,9 @@ mod tests {
         let rem_expr: Rem<u32, 1, _, _> = Rem::new(&a, &b);
 
         // Test scalar evaluation
-        assert_eq!(rem_expr.eval_scalar(0), 1);  // 10 % 3 = 1
-        assert_eq!(rem_expr.eval_scalar(1), 2);  // 17 % 5 = 2
-        assert_eq!(rem_expr.eval_scalar(2), 4);  // 25 % 7 = 4
+        assert_eq!(rem_expr.eval_scalar(0), 1); // 10 % 3 = 1
+        assert_eq!(rem_expr.eval_scalar(1), 2); // 17 % 5 = 2
+        assert_eq!(rem_expr.eval_scalar(2), 4); // 25 % 7 = 4
         assert_eq!(rem_expr.eval_scalar(3), 10); // 100 % 30 = 10
 
         // Test materialization

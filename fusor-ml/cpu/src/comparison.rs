@@ -241,7 +241,10 @@ macro_rules! define_comparison_tensor_op {
             }
 
             fn to_concrete(&self) -> ConcreteTensor<E, R> {
-                let shape: [usize; R] = self.lhs.layout().shape()
+                let shape: [usize; R] = self
+                    .lhs
+                    .layout()
+                    .shape()
                     .try_into()
                     .expect("Shape length mismatch");
                 materialize_expr(self, shape)

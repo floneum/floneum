@@ -3,7 +3,7 @@
 //! This module provides PyTorch-style tensor indexing via the `i()` method.
 //! Example: `tensor.i((.., 0, ..))` to select a specific index along one dimension.
 
-use crate::{ConcreteTensor, Tensor, SimdElement};
+use crate::{ConcreteTensor, SimdElement, Tensor};
 use fusor_core::DataType;
 use std::ops::{Range, RangeFrom, RangeFull, RangeTo};
 
@@ -154,10 +154,7 @@ where
     D: SimdElement + DataType + Default,
 {
     /// Index into a 4D tensor.
-    pub fn i<I1, I2, I3, I4>(
-        &self,
-        (i1, i2, i3, i4): (I1, I2, I3, I4),
-    ) -> Tensor<3, D>
+    pub fn i<I1, I2, I3, I4>(&self, (i1, i2, i3, i4): (I1, I2, I3, I4)) -> Tensor<3, D>
     where
         I1: Into<IndexOp>,
         I2: Into<IndexOp>,
@@ -215,8 +212,9 @@ mod tests {
     #[tokio::test]
     async fn test_index_2d_row() {
         // Create a 2D tensor [[1, 2], [3, 4], [5, 6]]
-        let tensor: Tensor<2, f32, ConcreteTensor<f32, 2>> =
-            Tensor::Cpu(fusor_cpu::Tensor::from_slice([3, 2], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
+        let tensor: Tensor<2, f32, ConcreteTensor<f32, 2>> = Tensor::Cpu(
+            fusor_cpu::Tensor::from_slice([3, 2], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+        );
 
         // Select row 1: [3, 4]
         let indexed = tensor.i((1, ..));
@@ -229,8 +227,9 @@ mod tests {
     #[tokio::test]
     async fn test_index_2d_col() {
         // Create a 2D tensor [[1, 2], [3, 4], [5, 6]]
-        let tensor: Tensor<2, f32, ConcreteTensor<f32, 2>> =
-            Tensor::Cpu(fusor_cpu::Tensor::from_slice([3, 2], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
+        let tensor: Tensor<2, f32, ConcreteTensor<f32, 2>> = Tensor::Cpu(
+            fusor_cpu::Tensor::from_slice([3, 2], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+        );
 
         // Select column 0: [1, 3, 5]
         let indexed = tensor.i((.., 0));
@@ -244,10 +243,9 @@ mod tests {
     #[tokio::test]
     async fn test_index_3d() {
         // Create a 3D tensor [[[1, 2], [3, 4]], [[5, 6], [7, 8]]]
-        let tensor: Tensor<3, f32, ConcreteTensor<f32, 3>> = Tensor::Cpu(fusor_cpu::Tensor::from_slice(
-            [2, 2, 2],
-            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
-        ));
+        let tensor: Tensor<3, f32, ConcreteTensor<f32, 3>> = Tensor::Cpu(
+            fusor_cpu::Tensor::from_slice([2, 2, 2], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]),
+        );
 
         // Select along middle dimension: tensor[:, 0, :] -> [[1, 2], [5, 6]]
         let indexed = tensor.i((.., 0, ..));
@@ -262,10 +260,9 @@ mod tests {
     #[tokio::test]
     async fn test_index_4d() {
         // Create a 4D tensor
-        let tensor: Tensor<4, f32, ConcreteTensor<f32, 4>> = Tensor::Cpu(fusor_cpu::Tensor::from_slice(
-            [1, 2, 2, 2],
-            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
-        ));
+        let tensor: Tensor<4, f32, ConcreteTensor<f32, 4>> = Tensor::Cpu(
+            fusor_cpu::Tensor::from_slice([1, 2, 2, 2], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]),
+        );
 
         // Select tensor[0, :, :, :] -> 3D tensor
         let indexed = tensor.i((0, .., .., ..));

@@ -105,7 +105,9 @@ where
             *cached = cached.slice_assign(slice, v);
             self.current_seq_len = required_seq_len;
             // Return only the valid portion of the cache, not the full allocated tensor
-            cached.narrow(self.concat_dim, 0, self.current_seq_len).to_concrete()
+            cached
+                .narrow(self.concat_dim, 0, self.current_seq_len)
+                .to_concrete()
         } else {
             // First append - just store it
             self.all_data = Some(v.clone());

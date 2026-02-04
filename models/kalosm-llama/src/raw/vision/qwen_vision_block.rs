@@ -221,7 +221,9 @@ where
             }
         }
 
-        let mask_tensor: Tensor<2, f32> = Tensor::new(&xs.device(), &mask_vec).reshape([seq_len, seq_len]).to_concrete();
+        let mask_tensor: Tensor<2, f32> = Tensor::new(&xs.device(), &mask_vec)
+            .reshape([seq_len, seq_len])
+            .to_concrete();
         let mask = AttentionMask::new(mask_tensor);
 
         // query_states is already f32

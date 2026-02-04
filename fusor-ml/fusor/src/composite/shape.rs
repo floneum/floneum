@@ -99,7 +99,12 @@ where
     /// * `dim` - The dimension to narrow (can be `usize` or `D::Minus1`, etc.)
     /// * `start` - The starting index
     /// * `length` - The length of the slice
-    pub fn narrow(&self, dim: impl Dim<R>, start: usize, length: usize) -> Tensor<R, D, MapLayout<&B, R>> {
+    pub fn narrow(
+        &self,
+        dim: impl Dim<R>,
+        start: usize,
+        length: usize,
+    ) -> Tensor<R, D, MapLayout<&B, R>> {
         let dim = dim.resolve();
         match self {
             Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().narrow(dim, start, length)),
@@ -285,7 +290,6 @@ where
         self.transpose(R - 2, R - 1)
     }
 }
-
 
 fn dispatch_vec<const R: usize, D, B, O>(
     tensors: impl IntoIterator<Item = Tensor<R, D, B>>,

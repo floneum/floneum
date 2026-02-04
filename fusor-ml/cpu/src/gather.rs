@@ -181,8 +181,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pulp::Arch;
     use crate::SimdElement;
+    use pulp::Arch;
 
     #[test]
     fn test_gather_f32() {
@@ -205,13 +205,12 @@ mod tests {
             type Output = ();
 
             fn with_simd<S: Simd>(self, simd: S) -> Self::Output {
-                let lane_count =
-                    std::mem::size_of::<<f32 as SimdElement>::Simd<S>>() / std::mem::size_of::<f32>();
+                let lane_count = std::mem::size_of::<<f32 as SimdElement>::Simd<S>>()
+                    / std::mem::size_of::<f32>();
                 *self.lane_count = lane_count;
 
                 unsafe {
-                    let gathered =
-                        f32::gather_unchecked(simd, self.data, self.indices, lane_count);
+                    let gathered = f32::gather_unchecked(simd, self.data, self.indices, lane_count);
 
                     // Store result
                     let (out_simd, _) = f32::as_mut_simd::<S>(self.result);
@@ -256,13 +255,12 @@ mod tests {
             type Output = ();
 
             fn with_simd<S: Simd>(self, simd: S) -> Self::Output {
-                let lane_count =
-                    std::mem::size_of::<<f32 as SimdElement>::Simd<S>>() / std::mem::size_of::<f32>();
+                let lane_count = std::mem::size_of::<<f32 as SimdElement>::Simd<S>>()
+                    / std::mem::size_of::<f32>();
                 *self.lane_count = lane_count;
 
                 unsafe {
-                    let gathered =
-                        f32::gather_unchecked(simd, self.data, self.indices, lane_count);
+                    let gathered = f32::gather_unchecked(simd, self.data, self.indices, lane_count);
 
                     let (out_simd, _) = f32::as_mut_simd::<S>(self.result);
                     out_simd[0] = gathered;

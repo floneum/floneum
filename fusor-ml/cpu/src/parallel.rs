@@ -102,18 +102,17 @@ where
 /// * `chunk_size` - Size of each chunk to process together
 /// * `f` - Function receiving (chunk_index, input_chunk, output_chunk)
 #[inline]
-pub fn parallel_zip_chunks_mut<T, U, F>(
-    input: &[T],
-    output: &mut [U],
-    chunk_size: usize,
-    f: F,
-)
+pub fn parallel_zip_chunks_mut<T, U, F>(input: &[T], output: &mut [U], chunk_size: usize, f: F)
 where
     T: Sync,
     U: Send,
     F: Fn(usize, &[T], &mut [U]) + Send + Sync,
 {
-    assert_eq!(input.len(), output.len(), "Input and output must have same length");
+    assert_eq!(
+        input.len(),
+        output.len(),
+        "Input and output must have same length"
+    );
 
     if input.is_empty() || chunk_size == 0 {
         return;
@@ -124,7 +123,8 @@ where
 
     // If single-threaded or very small workload, run sequentially
     if n_threads == 1 || total_chunks <= 1 {
-        for (i, (in_chunk, out_chunk)) in input.chunks(chunk_size)
+        for (i, (in_chunk, out_chunk)) in input
+            .chunks(chunk_size)
             .zip(output.chunks_mut(chunk_size))
             .enumerate()
         {
@@ -163,7 +163,8 @@ where
 
             let f_ref = &f;
             scope.spawn(move || {
-                for (i, (in_chunk, out_chunk)) in thread_in.chunks(chunk_size)
+                for (i, (in_chunk, out_chunk)) in thread_in
+                    .chunks(chunk_size)
                     .zip(thread_out.chunks_mut(chunk_size))
                     .enumerate()
                 {

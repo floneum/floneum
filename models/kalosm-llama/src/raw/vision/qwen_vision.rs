@@ -34,10 +34,26 @@ async fn test_pad() {
     let data: Vec<u32> = slice.as_slice().to_vec();
     // Reshape to 2D for comparison
     let expected = vec![
-        0, 1, 2, 3, u32::MAX,
-        4, 5, 6, 7, u32::MAX,
-        8, 9, 10, 11, u32::MAX,
-        u32::MAX, u32::MAX, u32::MAX, u32::MAX, u32::MAX
+        0,
+        1,
+        2,
+        3,
+        u32::MAX,
+        4,
+        5,
+        6,
+        7,
+        u32::MAX,
+        8,
+        9,
+        10,
+        11,
+        u32::MAX,
+        u32::MAX,
+        u32::MAX,
+        u32::MAX,
+        u32::MAX,
+        u32::MAX,
     ];
     assert_eq!(data, expected);
 }
@@ -88,7 +104,9 @@ pub(crate) fn get_window_index(
             .to_concrete()
         };
 
-        let index_padded_flat = index_padded.reshape([index_padded.shape().iter().product::<usize>()]).to_concrete();
+        let index_padded_flat = index_padded
+            .reshape([index_padded.shape().iter().product::<usize>()])
+            .to_concrete();
         let slice = pollster::block_on(index_padded_flat.as_slice())?;
         let index_padded_slice: Vec<u32> = slice.as_slice().to_vec();
 

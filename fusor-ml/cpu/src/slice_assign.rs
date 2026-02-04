@@ -106,7 +106,9 @@ fn slice_assign_contiguous<E, const R: usize>(
 where
     E: SimdElement,
 {
-    let input_shape: [usize; R] = input.layout().shape()
+    let input_shape: [usize; R] = input
+        .layout()
+        .shape()
         .try_into()
         .expect("Shape length mismatch");
     let mut output = ConcreteTensor::<E, R>::uninit_unchecked(input_shape);
@@ -152,7 +154,9 @@ fn slice_assign_strided<E, const R: usize>(
 where
     E: SimdElement,
 {
-    let input_shape: [usize; R] = input.layout().shape()
+    let input_shape: [usize; R] = input
+        .layout()
+        .shape()
         .try_into()
         .expect("Shape length mismatch");
     let mut output = ConcreteTensor::<E, R>::uninit_unchecked(input_shape);
