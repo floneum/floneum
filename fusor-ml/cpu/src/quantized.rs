@@ -699,8 +699,7 @@ fn process_row_simd_tiled<B: GgufBlock, S: Simd>(
         }
 
         // Reduce and store results
-        out_row[base] =
-            <SumOp as SimdReduceOp<f32>>::reduce_simd_vec(simd, acc0) + scalar_acc[0];
+        out_row[base] = <SumOp as SimdReduceOp<f32>>::reduce_simd_vec(simd, acc0) + scalar_acc[0];
         out_row[base + 1] =
             <SumOp as SimdReduceOp<f32>>::reduce_simd_vec(simd, acc1) + scalar_acc[1];
         out_row[base + 2] =

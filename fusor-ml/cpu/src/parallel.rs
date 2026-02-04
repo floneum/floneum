@@ -22,77 +22,6 @@ pub fn num_threads() -> usize {
     }
 }
 
-/// Execute a function in parallel over mutable chunks of data.
-///
-/// Divides the data into chunks and processes them in parallel using
-/// `std::thread::scope`. Each thread receives its chunk index and a
-/// mutable slice of the chunk data.
-///
-/// # Arguments
-/// * `data` - The mutable slice to process in parallel
-/// * `chunk_size` - The size of each logical chunk (determines work division)
-/// * `f` - Function to execute on each chunk, receives (chunk_index, chunk_data)
-///
-/// # Note
-/// If the data length is not evenly divisible by chunk_size, the last
-/// thread will process the remaining elements.
-#[inline]
-#[allow(dead_code)]
-pub fn parallel_chunks_mut<T, F>(data: &mut [T], chunk_size: usize, f: F)
-where
-    T: Send,
-    F: Fn(usize, &mut [T]) + Send + Sync,
-{
-    if data.is_empty() || chunk_size == 0 {
-        return;
-    }
-
-    let n_threads = num_threads();
-    let total_chunks = data.len().div_ceil(chunk_size);
-
-    // If single-threaded or very small workload, run sequentially
-    if n_threads == 1 || total_chunks <= 1 {
-        for (i, chunk) in data.chunks_mut(chunk_size).enumerate() {
-            f(i, chunk);
-        }
-        return;
-    }
-
-    // Distribute chunks evenly among threads
-    let chunks_per_thread = total_chunks.div_ceil(n_threads);
-    let elements_per_thread = chunks_per_thread * chunk_size;
-
-    std::thread::scope(|scope| {
-        let mut remaining = data;
-        let mut chunk_offset = 0;
-
-        for thread_id in 0..n_threads {
-            if remaining.is_empty() {
-                break;
-            }
-
-            let this_size = if thread_id == n_threads - 1 {
-                remaining.len()
-            } else {
-                elements_per_thread.min(remaining.len())
-            };
-
-            let (thread_data, rest) = remaining.split_at_mut(this_size);
-            remaining = rest;
-
-            let current_chunk_offset = chunk_offset;
-            chunk_offset += this_size.div_ceil(chunk_size);
-
-            let f_ref = &f;
-            scope.spawn(move || {
-                for (i, chunk) in thread_data.chunks_mut(chunk_size).enumerate() {
-                    f_ref(current_chunk_offset + i, chunk);
-                }
-            });
-        }
-    });
-}
-
 /// Execute a function in parallel over pairs of input/output chunks.
 ///
 /// Useful for operations like softmax where each input row maps to an output row.
@@ -184,42 +113,6 @@ mod tests {
     fn test_num_threads() {
         let n = num_threads();
         assert!(n >= 1);
-    }
-
-    #[test]
-    fn test_parallel_chunks_mut_basic() {
-        let mut data = vec![0u32; 100];
-        parallel_chunks_mut(&mut data, 10, |chunk_idx, chunk| {
-            for (i, val) in chunk.iter_mut().enumerate() {
-                *val = (chunk_idx * 10 + i) as u32;
-            }
-        });
-
-        for (i, &val) in data.iter().enumerate() {
-            assert_eq!(val, i as u32);
-        }
-    }
-
-    #[test]
-    fn test_parallel_chunks_mut_uneven() {
-        let mut data = vec![0u32; 95]; // Not evenly divisible by 10
-        parallel_chunks_mut(&mut data, 10, |chunk_idx, chunk| {
-            for (i, val) in chunk.iter_mut().enumerate() {
-                *val = (chunk_idx * 10 + i) as u32;
-            }
-        });
-
-        for (i, &val) in data.iter().enumerate() {
-            assert_eq!(val, i as u32);
-        }
-    }
-
-    #[test]
-    fn test_parallel_chunks_mut_empty() {
-        let mut data: Vec<u32> = vec![];
-        parallel_chunks_mut(&mut data, 10, |_, _| {
-            panic!("Should not be called on empty data");
-        });
     }
 
     #[test]

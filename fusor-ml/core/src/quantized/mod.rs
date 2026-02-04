@@ -1318,95 +1318,92 @@ impl WgslQuantizedType for BlockQ5K {
         // Process each of the 4 chunks
         // Each chunk uses a pair of bits from qh:
         // Chunk 0: bits 0,1; Chunk 1: bits 2,3; Chunk 2: bits 4,5; Chunk 3: bits 6,7
-        let mut run_single_chunk = |scales: &str,
-                                    offsets: &str,
-                                    suffix: &str,
-                                    bit_pos_low: u32,
-                                    bit_pos_high: u32| {
-            writeln!(code, "{{").unwrap();
-            writeln!(
-                code,
-                "let chunk_scales = vec4<{datatype}>(unpack4xU8({scales})) * super_block_scale;"
-            )
-            .unwrap();
-            writeln!(code, "let low_scale = chunk_scales.{suffix};").unwrap();
-            // Q5K uses sequential scale indices without division (unlike Q4K)
-            let high_suffix = if suffix == "x" { "y" } else { "w" };
-            writeln!(code, "let high_scale = chunk_scales.{high_suffix};").unwrap();
-            writeln!(
-                code,
-                "let chunk_offsets = vec4<{datatype}>(unpack4xU8({offsets})) * super_block_min;"
-            )
-            .unwrap();
-            writeln!(code, "let low_offset = chunk_offsets.{suffix};").unwrap();
-            writeln!(code, "let high_offset = chunk_offsets.{high_suffix};").unwrap();
+        let mut run_single_chunk =
+            |scales: &str, offsets: &str, suffix: &str, bit_pos_low: u32, bit_pos_high: u32| {
+                writeln!(code, "{{").unwrap();
+                writeln!(
+                    code,
+                    "let chunk_scales = vec4<{datatype}>(unpack4xU8({scales})) * super_block_scale;"
+                )
+                .unwrap();
+                writeln!(code, "let low_scale = chunk_scales.{suffix};").unwrap();
+                // Q5K uses sequential scale indices without division (unlike Q4K)
+                let high_suffix = if suffix == "x" { "y" } else { "w" };
+                writeln!(code, "let high_scale = chunk_scales.{high_suffix};").unwrap();
+                writeln!(
+                    code,
+                    "let chunk_offsets = vec4<{datatype}>(unpack4xU8({offsets})) * super_block_min;"
+                )
+                .unwrap();
+                writeln!(code, "let low_offset = chunk_offsets.{suffix};").unwrap();
+                writeln!(code, "let high_offset = chunk_offsets.{high_suffix};").unwrap();
 
-            writeln!(code, "for (var i = 0u; i < 32u; i += 4) {{").unwrap();
-            writeln!(code, "let qs_chunk = {chunk}.qs[qs_index];").unwrap();
-            writeln!(code, "let qh_chunk = {chunk}.qh[i / 4u];").unwrap();
+                writeln!(code, "for (var i = 0u; i < 32u; i += 4) {{").unwrap();
+                writeln!(code, "let qs_chunk = {chunk}.qs[qs_index];").unwrap();
+                writeln!(code, "let qh_chunk = {chunk}.qh[i / 4u];").unwrap();
 
-            // Extract low 4 bits and high 4 bits from qs
-            writeln!(code, "let qs_low = unpack4xU8(qs_chunk & {LOW_FOUR_BITS});").unwrap();
-            // High nibbles need to be shifted right by 4 to get values 0-15
-            writeln!(
-                code,
-                "let qs_high = unpack4xU8(qs_chunk & {HIGH_FOUR_BITS}) >> vec4<u32>(4u);"
-            )
-            .unwrap();
+                // Extract low 4 bits and high 4 bits from qs
+                writeln!(code, "let qs_low = unpack4xU8(qs_chunk & {LOW_FOUR_BITS});").unwrap();
+                // High nibbles need to be shifted right by 4 to get values 0-15
+                writeln!(
+                    code,
+                    "let qs_high = unpack4xU8(qs_chunk & {HIGH_FOUR_BITS}) >> vec4<u32>(4u);"
+                )
+                .unwrap();
 
-            // Extract high bits from qh for low and high nibbles
-            // Each byte's bit at position bit_pos_* determines if we add 16
-            writeln!(code, "let qh_bytes = unpack4xU8(qh_chunk);").unwrap();
-            writeln!(
-                code,
-                "let qh_low = ((qh_bytes >> vec4<u32>({bit_pos_low}u)) & vec4<u32>(1u)) * 16u;"
-            )
-            .unwrap();
-            writeln!(
+                // Extract high bits from qh for low and high nibbles
+                // Each byte's bit at position bit_pos_* determines if we add 16
+                writeln!(code, "let qh_bytes = unpack4xU8(qh_chunk);").unwrap();
+                writeln!(
+                    code,
+                    "let qh_low = ((qh_bytes >> vec4<u32>({bit_pos_low}u)) & vec4<u32>(1u)) * 16u;"
+                )
+                .unwrap();
+                writeln!(
                 code,
                 "let qh_high = ((qh_bytes >> vec4<u32>({bit_pos_high}u)) & vec4<u32>(1u)) * 16u;"
             )
             .unwrap();
 
-            // Combine: value = (qs_nibble + high_bit * 16)
-            writeln!(
-                code,
-                "let weight_chunk_low = vec4<{datatype}>(qs_low + qh_low);"
-            )
-            .unwrap();
-            writeln!(
-                code,
-                "let weight_chunk_high = vec4<{datatype}>(qs_high + qh_high);"
-            )
-            .unwrap();
+                // Combine: value = (qs_nibble + high_bit * 16)
+                writeln!(
+                    code,
+                    "let weight_chunk_low = vec4<{datatype}>(qs_low + qh_low);"
+                )
+                .unwrap();
+                writeln!(
+                    code,
+                    "let weight_chunk_high = vec4<{datatype}>(qs_high + qh_high);"
+                )
+                .unwrap();
 
-            writeln!(
-                code,
-                "let low_result = weight_chunk_low * low_scale - low_offset;"
-            )
-            .unwrap();
-            writeln!(
-                code,
-                "let high_result = weight_chunk_high * high_scale - high_offset;"
-            )
-            .unwrap();
-            for i in 0..4 {
-                process_element(
-                    format!("output_index + i + {i}u"),
-                    format!("low_result[{i}]"),
+                writeln!(
                     code,
-                );
-                process_element(
-                    format!("output_index + i + {i}u + 32u"),
-                    format!("high_result[{i}]"),
+                    "let low_result = weight_chunk_low * low_scale - low_offset;"
+                )
+                .unwrap();
+                writeln!(
                     code,
-                );
-            }
-            writeln!(code, "qs_index += 1;").unwrap();
-            writeln!(code, "}}").unwrap();
-            writeln!(code, "output_index += 64;").unwrap();
-            writeln!(code, "}}").unwrap();
-        };
+                    "let high_result = weight_chunk_high * high_scale - high_offset;"
+                )
+                .unwrap();
+                for i in 0..4 {
+                    process_element(
+                        format!("output_index + i + {i}u"),
+                        format!("low_result[{i}]"),
+                        code,
+                    );
+                    process_element(
+                        format!("output_index + i + {i}u + 32u"),
+                        format!("high_result[{i}]"),
+                        code,
+                    );
+                }
+                writeln!(code, "qs_index += 1;").unwrap();
+                writeln!(code, "}}").unwrap();
+                writeln!(code, "output_index += 64;").unwrap();
+                writeln!(code, "}}").unwrap();
+            };
 
         // Chunk 0: first_scales.x/y, bits 0,1
         run_single_chunk("first_scales", "first_offsets", "x", 0, 1);
