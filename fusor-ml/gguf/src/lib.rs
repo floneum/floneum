@@ -1,10 +1,7 @@
 //! Support for [GGUF](https://github.com/ggml-org/ggml/blob/master/docs/gguf.md) files
 
 // Enable NEON dot product intrinsics for faster quantized matmul on Apple Silicon (nightly only)
-#![cfg_attr(
-    all(target_arch = "aarch64", nightly),
-    feature(stdarch_neon_dotprod)
-)]
+#![cfg_attr(all(target_arch = "aarch64", nightly), feature(stdarch_neon_dotprod))]
 
 // Tensor layout is described at https://github.com/ggml-org/llama.cpp/wiki/Tensor-Encoding-Schemes
 // Modified from https://github.com/huggingface/candle/blob/e286cf7cc9e34bc426a542264b818e35e6eed05b/candle-core/src/quantized/gguf_file.rs#L31
