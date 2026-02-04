@@ -28,8 +28,8 @@ async fn test_pad() {
 
     let padded_tensor = pad_to(&tensor, [4, 5], value);
 
-    println!("Original Tensor: {tensor:?}");
-    println!("Padded Tensor: {padded_tensor:?}");
+    println!("Original Tensor shape: {:?}", tensor.shape());
+    println!("Padded Tensor shape: {:?}", padded_tensor.shape());
     let slice = padded_tensor.as_slice().await.unwrap();
     let data: Vec<u32> = slice.as_slice().to_vec();
     // Reshape to 2D for comparison

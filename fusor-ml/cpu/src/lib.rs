@@ -45,6 +45,9 @@ pub use tensor::{FloatOps, Scalar, Tensor};
 // Re-export SlidingWindow from fusor-types
 pub use fusor_types::SlidingWindow;
 
+// Re-export FromArray trait from fusor-types
+pub use fusor_types::FromArray;
+
 // Re-export Layout from fusor-types for public API
 pub use fusor_types::Layout;
 

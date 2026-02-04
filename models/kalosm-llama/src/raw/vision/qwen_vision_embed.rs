@@ -235,7 +235,7 @@ async fn test_vision_patch_embed() {
     let input = Tensor::new(&device, &input);
 
     let output = patch_embed
-        .forward(&input.reshape((1, ())))
+        .forward(&input.reshape((1, ())).to_concrete())
         .unwrap()
         .cast::<f32>();
     let output_slice = output.as_slice().await.unwrap();

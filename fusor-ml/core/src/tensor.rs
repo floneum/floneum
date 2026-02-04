@@ -548,35 +548,31 @@ impl<const R: usize, D> Clone for Tensor<R, D> {
     }
 }
 
-pub trait IntoTensor<const R: usize, D> {
-    fn into_tensor(self, device: &Device) -> Tensor<R, D>;
-}
-
-impl<D: DataType> IntoTensor<0, D> for () {
-    fn into_tensor(self, device: &Device) -> Tensor<0, D> {
+impl<D: DataType> fusor_types::FromArray<0, D, (), Device> for Tensor<0, D> {
+    fn from_array(_data: (), device: &Device) -> Self {
         let iter = std::iter::empty();
         Tensor::new_inner(device, iter, [])
     }
 }
 
-impl<'a, I, D: DataType> IntoTensor<1, D> for I
+impl<'a, I, D: DataType> fusor_types::FromArray<1, D, I, Device> for Tensor<1, D>
 where
     I: IntoIterator<Item = &'a D, IntoIter: ExactSizeIterator>,
 {
-    fn into_tensor(self, device: &Device) -> Tensor<1, D> {
-        let iter = self.into_iter();
+    fn from_array(data: I, device: &Device) -> Self {
+        let iter = data.into_iter();
         let size = iter.len();
         Tensor::new_inner(device, iter, [size])
     }
 }
 
-impl<'a, I, I2, D: DataType> IntoTensor<2, D> for I
+impl<'a, I, I2, D: DataType> fusor_types::FromArray<2, D, I, Device> for Tensor<2, D>
 where
     I: IntoIterator<Item = I2, IntoIter: ExactSizeIterator>,
     I2: IntoIterator<Item = &'a D, IntoIter: ExactSizeIterator>,
 {
-    fn into_tensor(self, device: &Device) -> Tensor<2, D> {
-        let mut iter = self.into_iter().map(IntoIterator::into_iter).peekable();
+    fn from_array(data: I, device: &Device) -> Self {
+        let mut iter = data.into_iter().map(IntoIterator::into_iter).peekable();
         let size = iter.len();
         let second_size = iter.peek().map(ExactSizeIterator::len).unwrap_or_default();
         let iter = iter.flat_map(|i| {
@@ -590,14 +586,14 @@ where
     }
 }
 
-impl<'a, I, I2, I3, D: DataType> IntoTensor<3, D> for I
+impl<'a, I, I2, I3, D: DataType> fusor_types::FromArray<3, D, I, Device> for Tensor<3, D>
 where
     I: IntoIterator<Item = I2, IntoIter: ExactSizeIterator>,
     I2: IntoIterator<Item = I3, IntoIter: ExactSizeIterator>,
     I3: IntoIterator<Item = &'a D, IntoIter: ExactSizeIterator>,
 {
-    fn into_tensor(self, device: &Device) -> Tensor<3, D> {
-        let mut iter = self
+    fn from_array(data: I, device: &Device) -> Self {
+        let mut iter = data
             .into_iter()
             .map(|i| i.into_iter().map(IntoIterator::into_iter).peekable())
             .peekable();
@@ -631,15 +627,15 @@ where
     }
 }
 
-impl<'a, I, I2, I3, I4, D: DataType> IntoTensor<4, D> for I
+impl<'a, I, I2, I3, I4, D: DataType> fusor_types::FromArray<4, D, I, Device> for Tensor<4, D>
 where
     I: IntoIterator<Item = I2, IntoIter: ExactSizeIterator>,
     I2: IntoIterator<Item = I3, IntoIter: ExactSizeIterator>,
     I3: IntoIterator<Item = I4, IntoIter: ExactSizeIterator>,
     I4: IntoIterator<Item = &'a D, IntoIter: ExactSizeIterator>,
 {
-    fn into_tensor(self, device: &Device) -> Tensor<4, D> {
-        let mut iter = self
+    fn from_array(data: I, device: &Device) -> Self {
+        let mut iter = data
             .into_iter()
             .map(|i| {
                 i.into_iter()
@@ -688,7 +684,7 @@ where
     }
 }
 
-impl<'a, I, I2, I3, I4, I5, D: DataType> IntoTensor<5, D> for I
+impl<'a, I, I2, I3, I4, I5, D: DataType> fusor_types::FromArray<5, D, I, Device> for Tensor<5, D>
 where
     I: IntoIterator<Item = I2, IntoIter: ExactSizeIterator>,
     I2: IntoIterator<Item = I3, IntoIter: ExactSizeIterator>,
@@ -696,8 +692,8 @@ where
     I4: IntoIterator<Item = I5, IntoIter: ExactSizeIterator>,
     I5: IntoIterator<Item = &'a D, IntoIter: ExactSizeIterator>,
 {
-    fn into_tensor(self, device: &Device) -> Tensor<5, D> {
-        let mut iter = self
+    fn from_array(data: I, device: &Device) -> Self {
+        let mut iter = data
             .into_iter()
             .map(|i| {
                 i.into_iter()
@@ -762,8 +758,11 @@ where
 }
 
 impl<D: DataType, const R: usize> Tensor<R, D> {
-    pub fn new(device: &Device, data: impl IntoTensor<R, D>) -> Self {
-        data.into_tensor(device)
+    pub fn new<T>(device: &Device, data: T) -> Self
+    where
+        Self: fusor_types::FromArray<R, D, T, Device>,
+    {
+        fusor_types::FromArray::from_array(data, device)
     }
 
     pub fn splat(device: &Device, value: D, shape: [usize; R]) -> Self {

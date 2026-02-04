@@ -164,9 +164,9 @@ mod tests {
             &device,
         )
         .unwrap();
-        println!("RGB shape: {rgb:?}");
+        println!("RGB shape: {:?}", rgb.shape());
         println!("Grid shape: {:?}", [grid_t, grid_h, grid_w]);
-        assert_eq!(rgb.shape(), &[1944, 1176]);
+        assert_eq!(rgb.shape(), [1944, 1176]);
         assert_eq!([grid_t, grid_h, grid_w], [1, 36, 54]);
     }
 }
