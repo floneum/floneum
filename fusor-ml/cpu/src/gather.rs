@@ -7,6 +7,8 @@
 use pulp::Simd;
 
 use crate::MAX_SIMD_LANES;
+#[allow(unused_imports)]
+use crate::SimdElement;
 
 // Architecture-specific gather implementations
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
