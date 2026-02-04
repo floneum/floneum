@@ -1,7 +1,10 @@
 //! Support for [GGUF](https://github.com/ggml-org/ggml/blob/master/docs/gguf.md) files
 
-// Enable NEON dot product intrinsics for faster quantized matmul on Apple Silicon
-#![cfg_attr(target_arch = "aarch64", feature(stdarch_neon_dotprod))]
+// Enable NEON dot product intrinsics for faster quantized matmul on Apple Silicon (nightly only)
+#![cfg_attr(
+    all(target_arch = "aarch64", nightly),
+    feature(stdarch_neon_dotprod)
+)]
 
 // Tensor layout is described at https://github.com/ggml-org/llama.cpp/wiki/Tensor-Encoding-Schemes
 // Modified from https://github.com/huggingface/candle/blob/e286cf7cc9e34bc426a542264b818e35e6eed05b/candle-core/src/quantized/gguf_file.rs#L31
@@ -843,7 +846,7 @@ impl GgufBlock for BlockQ4_0 {
         data
     }
 
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(target_arch = "aarch64", nightly))]
     fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
         use std::arch::aarch64::*;
         const CENTER: i8 = 8;
@@ -876,7 +879,7 @@ impl GgufBlock for BlockQ4_0 {
         }
     }
 
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(not(all(target_arch = "aarch64", nightly)))]
     fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
         const CENTER: i8 = 8;
         let mut sum: i32 = 0;
@@ -1163,7 +1166,7 @@ impl GgufBlock for BlockQ8_0 {
         std::array::from_fn(|i| self.data[i] as f32 * scale)
     }
 
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(target_arch = "aarch64", nightly))]
     fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
         use std::arch::aarch64::*;
         unsafe {
@@ -1187,7 +1190,7 @@ impl GgufBlock for BlockQ8_0 {
         }
     }
 
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(not(all(target_arch = "aarch64", nightly)))]
     fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
         let mut sum: i32 = 0;
         for i in 0..32 {
@@ -1398,7 +1401,7 @@ impl GgufBlock for BlockQ4K {
         data
     }
 
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(target_arch = "aarch64", nightly))]
     fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
         use std::arch::aarch64::*;
 
@@ -1481,7 +1484,7 @@ impl GgufBlock for BlockQ4K {
         }
     }
 
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(not(all(target_arch = "aarch64", nightly)))]
     fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
         let super_scale = self.scale.to_f32() * y.scale.to_f32();
         let super_min = self.min.to_f32() * y.scale.to_f32();
