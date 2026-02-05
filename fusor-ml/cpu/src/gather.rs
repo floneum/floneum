@@ -13,8 +13,6 @@ use crate::SimdElement;
 // Architecture-specific gather implementations
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 mod x86_gather {
-    use super::*;
-
     #[cfg(target_arch = "x86")]
     use std::arch::x86::*;
     #[cfg(target_arch = "x86_64")]
@@ -37,84 +35,92 @@ mod x86_gather {
     #[inline]
     #[target_feature(enable = "avx2")]
     pub unsafe fn gather_f32_avx2(slice: &[f32], indices: &[usize]) -> [f32; 8] {
-        let base_ptr = slice.as_ptr();
-        let idx_i32: [i32; 8] = [
-            indices[0] as i32,
-            indices[1] as i32,
-            indices[2] as i32,
-            indices[3] as i32,
-            indices[4] as i32,
-            indices[5] as i32,
-            indices[6] as i32,
-            indices[7] as i32,
-        ];
-        let idx_vec = _mm256_loadu_si256(idx_i32.as_ptr() as *const __m256i);
-        let gathered = _mm256_i32gather_ps::<4>(base_ptr, idx_vec);
+        unsafe {
+            let base_ptr = slice.as_ptr();
+            let idx_i32: [i32; 8] = [
+                indices[0] as i32,
+                indices[1] as i32,
+                indices[2] as i32,
+                indices[3] as i32,
+                indices[4] as i32,
+                indices[5] as i32,
+                indices[6] as i32,
+                indices[7] as i32,
+            ];
+            let idx_vec = _mm256_loadu_si256(idx_i32.as_ptr() as *const __m256i);
+            let gathered = _mm256_i32gather_ps::<4>(base_ptr, idx_vec);
 
-        let mut result = [0.0f32; 8];
-        _mm256_storeu_ps(result.as_mut_ptr(), gathered);
-        result
+            let mut result = [0.0f32; 8];
+            _mm256_storeu_ps(result.as_mut_ptr(), gathered);
+            result
+        }
     }
 
     /// AVX2 gather for f64 (4 lanes)
     #[inline]
     #[target_feature(enable = "avx2")]
     pub unsafe fn gather_f64_avx2(slice: &[f64], indices: &[usize]) -> [f64; 4] {
-        let base_ptr = slice.as_ptr();
-        let idx_i32: [i32; 4] = [
-            indices[0] as i32,
-            indices[1] as i32,
-            indices[2] as i32,
-            indices[3] as i32,
-        ];
-        let idx_vec = _mm_loadu_si128(idx_i32.as_ptr() as *const __m128i);
-        let gathered = _mm256_i32gather_pd::<8>(base_ptr, idx_vec);
+        unsafe {
+            let base_ptr = slice.as_ptr();
+            let idx_i32: [i32; 4] = [
+                indices[0] as i32,
+                indices[1] as i32,
+                indices[2] as i32,
+                indices[3] as i32,
+            ];
+            let idx_vec = _mm_loadu_si128(idx_i32.as_ptr() as *const __m128i);
+            let gathered = _mm256_i32gather_pd::<8>(base_ptr, idx_vec);
 
-        let mut result = [0.0f64; 4];
-        _mm256_storeu_pd(result.as_mut_ptr(), gathered);
-        result
+            let mut result = [0.0f64; 4];
+            _mm256_storeu_pd(result.as_mut_ptr(), gathered);
+            result
+        }
     }
 
     /// AVX2 gather for i32 (8 lanes)
     #[inline]
     #[target_feature(enable = "avx2")]
     pub unsafe fn gather_i32_avx2(slice: &[i32], indices: &[usize]) -> [i32; 8] {
-        let base_ptr = slice.as_ptr();
-        let idx_i32: [i32; 8] = [
-            indices[0] as i32,
-            indices[1] as i32,
-            indices[2] as i32,
-            indices[3] as i32,
-            indices[4] as i32,
-            indices[5] as i32,
-            indices[6] as i32,
-            indices[7] as i32,
-        ];
-        let idx_vec = _mm256_loadu_si256(idx_i32.as_ptr() as *const __m256i);
-        let gathered = _mm256_i32gather_epi32::<4>(base_ptr, idx_vec);
+        unsafe {
+            let base_ptr = slice.as_ptr();
+            let idx_i32: [i32; 8] = [
+                indices[0] as i32,
+                indices[1] as i32,
+                indices[2] as i32,
+                indices[3] as i32,
+                indices[4] as i32,
+                indices[5] as i32,
+                indices[6] as i32,
+                indices[7] as i32,
+            ];
+            let idx_vec = _mm256_loadu_si256(idx_i32.as_ptr() as *const __m256i);
+            let gathered = _mm256_i32gather_epi32::<4>(base_ptr, idx_vec);
 
-        let mut result = [0i32; 8];
-        _mm256_storeu_si256(result.as_mut_ptr() as *mut __m256i, gathered);
-        result
+            let mut result = [0i32; 8];
+            _mm256_storeu_si256(result.as_mut_ptr() as *mut __m256i, gathered);
+            result
+        }
     }
 
     /// AVX2 gather for i64 (4 lanes)
     #[inline]
     #[target_feature(enable = "avx2")]
     pub unsafe fn gather_i64_avx2(slice: &[i64], indices: &[usize]) -> [i64; 4] {
-        let base_ptr = slice.as_ptr();
-        let idx_i32: [i32; 4] = [
-            indices[0] as i32,
-            indices[1] as i32,
-            indices[2] as i32,
-            indices[3] as i32,
-        ];
-        let idx_vec = _mm_loadu_si128(idx_i32.as_ptr() as *const __m128i);
-        let gathered = _mm256_i32gather_epi64::<8>(base_ptr, idx_vec);
+        unsafe {
+            let base_ptr = slice.as_ptr();
+            let idx_i32: [i32; 4] = [
+                indices[0] as i32,
+                indices[1] as i32,
+                indices[2] as i32,
+                indices[3] as i32,
+            ];
+            let idx_vec = _mm_loadu_si128(idx_i32.as_ptr() as *const __m128i);
+            let gathered = _mm256_i32gather_epi64::<8>(base_ptr, idx_vec);
 
-        let mut result = [0i64; 4];
-        _mm256_storeu_si256(result.as_mut_ptr() as *mut __m256i, gathered);
-        result
+            let mut result = [0i64; 4];
+            _mm256_storeu_si256(result.as_mut_ptr() as *mut __m256i, gathered);
+            result
+        }
     }
 }
 
