@@ -21,18 +21,35 @@ fn conv1d(
     out_channels: usize,
     kernel_size: usize,
 ) -> Result<Conv1d<crate::WhisperDType>> {
-    let weight_2d: Tensor<2, crate::WhisperDType> = vb.get("weight", device)?.dequantize();
-    // Reshape from [out_channels, in_channels*kernel_size] to [out_channels, in_channels, kernel_size]
-    let weight: Tensor<3, crate::WhisperDType> = weight_2d
-        .reshape([out_channels, in_channels, kernel_size])
-        .to_concrete();
+    let weight_q = vb.get("weight", device)?;
+    let weight_shape = weight_q.shape();
 
-    let bias_2d: Tensor<2, crate::WhisperDType> = vb.get("bias", device)?.dequantize();
-    // Squeeze to rank 1: assume shape is (1, out_channels) or (out_channels, 1)
-    let bias: Tensor<1, crate::WhisperDType, _> = if bias_2d.shape()[0] == 1 {
-        bias_2d.squeeze(0).to_concrete()
+    // Handle both 2D and 3D weight formats
+    let weight: Tensor<3, crate::WhisperDType> = if weight_shape.len() == 3 {
+        // Already 3D: [out_channels, in_channels, kernel_size]
+        weight_q.dequantize()
     } else {
-        bias_2d.squeeze(1).to_concrete()
+        // 2D: reshape from [out_channels, in_channels*kernel_size] to [out_channels, in_channels, kernel_size]
+        let weight_2d: Tensor<2, crate::WhisperDType> = weight_q.dequantize();
+        weight_2d
+            .reshape([out_channels, in_channels, kernel_size])
+            .to_concrete()
+    };
+
+    let bias_q = vb.get("bias", device)?;
+    let bias_shape = bias_q.shape();
+
+    // Handle 1D, 2D bias formats
+    let bias: Tensor<1, crate::WhisperDType> = if bias_shape.len() == 1 {
+        bias_q.dequantize()
+    } else {
+        let bias_2d: Tensor<2, crate::WhisperDType> = bias_q.dequantize();
+        // Squeeze to rank 1: assume shape is (1, out_channels) or (out_channels, 1)
+        if bias_2d.shape()[0] == 1 {
+            bias_2d.squeeze(0).to_concrete()
+        } else {
+            bias_2d.squeeze(1).to_concrete()
+        }
     };
     Ok(Conv1d::new(weight, Some(bias), config))
 }

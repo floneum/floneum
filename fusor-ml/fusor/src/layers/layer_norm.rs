@@ -158,20 +158,32 @@ impl LayerNorm<1, f32> {
     /// - bias (optional): Tensor with same shape as weight
     pub fn load(device: &Device, vb: &mut VarBuilder, eps: f32) -> crate::Result<Self> {
         let weight_q = vb.get("weight", device)?;
-        let weight_2d: Tensor<2, f32> = weight_q.dequantize();
-        // Squeeze to 1D
-        let weight = if weight_2d.shape()[0] == 1 {
-            weight_2d.squeeze(0)
+        let weight_shape = weight_q.shape();
+
+        // Handle both 1D and 2D weight formats
+        let weight: Tensor<1, f32> = if weight_shape.len() == 1 {
+            weight_q.dequantize()
         } else {
-            weight_2d.squeeze(1)
+            let weight_2d: Tensor<2, f32> = weight_q.dequantize();
+            // Squeeze to 1D
+            if weight_2d.shape()[0] == 1 {
+                weight_2d.squeeze(0).to_concrete()
+            } else {
+                weight_2d.squeeze(1).to_concrete()
+            }
         };
 
         let bias = vb.get("bias", device).ok().map(|b| {
-            let bias_2d: Tensor<2, f32> = b.dequantize();
-            if bias_2d.shape()[0] == 1 {
-                bias_2d.squeeze(0).to_concrete()
+            let bias_shape = b.shape();
+            if bias_shape.len() == 1 {
+                b.dequantize()
             } else {
-                bias_2d.squeeze(1).to_concrete()
+                let bias_2d: Tensor<2, f32> = b.dequantize();
+                if bias_2d.shape()[0] == 1 {
+                    bias_2d.squeeze(0).to_concrete()
+                } else {
+                    bias_2d.squeeze(1).to_concrete()
+                }
             }
         });
 
