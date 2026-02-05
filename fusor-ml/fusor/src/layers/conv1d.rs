@@ -129,6 +129,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(clippy::useless_conversion)]
 mod tests {
     use super::*;
 

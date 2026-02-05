@@ -1300,6 +1300,7 @@ async fn test_gpu_or_add() {
 
 #[cfg(test)]
 #[tokio::test]
+#[allow(clippy::identity_op, clippy::useless_conversion)]
 async fn test_matmul_cpu_vs_gpu() {
     // Create random-ish data for matmul test
     // Simulating attention: Q @ K^T with shape [batch, heads, seq_len, head_dim]

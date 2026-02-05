@@ -81,6 +81,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(clippy::identity_op, clippy::useless_conversion)]
 mod tests {
     use super::*;
 

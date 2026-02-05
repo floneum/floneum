@@ -2034,6 +2034,7 @@ fn second_scales_min_k4(packed_scales: &[u32]) -> (u32, u32) {
 }
 
 #[cfg(test)]
+#[allow(clippy::needless_range_loop)]
 mod vec_dot_tests {
     use super::*;
 

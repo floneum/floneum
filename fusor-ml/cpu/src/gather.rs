@@ -187,6 +187,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(clippy::needless_range_loop)]
 mod tests {
     use super::*;
     use crate::SimdElement;
