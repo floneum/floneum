@@ -1817,3 +1817,37 @@ async fn test_f16_to_f32_cast() {
     assert_eq!(output[[2, 0]], data[2][0].to_f32());
     assert_eq!(output[[2, 1]], data[2][1].to_f32());
 }
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_tanh_exact_large_values() {
+    let device = Device::test_instance();
+
+    let data = [[4., 5.], [6., 8.], [10., 15.]];
+    let tensor = Tensor::new(&device, &data);
+
+    let tensor = tensor.tanh_exact();
+
+    let output = tensor.as_slice().await.unwrap();
+    println!("tanh_exact output: {output:?}");
+    println!(
+        "Expected: {:?}",
+        data.iter()
+            .flat_map(|row| row.iter().map(|x| x.tanh()))
+            .collect::<Vec<_>>()
+    );
+
+    for i in 0..3 {
+        for j in 0..2 {
+            let expected = data[i][j].tanh();
+            let actual = output[[i, j]];
+            assert!(
+                (actual - expected).abs() < 0.01,
+                "tanh_exact({}) = {}, expected {}",
+                data[i][j],
+                actual,
+                expected
+            );
+        }
+    }
+}

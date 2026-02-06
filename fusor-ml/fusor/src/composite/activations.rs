@@ -49,25 +49,23 @@ where
         TanhOp: SimdUnaryOp<D>,
         D: fusor_cpu::Scalar,
     {
-        // Clamp for numerical stability (tanh is unstable for large inputs)
-        let clamped = self.clamp(D::from_f32(-5.5), D::from_f32(5.5));
-
         let coeff = D::from_f32((2.0 / std::f32::consts::PI).sqrt());
 
         // x^2
-        let x_squared = &clamped * &clamped;
+        let x_squared = self * self;
 
         // 0.044715 * x^2 + 1.0
         let inner_factor = x_squared * D::from_f32(0.044715) + D::from_f32(1.0);
 
         // x * (1 + 0.044715 * x^2)
-        let inner = &clamped * &inner_factor;
+        let inner = self * &inner_factor;
 
         // sqrt(2/pi) * (x * (1 + 0.044715 * x^2))
         let tanh_input = inner * coeff;
 
-        // tanh(...)
-        let tanh_result = tanh_input.tanh();
+        // tanh(...) - clamp output to [-1, 1] for compatibility with software renderers (WARP)
+        // that have buggy built-in tanh() returning values > 1 for large inputs
+        let tanh_result = tanh_input.tanh().clamp(D::from_f32(-1.0), D::from_f32(1.0));
 
         // 1 + tanh(...)
         let one_plus_tanh = &tanh_result + D::from_f32(1.0);

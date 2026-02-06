@@ -71,7 +71,9 @@ pub struct Device {
 impl Device {
     pub async fn new() -> Result<Self, crate::Error> {
         let dx_compiler = wgpu::Dx12Compiler::from_env().unwrap_or(wgpu::Dx12Compiler::StaticDxc);
+        let backends = wgpu::Backends::from_env().unwrap_or(wgpu::Backends::all());
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            backends,
             backend_options: BackendOptions {
                 dx12: Dx12BackendOptions {
                     shader_compiler: dx_compiler,
@@ -81,7 +83,9 @@ impl Device {
             },
             ..Default::default()
         });
-        let adapter = instance.request_adapter(&Default::default()).await.unwrap();
+        let adapter = wgpu::util::initialize_adapter_from_env_or_default(&instance, None)
+            .await
+            .expect("Failed to find a suitable GPU adapter");
         let mut required_features = wgpu::Features::empty();
         if adapter.features().contains(wgpu::Features::SUBGROUP) {
             required_features |= wgpu::Features::SUBGROUP;
