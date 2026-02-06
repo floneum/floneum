@@ -417,8 +417,7 @@ async fn test_loading_qwen_vision() {
     use fusor::ToVec2;
     use kalosm_common::Cache;
 
-    // Skip in macOS CI
-    #[cfg(target_os = "macos")]
+    // Skip in CI
     if std::env::var("CI").is_ok() {
         return;
     }

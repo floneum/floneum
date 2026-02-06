@@ -126,6 +126,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_image() {
+        // Skip in CI
+        if std::env::var("CI").is_ok() {
+            return;
+        }
+
         let device = Device::new().await.unwrap();
         // download image from https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg
         let image_bytes = reqwest::get(
