@@ -410,7 +410,8 @@ where
                     blocks_per_weight_row,
                 );
             } else {
-                // Parallelize over output column chunks using scoped threads
+                // Same CHUNK_SIZE=32 aligned thread distribution as before,
+                // but each thread quantizes activations once instead of per chunk.
                 const CHUNK_SIZE: usize = 32;
                 let total_chunks = n.div_ceil(CHUNK_SIZE);
                 let chunks_per_thread = total_chunks.div_ceil(n_threads);
@@ -437,17 +438,35 @@ where
                         start_n += this_size;
 
                         scope.spawn(move || {
-                            // Process each CHUNK_SIZE piece within this thread
-                            for (i, out_chunk) in thread_chunk.chunks_mut(CHUNK_SIZE).enumerate() {
+                            // Quantize activations ONCE per thread (not per chunk).
+                            let act_blocks: Vec<B::ActivationBlock> = (0..blocks_per_weight_row)
+                                .map(|block_idx| {
+                                    let start = block_idx * B::BLOCK_SIZE;
+                                    B::quantize_activation(
+                                        &lhs_data[start..start + B::BLOCK_SIZE],
+                                    )
+                                })
+                                .collect();
+
+                            for (i, out_chunk) in
+                                thread_chunk.chunks_mut(CHUNK_SIZE).enumerate()
+                            {
                                 let chunk_start = thread_start_n + i * CHUNK_SIZE;
-                                process_row_integer_range::<B>(
-                                    lhs_data,
-                                    rhs_blocks,
-                                    out_chunk,
-                                    chunk_start,
-                                    out_chunk.len(),
-                                    blocks_per_weight_row,
-                                );
+                                let chunk_n = out_chunk.len();
+                                for (idx, out_elem) in
+                                    out_chunk.iter_mut().enumerate().take(chunk_n)
+                                {
+                                    let n_out = chunk_start + idx;
+                                    let mut sum = 0.0f32;
+                                    for (block_idx, act_block) in
+                                        act_blocks.iter().enumerate()
+                                    {
+                                        sum += rhs_blocks
+                                            [n_out * blocks_per_weight_row + block_idx]
+                                            .vec_dot(act_block);
+                                    }
+                                    *out_elem = sum;
+                                }
                             }
                         });
                     }
