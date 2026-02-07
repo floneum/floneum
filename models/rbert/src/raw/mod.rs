@@ -16,8 +16,11 @@ mod self_output;
 use self_output::*;
 mod intermediate_layer;
 use intermediate_layer::*;
-mod embedding;
+pub(crate) mod embedding;
 mod layer_norm;
+pub mod qwen;
+
+pub use qwen::QwenEmbeddingModel;
 
 use fusor_core::{Device, FloatDataType, Result, Tensor, VarBuilder};
 use serde::Deserialize;

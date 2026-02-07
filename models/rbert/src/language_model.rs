@@ -109,12 +109,14 @@ impl Embedder for Bert {
     }
 
     async fn embed_string(&self, input: String) -> Result<Embedding, Self::Error> {
-        self.embed_with_pooling(&input, Pooling::CLS).await
+        let pooling = self.model.default_pooling();
+        self.embed_with_pooling(&input, pooling).await
     }
 
     async fn embed_vec(&self, inputs: Vec<String>) -> Result<Vec<Embedding>, Self::Error> {
         let inputs_borrowed = inputs.iter().map(|s| s.as_str()).collect::<Vec<_>>();
-        self.embed_batch_with_pooling(inputs_borrowed, Pooling::CLS)
+        let pooling = self.model.default_pooling();
+        self.embed_batch_with_pooling(inputs_borrowed, pooling)
             .await
     }
 }
@@ -137,8 +139,9 @@ impl Deref for Bert {
             let myself = unsafe { &*uninit_callable.as_ptr() };
             let self_clone = myself.clone();
             let input = text.to_string();
+            let pooling = self_clone.model.default_pooling();
 
-            Box::pin(async move { self_clone.embed_with_pooling(&input, Pooling::CLS).await })
+            Box::pin(async move { self_clone.embed_with_pooling(&input, pooling).await })
                 as Pin<Box<dyn FutureWasmNotSend<Output = Result<Embedding, BertError>> + 'static>>
         };
 
@@ -181,4 +184,27 @@ async fn test_bert() {
         .await
         .unwrap();
     println!("{result:?}");
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_qwen3_embedding() {
+    use crate::BertSource;
+
+    let model = Bert::builder()
+        .with_source(BertSource::qwen3_embedding_0_6b())
+        .build()
+        .await
+        .unwrap();
+
+    let result = model
+        .embed_string("The quick brown fox jumps over the lazy dog.".to_string())
+        .await
+        .unwrap();
+
+    let vec = result.vector();
+    println!("Qwen3 embedding dimension: {}", vec.len());
+    println!("First 5 values: {:?}", &vec[..5]);
+    assert!(!vec.is_empty());
+    assert_eq!(vec.len(), 1024); // Qwen3-Embedding-0.6B has 1024 dimensions
 }

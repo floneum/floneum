@@ -2,8 +2,18 @@ use rbert::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let bert = Bert::builder().build().await?;
-    let sentences = ["Kalosm can be used to build local AI applications"; 60];
+    let bert = Bert::builder()
+        .with_source(BertSource::qwen3_embedding_0_6b())
+        .build()
+        .await
+        .unwrap();
+    let sentences = [
+        "Cats are cool",
+        "The geopolitical situation is dire",
+        "Pets are great",
+        "Napoleon is from France",
+        "Kalosm supports embedding models",
+    ];
     let start = std::time::Instant::now();
     let embeddings = bert.embed_batch(sentences).await?;
     println!("embeddings {embeddings:?}");

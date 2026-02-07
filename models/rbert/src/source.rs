@@ -242,6 +242,96 @@ impl BertSource {
             ))
             .with_search_embedding_prefix(SNOWFLAKE_EMBEDDING_PREFIX.to_string())
     }
+
+    /// Create a new [`BertSource`] with the [Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF) model
+    ///
+    /// This model uses the Qwen3 architecture and supports:
+    /// - 100+ languages
+    /// - 32K context length
+    /// - 1024 embedding dimensions
+    /// - Last-token pooling (automatic)
+    pub fn qwen3_embedding_0_6b() -> Self {
+        Self {
+            // Config is not used for Qwen models (loaded from GGUF metadata),
+            // but we need to provide something for the BertSource struct
+            config: FileSource::huggingface(
+                "Qwen/Qwen3-Embedding-0.6B".to_string(),
+                "main".to_string(),
+                "config.json".to_string(),
+            ),
+            tokenizer: FileSource::huggingface(
+                "Qwen/Qwen3-Embedding-0.6B".to_string(),
+                "main".to_string(),
+                "tokenizer.json".to_string(),
+            ),
+            model: FileSource::huggingface(
+                "Qwen/Qwen3-Embedding-0.6B-GGUF".to_string(),
+                "main".to_string(),
+                "Qwen3-Embedding-0.6B-Q8_0.gguf".to_string(),
+            ),
+            search_embedding_prefix: None,
+        }
+    }
+
+    /// Create a new [`BertSource`] with the [Qwen3-Embedding-4B](https://huggingface.co/Qwen/Qwen3-Embedding-4B-GGUF) model
+    ///
+    /// This model uses the Qwen3 architecture and supports:
+    /// - 100+ languages
+    /// - 32K context length
+    /// - 2560 embedding dimensions
+    /// - Last-token pooling (automatic)
+    ///
+    /// This is a larger model than [`Self::qwen3_embedding_0_6b`] with higher quality embeddings.
+    pub fn qwen3_embedding_4b() -> Self {
+        Self {
+            config: FileSource::huggingface(
+                "Qwen/Qwen3-Embedding-4B".to_string(),
+                "main".to_string(),
+                "config.json".to_string(),
+            ),
+            tokenizer: FileSource::huggingface(
+                "Qwen/Qwen3-Embedding-4B".to_string(),
+                "main".to_string(),
+                "tokenizer.json".to_string(),
+            ),
+            model: FileSource::huggingface(
+                "Qwen/Qwen3-Embedding-4B-GGUF".to_string(),
+                "main".to_string(),
+                "Qwen3-Embedding-4B-Q8_0.gguf".to_string(),
+            ),
+            search_embedding_prefix: None,
+        }
+    }
+
+    /// Create a new [`BertSource`] with the [Qwen3-Embedding-8B](https://huggingface.co/Qwen/Qwen3-Embedding-8B-GGUF) model
+    ///
+    /// This model uses the Qwen3 architecture and supports:
+    /// - 100+ languages
+    /// - 32K context length
+    /// - 4096 embedding dimensions
+    /// - Last-token pooling (automatic)
+    ///
+    /// This is the largest Qwen3 embedding model with the highest quality embeddings.
+    pub fn qwen3_embedding_8b() -> Self {
+        Self {
+            config: FileSource::huggingface(
+                "Qwen/Qwen3-Embedding-8B".to_string(),
+                "main".to_string(),
+                "config.json".to_string(),
+            ),
+            tokenizer: FileSource::huggingface(
+                "Qwen/Qwen3-Embedding-8B".to_string(),
+                "main".to_string(),
+                "tokenizer.json".to_string(),
+            ),
+            model: FileSource::huggingface(
+                "Qwen/Qwen3-Embedding-8B-GGUF".to_string(),
+                "main".to_string(),
+                "Qwen3-Embedding-8B-Q8_0.gguf".to_string(),
+            ),
+            search_embedding_prefix: None,
+        }
+    }
 }
 
 impl Default for BertSource {

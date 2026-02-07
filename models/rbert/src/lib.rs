@@ -53,7 +53,7 @@ mod raw;
 mod source;
 
 pub use crate::language_model::*;
-pub use crate::raw::{BertModel, Config};
+pub use crate::raw::{BertModel, Config, QwenEmbeddingModel};
 pub use crate::source::*;
 
 /// A builder for a [`Bert`] model
@@ -156,6 +156,63 @@ pub enum Pooling {
     Mean,
     /// Take the embedding of the CLS token for each sequence
     CLS,
+    /// Take the embedding of the last token for each sequence (used by Qwen)
+    Last,
+}
+
+/// An embedding model that can be either BERT or Qwen
+pub enum EmbeddingModel {
+    /// A BERT-style embedding model
+    Bert(BertModel),
+    /// A Qwen-style embedding model
+    Qwen(QwenEmbeddingModel),
+}
+
+impl EmbeddingModel {
+    /// Get the device the model is running on
+    pub fn device(&self) -> &Device {
+        match self {
+            EmbeddingModel::Bert(model) => &model.device,
+            EmbeddingModel::Qwen(model) => &model.device,
+        }
+    }
+
+    /// Get the maximum sequence length
+    pub fn max_seq_len(&self) -> usize {
+        match self {
+            EmbeddingModel::Bert(model) => model.max_seq_len(),
+            EmbeddingModel::Qwen(model) => model.max_seq_len(),
+        }
+    }
+
+    /// Get the embedding dimension
+    pub fn embedding_dim(&self) -> usize {
+        match self {
+            EmbeddingModel::Bert(model) => model.embedding_dim(),
+            EmbeddingModel::Qwen(model) => model.embedding_dim(),
+        }
+    }
+
+    /// Get the default pooling strategy for this model
+    pub fn default_pooling(&self) -> Pooling {
+        match self {
+            EmbeddingModel::Bert(_) => Pooling::Mean,
+            EmbeddingModel::Qwen(_) => Pooling::Last,
+        }
+    }
+
+    /// Forward pass through the model
+    pub fn forward(
+        &self,
+        input_ids: &Tensor<2, u32>,
+        token_type_ids: &Tensor<2, u32>,
+        attention_mask: Option<&Tensor<2, u32>>,
+    ) -> Tensor<3, f32> {
+        match self {
+            EmbeddingModel::Bert(model) => model.forward(input_ids, token_type_ids, attention_mask),
+            EmbeddingModel::Qwen(model) => model.forward(input_ids, attention_mask),
+        }
+    }
 }
 
 /// A bert embedding model. The main interface for this model is [`EmbedderExt`].
@@ -196,10 +253,11 @@ pub enum Pooling {
 ///     Ok(())
 /// }
 /// ```
+/// A bert embedding model. Can be either BERT or Qwen architecture.
 #[derive(Clone)]
 pub struct Bert {
     embedding_search_prefix: Arc<Option<String>>,
-    model: Arc<BertModel>,
+    model: Arc<EmbeddingModel>,
     tokenizer: Arc<RwLock<Tokenizer>>,
 }
 
@@ -256,14 +314,28 @@ impl Bert {
             })
             .await?;
 
-        let config: Config =
-            serde_json::from_slice(&config).map_err(BertLoadingError::LoadConfig)?;
-
         let device = Device::new().await?;
         let mut weights = std::io::Cursor::new(&weights_bytes);
         let mut vb = VarBuilder::from_gguf(&mut weights)
             .map_err(|err| BertLoadingError::LoadModel(err.into()))?;
-        let model = BertModel::load(&device, &mut vb, &config)?;
+
+        // Detect architecture from GGUF metadata
+        let architecture = vb.architecture();
+        let model = match architecture.as_deref() {
+            Some("qwen3") | Some("qwen2") => {
+                // Load Qwen embedding model
+                let qwen_model = QwenEmbeddingModel::load(&device, &mut vb)?;
+                EmbeddingModel::Qwen(qwen_model)
+            }
+            _ => {
+                // Load BERT model (default)
+                let config: Config =
+                    serde_json::from_slice(&config).map_err(BertLoadingError::LoadConfig)?;
+                let bert_model = BertModel::load(&device, &mut vb, &config)?;
+                EmbeddingModel::Bert(bert_model)
+            }
+        };
+
         let mut tokenizer =
             Tokenizer::from_bytes(&tokenizer_bytes).map_err(BertLoadingError::LoadTokenizer)?;
         tokenizer.with_padding(None);
@@ -343,7 +415,7 @@ impl Bert {
         if tokens.is_empty() {
             return Ok(Vec::new());
         }
-        let device = &self.model.device;
+        let device = self.model.device();
         let pp = PaddingParams {
             strategy: tokenizers::PaddingStrategy::BatchLongest,
             ..Default::default()
@@ -390,6 +462,14 @@ impl Bert {
             Pooling::CLS => {
                 // Index into the first token of each sentence which is the CLS token that contains the sentence embedding
                 let indexed_embeddings = embeddings.i((.., 0, ..));
+                Ok(indexed_embeddings.chunk(n_sentences, 0)?)
+            }
+            Pooling::Last => {
+                // Index into the last non-padding token of each sentence
+                // For now, use the last position (n_tokens - 1)
+                let last_idx = n_tokens - 1;
+                let indexed_embeddings = embeddings.i((.., last_idx, ..));
+                let indexed_embeddings = normalize_l2(&indexed_embeddings);
                 Ok(indexed_embeddings.chunk(n_sentences, 0)?)
             }
         }
