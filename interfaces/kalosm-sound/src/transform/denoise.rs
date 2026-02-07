@@ -1,10 +1,12 @@
 //! Handles denoising audio streams
 use std::{
+    future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
 
 use futures_core::{ready, Stream};
+use futures_util::FutureExt;
 use rodio::buffer::SamplesBuffer;
 
 use crate::{AsyncSource, ResampledAsyncSource, VoiceActivityDetectorOutput};
@@ -30,8 +32,12 @@ impl<S: AsyncSource> DenoisedExt for S {}
 
 mod fusor_impl {
     use super::*;
-    use nnnoiseless::{DenoiseFeatures, FusorRnnoise, FusorRnnoiseState, FREQ_SIZE, NB_BANDS, NB_FEATURES};
+    use nnnoiseless::{
+        DenoiseFeatures, FusorRnnoise, FusorRnnoiseState, FREQ_SIZE, NB_BANDS, NB_FEATURES,
+    };
     use std::sync::Arc;
+
+    type InitFuture = Pin<Box<dyn Future<Output = fusor_core::Result<FusorRnnoise>>>>;
 
     /// A stream of [`SamplesBuffer`]s with voice activity detection information.
     ///
@@ -41,10 +47,12 @@ mod fusor_impl {
         source: ResampledAsyncSource<S>,
         /// CPU-side feature extraction
         features: Box<DenoiseFeatures>,
-        /// GPU-side RNN model
-        rnn: Arc<FusorRnnoise>,
-        /// RNN hidden state
-        rnn_state: FusorRnnoiseState,
+        /// GPU-side RNN model (lazily initialized)
+        rnn: Option<Arc<FusorRnnoise>>,
+        /// RNN hidden state (lazily initialized)
+        rnn_state: Option<FusorRnnoiseState>,
+        /// Future for initializing the RNN model
+        init_future: Option<InitFuture>,
         /// Previous gains for smoothing
         lastg: [f32; NB_BANDS],
         /// Buffer fill index
@@ -57,15 +65,12 @@ mod fusor_impl {
 
     impl<S: AsyncSource + Unpin> DenoisedStream<S> {
         pub(super) fn new(source: S) -> Self {
-            // Load the fusor model
-            let rnn = FusorRnnoise::new();
-            let rnn_state = rnn.new_state();
-
             Self {
                 source: source.resample(SAMPLE_RATE),
                 features: Box::new(DenoiseFeatures::new()),
-                rnn: Arc::new(rnn),
-                rnn_state,
+                rnn: None,
+                rnn_state: None,
+                init_future: None,
                 lastg: [0.0; NB_BANDS],
                 fill_index: 0,
                 input_buffer: [0f32; FRAME_SIZE],
@@ -79,6 +84,39 @@ mod fusor_impl {
 
         fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
             let this = self.get_mut();
+
+            // Lazily initialize the RNN model before yielding any items
+            if this.rnn.is_none() {
+                // Start the initialization future if not already started
+                if this.init_future.is_none() {
+                    this.init_future = Some(Box::pin(FusorRnnoise::new()));
+                }
+
+                // Poll the initialization future
+                if let Some(fut) = &mut this.init_future {
+                    match fut.poll_unpin(cx) {
+                        Poll::Ready(Ok(rnn)) => {
+                            let rnn_state = rnn.new_state();
+                            this.rnn = Some(Arc::new(rnn));
+                            this.rnn_state = Some(rnn_state);
+                            this.init_future = None;
+                        }
+                        Poll::Ready(Err(err)) => {
+                            tracing::error!("Failed to initialize RNNoise model: {err}");
+                            this.init_future = None;
+                            return Poll::Ready(None);
+                        }
+                        Poll::Pending => return Poll::Pending,
+                    }
+                }
+            }
+
+            let rnn = this.rnn.as_ref().expect("RNN should be initialized");
+            let rnn_state = this
+                .rnn_state
+                .as_mut()
+                .expect("RNN state should be initialized");
+
             let sample_rate = this.source.sample_rate();
             let stream = this.source.as_stream();
             let mut stream = std::pin::pin!(stream);
@@ -110,7 +148,7 @@ mod fusor_impl {
                 let mut features_array = [0.0f32; NB_FEATURES];
                 features_array.copy_from_slice(features_slice);
 
-                let (gains, vad) = this.rnn.forward_sync(&features_array, &mut this.rnn_state);
+                let (gains, vad) = rnn.forward_sync(&features_array, rnn_state);
 
                 // Convert gains to array
                 let mut g = [0.0f32; NB_BANDS];

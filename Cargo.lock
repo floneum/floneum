@@ -4704,6 +4704,7 @@ dependencies = [
  "byteorder",
  "cpal",
  "dasp",
+ "fusor-core",
  "futures-channel",
  "futures-core",
  "futures-util",
