@@ -1,5 +1,5 @@
-use fusor_core::layers::RmsNorm;
-use fusor_core::{Device, QMatrix, Result, Tensor, VarBuilder};
+use fusor::layers::RmsNorm;
+use fusor::{Device, QMatrix, Result, Tensor, VarBuilder};
 
 use super::rope::RopeCache;
 
@@ -54,30 +54,30 @@ impl QwenSelfAttention {
         start_pos: usize,
         attention_mask: Option<&Tensor<2, u32>>,
     ) -> Tensor<3, f32> {
-        let [b_sz, seq_len, _hidden_size] = *hidden_states.shape();
+        let [b_sz, seq_len, _hidden_size] = hidden_states.shape();
 
         // Compute Q, K, V projections
         let mut query_states = hidden_states
             .q_mat_mul(&self.wq)
             .reshape([b_sz, seq_len, self.num_heads, self.head_dim])
-            .transpose(1, 2);
+            .transpose(1, 2).to_concrete();
 
         let mut key_states = hidden_states
             .q_mat_mul(&self.wk)
             .reshape([b_sz, seq_len, self.num_kv_heads, self.head_dim])
-            .transpose(1, 2);
+            .transpose(1, 2).to_concrete();
 
         let value_states = hidden_states
             .q_mat_mul(&self.wv)
             .reshape([b_sz, seq_len, self.num_kv_heads, self.head_dim])
-            .transpose(1, 2);
+            .transpose(1, 2).to_concrete();
 
         // Apply optional Q/K normalization
         if let Some(ref q_norm) = self.q_norm {
-            query_states = q_norm.forward(&query_states);
+            query_states = q_norm.forward_4d(&query_states);
         }
         if let Some(ref k_norm) = self.k_norm {
-            key_states = k_norm.forward(&key_states);
+            key_states = k_norm.forward_4d(&key_states);
         }
 
         // Apply RoPE to Q and K
@@ -100,9 +100,9 @@ impl QwenSelfAttention {
             let mask_f32: Tensor<2, f32> = m.cast();
             // Create ones by adding 1 to zeros
             let zeros = mask_f32.zeros_like();
-            let ones = zeros + 1.0f32;
+            let ones = (zeros + 1.0f32).to_concrete();
             // (1 - mask) * large_neg gives: valid=0, pad=large_neg
-            (ones - mask_f32) * MASK_NEG_VALUE
+            ((ones - mask_f32) * MASK_NEG_VALUE).to_concrete()
         });
 
         let attn_output = query_states.flash_attention(
@@ -113,9 +113,9 @@ impl QwenSelfAttention {
         );
 
         // Reshape and project output
-        let attn_output = attn_output
-            .transpose(1, 2)
-            .reshape([b_sz, seq_len, hidden_size]);
+        let attn_output = attn_output.transpose(1, 2);
+        let attn_output = attn_output.to_concrete()
+            .reshape([b_sz, seq_len, hidden_size]).to_concrete();
 
         attn_output.q_mat_mul(&self.wo)
     }

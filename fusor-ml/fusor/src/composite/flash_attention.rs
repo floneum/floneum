@@ -135,8 +135,14 @@ where
 
         // Apply mask if provided
         let scores_masked = if let Some(m) = mask {
-            // Mask is [q_seq_len, kv_seq_len], broadcast to [batch, num_heads, q_seq_len, kv_seq_len]
-            let mask_4d: Tensor<4, D, _> = m.reshape([1, 1, q_seq_len, kv_seq_len]);
+            let m_shape = m.shape();
+            let mask_4d: Tensor<4, D, _> = if m_shape[0] == q_seq_len && m_shape[1] == kv_seq_len {
+                // Mask is [q_seq_len, kv_seq_len]
+                m.reshape([1, 1, q_seq_len, kv_seq_len])
+            } else {
+                // Mask is [batch, kv_seq_len] — per-token validity mask
+                m.reshape([m_shape[0], 1, 1, m_shape[1]])
+            };
             let mask_broadcast = mask_4d.broadcast_as([batch, num_heads, q_seq_len, kv_seq_len]);
             (scores_scaled + mask_broadcast).to_concrete()
         } else {

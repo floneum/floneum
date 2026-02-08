@@ -7054,7 +7054,7 @@ name = "rbert"
 version = "0.4.0"
 dependencies = [
  "anyhow",
- "fusor-core",
+ "fusor",
  "fusor-gguf",
  "kalosm",
  "kalosm-common",

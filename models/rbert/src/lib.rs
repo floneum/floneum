@@ -42,11 +42,11 @@
 
 #![warn(missing_docs)]
 
-use fusor_core::{DataType, Device, Tensor, VarBuilder};
+use fusor::{Device, Tensor, VarBuilder};
 use kalosm_common::*;
 use kalosm_model_types::ModelLoadingProgress;
 use std::sync::{Arc, RwLock};
-use tokenizers::{Encoding, PaddingParams, Tokenizer};
+use tokenizers::{Encoding, PaddingDirection, PaddingParams, Tokenizer};
 
 mod language_model;
 mod raw;
@@ -61,6 +61,7 @@ pub use crate::source::*;
 pub struct BertBuilder {
     source: BertSource,
     cache: kalosm_common::Cache,
+    device: Option<Device>,
 }
 
 impl BertBuilder {
@@ -74,6 +75,12 @@ impl BertBuilder {
     pub async fn build(self) -> Result<Bert, BertLoadingError> {
         self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator())
             .await
+    }
+
+    /// Set the device to use for the model. If not set, the best available device is selected automatically.
+    pub fn with_device(mut self, device: Device) -> Self {
+        self.device = Some(device);
+        self
     }
 
     #[cfg(feature = "tokio")]
@@ -123,7 +130,7 @@ pub enum BertLoadingError {
     DownloadingError(#[from] CacheError),
     /// An error that can occur when trying to load a Bert model.
     #[error("Failed to load model into device: {0}")]
-    LoadModel(#[from] fusor_core::Error),
+    LoadModel(#[from] fusor::Error),
     /// An IO error that can occur when trying to load a bert model.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
@@ -143,7 +150,7 @@ pub enum BertLoadingError {
 pub enum BertError {
     /// An error that can occur when trying to run a Bert model.
     #[error("Failed to run model: {0}")]
-    Fusor(#[from] fusor_core::Error),
+    Fusor(#[from] fusor::Error),
     /// An error that can occur when tokenizing or detokenizing text.
     #[error("Failed to tokenize: {0}")]
     TokenizerError(tokenizers::Error),
@@ -284,7 +291,7 @@ impl Bert {
         builder: BertBuilder,
         mut progress_handler: impl FnMut(ModelLoadingProgress) + Send + 'static,
     ) -> Result<Self, BertLoadingError> {
-        let BertBuilder { source, cache } = builder;
+        let BertBuilder { source, cache, device } = builder;
         let BertSource {
             config,
             tokenizer,
@@ -314,10 +321,13 @@ impl Bert {
             })
             .await?;
 
-        let device = Device::new().await?;
+        let device = match device {
+            Some(device) => device,
+            None => Device::auto().await,
+        };
         let mut weights = std::io::Cursor::new(&weights_bytes);
         let mut vb = VarBuilder::from_gguf(&mut weights)
-            .map_err(|err| BertLoadingError::LoadModel(err.into()))?;
+            .map_err(|err| BertLoadingError::LoadModel(fusor::Error::from(err)))?;
 
         // Detect architecture from GGUF metadata
         let architecture = vb.architecture();
@@ -416,8 +426,15 @@ impl Bert {
             return Ok(Vec::new());
         }
         let device = self.model.device();
+        // Qwen models use last-token pooling and require left padding so the
+        // last position always contains the final content token.
+        let padding_direction = match pooling {
+            Pooling::Last => PaddingDirection::Left,
+            _ => PaddingDirection::Right,
+        };
         let pp = PaddingParams {
             strategy: tokenizers::PaddingStrategy::BatchLongest,
+            direction: padding_direction,
             ..Default::default()
         };
         tokenizers::pad_encodings(&mut tokens, &pp).map_err(BertError::TokenizerError)?;
@@ -455,27 +472,25 @@ impl Bert {
             Pooling::Mean => {
                 // Take the mean embedding value for all tokens (except padding)
                 // For now, skip masking and just compute the mean
-                let embeddings = embeddings.sum(1) / (n_tokens as f32);
+                let embeddings = embeddings.sum::<2>(1).div_scalar(n_tokens as f32);
                 let embeddings = normalize_l2(&embeddings);
-                Ok(embeddings.chunk(n_sentences, 0)?)
+                Ok(embeddings.chunk(n_sentences, 0).into_iter().map(|c| c.to_concrete()).collect())
             }
             Pooling::CLS => {
                 // Index into the first token of each sentence which is the CLS token that contains the sentence embedding
-                let indexed_embeddings = embeddings.i((.., 0, ..));
-                Ok(indexed_embeddings.chunk(n_sentences, 0)?)
+                let indexed_embeddings = embeddings.to_concrete().i((.., 0, ..));
+                Ok(indexed_embeddings.chunk(n_sentences, 0).into_iter().map(|c| c.to_concrete()).collect())
             }
             Pooling::Last => {
-                // Index into the last non-padding token of each sentence
-                // For now, use the last position (n_tokens - 1)
-                let last_idx = n_tokens - 1;
-                let indexed_embeddings = embeddings.i((.., last_idx, ..));
-                let indexed_embeddings = normalize_l2(&indexed_embeddings);
-                Ok(indexed_embeddings.chunk(n_sentences, 0)?)
+                // With left padding, the last token is always at the final position
+                let indexed_embeddings = embeddings.to_concrete().i((.., n_tokens - 1, ..));
+                let normalized = normalize_l2(&indexed_embeddings);
+                Ok(normalized.chunk(n_sentences, 0).into_iter().map(|c| c.to_concrete()).collect())
             }
         }
     }
 }
 
-fn normalize_l2<D: DataType>(v: &Tensor<2, D>) -> Tensor<2, D> {
-    v.div_(&v.sqr().sum_keepdim(1).sqrt())
+fn normalize_l2(v: &Tensor<2, f32>) -> Tensor<2, f32> {
+    v.div_(&v.sqr().to_concrete().sum_keepdim::<1>(1).sqrt())
 }

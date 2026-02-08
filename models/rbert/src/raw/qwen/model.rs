@@ -1,9 +1,8 @@
-use fusor_core::layers::RmsNorm;
-use fusor_core::{Device, Result, Tensor, VarBuilder};
+use fusor::layers::{RmsNorm, Embedding};
+use fusor::{Device, Result, Tensor, VarBuilder};
 
 use super::layer::QwenLayer;
 use super::rope::RopeCache;
-use crate::raw::embedding::{embedding, Embedding};
 
 /// Configuration for QwenEmbeddingModel loaded from GGUF metadata
 #[derive(Debug, Clone)]
@@ -23,43 +22,36 @@ impl QwenConfig {
     pub fn from_gguf(vb: &VarBuilder) -> Result<Self> {
         let num_heads = vb
             .get_metadata(".attention.head_count")
-            .ok()
             .and_then(|v| v.to_u32().ok())
             .unwrap_or(16) as usize;
 
         let num_kv_heads = vb
             .get_metadata(".attention.head_count_kv")
-            .ok()
             .and_then(|v| v.to_u32().ok())
             .unwrap_or(num_heads as u32) as usize;
 
         let num_layers = vb
             .get_metadata(".block_count")
-            .ok()
             .and_then(|v| v.to_u32().ok())
             .unwrap_or(28) as usize;
 
         let hidden_size = vb
             .get_metadata(".embedding_length")
-            .ok()
             .and_then(|v| v.to_u32().ok())
             .unwrap_or(1024) as usize;
 
         let context_length = vb
             .get_metadata(".context_length")
-            .ok()
             .and_then(|v| v.to_u32().ok())
             .unwrap_or(32768) as usize;
 
         let rope_theta = vb
             .get_metadata(".rope.freq_base")
-            .ok()
             .and_then(|v| v.to_f32().ok())
             .unwrap_or(1_000_000.0);
 
         let rms_norm_eps = vb
             .get_metadata(".attention.layer_norm_rms_epsilon")
-            .ok()
             .and_then(|v| v.to_f32().ok())
             .unwrap_or(1e-6);
 
@@ -67,7 +59,6 @@ impl QwenConfig {
         // Fall back to hidden_size / num_heads if not present
         let head_dimension = vb
             .get_metadata(".attention.key_length")
-            .ok()
             .and_then(|v| v.to_u32().ok())
             .map(|x| x as usize)
             .unwrap_or_else(|| hidden_size / num_heads);
@@ -87,7 +78,7 @@ impl QwenConfig {
 
 /// Qwen embedding model (encoder-only for embeddings)
 pub struct QwenEmbeddingModel {
-    token_embeddings: Embedding,
+    token_embeddings: Embedding<f32>,
     layers: Vec<QwenLayer>,
     final_norm: RmsNorm<1, f32>,
     rope_cache: RopeCache,
@@ -101,7 +92,7 @@ impl QwenEmbeddingModel {
         let config = QwenConfig::from_gguf(vb)?;
 
         // Load token embeddings
-        let token_embeddings = embedding(device, &mut vb.pp("token_embd"))?;
+        let token_embeddings = Embedding::load(device, &mut vb.pp("token_embd"))?;
 
         // Create RoPE cache
         let rope_cache = RopeCache::new(&config, device)?;

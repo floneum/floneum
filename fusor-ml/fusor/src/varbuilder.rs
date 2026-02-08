@@ -141,8 +141,30 @@ impl<'a> VarBuilder<'a> {
     }
 
     /// Get a metadata value by key.
+    ///
+    /// If the key starts with `.`, it will search for metadata keys that end with the given key
+    /// and return the value for the shortest matching key. This allows architecture-prefixed
+    /// keys like `qwen3.attention.head_count` to be found with `.attention.head_count`.
     pub fn get_metadata(&self, key: &str) -> Option<&GgufValue> {
-        self.metadata.metadata.get(key)
+        if key.starts_with('.') {
+            self.metadata
+                .metadata
+                .iter()
+                .filter(|(k, _)| k.ends_with(key))
+                .min_by_key(|(k, _)| k.len())
+                .map(|(_, v)| v)
+        } else {
+            self.metadata.metadata.get(key)
+        }
+    }
+
+    /// Get the model architecture from GGUF metadata.
+    ///
+    /// Reads the "general.architecture" metadata key.
+    pub fn architecture(&self) -> Option<String> {
+        self.get_metadata("general.architecture")
+            .and_then(|v| v.to_string().ok())
+            .map(|s| s.to_string())
     }
 }
 

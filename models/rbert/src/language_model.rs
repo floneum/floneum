@@ -8,7 +8,7 @@ use crate::BertBuilder;
 use crate::BertError;
 use crate::BertLoadingError;
 use crate::Pooling;
-use fusor_core::ToVec2;
+use fusor::ToVec2;
 pub use kalosm_language_model::{
     Embedder, EmbedderCacheExt, EmbedderExt, Embedding, EmbeddingInput, EmbeddingVariant,
 };
@@ -44,7 +44,7 @@ impl Bert {
         let last_slice = last
             .as_slice()
             .await
-            .map_err(|err| BertError::Fusor(fusor_core::Error::BufferAsyncError(err)))?;
+            .map_err(BertError::Fusor)?;
         let slice_data = last_slice.to_vec2();
         Ok(Embedding::from(
             slice_data.into_iter().next().into_iter().next().unwrap(),
@@ -61,7 +61,8 @@ impl Bert {
 
         let mut embeddings = Vec::with_capacity(tensors.len());
         for tensor in tensors {
-            let slice_data = tensor.to_vec2().await?;
+            let slice = tensor.as_slice().await.map_err(BertError::Fusor)?;
+            let slice_data = slice.to_vec2();
             embeddings.push(Embedding::from(
                 slice_data.into_iter().next().into_iter().next().unwrap(),
             ));
@@ -208,3 +209,4 @@ async fn test_qwen3_embedding() {
     assert!(!vec.is_empty());
     assert_eq!(vec.len(), 1024); // Qwen3-Embedding-0.6B has 1024 dimensions
 }
+

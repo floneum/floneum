@@ -1,4 +1,4 @@
-use fusor_core::{Device, Result, Tensor};
+use fusor::{Device, Result, Tensor};
 
 use super::model::QwenConfig;
 
@@ -12,10 +12,10 @@ fn create_inverse_frequency(
         .map(|i| 1. / (rope_theta.powf(i as f32 / dim as f32)))
         .collect();
     let inverse_frequency_len = inverse_frequency.len();
-    Tensor::new(device, &inverse_frequency).reshape([1, inverse_frequency_len])
+    Tensor::new(device, &inverse_frequency).reshape([1, inverse_frequency_len]).to_concrete()
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RopeCache {
     sin: Tensor<2, f32>,
     cos: Tensor<2, f32>,
@@ -29,14 +29,14 @@ impl RopeCache {
             device,
         );
 
-        let context_indices: Tensor<2, f32> =
-            Tensor::arange(device, 0f32, config.context_length as f32)
-                .reshape([config.context_length, 1]);
+        let context_indices =
+            fusor::arange(device, 0f32, config.context_length as f32)
+                .reshape([config.context_length, 1]).to_concrete();
 
         let outer_product = context_indices.mat_mul(&inverse_frequency);
 
-        let sin = outer_product.sin();
-        let cos = outer_product.cos();
+        let sin = outer_product.sin().to_concrete();
+        let cos = outer_product.cos().to_concrete();
 
         Ok(Self { sin, cos })
     }
@@ -48,9 +48,9 @@ impl RopeCache {
         k: &Tensor<4, f32>,
         start_pos: usize,
     ) -> (Tensor<4, f32>, Tensor<4, f32>) {
-        let [_b_sz, _n_head, seq_len, _n_embd] = *q.shape();
-        let cos = self.cos.narrow(0, start_pos, seq_len);
-        let sin = self.sin.narrow(0, start_pos, seq_len);
+        let [_b_sz, _n_head, seq_len, _n_embd] = q.shape();
+        let cos = self.cos.narrow(0, start_pos, seq_len).to_concrete();
+        let sin = self.sin.narrow(0, start_pos, seq_len).to_concrete();
 
         let q = q.rope_normal_fused(&cos, &sin);
         let k = k.rope_normal_fused(&cos, &sin);

@@ -3,6 +3,9 @@ use kalosm_model_types::FileSource;
 const SNOWFLAKE_EMBEDDING_PREFIX: &str =
     "Represent this sentence for searching relevant passages: ";
 
+const QWEN3_EMBEDDING_PREFIX: &str =
+    "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery: ";
+
 /// A the source of a [`crate::Bert`] model
 pub struct BertSource {
     pub(crate) search_embedding_prefix: Option<String>,
@@ -269,7 +272,7 @@ impl BertSource {
                 "main".to_string(),
                 "Qwen3-Embedding-0.6B-Q8_0.gguf".to_string(),
             ),
-            search_embedding_prefix: None,
+            search_embedding_prefix: Some(QWEN3_EMBEDDING_PREFIX.to_string()),
         }
     }
 
@@ -299,7 +302,7 @@ impl BertSource {
                 "main".to_string(),
                 "Qwen3-Embedding-4B-Q8_0.gguf".to_string(),
             ),
-            search_embedding_prefix: None,
+            search_embedding_prefix: Some(QWEN3_EMBEDDING_PREFIX.to_string()),
         }
     }
 
@@ -329,7 +332,7 @@ impl BertSource {
                 "main".to_string(),
                 "Qwen3-Embedding-8B-Q8_0.gguf".to_string(),
             ),
-            search_embedding_prefix: None,
+            search_embedding_prefix: Some(QWEN3_EMBEDDING_PREFIX.to_string()),
         }
     }
 }

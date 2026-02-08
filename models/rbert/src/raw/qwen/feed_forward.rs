@@ -1,4 +1,4 @@
-use fusor_core::{Device, QMatrix, Result, Tensor, VarBuilder};
+use fusor::{Device, QMatrix, Result, Tensor, VarBuilder};
 
 /// Qwen-style Feed Forward Network with gate/up/down projections
 /// Formula: SiLU(x @ gate) * (x @ up) @ down
