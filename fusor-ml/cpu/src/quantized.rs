@@ -398,10 +398,13 @@ where
 
         if m == 1 {
             // m=1 (token generation): memory-bandwidth bound, parallelize over output columns.
-            let n_threads = crate::parallel::num_threads();
+            // Scale thread count based on work size: each thread needs enough vec_dot calls
+            // to amortize std::thread::scope's thread creation overhead (~10µs per thread).
+            let max_threads = crate::parallel::num_threads();
+            let total_work = n * blocks_per_weight_row;
+            let n_threads = (total_work / 16384).min(max_threads).max(1);
 
-            // For small n or single-threaded, don't parallelize
-            if n < 64 || n_threads == 1 {
+            if n_threads == 1 {
                 process_row_integer_tiled::<B>(
                     lhs_data,
                     rhs_blocks,
