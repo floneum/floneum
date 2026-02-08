@@ -535,39 +535,6 @@ where
     }
 }
 
-/// Process a range of output columns for m=1 parallelization using integer dot products.
-/// Uses NEON intrinsics on aarch64 for efficient i8 x i8 -> i32 computation.
-#[inline(always)]
-fn process_row_integer_range<B: GgufBlock>(
-    lhs_row: &[f32],
-    rhs_blocks: &[B],
-    out_chunk: &mut [f32],
-    start_n: usize,
-    chunk_n: usize,
-    blocks_per_weight_row: usize,
-) where
-    B::ActivationBlock: Pod,
-{
-    // Quantize activations once for all output columns
-    let act_blocks: Vec<B::ActivationBlock> = (0..blocks_per_weight_row)
-        .map(|block_idx| {
-            let start = block_idx * B::BLOCK_SIZE;
-            let chunk = &lhs_row[start..start + B::BLOCK_SIZE];
-            B::quantize_activation(chunk)
-        })
-        .collect();
-
-    for (i, out_elem) in out_chunk.iter_mut().enumerate().take(chunk_n) {
-        let n_out = start_n + i;
-        let mut sum = 0.0f32;
-        for (block_idx, act_block) in act_blocks.iter().enumerate() {
-            let weight_block_idx = n_out * blocks_per_weight_row + block_idx;
-            sum += rhs_blocks[weight_block_idx].vec_dot(act_block);
-        }
-        *out_elem = sum;
-    }
-}
-
 /// Process a range of output columns for m=1 parallelization
 #[allow(dead_code)]
 #[inline(always)]
