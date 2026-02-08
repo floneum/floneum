@@ -876,7 +876,58 @@ impl GgufBlock for BlockQ4_0 {
         }
     }
 
-    #[cfg(not(all(target_arch = "aarch64", nightly)))]
+    #[cfg(target_arch = "x86_64")]
+    fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
+        let sum = if is_x86_feature_detected!("avx2") {
+            #[target_feature(enable = "avx2")]
+            unsafe fn dot_avx2(q4_data: *const u8, q8_data: *const i8) -> i32 {
+                use std::arch::x86_64::*;
+                unsafe {
+                    // Load 16 packed Q4_0 bytes
+                    let q4_packed = _mm_loadu_si128(q4_data as *const __m128i);
+                    // Unpack: low nibbles in lower lane, high nibbles in upper lane
+                    let lo = _mm256_castsi128_si256(q4_packed);
+                    let q4_256 = _mm256_inserti128_si256(lo, _mm_srli_epi32(q4_packed, 4), 1);
+                    let q4_bytes = _mm256_and_si256(q4_256, _mm256_set1_epi8(0x0F));
+                    // Center: subtract 8 (Q4_0 values 0-15 → -8..+7)
+                    let centered = _mm256_sub_epi8(q4_bytes, _mm256_set1_epi8(8));
+                    // Load 32 Q8_0 activation values
+                    let qy = _mm256_loadu_si256(q8_data as *const __m256i);
+                    // Sign trick for signed × signed dot product
+                    let qxabs = _mm256_sign_epi8(centered, centered);
+                    let qysign = _mm256_sign_epi8(qy, centered);
+                    // maddubs: pairs of u8 × i8 → saturated i16, then madd to i32
+                    let prod16 = _mm256_maddubs_epi16(qxabs, qysign);
+                    let prod32 = _mm256_madd_epi16(prod16, _mm256_set1_epi16(1));
+                    // Horizontal sum of 8 i32 lanes
+                    let hi128 = _mm256_extracti128_si256(prod32, 1);
+                    let lo128 = _mm256_castsi256_si128(prod32);
+                    let sum128 = _mm_add_epi32(lo128, hi128);
+                    let hi64 = _mm_shuffle_epi32(sum128, 0x4E);
+                    let sum64 = _mm_add_epi32(sum128, hi64);
+                    let hi32 = _mm_shuffle_epi32(sum64, 0xB1);
+                    let result = _mm_add_epi32(sum64, hi32);
+                    _mm_cvtsi128_si32(result)
+                }
+            }
+            unsafe { dot_avx2(self.data.as_ptr(), y.data.as_ptr()) }
+        } else {
+            const CENTER: i8 = 8;
+            let mut sum: i32 = 0;
+            for i in 0..16 {
+                let byte = self.data[i];
+                let q4_lo = (byte & 0x0F) as i8 - CENTER;
+                let q4_hi = (byte >> 4) as i8 - CENTER;
+                sum += (q4_lo as i32) * (y.data[i] as i32);
+                sum += (q4_hi as i32) * (y.data[i + 16] as i32);
+            }
+            sum
+        };
+        let scale = self.scale.to_f32() * y.scale.to_f32();
+        (sum as f32) * scale
+    }
+
+    #[cfg(not(any(all(target_arch = "aarch64", nightly), target_arch = "x86_64")))]
     fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
         const CENTER: i8 = 8;
         let mut sum: i32 = 0;
@@ -1187,7 +1238,45 @@ impl GgufBlock for BlockQ8_0 {
         }
     }
 
-    #[cfg(not(all(target_arch = "aarch64", nightly)))]
+    #[cfg(target_arch = "x86_64")]
+    fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
+        let sum = if is_x86_feature_detected!("avx2") {
+            #[target_feature(enable = "avx2")]
+            unsafe fn dot_avx2(x_data: *const i8, y_data: *const i8) -> i32 {
+                use std::arch::x86_64::*;
+                unsafe {
+                    let qx = _mm256_loadu_si256(x_data as *const __m256i);
+                    let qy = _mm256_loadu_si256(y_data as *const __m256i);
+                    // Sign trick: abs(x) * (y * sign(x))
+                    let qxabs = _mm256_sign_epi8(qx, qx);
+                    let qysign = _mm256_sign_epi8(qy, qx);
+                    // maddubs: pairs of u8 × i8 → saturated i16, then madd to i32
+                    let prod16 = _mm256_maddubs_epi16(qxabs, qysign);
+                    let prod32 = _mm256_madd_epi16(prod16, _mm256_set1_epi16(1));
+                    // Horizontal sum of 8 i32 lanes
+                    let hi128 = _mm256_extracti128_si256(prod32, 1);
+                    let lo128 = _mm256_castsi256_si128(prod32);
+                    let sum128 = _mm_add_epi32(lo128, hi128);
+                    let hi64 = _mm_shuffle_epi32(sum128, 0x4E);
+                    let sum64 = _mm_add_epi32(sum128, hi64);
+                    let hi32 = _mm_shuffle_epi32(sum64, 0xB1);
+                    let result = _mm_add_epi32(sum64, hi32);
+                    _mm_cvtsi128_si32(result)
+                }
+            }
+            unsafe { dot_avx2(self.data.as_ptr(), y.data.as_ptr()) }
+        } else {
+            let mut sum: i32 = 0;
+            for i in 0..32 {
+                sum += (self.data[i] as i32) * (y.data[i] as i32);
+            }
+            sum
+        };
+        let scale = self.scale.to_f32() * y.scale.to_f32();
+        (sum as f32) * scale
+    }
+
+    #[cfg(not(any(all(target_arch = "aarch64", nightly), target_arch = "x86_64")))]
     fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
         let mut sum: i32 = 0;
         for i in 0..32 {
