@@ -1,11 +1,13 @@
 use super::{AnthropicCompatibleClient, NoAnthropicAPIKeyError};
 use crate::{
-    ChatMessage, ChatModel, ChatSession, ContentChunk, CreateChatSession, GenerationParameters,
+    ChatMessage, ChatModel, ChatSession, ContentChunk, CreateChatSession,
+    CreateDefaultChatConstraintsForType, GenerationParameters, SchemaParser, StructuredChatModel,
 };
 use futures_util::StreamExt;
 use kalosm_model_types::{ModelBuilder, ModelLoadingProgress};
+use kalosm_sample::Schema;
 use reqwest_eventsource::{Event, RequestBuilderExt};
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{future::Future, sync::Arc};
 use thiserror::Error;
 
@@ -193,6 +195,8 @@ enum AnthropicCompatibleChatResponse {
     ContentBlockDelta(AnthropicCompatibleChatResponseContentBlockDelta),
     #[serde(rename = "content_block_stop")]
     ContentBlockStop,
+    #[serde(rename = "message_stop")]
+    MessageStop,
     #[serde(rename = "error")]
     Error(AnthropicCompatibleChatResponseError),
     #[serde(other)]
@@ -277,6 +281,8 @@ struct AnthropicCompatibleChatResponseContentBlockDelta {
 enum AnthropicCompatibleChatResponseContentBlockDeltaMessage {
     #[serde(rename = "text_delta")]
     TextDelta { text: String },
+    #[serde(rename = "input_json_delta")]
+    InputJsonDelta { partial_json: String },
     #[serde(other)]
     Unknown,
 }
@@ -349,10 +355,15 @@ impl ChatModel<GenerationParameters> for AnthropicCompatibleChatModel {
                                         new_message_text += &text;
                                         on_token(text)?;
                                 },
+                                AnthropicCompatibleChatResponseContentBlockDeltaMessage::InputJsonDelta { partial_json } => {
+                                        new_message_text += &partial_json;
+                                        on_token(partial_json)?;
+                                },
                                 AnthropicCompatibleChatResponseContentBlockDeltaMessage::Unknown => tracing::trace!("Unknown delta from Anthropic API: {:?}", message.data),
                             }
                             }
-                            AnthropicCompatibleChatResponse::ContentBlockStop => {
+                            AnthropicCompatibleChatResponse::ContentBlockStop
+                            | AnthropicCompatibleChatResponse::MessageStop => {
                                 break;
                             }
                             AnthropicCompatibleChatResponse::Error(
@@ -377,6 +388,191 @@ impl ChatModel<GenerationParameters> for AnthropicCompatibleChatModel {
             session.messages.push(new_message);
 
             Ok(())
+        }
+    }
+}
+
+fn remove_unsupported_properties(schema: &mut serde_json::Value) {
+    match schema {
+        serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::String(_) => {}
+        serde_json::Value::Array(array) => {
+            for item in array {
+                remove_unsupported_properties(item);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            map.retain(|key, value| {
+                const UNSUPPORTED_PROPERTIES: [&str; 19] = [
+                    "minLength",
+                    "maxLength",
+                    "pattern",
+                    "format",
+                    "minimum",
+                    "maximum",
+                    "multipleOf",
+                    "patternProperties",
+                    "unevaluatedProperties",
+                    "propertyNames",
+                    "minProperties",
+                    "maxProperties",
+                    "unevaluatedItems",
+                    "contains",
+                    "minContains",
+                    "maxContains",
+                    "minItems",
+                    "maxItems",
+                    "uniqueItems",
+                ];
+                if UNSUPPORTED_PROPERTIES.contains(&key.as_str()) {
+                    return false;
+                }
+                remove_unsupported_properties(value);
+                true
+            });
+        }
+    }
+}
+
+impl<T: Schema + DeserializeOwned> CreateDefaultChatConstraintsForType<T>
+    for AnthropicCompatibleChatModel
+{
+    type DefaultConstraints = SchemaParser<T>;
+
+    fn create_default_constraints() -> Self::DefaultConstraints {
+        SchemaParser::new()
+    }
+}
+
+impl<P> StructuredChatModel<SchemaParser<P>> for AnthropicCompatibleChatModel
+where
+    P: Schema + DeserializeOwned,
+{
+    fn add_message_with_callback_and_constraints<'a>(
+        &'a self,
+        session: &'a mut Self::ChatSession,
+        messages: &[ChatMessage],
+        sampler: GenerationParameters,
+        _: SchemaParser<P>,
+        mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
+    ) -> impl Future<Output = Result<P, Self::Error>> + Send + 'a {
+        let schema = P::schema();
+        let mut schema: serde_json::Result<serde_json::Value> =
+            serde_json::from_str(&schema.to_string());
+        if let Ok(schema) = &mut schema {
+            remove_unsupported_properties(schema);
+        }
+
+        let mut system_prompt = None;
+        let messages: Vec<_> = messages
+            .iter()
+            .filter(|message| {
+                if let crate::MessageType::SystemPrompt = message.role() {
+                    system_prompt = message.content().as_str().map(ToString::to_string);
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect();
+        let messages = format_messages(&messages);
+        let myself = &*self.inner;
+
+        let json = schema.map(|schema| {
+            let mut json = serde_json::json!({
+                "model": myself.model,
+                "messages": messages,
+                "stream": true,
+                "top_p": sampler.top_p,
+                "top_k": sampler.top_k,
+                "temperature": sampler.temperature,
+                "max_tokens": sampler.max_length.min(myself.max_tokens),
+                "output_config": {
+                    "format": {
+                        "type": "json_schema",
+                        "schema": schema
+                    }
+                }
+            });
+            if let Some(stop_on) = sampler.stop_on.as_ref() {
+                json["stop"] = vec![stop_on.clone()].into();
+            }
+            if let Some(system) = system_prompt {
+                json["system"] = system.into();
+            }
+            json
+        });
+
+        async move {
+            let json = json?;
+            let api_key = myself.client.resolve_api_key()?;
+            let mut event_source = myself
+                .client
+                .reqwest_client
+                .post(format!("{}/messages", myself.client.base_url()))
+                .header("Content-Type", "application/json")
+                .header("x-api-key", &api_key)
+                .header("anthropic-version", myself.client.version())
+                .json(&json)
+                .eventsource()
+                .unwrap();
+
+            let mut new_message_text = String::new();
+
+            while let Some(event) = event_source.next().await {
+                match event? {
+                    Event::Open => {}
+                    Event::Message(message) => {
+                        let data =
+                            serde_json::from_str::<AnthropicCompatibleChatResponse>(&message.data)?;
+                        match data {
+                            AnthropicCompatibleChatResponse::ContentBlockDelta(delta_block) => {
+                                match delta_block.delta {
+                                    AnthropicCompatibleChatResponseContentBlockDeltaMessage::TextDelta { text } => {
+                                        new_message_text += &text;
+                                        on_token(text)?;
+                                    }
+                                    AnthropicCompatibleChatResponseContentBlockDeltaMessage::InputJsonDelta { partial_json } => {
+                                        new_message_text += &partial_json;
+                                        on_token(partial_json)?;
+                                    }
+                                    AnthropicCompatibleChatResponseContentBlockDeltaMessage::Unknown => {
+                                        tracing::trace!("Unknown delta from Anthropic API: {:?}", message.data);
+                                    }
+                                }
+                            }
+                            AnthropicCompatibleChatResponse::ContentBlockStop => {}
+                            AnthropicCompatibleChatResponse::MessageStop => {
+                                break;
+                            }
+                            AnthropicCompatibleChatResponse::Error(err) => {
+                                return Err(AnthropicCompatibleChatModelError::StreamError(err));
+                            }
+                            AnthropicCompatibleChatResponse::Unknown => {
+                                tracing::trace!(
+                                    "Unknown response from Anthropic API: {:?}",
+                                    message.data
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            let result = serde_json::from_str::<P>(&new_message_text).map_err(|err| {
+                tracing::error!(
+                    "Failed to parse structured response: {new_message_text:?}\nerror: {err:?}"
+                );
+                AnthropicCompatibleChatModelError::DeserializeError(err)
+            })?;
+
+            let new_message =
+                crate::ChatMessage::new(crate::MessageType::ModelAnswer, new_message_text);
+            session.messages.push(new_message);
+
+            Ok(result)
         }
     }
 }
@@ -427,7 +623,9 @@ mod tests {
     use std::sync::{Arc, RwLock};
 
     use super::{
-        AnthropicCompatibleChatModelBuilder, ChatModel, CreateChatSession, GenerationParameters,
+        AnthropicCompatibleChatModelBuilder, AnthropicCompatibleChatResponse,
+        AnthropicCompatibleChatResponseContentBlockDeltaMessage, ChatModel, CreateChatSession,
+        GenerationParameters,
     };
 
     #[tokio::test]
@@ -472,5 +670,206 @@ mod tests {
         println!("{all_text}");
 
         assert!(!all_text.is_empty());
+    }
+
+    #[test]
+    fn test_remove_unsupported_properties() {
+        let mut schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "pattern": "^[a-z]+$"
+                },
+                "age": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 150
+                },
+                "tags": {
+                    "type": "array",
+                    "items": { "type": "string", "format": "uri" },
+                    "minItems": 1,
+                    "maxItems": 10,
+                    "uniqueItems": true
+                }
+            },
+            "required": ["name", "age"]
+        });
+
+        super::remove_unsupported_properties(&mut schema);
+
+        let name_props = &schema["properties"]["name"];
+        assert_eq!(name_props["type"], "string");
+        assert!(name_props.get("minLength").is_none());
+        assert!(name_props.get("maxLength").is_none());
+        assert!(name_props.get("pattern").is_none());
+
+        let age_props = &schema["properties"]["age"];
+        assert_eq!(age_props["type"], "integer");
+        assert!(age_props.get("minimum").is_none());
+        assert!(age_props.get("maximum").is_none());
+
+        let tags_props = &schema["properties"]["tags"];
+        assert_eq!(tags_props["type"], "array");
+        assert!(tags_props.get("minItems").is_none());
+        assert!(tags_props.get("maxItems").is_none());
+        assert!(tags_props.get("uniqueItems").is_none());
+        assert!(tags_props["items"].get("format").is_none());
+
+        assert!(schema["required"].is_array());
+    }
+
+    #[test]
+    fn test_deserialize_input_json_delta() {
+        let json = r#"{"type":"input_json_delta","partial_json":"{\"name\":"}"#;
+        let delta: AnthropicCompatibleChatResponseContentBlockDeltaMessage =
+            serde_json::from_str(json).unwrap();
+        match delta {
+            AnthropicCompatibleChatResponseContentBlockDeltaMessage::InputJsonDelta {
+                partial_json,
+            } => {
+                assert_eq!(partial_json, r#"{"name":"#);
+            }
+            _ => panic!("Expected InputJsonDelta variant"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_text_delta() {
+        let json = r#"{"type":"text_delta","text":"Hello world"}"#;
+        let delta: AnthropicCompatibleChatResponseContentBlockDeltaMessage =
+            serde_json::from_str(json).unwrap();
+        match delta {
+            AnthropicCompatibleChatResponseContentBlockDeltaMessage::TextDelta { text } => {
+                assert_eq!(text, "Hello world");
+            }
+            _ => panic!("Expected TextDelta variant"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_content_block_delta_event() {
+        let json = r#"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"key\":\"val\"}"}}"#;
+        let event: AnthropicCompatibleChatResponse = serde_json::from_str(json).unwrap();
+        match event {
+            AnthropicCompatibleChatResponse::ContentBlockDelta(block) => {
+                assert_eq!(block.index, 0);
+                match block.delta {
+                    AnthropicCompatibleChatResponseContentBlockDeltaMessage::InputJsonDelta {
+                        partial_json,
+                    } => {
+                        assert_eq!(partial_json, r#"{"key":"val"}"#);
+                    }
+                    _ => panic!("Expected InputJsonDelta"),
+                }
+            }
+            _ => panic!("Expected ContentBlockDelta"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_message_stop_event() {
+        let json = r#"{"type":"message_stop"}"#;
+        let event: AnthropicCompatibleChatResponse = serde_json::from_str(json).unwrap();
+        assert!(matches!(
+            event,
+            AnthropicCompatibleChatResponse::MessageStop
+        ));
+    }
+
+    #[test]
+    fn test_deserialize_content_block_stop_event() {
+        let json = r#"{"type":"content_block_stop","index":0}"#;
+        let event: AnthropicCompatibleChatResponse = serde_json::from_str(json).unwrap();
+        assert!(matches!(
+            event,
+            AnthropicCompatibleChatResponse::ContentBlockStop
+        ));
+    }
+
+    #[test]
+    fn test_unknown_event_types_deserialize_as_unknown() {
+        let json = r#"{"type":"message_start","message":{"id":"msg_123"}}"#;
+        let event: AnthropicCompatibleChatResponse = serde_json::from_str(json).unwrap();
+        assert!(matches!(event, AnthropicCompatibleChatResponse::Unknown));
+
+        let json = r#"{"type":"ping"}"#;
+        let event: AnthropicCompatibleChatResponse = serde_json::from_str(json).unwrap();
+        assert!(matches!(event, AnthropicCompatibleChatResponse::Unknown));
+    }
+
+    #[test]
+    fn test_structured_request_uses_output_config_format() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" },
+                "age": { "type": "integer" }
+            },
+            "required": ["name", "age"]
+        });
+
+        let json = serde_json::json!({
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "test"}],
+            "stream": true,
+            "top_p": 0.9,
+            "top_k": 40,
+            "temperature": 0.7,
+            "max_tokens": 1024,
+            "output_config": {
+                "format": {
+                    "type": "json_schema",
+                    "schema": schema
+                }
+            }
+        });
+
+        assert!(json.get("output_config").is_some());
+        assert!(json.get("tools").is_none());
+        assert!(json.get("tool_choice").is_none());
+
+        let format = &json["output_config"]["format"];
+        assert_eq!(format["type"], "json_schema");
+        assert_eq!(format["schema"]["type"], "object");
+        assert_eq!(
+            format["schema"]["required"],
+            serde_json::json!(["name", "age"])
+        );
+    }
+
+    #[test]
+    fn test_text_delta_used_for_structured_response() {
+        let events = vec![
+            r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"{\"name\":\"Alice\""}}"#,
+            r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":",\"age\":30}"}}"#,
+            r#"{"type":"content_block_stop","index":0}"#,
+            r#"{"type":"message_stop"}"#,
+        ];
+
+        let mut accumulated = String::new();
+        let mut stopped = false;
+
+        for event_json in &events {
+            let event: AnthropicCompatibleChatResponse = serde_json::from_str(event_json).unwrap();
+            if let AnthropicCompatibleChatResponse::ContentBlockDelta(block) = event {
+                if let AnthropicCompatibleChatResponseContentBlockDeltaMessage::TextDelta { text } =
+                    block.delta
+                {
+                    accumulated += &text;
+                }
+            } else if let AnthropicCompatibleChatResponse::MessageStop = event {
+                stopped = true;
+            }
+        }
+
+        assert!(stopped);
+        assert!(!accumulated.is_empty());
+        let parsed: serde_json::Value = serde_json::from_str(&accumulated).unwrap();
+        assert_eq!(parsed["name"], "Alice");
+        assert_eq!(parsed["age"], 30);
     }
 }

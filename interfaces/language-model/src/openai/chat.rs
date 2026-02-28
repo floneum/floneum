@@ -1,7 +1,7 @@
 use super::{NoOpenAIAPIKeyError, OpenAICompatibleClient};
 use crate::{
     ChatModel, ChatSession, ContentChunk, CreateChatSession, CreateDefaultChatConstraintsForType,
-    GenerationParameters, ModelConstraints, StructuredChatModel,
+    GenerationParameters, SchemaParser, StructuredChatModel,
 };
 use futures_util::StreamExt;
 use kalosm_model_types::{ModelBuilder, ModelLoadingProgress};
@@ -289,31 +289,6 @@ impl ChatModel<GenerationParameters> for OpenAICompatibleChatModel {
     }
 }
 
-/// A parser for any type that implements the [`Schema`] trait and [`Deserialize`].
-#[derive(Debug, Clone, Copy)]
-pub struct SchemaParser<P> {
-    phantom: std::marker::PhantomData<P>,
-}
-
-impl<P> Default for SchemaParser<P> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<P> SchemaParser<P> {
-    /// Create a new parser for the given schema.
-    pub const fn new() -> Self {
-        Self {
-            phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<P> ModelConstraints for SchemaParser<P> {
-    type Output = P;
-}
-
 impl<T: Schema + DeserializeOwned> CreateDefaultChatConstraintsForType<T>
     for OpenAICompatibleChatModel
 {
@@ -543,8 +518,9 @@ mod tests {
 
     use super::{
         ChatModel, CreateChatSession, GenerationParameters, OpenAICompatibleChatModelBuilder,
-        SchemaParser, StructuredChatModel,
+        StructuredChatModel,
     };
+    use crate::SchemaParser;
 
     #[tokio::test]
     async fn test_gpt_5_mini() {

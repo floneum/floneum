@@ -13,6 +13,34 @@ pub use boxed::*;
 
 use crate::MessageContent;
 
+/// A parser for any type that implements the [`Schema`](kalosm_sample::Schema) trait and [`Deserialize`](serde::Deserialize).
+///
+/// Used by remote chat model adapters (e.g. OpenAI, Anthropic) to enforce structured
+/// JSON schema generation at the API level.
+#[derive(Debug, Clone, Copy)]
+pub struct SchemaParser<P> {
+    phantom: std::marker::PhantomData<P>,
+}
+
+impl<P> Default for SchemaParser<P> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<P> SchemaParser<P> {
+    /// Create a new parser for the given schema.
+    pub const fn new() -> Self {
+        Self {
+            phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<P> ModelConstraints for SchemaParser<P> {
+    type Output = P;
+}
+
 #[doc = include_str!("../../docs/completion_session.md")]
 pub trait TextCompletionSession {
     /// The type of error the session may return during operations.
