@@ -282,7 +282,7 @@ impl ChatModel<GenerationParameters> for OpenAICompatibleChatModel {
             }
 
             let new_message =
-                crate::ChatMessage::new(crate::MessageType::UserMessage, new_message_text);
+                crate::ChatMessage::new(crate::MessageType::ModelAnswer, new_message_text);
 
             session.messages.push(new_message);
 
@@ -316,52 +316,8 @@ where
         let schema = P::schema();
         let mut schema: serde_json::Result<serde_json::Value> =
             serde_json::from_str(&schema.to_string());
-        fn remove_unsupported_properties(schema: &mut serde_json::Value) {
-            match schema {
-                serde_json::Value::Null => {}
-                serde_json::Value::Bool(_) => {}
-                serde_json::Value::Number(_) => {}
-                serde_json::Value::String(_) => {}
-                serde_json::Value::Array(array) => {
-                    for item in array {
-                        remove_unsupported_properties(item);
-                    }
-                }
-                serde_json::Value::Object(map) => {
-                    map.retain(|key, value| {
-                        const OPEN_AI_UNSUPPORTED_PROPERTIES: [&str; 19] = [
-                            "minLength",
-                            "maxLength",
-                            "pattern",
-                            "format",
-                            "minimum",
-                            "maximum",
-                            "multipleOf",
-                            "patternProperties",
-                            "unevaluatedProperties",
-                            "propertyNames",
-                            "minProperties",
-                            "maxProperties",
-                            "unevaluatedItems",
-                            "contains",
-                            "minContains",
-                            "maxContains",
-                            "minItems",
-                            "maxItems",
-                            "uniqueItems",
-                        ];
-                        if OPEN_AI_UNSUPPORTED_PROPERTIES.contains(&key.as_str()) {
-                            return false;
-                        }
-
-                        remove_unsupported_properties(value);
-                        true
-                    });
-                }
-            }
-        }
         if let Ok(schema) = &mut schema {
-            remove_unsupported_properties(schema);
+            crate::remove_unsupported_schema_properties(schema);
         }
 
         let myself = &*self.inner;
@@ -463,7 +419,7 @@ where
             })?;
 
             let new_message =
-                crate::ChatMessage::new(crate::MessageType::UserMessage, new_message_text);
+                crate::ChatMessage::new(crate::MessageType::ModelAnswer, new_message_text);
 
             session.messages.push(new_message);
 

@@ -235,3 +235,51 @@ pub trait StructuredTextCompletionModel<
         on_token: impl FnMut(String) -> Result<(), Self::Error> + WasmNotSendSync + 'static,
     ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + WasmNotSend + 'a;
 }
+
+/// Remove JSON Schema properties that are not supported by structured output APIs
+/// (e.g. Anthropic, OpenAI). This strips validation-only keywords like `minLength`,
+/// `pattern`, `minimum`, `maxItems`, etc. that would cause API errors.
+#[cfg(any(feature = "anthropic", feature = "openai"))]
+pub(crate) fn remove_unsupported_schema_properties(schema: &mut serde_json::Value) {
+    match schema {
+        serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::String(_) => {}
+        serde_json::Value::Array(array) => {
+            for item in array {
+                remove_unsupported_schema_properties(item);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            map.retain(|key, value| {
+                const UNSUPPORTED_PROPERTIES: [&str; 19] = [
+                    "minLength",
+                    "maxLength",
+                    "pattern",
+                    "format",
+                    "minimum",
+                    "maximum",
+                    "multipleOf",
+                    "patternProperties",
+                    "unevaluatedProperties",
+                    "propertyNames",
+                    "minProperties",
+                    "maxProperties",
+                    "unevaluatedItems",
+                    "contains",
+                    "minContains",
+                    "maxContains",
+                    "minItems",
+                    "maxItems",
+                    "uniqueItems",
+                ];
+                if UNSUPPORTED_PROPERTIES.contains(&key.as_str()) {
+                    return false;
+                }
+                remove_unsupported_schema_properties(value);
+                true
+            });
+        }
+    }
+}

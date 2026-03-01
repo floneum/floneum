@@ -311,42 +311,19 @@ impl ChatModel<GenerationParameters> for AnthropicCompatibleChatModel {
         sampler: GenerationParameters,
         mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a {
-        let mut system_prompt = None;
-        let messages: Vec<_> = messages
-            .iter()
-            .filter(|message| {
-                if let crate::MessageType::SystemPrompt = message.role() {
-                    system_prompt = message.content().as_str().map(ToString::to_string);
-                    false
-                } else {
-                    true
-                }
-            })
-            .collect();
-        let messages = format_messages(&messages);
+        let (system_prompt, filtered) = extract_system_prompt(messages);
+        let messages = format_messages(&filtered);
         let myself = &*self.inner;
-        let mut json = serde_json::json!({
-            "model": myself.model,
-            "messages": messages,
-            "stream": true,
-            "temperature": sampler.temperature,
-            "max_tokens": sampler.max_length.min(myself.max_tokens),
-        });
-        if let Some(top_p) = sampler.top_p {
-            json["top_p"] = top_p.into();
-        }
-        if let Some(top_k) = sampler.top_k {
-            json["top_k"] = top_k.into();
-        }
+        let json = build_anthropic_request_json(
+            &myself.model,
+            messages,
+            &sampler,
+            myself.max_tokens,
+            system_prompt,
+        );
 
         async move {
             let api_key = myself.client.resolve_api_key()?;
-            if let Some(stop_on) = sampler.stop_on.as_ref() {
-                json["stop"] = vec![stop_on.clone()].into();
-            }
-            if let Some(system) = system_prompt {
-                json["system"] = system.into();
-            }
             let mut event_source = myself
                 .client
                 .reqwest_client
@@ -358,100 +335,15 @@ impl ChatModel<GenerationParameters> for AnthropicCompatibleChatModel {
                 .eventsource()
                 .unwrap();
 
-            let mut new_message_text = String::new();
-
-            while let Some(event) = event_source.next().await {
-                match event? {
-                    Event::Open => {}
-                    Event::Message(message) => {
-                        let data =
-                            serde_json::from_str::<AnthropicCompatibleChatResponse>(&message.data)?;
-                        match data {
-                            AnthropicCompatibleChatResponse::ContentBlockDelta(
-                                anthropic_compatible_chat_response_content_block_delta,
-                            ) => {
-                                match anthropic_compatible_chat_response_content_block_delta.delta {
-                                AnthropicCompatibleChatResponseContentBlockDeltaMessage::TextDelta { text } => {
-                                        new_message_text += &text;
-                                        on_token(text)?;
-                                },
-                                AnthropicCompatibleChatResponseContentBlockDeltaMessage::InputJsonDelta { partial_json } => {
-                                        new_message_text += &partial_json;
-                                        on_token(partial_json)?;
-                                },
-                                AnthropicCompatibleChatResponseContentBlockDeltaMessage::Unknown => tracing::trace!("Unknown delta from Anthropic API: {:?}", message.data),
-                            }
-                            }
-                            AnthropicCompatibleChatResponse::ContentBlockStop
-                            | AnthropicCompatibleChatResponse::MessageStop => {
-                                break;
-                            }
-                            AnthropicCompatibleChatResponse::Error(
-                                anthropic_compatible_chat_response_error,
-                            ) => {
-                                return Err(AnthropicCompatibleChatModelError::StreamError(
-                                    anthropic_compatible_chat_response_error,
-                                ))
-                            }
-                            AnthropicCompatibleChatResponse::Unknown => tracing::trace!(
-                                "Unknown response from Anthropic API: {:?}",
-                                message.data
-                            ),
-                        }
-                    }
-                }
-            }
+            let new_message_text =
+                consume_anthropic_stream(&mut event_source, &mut on_token).await?;
 
             let new_message =
-                crate::ChatMessage::new(crate::MessageType::UserMessage, new_message_text);
+                crate::ChatMessage::new(crate::MessageType::ModelAnswer, new_message_text);
 
             session.messages.push(new_message);
 
             Ok(())
-        }
-    }
-}
-
-fn remove_unsupported_properties(schema: &mut serde_json::Value) {
-    match schema {
-        serde_json::Value::Null
-        | serde_json::Value::Bool(_)
-        | serde_json::Value::Number(_)
-        | serde_json::Value::String(_) => {}
-        serde_json::Value::Array(array) => {
-            for item in array {
-                remove_unsupported_properties(item);
-            }
-        }
-        serde_json::Value::Object(map) => {
-            map.retain(|key, value| {
-                const UNSUPPORTED_PROPERTIES: [&str; 19] = [
-                    "minLength",
-                    "maxLength",
-                    "pattern",
-                    "format",
-                    "minimum",
-                    "maximum",
-                    "multipleOf",
-                    "patternProperties",
-                    "unevaluatedProperties",
-                    "propertyNames",
-                    "minProperties",
-                    "maxProperties",
-                    "unevaluatedItems",
-                    "contains",
-                    "minContains",
-                    "maxContains",
-                    "minItems",
-                    "maxItems",
-                    "uniqueItems",
-                ];
-                if UNSUPPORTED_PROPERTIES.contains(&key.as_str()) {
-                    return false;
-                }
-                remove_unsupported_properties(value);
-                true
-            });
         }
     }
 }
@@ -482,50 +374,27 @@ where
         let mut schema: serde_json::Result<serde_json::Value> =
             serde_json::from_str(&schema.to_string());
         if let Ok(schema) = &mut schema {
-            remove_unsupported_properties(schema);
+            crate::remove_unsupported_schema_properties(schema);
         }
 
-        let mut system_prompt = None;
-        let messages: Vec<_> = messages
-            .iter()
-            .filter(|message| {
-                if let crate::MessageType::SystemPrompt = message.role() {
-                    system_prompt = message.content().as_str().map(ToString::to_string);
-                    false
-                } else {
-                    true
-                }
-            })
-            .collect();
-        let messages = format_messages(&messages);
+        let (system_prompt, filtered) = extract_system_prompt(messages);
+        let messages = format_messages(&filtered);
         let myself = &*self.inner;
 
         let json = schema.map(|schema| {
-            let mut json = serde_json::json!({
-                "model": myself.model,
-                "messages": messages,
-                "stream": true,
-                "temperature": sampler.temperature,
-                "max_tokens": sampler.max_length.min(myself.max_tokens),
-                "output_config": {
-                    "format": {
-                        "type": "json_schema",
-                        "schema": schema
-                    }
+            let mut json = build_anthropic_request_json(
+                &myself.model,
+                messages,
+                &sampler,
+                myself.max_tokens,
+                system_prompt,
+            );
+            json["output_config"] = serde_json::json!({
+                "format": {
+                    "type": "json_schema",
+                    "schema": schema
                 }
             });
-            if let Some(top_p) = sampler.top_p {
-                json["top_p"] = top_p.into();
-            }
-            if let Some(top_k) = sampler.top_k {
-                json["top_k"] = top_k.into();
-            }
-            if let Some(stop_on) = sampler.stop_on.as_ref() {
-                json["stop"] = vec![stop_on.clone()].into();
-            }
-            if let Some(system) = system_prompt {
-                json["system"] = system.into();
-            }
             json
         });
 
@@ -543,47 +412,8 @@ where
                 .eventsource()
                 .unwrap();
 
-            let mut new_message_text = String::new();
-
-            while let Some(event) = event_source.next().await {
-                match event? {
-                    Event::Open => {}
-                    Event::Message(message) => {
-                        let data =
-                            serde_json::from_str::<AnthropicCompatibleChatResponse>(&message.data)?;
-                        match data {
-                            AnthropicCompatibleChatResponse::ContentBlockDelta(delta_block) => {
-                                match delta_block.delta {
-                                    AnthropicCompatibleChatResponseContentBlockDeltaMessage::TextDelta { text } => {
-                                        new_message_text += &text;
-                                        on_token(text)?;
-                                    }
-                                    AnthropicCompatibleChatResponseContentBlockDeltaMessage::InputJsonDelta { partial_json } => {
-                                        new_message_text += &partial_json;
-                                        on_token(partial_json)?;
-                                    }
-                                    AnthropicCompatibleChatResponseContentBlockDeltaMessage::Unknown => {
-                                        tracing::trace!("Unknown delta from Anthropic API: {:?}", message.data);
-                                    }
-                                }
-                            }
-                            AnthropicCompatibleChatResponse::ContentBlockStop => {}
-                            AnthropicCompatibleChatResponse::MessageStop => {
-                                break;
-                            }
-                            AnthropicCompatibleChatResponse::Error(err) => {
-                                return Err(AnthropicCompatibleChatModelError::StreamError(err));
-                            }
-                            AnthropicCompatibleChatResponse::Unknown => {
-                                tracing::trace!(
-                                    "Unknown response from Anthropic API: {:?}",
-                                    message.data
-                                );
-                            }
-                        }
-                    }
-                }
-            }
+            let new_message_text =
+                consume_anthropic_stream(&mut event_source, &mut on_token).await?;
 
             let result = serde_json::from_str::<P>(&new_message_text).map_err(|err| {
                 tracing::error!(
@@ -599,6 +429,108 @@ where
             Ok(result)
         }
     }
+}
+
+fn build_anthropic_request_json(
+    model: &str,
+    messages: serde_json::Value,
+    sampler: &GenerationParameters,
+    max_tokens: u32,
+    system_prompt: Option<String>,
+) -> serde_json::Value {
+    let mut json = serde_json::json!({
+        "model": model,
+        "messages": messages,
+        "stream": true,
+        "temperature": sampler.temperature,
+        "max_tokens": sampler.max_length.min(max_tokens),
+    });
+    if let Some(top_p) = sampler.top_p {
+        json["top_p"] = top_p.into();
+    }
+    if let Some(top_k) = sampler.top_k {
+        json["top_k"] = top_k.into();
+    }
+    if let Some(stop_on) = sampler.stop_on.as_ref() {
+        json["stop"] = vec![stop_on.clone()].into();
+    }
+    if let Some(system) = system_prompt {
+        json["system"] = system.into();
+    }
+    json
+}
+
+async fn consume_anthropic_stream(
+    event_source: &mut reqwest_eventsource::EventSource,
+    on_token: &mut impl FnMut(String) -> Result<(), AnthropicCompatibleChatModelError>,
+) -> Result<String, AnthropicCompatibleChatModelError> {
+    let mut new_message_text = String::new();
+
+    while let Some(event) = event_source.next().await {
+        match event? {
+            Event::Open => {}
+            Event::Message(message) => {
+                let data = serde_json::from_str::<AnthropicCompatibleChatResponse>(&message.data)?;
+                match data {
+                    AnthropicCompatibleChatResponse::ContentBlockDelta(delta_block) => {
+                        match delta_block.delta {
+                            AnthropicCompatibleChatResponseContentBlockDeltaMessage::TextDelta {
+                                text,
+                            } => {
+                                new_message_text += &text;
+                                on_token(text)?;
+                            }
+                            AnthropicCompatibleChatResponseContentBlockDeltaMessage::InputJsonDelta {
+                                partial_json,
+                            } => {
+                                new_message_text += &partial_json;
+                                on_token(partial_json)?;
+                            }
+                            AnthropicCompatibleChatResponseContentBlockDeltaMessage::Unknown => {
+                                tracing::trace!(
+                                    "Unknown delta from Anthropic API: {:?}",
+                                    message.data
+                                );
+                            }
+                        }
+                    }
+                    AnthropicCompatibleChatResponse::ContentBlockStop => {}
+                    AnthropicCompatibleChatResponse::MessageStop => {
+                        break;
+                    }
+                    AnthropicCompatibleChatResponse::Error(err) => {
+                        return Err(AnthropicCompatibleChatModelError::StreamError(err));
+                    }
+                    AnthropicCompatibleChatResponse::Unknown => {
+                        tracing::trace!(
+                            "Unknown response from Anthropic API: {:?}",
+                            message.data
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(new_message_text)
+}
+
+fn extract_system_prompt<'a>(
+    messages: &'a [ChatMessage],
+) -> (Option<String>, Vec<&'a ChatMessage>) {
+    let mut system_prompt = None;
+    let filtered: Vec<_> = messages
+        .iter()
+        .filter(|message| {
+            if let crate::MessageType::SystemPrompt = message.role() {
+                system_prompt = message.content().as_str().map(ToString::to_string);
+                false
+            } else {
+                true
+            }
+        })
+        .collect();
+    (system_prompt, filtered)
 }
 
 fn format_messages(messages: &[&crate::ChatMessage]) -> serde_json::Value {
@@ -725,7 +657,7 @@ mod tests {
             "required": ["name", "age"]
         });
 
-        super::remove_unsupported_properties(&mut schema);
+        crate::remove_unsupported_schema_properties(&mut schema);
 
         let name_props = &schema["properties"]["name"];
         assert_eq!(name_props["type"], "string");
@@ -825,46 +757,6 @@ mod tests {
         let json = r#"{"type":"ping"}"#;
         let event: AnthropicCompatibleChatResponse = serde_json::from_str(json).unwrap();
         assert!(matches!(event, AnthropicCompatibleChatResponse::Unknown));
-    }
-
-    #[test]
-    fn test_structured_request_uses_output_config_format() {
-        let schema = serde_json::json!({
-            "type": "object",
-            "properties": {
-                "name": { "type": "string" },
-                "age": { "type": "integer" }
-            },
-            "required": ["name", "age"]
-        });
-
-        let json = serde_json::json!({
-            "model": "test-model",
-            "messages": [{"role": "user", "content": "test"}],
-            "stream": true,
-            "top_p": 0.9,
-            "top_k": 40,
-            "temperature": 0.7,
-            "max_tokens": 1024,
-            "output_config": {
-                "format": {
-                    "type": "json_schema",
-                    "schema": schema
-                }
-            }
-        });
-
-        assert!(json.get("output_config").is_some());
-        assert!(json.get("tools").is_none());
-        assert!(json.get("tool_choice").is_none());
-
-        let format = &json["output_config"]["format"];
-        assert_eq!(format["type"], "json_schema");
-        assert_eq!(format["schema"]["type"], "object");
-        assert_eq!(
-            format["schema"]["required"],
-            serde_json::json!(["name", "age"])
-        );
     }
 
     #[test]
