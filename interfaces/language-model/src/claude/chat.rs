@@ -515,9 +515,7 @@ async fn consume_anthropic_stream(
     Ok(new_message_text)
 }
 
-fn extract_system_prompt<'a>(
-    messages: &'a [ChatMessage],
-) -> (Option<String>, Vec<&'a ChatMessage>) {
+fn extract_system_prompt(messages: &[ChatMessage]) -> (Option<String>, Vec<&ChatMessage>) {
     let mut system_prompt = None;
     let filtered: Vec<_> = messages
         .iter()
