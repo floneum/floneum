@@ -213,9 +213,11 @@ impl ChatModel<GenerationParameters> for OpenAICompatibleChatModel {
             "messages": messages,
             "model": myself.model,
             "stream": true,
-            "top_p": sampler.top_p,
             "temperature": sampler.temperature,
         });
+        if let Some(top_p) = sampler.top_p {
+            json["top_p"] = serde_json::json!(top_p);
+        }
         if let Some(repetition_penalty) = sampler.repetition_penalty {
             json["frequency_penalty"] = serde_json::json!(repetition_penalty);
         }
@@ -369,7 +371,6 @@ where
                 "messages": messages,
                 "model": myself.model,
                 "stream": true,
-                "top_p": sampler.top_p,
                 "temperature": sampler.temperature,
                 "response_format": {
                     "type": "json_schema",
@@ -380,6 +381,9 @@ where
                     }
                 }
             });
+            if let Some(top_p) = sampler.top_p {
+                json["top_p"] = serde_json::json!(top_p);
+            }
             if let Some(repetition_penalty) = sampler.repetition_penalty {
                 json["frequency_penalty"] = serde_json::json!(repetition_penalty);
             }

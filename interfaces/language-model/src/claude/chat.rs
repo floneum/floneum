@@ -94,6 +94,22 @@ impl<const WITH_NAME: bool> AnthropicCompatibleChatModelBuilder<WITH_NAME> {
             .with_max_tokens(4096)
     }
 
+    /// Set the model to `claude-opus-4-6`
+    pub fn with_claude_opus_4_6(self) -> AnthropicCompatibleChatModelBuilder<true> {
+        self.with_model("claude-opus-4-6").with_max_tokens(128_000)
+    }
+
+    /// Set the model to `claude-sonnet-4-6`
+    pub fn with_claude_sonnet_4_6(self) -> AnthropicCompatibleChatModelBuilder<true> {
+        self.with_model("claude-sonnet-4-6").with_max_tokens(64_000)
+    }
+
+    /// Set the model to `claude-haiku-4-5-20251001`
+    pub fn with_claude_haiku_4_5(self) -> AnthropicCompatibleChatModelBuilder<true> {
+        self.with_model("claude-haiku-4-5-20251001")
+            .with_max_tokens(64_000)
+    }
+
     /// Set the client used to make requests to the Anthropic API.
     pub fn with_client(mut self, client: AnthropicCompatibleClient) -> Self {
         self.client = client;
@@ -313,11 +329,15 @@ impl ChatModel<GenerationParameters> for AnthropicCompatibleChatModel {
             "model": myself.model,
             "messages": messages,
             "stream": true,
-            "top_p": sampler.top_p,
-            "top_k": sampler.top_k,
             "temperature": sampler.temperature,
             "max_tokens": sampler.max_length.min(myself.max_tokens),
         });
+        if let Some(top_p) = sampler.top_p {
+            json["top_p"] = top_p.into();
+        }
+        if let Some(top_k) = sampler.top_k {
+            json["top_k"] = top_k.into();
+        }
 
         async move {
             let api_key = myself.client.resolve_api_key()?;
@@ -485,8 +505,6 @@ where
                 "model": myself.model,
                 "messages": messages,
                 "stream": true,
-                "top_p": sampler.top_p,
-                "top_k": sampler.top_k,
                 "temperature": sampler.temperature,
                 "max_tokens": sampler.max_length.min(myself.max_tokens),
                 "output_config": {
@@ -496,6 +514,12 @@ where
                     }
                 }
             });
+            if let Some(top_p) = sampler.top_p {
+                json["top_p"] = top_p.into();
+            }
+            if let Some(top_k) = sampler.top_k {
+                json["top_k"] = top_k.into();
+            }
             if let Some(stop_on) = sampler.stop_on.as_ref() {
                 json["stop"] = vec![stop_on.clone()].into();
             }
@@ -622,16 +646,18 @@ fn format_messages(messages: &[&crate::ChatMessage]) -> serde_json::Value {
 mod tests {
     use std::sync::{Arc, RwLock};
 
+    use serde::Deserialize;
+
     use super::{
         AnthropicCompatibleChatModelBuilder, AnthropicCompatibleChatResponse,
         AnthropicCompatibleChatResponseContentBlockDeltaMessage, ChatModel, CreateChatSession,
-        GenerationParameters,
+        GenerationParameters, StructuredChatModel,
     };
 
     #[tokio::test]
-    async fn test_claude_3_5_haiku() {
+    async fn test_claude_4_6_haiku() {
         let model = AnthropicCompatibleChatModelBuilder::new()
-            .with_claude_3_5_haiku()
+            .with_claude_haiku_4_5()
             .build();
 
         let mut session = model.new_chat_session().unwrap();
@@ -871,5 +897,142 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&accumulated).unwrap();
         assert_eq!(parsed["name"], "Alice");
         assert_eq!(parsed["age"], 30);
+    }
+
+    #[tokio::test]
+    async fn test_claude_haiku_4_5_constrained() {
+        let model = AnthropicCompatibleChatModelBuilder::new()
+            .with_claude_haiku_4_5()
+            .build();
+
+        let mut session = model.new_chat_session().unwrap();
+
+        let messages = vec![crate::ChatMessage::new(
+            crate::MessageType::UserMessage,
+            "Give me a list of 5 primes.".to_string(),
+        )];
+        let all_text = Arc::new(RwLock::new(String::new()));
+
+        #[derive(Debug, Clone, kalosm_sample::Parse, kalosm_sample::Schema, Deserialize)]
+        struct Constraints {
+            primes: Vec<u8>,
+        }
+
+        let response: Constraints = model
+            .add_message_with_callback_and_constraints(
+                &mut session,
+                &messages,
+                GenerationParameters::default(),
+                crate::SchemaParser::new(),
+                {
+                    let all_text = all_text.clone();
+                    move |token| {
+                        let mut all_text = all_text.write().unwrap();
+                        all_text.push_str(&token);
+                        print!("{token}");
+                        std::io::Write::flush(&mut std::io::stdout()).unwrap();
+                        Ok(())
+                    }
+                },
+            )
+            .await
+            .unwrap();
+        println!("{response:?}");
+
+        let all_text = all_text.read().unwrap();
+        println!("{all_text}");
+
+        assert!(!all_text.is_empty());
+        assert!(!response.primes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_claude_haiku_4_5_constrained_with_enum() {
+        let model = AnthropicCompatibleChatModelBuilder::new()
+            .with_claude_haiku_4_5()
+            .build();
+
+        let mut session = model.new_chat_session().unwrap();
+
+        #[derive(Debug, Clone, kalosm_sample::Parse, kalosm_sample::Schema, Deserialize)]
+        struct Constraints {
+            contains_name: ContainsName,
+        }
+
+        #[derive(Debug, Clone, kalosm_sample::Parse, kalosm_sample::Schema, Deserialize)]
+        enum ContainsName {
+            Yes,
+            No,
+        }
+
+        {
+            let all_text = Arc::new(RwLock::new(String::new()));
+            let messages = vec![crate::ChatMessage::new(
+                crate::MessageType::UserMessage,
+                "Does this sentence contain a name: Evan is one of the developers of Kalosm"
+                    .to_string(),
+            )];
+
+            let response: Constraints = model
+                .add_message_with_callback_and_constraints(
+                    &mut session,
+                    &messages,
+                    GenerationParameters::default(),
+                    crate::SchemaParser::new(),
+                    {
+                        let all_text = all_text.clone();
+                        move |token| {
+                            let mut all_text = all_text.write().unwrap();
+                            all_text.push_str(&token);
+                            print!("{token}");
+                            std::io::Write::flush(&mut std::io::stdout()).unwrap();
+                            Ok(())
+                        }
+                    },
+                )
+                .await
+                .unwrap();
+            println!("{response:?}");
+
+            let all_text = all_text.read().unwrap();
+            println!("{all_text}");
+
+            assert!(!all_text.is_empty());
+            assert!(matches!(response.contains_name, ContainsName::Yes));
+        }
+        {
+            let all_text = Arc::new(RwLock::new(String::new()));
+            let messages = vec![crate::ChatMessage::new(
+                crate::MessageType::UserMessage,
+                "Does this sentence contain a name: The earth is round".to_string(),
+            )];
+
+            let response: Constraints = model
+                .add_message_with_callback_and_constraints(
+                    &mut session,
+                    &messages,
+                    GenerationParameters::default(),
+                    crate::SchemaParser::new(),
+                    {
+                        let all_text = all_text.clone();
+                        move |token| {
+                            let mut all_text = all_text.write().unwrap();
+                            all_text.push_str(&token);
+                            print!("{token}");
+                            std::io::Write::flush(&mut std::io::stdout()).unwrap();
+                            Ok(())
+                        }
+                    },
+                )
+                .await
+                .unwrap();
+            println!("{response:?}");
+
+            let all_text = all_text.read().unwrap();
+            println!("{all_text}");
+
+            assert!(!all_text.is_empty());
+            assert!(matches!(response.contains_name, ContainsName::No));
+        }
     }
 }
