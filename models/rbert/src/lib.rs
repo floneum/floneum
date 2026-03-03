@@ -1,6 +1,6 @@
 //! # rbert
 //!
-//! A Rust wrapper for [bert sentence transformers](https://arxiv.org/abs/1908.10084) implemented in [Candle](https://github.com/huggingface/candle)
+//! A Rust embedding model library supporting BERT and Qwen architectures.
 //!
 //! ## Usage
 //!
@@ -203,7 +203,7 @@ impl EmbeddingModel {
     /// Get the default pooling strategy for this model
     pub fn default_pooling(&self) -> Pooling {
         match self {
-            EmbeddingModel::Bert(_) => Pooling::Mean,
+            EmbeddingModel::Bert(_) => Pooling::CLS,
             EmbeddingModel::Qwen(_) => Pooling::Last,
         }
     }
@@ -212,17 +212,20 @@ impl EmbeddingModel {
     pub fn forward(
         &self,
         input_ids: &Tensor<2, u32>,
-        token_type_ids: &Tensor<2, u32>,
         attention_mask: Option<&Tensor<2, u32>>,
     ) -> Tensor<3, f32> {
         match self {
-            EmbeddingModel::Bert(model) => model.forward(input_ids, token_type_ids, attention_mask),
+            EmbeddingModel::Bert(model) => {
+                let token_type_ids = input_ids.zeros_like();
+                model.forward(input_ids, &token_type_ids, attention_mask)
+            }
             EmbeddingModel::Qwen(model) => model.forward(input_ids, attention_mask),
         }
     }
 }
 
-/// A bert embedding model. The main interface for this model is [`EmbedderExt`].
+/// An embedding model supporting BERT and Qwen architectures.
+/// The main interface for this model is [`EmbedderExt`].
 ///
 /// # Example
 /// ```rust, no_run
@@ -260,7 +263,6 @@ impl EmbeddingModel {
 ///     Ok(())
 /// }
 /// ```
-/// A bert embedding model. Can be either BERT or Qwen architecture.
 #[derive(Clone)]
 pub struct Bert {
     embedding_search_prefix: Arc<Option<String>>,
@@ -299,13 +301,17 @@ impl Bert {
             search_embedding_prefix,
         } = source;
 
-        let source = format!("Config ({config})");
-        let mut create_progress = ModelLoadingProgress::downloading_progress(source);
-        let config = cache
-            .get_bytes(&config, |progress| {
-                progress_handler(create_progress(progress))
-            })
-            .await?;
+        let config_bytes = if let Some(config) = config {
+            let source = format!("Config ({config})");
+            let mut create_progress = ModelLoadingProgress::downloading_progress(source);
+            Some(cache
+                .get_bytes(&config, |progress| {
+                    progress_handler(create_progress(progress))
+                })
+                .await?)
+        } else {
+            None
+        };
         let tokenizer_source = format!("Tokenizer ({tokenizer})");
         let mut create_progress = ModelLoadingProgress::downloading_progress(tokenizer_source);
         let tokenizer_bytes = cache
@@ -339,8 +345,9 @@ impl Bert {
             }
             _ => {
                 // Load BERT model (default)
+                let config_bytes = config_bytes.ok_or(BertLoadingError::ConfigNotFound)?;
                 let config: Config =
-                    serde_json::from_slice(&config).map_err(BertLoadingError::LoadConfig)?;
+                    serde_json::from_slice(&config_bytes).map_err(BertLoadingError::LoadConfig)?;
                 let bert_model = BertModel::load(&device, &mut vb, &config)?;
                 EmbeddingModel::Bert(bert_model)
             }
@@ -364,8 +371,10 @@ impl Bert {
         pooling: Pooling,
     ) -> Result<Vec<Tensor<2, f32>>, BertError> {
         let embedding_dim = self.model.embedding_dim();
-        // The batch size limit (input length * memory per token)
-        let limit = embedding_dim * 512usize.pow(2) * 2;
+        // Approximates the quadratic attention memory cost (seq_len^2).
+        // Batches are split so that total work stays below this threshold.
+        const MAX_BATCH_TOKENS_SQUARED: usize = 512 * 512;
+        let limit = embedding_dim * MAX_BATCH_TOKENS_SQUARED * 2;
 
         // The sentences we are embedding may have a very different length. First we sort them so that similar length sentences are grouped together in the same batch to reduce the overhead of padding.
         let encodings = {
@@ -459,11 +468,9 @@ impl Bert {
         });
         let attention_mask = Tensor::stack(attention_masks, 0);
 
-        // The token type ids are only used for next sentence prediction. We can just set them to zero for embedding tasks.
-        let token_type_ids = token_ids.zeros_like();
         let embeddings = self
             .model
-            .forward(&token_ids, &token_type_ids, Some(&attention_mask));
+            .forward(&token_ids, Some(&attention_mask));
 
         let shape = embeddings.shape();
         let n_tokens = shape[1];

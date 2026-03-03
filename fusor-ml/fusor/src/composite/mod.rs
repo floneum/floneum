@@ -19,5 +19,7 @@ mod shape;
 mod to_vec;
 mod where_cond;
 
+pub use flash_attention::MaskKind;
+pub use rope::RopeCache;
 pub use shape::{arange, arange_step, cat, stack};
 pub use to_vec::{ToVec1, ToVec2, ToVec3};

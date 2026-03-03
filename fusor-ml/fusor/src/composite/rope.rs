@@ -1,7 +1,8 @@
 //! Rotary Position Embeddings (RoPE) that work on both CPU and GPU backends.
 
 use crate::{
-    AddOp, ConcreteTensor, MulOp, NegOp, SimdBinaryOp, SimdElement, SimdUnaryOp, SubOp, Tensor,
+    AddOp, ConcreteTensor, Device, MulOp, NegOp, SimdBinaryOp, SimdElement, SimdUnaryOp, SubOp,
+    Tensor,
 };
 use fusor_core::{DataType, FloatDataType};
 use fusor_cpu::FloatOps;
@@ -170,6 +171,100 @@ where
             (Tensor::Cpu(_), Tensor::Cpu(_), Tensor::Cpu(_)) => self.rope(cos, sin),
             _ => panic!("All tensors must be on the same device"),
         }
+    }
+}
+
+/// Pre-computed sin/cos tables for Rotary Position Embeddings.
+///
+/// Stores `[context_length, head_dim/2]` shaped sin and cos tensors.
+#[derive(Clone)]
+pub struct RopeCache {
+    sin: Tensor<2, f32>,
+    cos: Tensor<2, f32>,
+}
+
+impl RopeCache {
+    /// Create a RopeCache with standard inverse-frequency computation (no rope scaling).
+    pub fn new(
+        head_dim: usize,
+        context_length: usize,
+        rope_theta: f32,
+        device: &Device,
+    ) -> crate::Result<Self> {
+        let inverse_frequency: Vec<f32> = (0..head_dim)
+            .step_by(2)
+            .map(|i| 1. / (rope_theta.powf(i as f32 / head_dim as f32)))
+            .collect();
+        let inverse_frequency_len = inverse_frequency.len();
+        let inverse_frequency = Tensor::new(device, &inverse_frequency)
+            .reshape([1, inverse_frequency_len])
+            .to_concrete();
+
+        let context_indices = crate::arange(device, 0f32, context_length as f32)
+            .reshape([context_length, 1])
+            .to_concrete();
+
+        let outer_product = context_indices.mat_mul(&inverse_frequency);
+
+        let sin = outer_product.sin().to_concrete();
+        let cos = outer_product.cos().to_concrete();
+
+        Ok(Self { sin, cos })
+    }
+
+    /// Create a RopeCache from pre-computed cos and sin tensors.
+    ///
+    /// Use this for models that need custom frequency computation (rope scaling, freq weights).
+    pub fn from_parts(cos: Tensor<2, f32>, sin: Tensor<2, f32>) -> Self {
+        Self { cos, sin }
+    }
+
+    /// Apply non-interleaved (normal) RoPE to query and key tensors.
+    ///
+    /// Pairs first half with second half: (0, head_dim/2), (1, head_dim/2+1), etc.
+    pub fn forward(
+        &self,
+        q: &Tensor<4, f32>,
+        k: &Tensor<4, f32>,
+        start_pos: usize,
+    ) -> (Tensor<4, f32>, Tensor<4, f32>) {
+        let [_b_sz, _n_head, seq_len, _n_embd] = q.shape();
+        let cos = self.cos.narrow(0, start_pos, seq_len).to_concrete();
+        let sin = self.sin.narrow(0, start_pos, seq_len).to_concrete();
+
+        let q = q.rope_normal_fused(&cos, &sin);
+        let k = k.rope_normal_fused(&cos, &sin);
+
+        (q, k)
+    }
+
+    /// Apply interleaved RoPE to query and key tensors.
+    ///
+    /// Pairs adjacent elements: (0, 1), (2, 3), etc.
+    pub fn forward_interleaved(
+        &self,
+        q: &Tensor<4, f32>,
+        k: &Tensor<4, f32>,
+        start_pos: usize,
+    ) -> (Tensor<4, f32>, Tensor<4, f32>) {
+        let [_b_sz, _n_head, seq_len, _n_embd] = q.shape();
+        let cos = self.cos.narrow(0, start_pos, seq_len).to_concrete();
+        let sin = self.sin.narrow(0, start_pos, seq_len).to_concrete();
+
+        let q = q.rope_fused(&cos, &sin);
+        let k = k.rope_fused(&cos, &sin);
+
+        (q, k)
+    }
+
+    /// Access the raw sin tensor `[context_length, head_dim/2]`.
+    pub fn sin(&self) -> &Tensor<2, f32> {
+        &self.sin
+    }
+
+    /// Access the raw cos tensor `[context_length, head_dim/2]`.
+    pub fn cos(&self) -> &Tensor<2, f32> {
+        &self.cos
     }
 }
 

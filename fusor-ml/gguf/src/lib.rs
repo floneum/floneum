@@ -912,16 +912,7 @@ impl GgufBlock for BlockQ4_0 {
             }
             unsafe { dot_avx2(self.data.as_ptr(), y.data.as_ptr()) }
         } else {
-            const CENTER: i8 = 8;
-            let mut sum: i32 = 0;
-            for i in 0..16 {
-                let byte = self.data[i];
-                let q4_lo = (byte & 0x0F) as i8 - CENTER;
-                let q4_hi = (byte >> 4) as i8 - CENTER;
-                sum += (q4_lo as i32) * (y.data[i] as i32);
-                sum += (q4_hi as i32) * (y.data[i + 16] as i32);
-            }
-            sum
+            q4_0_vec_dot_scalar(&self.data, &y.data)
         };
         let scale = self.scale.to_f32() * y.scale.to_f32();
         (sum as f32) * scale
@@ -929,18 +920,7 @@ impl GgufBlock for BlockQ4_0 {
 
     #[cfg(not(any(all(target_arch = "aarch64", nightly), target_arch = "x86_64")))]
     fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
-        const CENTER: i8 = 8;
-        let mut sum: i32 = 0;
-
-        for i in 0..16 {
-            let byte = self.data[i];
-            let q4_lo = (byte & 0x0F) as i8 - CENTER;
-            let q4_hi = (byte >> 4) as i8 - CENTER;
-
-            sum += (q4_lo as i32) * (y.data[i] as i32);
-            sum += (q4_hi as i32) * (y.data[i + 16] as i32);
-        }
-
+        let sum = q4_0_vec_dot_scalar(&self.data, &y.data);
         let scale = self.scale.to_f32() * y.scale.to_f32();
         (sum as f32) * scale
     }
@@ -949,6 +929,20 @@ impl GgufBlock for BlockQ4_0 {
         let arr: &[f32; 32] = data.try_into().expect("data must have 32 elements");
         BlockQ8_0::quantize(arr)
     }
+}
+
+#[inline(always)]
+fn q4_0_vec_dot_scalar(data: &[u8; 16], y_data: &[i8; 32]) -> i32 {
+    const CENTER: i8 = 8;
+    let mut sum: i32 = 0;
+    for i in 0..16 {
+        let byte = data[i];
+        let q4_lo = (byte & 0x0F) as i8 - CENTER;
+        let q4_hi = (byte >> 4) as i8 - CENTER;
+        sum += (q4_lo as i32) * (y_data[i] as i32);
+        sum += (q4_hi as i32) * (y_data[i + 16] as i32);
+    }
+    sum
 }
 
 const Q5_0_BLOCK_SIZE: usize = 32;
@@ -1344,11 +1338,7 @@ impl GgufBlock for BlockQ8_0 {
             }
             unsafe { dot_avx2(self.data.as_ptr(), y.data.as_ptr()) }
         } else {
-            let mut sum: i32 = 0;
-            for i in 0..32 {
-                sum += (self.data[i] as i32) * (y.data[i] as i32);
-            }
-            sum
+            q8_0_vec_dot_scalar(&self.data, &y.data)
         };
         let scale = self.scale.to_f32() * y.scale.to_f32();
         (sum as f32) * scale
@@ -1356,10 +1346,7 @@ impl GgufBlock for BlockQ8_0 {
 
     #[cfg(not(any(all(target_arch = "aarch64", nightly), target_arch = "x86_64")))]
     fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
-        let mut sum: i32 = 0;
-        for i in 0..32 {
-            sum += (self.data[i] as i32) * (y.data[i] as i32);
-        }
+        let sum = q8_0_vec_dot_scalar(&self.data, &y.data);
         let scale = self.scale.to_f32() * y.scale.to_f32();
         (sum as f32) * scale
     }
@@ -1368,6 +1355,15 @@ impl GgufBlock for BlockQ8_0 {
         let arr: &[f32; 32] = data.try_into().expect("data must have 32 elements");
         BlockQ8_0::quantize(arr)
     }
+}
+
+#[inline(always)]
+fn q8_0_vec_dot_scalar(x_data: &[i8; 32], y_data: &[i8; 32]) -> i32 {
+    let mut sum: i32 = 0;
+    for i in 0..32 {
+        sum += (x_data[i] as i32) * (y_data[i] as i32);
+    }
+    sum
 }
 
 const K_BLOCK_SIZE: usize = 256;

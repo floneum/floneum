@@ -1,7 +1,5 @@
 use fusor::layers::RmsNorm;
-use fusor::{Device, QMatrix, Result, Tensor, VarBuilder};
-
-use super::rope::RopeCache;
+use fusor::{Device, QMatrix, Result, RopeCache, Tensor, VarBuilder};
 
 /// Qwen self-attention with separate Q/K/V projections and RoPE
 pub struct QwenSelfAttention {
@@ -51,7 +49,6 @@ impl QwenSelfAttention {
         &self,
         hidden_states: &Tensor<3, f32>,
         rope_cache: &RopeCache,
-        start_pos: usize,
         attention_mask: Option<&Tensor<2, u32>>,
     ) -> Tensor<3, f32> {
         let [b_sz, seq_len, _hidden_size] = hidden_states.shape();
@@ -81,7 +78,7 @@ impl QwenSelfAttention {
         }
 
         // Apply RoPE to Q and K
-        let (query_states, key_states) = rope_cache.forward(&query_states, &key_states, start_pos);
+        let (query_states, key_states) = rope_cache.forward(&query_states, &key_states, 0);
 
         // Scaled dot-product attention
         let hidden_size = self.num_heads * self.head_dim;
@@ -109,7 +106,7 @@ impl QwenSelfAttention {
             &key_states,
             &value_states,
             scale,
-            mask.as_ref(),
+            mask.as_ref().map(|m| (m, fusor::MaskKind::BatchKeyMask)),
         );
 
         // Reshape and project output

@@ -6,10 +6,10 @@ const SNOWFLAKE_EMBEDDING_PREFIX: &str =
 const QWEN3_EMBEDDING_PREFIX: &str =
     "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery: ";
 
-/// A the source of a [`crate::Bert`] model
+/// The source of a [`crate::Bert`] model
 pub struct BertSource {
     pub(crate) search_embedding_prefix: Option<String>,
-    pub(crate) config: FileSource,
+    pub(crate) config: Option<FileSource>,
     pub(crate) tokenizer: FileSource,
     pub(crate) model: FileSource,
 }
@@ -39,7 +39,7 @@ impl BertSource {
 
     /// Set the config to use
     pub fn with_config(mut self, config: FileSource) -> Self {
-        self.config = config;
+        self.config = Some(config);
         self
     }
 
@@ -95,11 +95,11 @@ impl BertSource {
     pub fn bge_small_en() -> Self {
         // https://huggingface.co/CompendiumLabs/bge-small-en-v1.5-gguf/blob/main/bge-small-en-v1.5-q4_k_m.gguf
         Self {
-            config: FileSource::huggingface(
+            config: Some(FileSource::huggingface(
                 "BAAI/bge-small-en-v1.5".to_string(),
                 "main".to_string(),
                 "config.json".to_string(),
-            ),
+            )),
             tokenizer: FileSource::huggingface(
                 "BAAI/bge-small-en-v1.5".to_string(),
                 "main".to_string(),
@@ -254,26 +254,11 @@ impl BertSource {
     /// - 1024 embedding dimensions
     /// - Last-token pooling (automatic)
     pub fn qwen3_embedding_0_6b() -> Self {
-        Self {
-            // Config is not used for Qwen models (loaded from GGUF metadata),
-            // but we need to provide something for the BertSource struct
-            config: FileSource::huggingface(
-                "Qwen/Qwen3-Embedding-0.6B".to_string(),
-                "main".to_string(),
-                "config.json".to_string(),
-            ),
-            tokenizer: FileSource::huggingface(
-                "Qwen/Qwen3-Embedding-0.6B".to_string(),
-                "main".to_string(),
-                "tokenizer.json".to_string(),
-            ),
-            model: FileSource::huggingface(
-                "Qwen/Qwen3-Embedding-0.6B-GGUF".to_string(),
-                "main".to_string(),
-                "Qwen3-Embedding-0.6B-Q8_0.gguf".to_string(),
-            ),
-            search_embedding_prefix: Some(QWEN3_EMBEDDING_PREFIX.to_string()),
-        }
+        qwen3_source(
+            "Qwen/Qwen3-Embedding-0.6B",
+            "Qwen/Qwen3-Embedding-0.6B-GGUF",
+            "Qwen3-Embedding-0.6B-Q8_0.gguf",
+        )
     }
 
     /// Create a new [`BertSource`] with the [Qwen3-Embedding-4B](https://huggingface.co/Qwen/Qwen3-Embedding-4B-GGUF) model
@@ -286,24 +271,11 @@ impl BertSource {
     ///
     /// This is a larger model than [`Self::qwen3_embedding_0_6b`] with higher quality embeddings.
     pub fn qwen3_embedding_4b() -> Self {
-        Self {
-            config: FileSource::huggingface(
-                "Qwen/Qwen3-Embedding-4B".to_string(),
-                "main".to_string(),
-                "config.json".to_string(),
-            ),
-            tokenizer: FileSource::huggingface(
-                "Qwen/Qwen3-Embedding-4B".to_string(),
-                "main".to_string(),
-                "tokenizer.json".to_string(),
-            ),
-            model: FileSource::huggingface(
-                "Qwen/Qwen3-Embedding-4B-GGUF".to_string(),
-                "main".to_string(),
-                "Qwen3-Embedding-4B-Q8_0.gguf".to_string(),
-            ),
-            search_embedding_prefix: Some(QWEN3_EMBEDDING_PREFIX.to_string()),
-        }
+        qwen3_source(
+            "Qwen/Qwen3-Embedding-4B",
+            "Qwen/Qwen3-Embedding-4B-GGUF",
+            "Qwen3-Embedding-4B-Q8_0.gguf",
+        )
     }
 
     /// Create a new [`BertSource`] with the [Qwen3-Embedding-8B](https://huggingface.co/Qwen/Qwen3-Embedding-8B-GGUF) model
@@ -316,24 +288,28 @@ impl BertSource {
     ///
     /// This is the largest Qwen3 embedding model with the highest quality embeddings.
     pub fn qwen3_embedding_8b() -> Self {
-        Self {
-            config: FileSource::huggingface(
-                "Qwen/Qwen3-Embedding-8B".to_string(),
-                "main".to_string(),
-                "config.json".to_string(),
-            ),
-            tokenizer: FileSource::huggingface(
-                "Qwen/Qwen3-Embedding-8B".to_string(),
-                "main".to_string(),
-                "tokenizer.json".to_string(),
-            ),
-            model: FileSource::huggingface(
-                "Qwen/Qwen3-Embedding-8B-GGUF".to_string(),
-                "main".to_string(),
-                "Qwen3-Embedding-8B-Q8_0.gguf".to_string(),
-            ),
-            search_embedding_prefix: Some(QWEN3_EMBEDDING_PREFIX.to_string()),
-        }
+        qwen3_source(
+            "Qwen/Qwen3-Embedding-8B",
+            "Qwen/Qwen3-Embedding-8B-GGUF",
+            "Qwen3-Embedding-8B-Q8_0.gguf",
+        )
+    }
+}
+
+fn qwen3_source(model_repo: &str, gguf_repo: &str, gguf_file: &str) -> BertSource {
+    BertSource {
+        config: None,
+        tokenizer: FileSource::huggingface(
+            model_repo.to_string(),
+            "main".to_string(),
+            "tokenizer.json".to_string(),
+        ),
+        model: FileSource::huggingface(
+            gguf_repo.to_string(),
+            "main".to_string(),
+            gguf_file.to_string(),
+        ),
+        search_embedding_prefix: Some(QWEN3_EMBEDDING_PREFIX.to_string()),
     }
 }
 

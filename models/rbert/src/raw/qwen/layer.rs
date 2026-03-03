@@ -1,9 +1,8 @@
 use fusor::layers::RmsNorm;
-use fusor::{Device, Result, Tensor, VarBuilder};
+use fusor::{Device, Result, RopeCache, Tensor, VarBuilder};
 
 use super::attention::QwenSelfAttention;
 use super::feed_forward::QwenFeedForward;
-use super::rope::RopeCache;
 
 /// A single Qwen transformer layer with pre-norm architecture
 pub struct QwenLayer {
@@ -39,7 +38,6 @@ impl QwenLayer {
         &self,
         hidden_states: &Tensor<3, f32>,
         rope_cache: &RopeCache,
-        start_pos: usize,
         attention_mask: Option<&Tensor<2, u32>>,
     ) -> Tensor<3, f32> {
         // Pre-norm + attention + residual
@@ -47,7 +45,7 @@ impl QwenLayer {
         let hidden_states = self.attention_norm.forward(hidden_states);
         let hidden_states = self
             .attention
-            .forward(&hidden_states, rope_cache, start_pos, attention_mask);
+            .forward(&hidden_states, rope_cache, attention_mask);
         let hidden_states = residual.add_(&hidden_states);
 
         // Pre-norm + FFN + residual

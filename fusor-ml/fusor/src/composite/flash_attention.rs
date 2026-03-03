@@ -7,6 +7,17 @@ use crate::{
 use fusor_core::{DataType, FloatDataType};
 use fusor_cpu::{MatmulImpl, MaxOp, SimdReduceOp, SumOp};
 
+/// Describes how to interpret a 2D attention mask.
+#[derive(Debug, Clone, Copy)]
+pub enum MaskKind {
+    /// Mask is [q_seq_len, kv_seq_len] — applied identically to every (batch, head) pair.
+    /// Used for causal masks in decoder models.
+    QKMask,
+    /// Mask is [batch, kv_seq_len] — per-token validity mask broadcast across heads and queries.
+    /// Used for padding masks in encoder/embedding models.
+    BatchKeyMask,
+}
+
 impl<D> Tensor<4, D, ConcreteTensor<D, 4>>
 where
     D: SimdElement
@@ -37,18 +48,20 @@ where
     ///   - k: Key tensor with shape [batch, num_kv_heads, kv_seq_len, head_dim]
     ///   - v: Value tensor with shape [batch, num_kv_heads, kv_seq_len, head_dim]
     ///   - scale: Scale factor (typically 1/sqrt(head_dim))
-    ///   - mask: Optional attention mask with shape [q_seq_len, kv_seq_len]
+    ///   - mask: Optional attention mask with a [`MaskKind`] describing its layout
     pub fn flash_attention(
         &self,
         k: &Self,
         v: &Self,
         scale: f32,
-        mask: Option<&Tensor<2, D, ConcreteTensor<D, 2>>>,
+        mask: Option<(&Tensor<2, D, ConcreteTensor<D, 2>>, MaskKind)>,
     ) -> Self {
         match (self, k, v) {
             // GPU path - use the optimized fused kernel
+            // TODO: GPU flash_attention kernel currently only supports QKMask layout.
+            // BatchKeyMask is passed through but may not be interpreted correctly on GPU.
             (Tensor::Gpu(q), Tensor::Gpu(k), Tensor::Gpu(v)) => {
-                let gpu_mask = mask.map(|m| match m {
+                let gpu_mask = mask.map(|(m, _kind)| match m {
                     Tensor::Gpu(mask) => mask,
                     _ => panic!("Mask must be on the same device as other tensors"),
                 });
@@ -68,7 +81,7 @@ where
         k: &Self,
         v: &Self,
         scale: f32,
-        mask: Option<&Tensor<2, D, ConcreteTensor<D, 2>>>,
+        mask: Option<(&Tensor<2, D, ConcreteTensor<D, 2>>, MaskKind)>,
     ) -> Self {
         let q_shape = self.shape();
         let k_shape = k.shape();
@@ -134,14 +147,17 @@ where
         let scores_scaled = scores.mul_scalar(D::from_f32(scale));
 
         // Apply mask if provided
-        let scores_masked = if let Some(m) = mask {
-            let m_shape = m.shape();
-            let mask_4d: Tensor<4, D, _> = if m_shape[0] == q_seq_len && m_shape[1] == kv_seq_len {
-                // Mask is [q_seq_len, kv_seq_len]
-                m.reshape([1, 1, q_seq_len, kv_seq_len])
-            } else {
-                // Mask is [batch, kv_seq_len] — per-token validity mask
-                m.reshape([m_shape[0], 1, 1, m_shape[1]])
+        let scores_masked = if let Some((m, kind)) = mask {
+            let mask_4d: Tensor<4, D, _> = match kind {
+                MaskKind::QKMask => {
+                    // Mask is [q_seq_len, kv_seq_len]
+                    m.reshape([1, 1, q_seq_len, kv_seq_len])
+                }
+                MaskKind::BatchKeyMask => {
+                    // Mask is [batch, kv_seq_len] — per-token validity mask
+                    let m_shape = m.shape();
+                    m.reshape([m_shape[0], 1, 1, m_shape[1]])
+                }
             };
             let mask_broadcast = mask_4d.broadcast_as([batch, num_heads, q_seq_len, kv_seq_len]);
             (scores_scaled + mask_broadcast).to_concrete()
@@ -219,7 +235,7 @@ mod tests {
 
         let scale = 1.0 / (2.0_f32.sqrt());
 
-        let output = q.flash_attention(&k, &v, scale, Some(&mask));
+        let output = q.flash_attention(&k, &v, scale, Some((&mask, MaskKind::QKMask)));
         let result = output.as_slice().await.unwrap();
 
         // With causal mask, first row should only attend to first position

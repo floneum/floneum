@@ -1,8 +1,7 @@
 use fusor::layers::{RmsNorm, Embedding};
-use fusor::{Device, Result, Tensor, VarBuilder};
+use fusor::{Device, Result, RopeCache, Tensor, VarBuilder};
 
 use super::layer::QwenLayer;
-use super::rope::RopeCache;
 
 /// Configuration for QwenEmbeddingModel loaded from GGUF metadata
 #[derive(Debug, Clone)]
@@ -23,7 +22,7 @@ impl QwenConfig {
         let num_heads = vb
             .get_metadata(".attention.head_count")
             .and_then(|v| v.to_u32().ok())
-            .unwrap_or(16) as usize;
+            .ok_or_else(|| fusor::Error::msg("Missing required GGUF metadata: .attention.head_count"))? as usize;
 
         let num_kv_heads = vb
             .get_metadata(".attention.head_count_kv")
@@ -33,12 +32,18 @@ impl QwenConfig {
         let num_layers = vb
             .get_metadata(".block_count")
             .and_then(|v| v.to_u32().ok())
-            .unwrap_or(28) as usize;
+            .ok_or_else(|| fusor::Error::msg("Missing required GGUF metadata: .block_count"))? as usize;
 
         let hidden_size = vb
             .get_metadata(".embedding_length")
             .and_then(|v| v.to_u32().ok())
-            .unwrap_or(1024) as usize;
+            .ok_or_else(|| fusor::Error::msg("Missing required GGUF metadata: .embedding_length"))? as usize;
+
+        if hidden_size % num_heads != 0 {
+            return Err(fusor::Error::msg(format!(
+                "hidden_size ({hidden_size}) must be divisible by num_heads ({num_heads})"
+            )));
+        }
 
         let context_length = vb
             .get_metadata(".context_length")
@@ -95,7 +100,7 @@ impl QwenEmbeddingModel {
         let token_embeddings = Embedding::load(device, &mut vb.pp("token_embd"))?;
 
         // Create RoPE cache
-        let rope_cache = RopeCache::new(&config, device)?;
+        let rope_cache = RopeCache::new(config.head_dimension, config.context_length, config.rope_theta, device)?;
 
         // Load transformer layers
         let mut layers = Vec::with_capacity(config.num_layers);
@@ -137,7 +142,7 @@ impl QwenEmbeddingModel {
 
         // Pass through transformer layers
         for layer in &self.layers {
-            hidden_states = layer.forward(&hidden_states, &self.rope_cache, 0, attention_mask);
+            hidden_states = layer.forward(&hidden_states, &self.rope_cache, attention_mask);
         }
 
         // Apply final layer norm

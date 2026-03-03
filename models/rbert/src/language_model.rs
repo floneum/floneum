@@ -210,3 +210,38 @@ async fn test_qwen3_embedding() {
     assert_eq!(vec.len(), 1024); // Qwen3-Embedding-0.6B has 1024 dimensions
 }
 
+#[cfg(test)]
+#[tokio::test]
+async fn test_qwen3_batch_embedding() {
+    use crate::{BertSource, Pooling};
+
+    let model = Bert::builder()
+        .with_source(BertSource::qwen3_embedding_0_6b())
+        .build()
+        .await
+        .unwrap();
+
+    // Two sentences of different lengths to exercise padding
+    let sentences = vec![
+        "Short sentence.",
+        "This is a significantly longer sentence to test batch padding behavior.",
+    ];
+
+    let results = model
+        .embed_batch_with_pooling(sentences, Pooling::Last)
+        .await
+        .unwrap();
+
+    assert_eq!(results.len(), 2);
+    for (i, emb) in results.iter().enumerate() {
+        let vec = emb.vector();
+        assert_eq!(vec.len(), 1024, "embedding {i} has wrong dimension");
+        // Verify L2 normalization (norm should be ~1.0)
+        let norm: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
+        assert!(
+            (norm - 1.0).abs() < 0.01,
+            "embedding {i} is not L2-normalized: norm = {norm}"
+        );
+    }
+}
+

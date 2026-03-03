@@ -4,10 +4,9 @@ use fusor::{
     CastTensor, CastTo, Device, FloatDataType, SimdElement, Tensor, VarBuilder,
 };
 
-use crate::raw::{
-    attention_layer::{forward_attention_qkv_f32, LlamaFeedForward},
-    rope::RopeCache,
-};
+use fusor::RopeCache;
+
+use crate::raw::attention_layer::{forward_attention_qkv_f32, LlamaFeedForward};
 
 pub(crate) struct VisionBlock<F: FloatDataType + SimdElement> {
     norm1: RmsNorm<1, F>,
@@ -66,7 +65,7 @@ where
         &self,
         xs: &Tensor<2, F>,
         cu_seqlens: &[u32],
-        rope_cache: &RopeCache<F>,
+        rope_cache: &RopeCache,
         cache: Option<&mut KvCache<f32>>,
     ) -> fusor::Result<Tensor<2, F>> {
         let xs_3d = xs.unsqueeze(0).to_concrete(); // [1, seq, dim]
@@ -146,7 +145,7 @@ where
         &self,
         xs: &Tensor<3, F>, // [1, seq, dim]
         cu_seqlens: &[u32],
-        rope_cache: &RopeCache<F>,
+        rope_cache: &RopeCache,
         cache: Option<&mut KvCache<f32>>,
     ) -> fusor::Result<Tensor<3, F>> {
         let [bsz, seq_len, _] = xs.shape();
@@ -168,8 +167,8 @@ where
             .reshape([seq_len, self.head_count, self.head_dim])
             .cast();
 
-        let sin: Tensor<2, f32> = rope_cache.sin().cast();
-        let cos: Tensor<2, f32> = rope_cache.cos().cast();
+        let sin = rope_cache.sin().clone();
+        let cos = rope_cache.cos().clone();
 
         // sin/cos: [total_seq, head_dim/2]
         // Expand to [total_seq, head_count, head_dim]
