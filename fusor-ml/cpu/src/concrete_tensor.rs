@@ -60,7 +60,7 @@ impl Iterator for IndexIterator {
 }
 
 #[derive(Clone)]
-pub struct ConcreteTensor<T: SimdElement, const R: usize> {
+pub struct ConcreteTensor<T, const R: usize> {
     layout: Layout,
     backing: ABox<[T]>,
 }
@@ -150,24 +150,6 @@ impl<T: SimdElement, const R: usize> ConcreteTensor<T, R> {
         Self { layout, backing }
     }
 
-    /// Create a new tensor with uninitialized memory (for internal use only)
-    #[inline]
-    pub(crate) fn uninit_unchecked(shape: [usize; R]) -> Self {
-        let layout = Layout::contiguous(&shape);
-        let num_elements = layout.num_elements();
-        // Transmute the MaybeUninit vec to T vec - this is safe because we will
-        // write to all elements before reading, and MaybeUninit<T> has same layout as T
-        // SAFETY: MaybeUninit<T> has same layout as T, and T is Pod so any memory layout is valid
-        // TODO: THIS IS UNSOUND - Uninit is not the same as AnyBitPattern
-        let backing: ABox<[T]> = unsafe {
-            // Allocate the aligned pointer
-            let mut vec: AVec<MaybeUninit<T>> = AVec::with_capacity(64, num_elements);
-            vec.set_len(num_elements);
-            std::mem::transmute::<ABox<[MaybeUninit<T>]>, ABox<[T]>>(vec.into_boxed_slice())
-        };
-        Self { layout, backing }
-    }
-
     /// Create a new tensor from existing data with contiguous layout
     pub fn from_slice(shape: [usize; R], data: &[T]) -> Self {
         let layout = Layout::contiguous(&shape);
@@ -215,3 +197,54 @@ impl<T: SimdElement, const R: usize> ConcreteTensor<T, R> {
         &mut self.backing
     }
 }
+
+impl<T: SimdElement, const R: usize> ConcreteTensor<MaybeUninit<T>, R> {
+    /// Allocate an uninitialized tensor with the given shape.
+    #[inline]
+    pub(crate) fn uninit(shape: [usize; R]) -> Self {
+        let layout = Layout::contiguous(&shape);
+        let num_elements = layout.num_elements();
+        let mut vec: AVec<MaybeUninit<T>> = AVec::with_capacity(64, num_elements);
+        // SAFETY: MaybeUninit<T> does not require initialization
+        unsafe { vec.set_len(num_elements) };
+        Self {
+            layout,
+            backing: vec.into_boxed_slice(),
+        }
+    }
+
+    /// Mutable slice of MaybeUninit<T> for element-wise writes.
+    #[inline]
+    pub(crate) fn as_mut_uninit_slice(&mut self) -> &mut [MaybeUninit<T>] {
+        &mut self.backing
+    }
+
+    /// Get the layout.
+    #[inline]
+    pub(crate) fn layout(&self) -> &Layout {
+        &self.layout
+    }
+
+    /// Number of elements.
+    #[inline]
+    pub(crate) fn len(&self) -> usize {
+        self.backing.len()
+    }
+
+    /// Convert to ConcreteTensor<T, R>.
+    ///
+    /// # Safety
+    /// All elements must have been initialized.
+    #[inline]
+    pub(crate) unsafe fn assume_init(self) -> ConcreteTensor<T, R> {
+        ConcreteTensor {
+            layout: self.layout,
+            // SAFETY: MaybeUninit<T> has identical layout to T,
+            // and caller guarantees all elements are initialized.
+            backing: unsafe {
+                std::mem::transmute::<ABox<[MaybeUninit<T>]>, ABox<[T]>>(self.backing)
+            },
+        }
+    }
+}
+

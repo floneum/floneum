@@ -1,5 +1,6 @@
 //! Slice assign operation: replace a slice region with values from another tensor
 
+use std::mem::MaybeUninit;
 use std::ops::Range;
 
 use crate::{ConcreteTensor, ResolvedTensor, SimdElement};
@@ -111,7 +112,7 @@ where
         .shape()
         .try_into()
         .expect("Shape length mismatch");
-    let mut output = ConcreteTensor::<E, R>::uninit_unchecked(input_shape);
+    let mut output = ConcreteTensor::<MaybeUninit<E>, R>::uninit(input_shape);
 
     let input_strides = input.layout().strides();
     let value_strides = value.layout().strides();
@@ -127,7 +128,7 @@ where
         }
 
         // Check if this position is in the slice region
-        if is_in_slice(&indices, slices) {
+        let val = if is_in_slice(&indices, slices) {
             // Get from value tensor
             let value_indices = to_value_indices(&indices, slices);
             let value_linear: usize = value_indices
@@ -135,14 +136,16 @@ where
                 .zip(value_strides.iter())
                 .map(|(&idx, &stride)| idx * stride)
                 .sum();
-            output.data_mut()[out_linear] = value.data()[value_linear];
+            value.data()[value_linear]
         } else {
             // Copy from input tensor
-            output.data_mut()[out_linear] = input.data()[out_linear];
-        }
+            input.data()[out_linear]
+        };
+        output.as_mut_uninit_slice()[out_linear] = MaybeUninit::new(val);
     }
 
-    output
+    // SAFETY: All elements were initialized in the loop above
+    unsafe { output.assume_init() }
 }
 
 /// General path for strided tensors
@@ -159,7 +162,7 @@ where
         .shape()
         .try_into()
         .expect("Shape length mismatch");
-    let mut output = ConcreteTensor::<E, R>::uninit_unchecked(input_shape);
+    let mut output = ConcreteTensor::<MaybeUninit<E>, R>::uninit(input_shape);
 
     let output_strides: Box<[usize]> = output.layout().strides().into();
     let input_strides = input.layout().strides();
@@ -178,7 +181,7 @@ where
         }
 
         // Check if this position is in the slice region
-        if is_in_slice(&indices, slices) {
+        let val = if is_in_slice(&indices, slices) {
             // Get from value tensor (with stride calculation)
             let value_indices = to_value_indices(&indices, slices);
             let value_linear: usize = value_offset
@@ -187,7 +190,7 @@ where
                     .zip(value_strides.iter())
                     .map(|(&idx, &stride)| idx * stride)
                     .sum::<usize>();
-            output.data_mut()[out_linear] = value.data()[value_linear];
+            value.data()[value_linear]
         } else {
             // Copy from input tensor (with stride calculation)
             let input_linear: usize = input_offset
@@ -196,11 +199,13 @@ where
                     .zip(input_strides.iter())
                     .map(|(&idx, &stride)| idx * stride)
                     .sum::<usize>();
-            output.data_mut()[out_linear] = input.data()[input_linear];
-        }
+            input.data()[input_linear]
+        };
+        output.as_mut_uninit_slice()[out_linear] = MaybeUninit::new(val);
     }
 
-    output
+    // SAFETY: All elements were initialized in the loop above
+    unsafe { output.assume_init() }
 }
 
 #[cfg(test)]

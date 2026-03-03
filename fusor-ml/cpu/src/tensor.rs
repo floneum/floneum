@@ -1,5 +1,6 @@
 //! Tensor - the unified interface over different tensor backends
 
+use std::mem::MaybeUninit;
 use std::ops::{
     Add as StdAdd, Div as StdDiv, Mul as StdMul, Neg as StdNeg, Range, Rem as StdRem, Sub as StdSub,
 };
@@ -1001,11 +1002,12 @@ where
             .shape()
             .try_into()
             .expect("Shape length mismatch");
-        let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
+        let mut output = ConcreteTensor::<MaybeUninit<E>, R>::uninit(shape);
         for (i, &val) in concrete.data().iter().enumerate() {
-            output.data_mut()[i] = val.powf(exponent);
+            output.as_mut_uninit_slice()[i] = MaybeUninit::new(val.powf(exponent));
         }
-        Tensor::new(output)
+        // SAFETY: All elements were initialized in the loop above
+        Tensor::new(unsafe { output.assume_init() })
     }
 
     /// Element-wise maximum with a scalar
@@ -1017,11 +1019,12 @@ where
             .shape()
             .try_into()
             .expect("Shape length mismatch");
-        let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
+        let mut output = ConcreteTensor::<MaybeUninit<E>, R>::uninit(shape);
         for (i, &val) in concrete.data().iter().enumerate() {
-            output.data_mut()[i] = val.float_max(scalar);
+            output.as_mut_uninit_slice()[i] = MaybeUninit::new(val.float_max(scalar));
         }
-        Tensor::new(output)
+        // SAFETY: All elements were initialized in the loop above
+        Tensor::new(unsafe { output.assume_init() })
     }
 
     /// Element-wise minimum with a scalar
@@ -1033,11 +1036,12 @@ where
             .shape()
             .try_into()
             .expect("Shape length mismatch");
-        let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
+        let mut output = ConcreteTensor::<MaybeUninit<E>, R>::uninit(shape);
         for (i, &val) in concrete.data().iter().enumerate() {
-            output.data_mut()[i] = val.float_min(scalar);
+            output.as_mut_uninit_slice()[i] = MaybeUninit::new(val.float_min(scalar));
         }
-        Tensor::new(output)
+        // SAFETY: All elements were initialized in the loop above
+        Tensor::new(unsafe { output.assume_init() })
     }
 
     /// Clamp each element to a range [min, max]
@@ -1049,11 +1053,12 @@ where
             .shape()
             .try_into()
             .expect("Shape length mismatch");
-        let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
+        let mut output = ConcreteTensor::<MaybeUninit<E>, R>::uninit(shape);
         for (i, &val) in concrete.data().iter().enumerate() {
-            output.data_mut()[i] = val.float_max(min).float_min(max);
+            output.as_mut_uninit_slice()[i] = MaybeUninit::new(val.float_max(min).float_min(max));
         }
-        Tensor::new(output)
+        // SAFETY: All elements were initialized in the loop above
+        Tensor::new(unsafe { output.assume_init() })
     }
 }
 

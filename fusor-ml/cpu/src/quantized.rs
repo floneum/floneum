@@ -7,6 +7,8 @@
 //! - Lazy dequantization via the `Dequantize` expression type
 //! - Efficient block-by-block matrix multiplication
 
+use std::mem::MaybeUninit;
+
 use aligned_vec::{ABox, AVec};
 use bytemuck::Pod;
 use fusor_gguf::GgufBlock;
@@ -133,16 +135,20 @@ impl<B: GgufBlock> QuantizedTensor<B> {
             .as_ref()
             .try_into()
             .expect("Shape length mismatch in dequantize");
-        let mut output = ConcreteTensor::<f32, R>::uninit_unchecked(shape);
-        let out_data = output.data_mut();
+        let mut output = ConcreteTensor::<MaybeUninit<f32>, R>::uninit(shape);
 
+        let out_ptr = output.as_mut_uninit_slice();
         for (block_idx, block) in self.blocks.iter().enumerate() {
             let dequantized = block.dequantize();
+            let src = dequantized.as_ref();
             let start = block_idx * B::BLOCK_SIZE;
-            out_data[start..start + B::BLOCK_SIZE].copy_from_slice(dequantized.as_ref());
+            for i in 0..B::BLOCK_SIZE {
+                out_ptr[start + i].write(src[i]);
+            }
         }
 
-        output
+        // SAFETY: All elements were initialized by block dequantization above
+        unsafe { output.assume_init() }
     }
 
     /// Create a lazy dequantization expression.

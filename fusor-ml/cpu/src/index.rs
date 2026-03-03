@@ -1,5 +1,7 @@
 //! Index operations: index_select (gather)
 
+use std::mem::MaybeUninit;
+
 use crate::{ConcreteTensor, ResolvedTensor, SimdElement};
 
 /// Compute the output shape for index_select
@@ -34,7 +36,7 @@ where
     let num_indices = indices.data().len();
     let output_shape = index_select_output_shape::<R>(input_shape, dimension, num_indices);
 
-    let mut output = ConcreteTensor::<E, R>::uninit_unchecked(output_shape);
+    let mut output = ConcreteTensor::<MaybeUninit<E>, R>::uninit(output_shape);
 
     // Compute strides for iteration
     let input_strides = input.layout().strides();
@@ -65,10 +67,11 @@ where
             .map(|(&idx, &stride)| idx * stride)
             .sum();
 
-        output.data_mut()[out_linear] = input.data()[in_linear];
+        output.as_mut_uninit_slice()[out_linear] = MaybeUninit::new(input.data()[in_linear]);
     }
 
-    output
+    // SAFETY: All elements were initialized in the loop above
+    unsafe { output.assume_init() }
 }
 
 #[cfg(test)]

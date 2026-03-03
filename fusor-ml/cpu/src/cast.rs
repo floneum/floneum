@@ -1,5 +1,7 @@
 //! Type casting operations for tensors
 
+use std::mem::MaybeUninit;
+
 use crate::{ConcreteTensor, ResolvedTensor, SimdElement};
 
 /// Trait for numeric types that can be cast to another type
@@ -100,13 +102,14 @@ where
         .shape()
         .try_into()
         .expect("Shape length mismatch");
-    let mut output = ConcreteTensor::<T2, R>::uninit_unchecked(shape);
+    let mut output = ConcreteTensor::<MaybeUninit<T2>, R>::uninit(shape);
 
     for (i, &val) in input.data().iter().enumerate() {
-        output.data_mut()[i] = val.cast();
+        output.as_mut_uninit_slice()[i] = MaybeUninit::new(val.cast());
     }
 
-    output
+    // SAFETY: All elements were initialized in the loop above
+    unsafe { output.assume_init() }
 }
 
 #[cfg(test)]
