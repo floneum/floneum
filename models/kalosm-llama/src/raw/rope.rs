@@ -1,5 +1,5 @@
 use super::{LlamaConfig, RopeScalingConfig};
-use fusor::{arange, CastTensor, CastTo, DataType, Device, FloatDataType, SimdElement, Tensor};
+use fusor::{arange, CastTensor, CastTo, DataType, Device, FloatDataType, SimdElement, Tensor, base_inverse_frequency};
 use std::f32::consts::PI;
 
 pub(crate) fn create_inverse_frequency<F>(
@@ -13,10 +13,7 @@ where
     F: FloatDataType + SimdElement + CastTo<f32> + CastTensor<f32>,
     f32: CastTo<F> + CastTensor<F>,
 {
-    let mut inverse_frequency = (0..dim)
-        .step_by(2)
-        .map(|i| 1. / (rope_theta.powf(i as f32 / dim as f32)))
-        .collect::<Vec<_>>();
+    let mut inverse_frequency = base_inverse_frequency(dim, rope_theta);
     if let Some(scaling_config) = &rope_scaling {
         let original_max_position_embeddings = scaling_config.original_max_position_embeddings;
         let factor = scaling_config.factor;

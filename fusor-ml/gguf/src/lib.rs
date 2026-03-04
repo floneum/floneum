@@ -169,65 +169,35 @@ impl TryFrom<u32> for GgufVersion {
     }
 }
 
-fn read_le_u8<R: std::io::Read>(reader: &mut R) -> Result<u8, GgufReadError> {
-    let mut bytes = [0; 1];
-    reader.read_exact(&mut bytes)?;
-    Ok(u8::from_le_bytes(bytes))
+macro_rules! define_read_le {
+    ($($ty:ty),*) => {
+        paste::paste! {
+            $(
+                fn [<read_le_ $ty>]<R: std::io::Read>(reader: &mut R) -> Result<$ty, GgufReadError> {
+                    let mut bytes = [0u8; std::mem::size_of::<$ty>()];
+                    reader.read_exact(&mut bytes)?;
+                    Ok(<$ty>::from_le_bytes(bytes))
+                }
+            )*
+        }
+    };
 }
 
-fn read_le_u16<R: std::io::Read>(reader: &mut R) -> Result<u16, GgufReadError> {
-    let mut bytes = [0; 2];
-    reader.read_exact(&mut bytes)?;
-    Ok(u16::from_le_bytes(bytes))
+macro_rules! define_write_le {
+    ($($ty:ty),*) => {
+        paste::paste! {
+            $(
+                fn [<write_le_ $ty>]<W: std::io::Write>(writer: &mut W, value: $ty) -> Result<(), GgufWriteError> {
+                    writer.write_all(&value.to_le_bytes())?;
+                    Ok(())
+                }
+            )*
+        }
+    };
 }
 
-fn read_le_u32<R: std::io::Read>(reader: &mut R) -> Result<u32, GgufReadError> {
-    let mut bytes = [0; 4];
-    reader.read_exact(&mut bytes)?;
-    Ok(u32::from_le_bytes(bytes))
-}
-
-fn read_le_u64<R: std::io::Read>(reader: &mut R) -> Result<u64, GgufReadError> {
-    let mut bytes = [0; 8];
-    reader.read_exact(&mut bytes)?;
-    Ok(u64::from_le_bytes(bytes))
-}
-
-fn read_le_i8<R: std::io::Read>(reader: &mut R) -> Result<i8, GgufReadError> {
-    let mut bytes = [0; 1];
-    reader.read_exact(&mut bytes)?;
-    Ok(i8::from_le_bytes(bytes))
-}
-
-fn read_le_i16<R: std::io::Read>(reader: &mut R) -> Result<i16, GgufReadError> {
-    let mut bytes = [0; 2];
-    reader.read_exact(&mut bytes)?;
-    Ok(i16::from_le_bytes(bytes))
-}
-
-fn read_le_i32<R: std::io::Read>(reader: &mut R) -> Result<i32, GgufReadError> {
-    let mut bytes = [0; 4];
-    reader.read_exact(&mut bytes)?;
-    Ok(i32::from_le_bytes(bytes))
-}
-
-fn read_le_i64<R: std::io::Read>(reader: &mut R) -> Result<i64, GgufReadError> {
-    let mut bytes = [0; 8];
-    reader.read_exact(&mut bytes)?;
-    Ok(i64::from_le_bytes(bytes))
-}
-
-fn read_le_f32<R: std::io::Read>(reader: &mut R) -> Result<f32, GgufReadError> {
-    let mut bytes = [0; 4];
-    reader.read_exact(&mut bytes)?;
-    Ok(f32::from_le_bytes(bytes))
-}
-
-fn read_le_f64<R: std::io::Read>(reader: &mut R) -> Result<f64, GgufReadError> {
-    let mut bytes = [0; 8];
-    reader.read_exact(&mut bytes)?;
-    Ok(f64::from_le_bytes(bytes))
-}
+define_read_le!(u8, u16, u32, u64, i8, i16, i32, i64, f32, f64);
+define_write_le!(u8, u16, u32, u64, i8, i16, i32, i64, f32, f64);
 
 fn read_array_length<R: std::io::Read>(
     reader: &mut R,
@@ -237,56 +207,6 @@ fn read_array_length<R: std::io::Read>(
         GgufVersion::V1 => read_le_u32(reader)? as usize,
         GgufVersion::V2 | GgufVersion::V3 => read_le_u64(reader)? as usize,
     })
-}
-
-fn write_le_u8<W: std::io::Write>(writer: &mut W, value: u8) -> Result<(), GgufWriteError> {
-    writer.write_all(&value.to_le_bytes())?;
-    Ok(())
-}
-
-fn write_le_u16<W: std::io::Write>(writer: &mut W, value: u16) -> Result<(), GgufWriteError> {
-    writer.write_all(&value.to_le_bytes())?;
-    Ok(())
-}
-
-fn write_le_u32<W: std::io::Write>(writer: &mut W, value: u32) -> Result<(), GgufWriteError> {
-    writer.write_all(&value.to_le_bytes())?;
-    Ok(())
-}
-
-fn write_le_u64<W: std::io::Write>(writer: &mut W, value: u64) -> Result<(), GgufWriteError> {
-    writer.write_all(&value.to_le_bytes())?;
-    Ok(())
-}
-
-fn write_le_i8<W: std::io::Write>(writer: &mut W, value: i8) -> Result<(), GgufWriteError> {
-    writer.write_all(&value.to_le_bytes())?;
-    Ok(())
-}
-
-fn write_le_i16<W: std::io::Write>(writer: &mut W, value: i16) -> Result<(), GgufWriteError> {
-    writer.write_all(&value.to_le_bytes())?;
-    Ok(())
-}
-
-fn write_le_i32<W: std::io::Write>(writer: &mut W, value: i32) -> Result<(), GgufWriteError> {
-    writer.write_all(&value.to_le_bytes())?;
-    Ok(())
-}
-
-fn write_le_i64<W: std::io::Write>(writer: &mut W, value: i64) -> Result<(), GgufWriteError> {
-    writer.write_all(&value.to_le_bytes())?;
-    Ok(())
-}
-
-fn write_le_f32<W: std::io::Write>(writer: &mut W, value: f32) -> Result<(), GgufWriteError> {
-    writer.write_all(&value.to_le_bytes())?;
-    Ok(())
-}
-
-fn write_le_f64<W: std::io::Write>(writer: &mut W, value: f64) -> Result<(), GgufWriteError> {
-    writer.write_all(&value.to_le_bytes())?;
-    Ok(())
 }
 
 fn write_array_length<W: std::io::Write>(
@@ -371,6 +291,32 @@ pub struct GgufMetadata {
     pub metadata: FxHashMap<Box<str>, GgufValue>,
     pub tensor_infos: FxHashMap<Box<str>, GgufTensorMetadata>,
     pub tensor_data_offset: u64,
+}
+
+impl GgufMetadata {
+    /// Look up a metadata value by key with suffix-aware matching.
+    ///
+    /// If the key starts with `.`, searches for metadata keys that end with the given suffix
+    /// and returns the value for the shortest matching key. This allows architecture-prefixed
+    /// keys like `qwen3.attention.head_count` to be found with `.attention.head_count`.
+    pub fn get_value(&self, key: &str) -> Option<&GgufValue> {
+        if key.starts_with('.') {
+            self.metadata
+                .iter()
+                .filter(|(k, _)| k.ends_with(key))
+                .min_by_key(|(k, _)| k.len())
+                .map(|(_, v)| v)
+        } else {
+            self.metadata.get(key)
+        }
+    }
+
+    /// Get the model architecture from the `general.architecture` metadata key.
+    pub fn architecture(&self) -> Option<String> {
+        self.get_value("general.architecture")
+            .and_then(|v| v.to_string().ok())
+            .map(|s| s.to_string())
+    }
 }
 
 fn read_string<R: std::io::Read>(

@@ -9,65 +9,23 @@ pub trait IsNonZero: SimdElement {
     fn is_nonzero(&self) -> bool;
 }
 
-impl IsNonZero for f32 {
-    fn is_nonzero(&self) -> bool {
-        *self != 0.0
-    }
+macro_rules! impl_is_nonzero {
+    ($($ty:ty => $zero:expr),*) => {
+        $(
+            impl IsNonZero for $ty {
+                fn is_nonzero(&self) -> bool {
+                    *self != $zero
+                }
+            }
+        )*
+    };
 }
 
-impl IsNonZero for f64 {
-    fn is_nonzero(&self) -> bool {
-        *self != 0.0
-    }
-}
-
-impl IsNonZero for i8 {
-    fn is_nonzero(&self) -> bool {
-        *self != 0
-    }
-}
-
-impl IsNonZero for i16 {
-    fn is_nonzero(&self) -> bool {
-        *self != 0
-    }
-}
-
-impl IsNonZero for i32 {
-    fn is_nonzero(&self) -> bool {
-        *self != 0
-    }
-}
-
-impl IsNonZero for i64 {
-    fn is_nonzero(&self) -> bool {
-        *self != 0
-    }
-}
-
-impl IsNonZero for u8 {
-    fn is_nonzero(&self) -> bool {
-        *self != 0
-    }
-}
-
-impl IsNonZero for u16 {
-    fn is_nonzero(&self) -> bool {
-        *self != 0
-    }
-}
-
-impl IsNonZero for u32 {
-    fn is_nonzero(&self) -> bool {
-        *self != 0
-    }
-}
-
-impl IsNonZero for u64 {
-    fn is_nonzero(&self) -> bool {
-        *self != 0
-    }
-}
+impl_is_nonzero!(
+    f32 => 0.0, f64 => 0.0,
+    i8 => 0, i16 => 0, i32 => 0, i64 => 0,
+    u8 => 0, u16 => 0, u32 => 0, u64 => 0
+);
 
 /// Conditional selection: where condition != 0, select on_true, else on_false
 #[inline(always)]

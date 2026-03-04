@@ -32,6 +32,18 @@ impl ModelBuilder for BertBuilder {
 }
 
 impl Bert {
+    /// Convert a 2D tensor (containing a single embedding) into an Embedding.
+    async fn tensor_to_embedding(
+        &self,
+        tensor: fusor::Tensor<2, f32>,
+    ) -> Result<Embedding, BertError> {
+        let slice = tensor.as_slice().await.map_err(BertError::Fusor)?;
+        let slice_data = slice.to_vec2();
+        Ok(Embedding::from(
+            slice_data.into_iter().next().into_iter().next().unwrap(),
+        ))
+    }
+
     /// Embed a sentence with a specific pooling strategy.
     pub async fn embed_with_pooling(
         &self,
@@ -39,13 +51,7 @@ impl Bert {
         pooling: Pooling,
     ) -> Result<Embedding, BertError> {
         let mut tensors = self.embed_batch_raw(vec![input], pooling)?;
-
-        let last = tensors.pop().unwrap();
-        let last_slice = last.as_slice().await.map_err(BertError::Fusor)?;
-        let slice_data = last_slice.to_vec2();
-        Ok(Embedding::from(
-            slice_data.into_iter().next().into_iter().next().unwrap(),
-        ))
+        self.tensor_to_embedding(tensors.pop().unwrap()).await
     }
 
     /// Embed a batch of sentences with a specific pooling strategy.
@@ -58,14 +64,24 @@ impl Bert {
 
         let mut embeddings = Vec::with_capacity(tensors.len());
         for tensor in tensors {
-            let slice = tensor.as_slice().await.map_err(BertError::Fusor)?;
-            let slice_data = slice.to_vec2();
-            embeddings.push(Embedding::from(
-                slice_data.into_iter().next().into_iter().next().unwrap(),
-            ));
+            embeddings.push(self.tensor_to_embedding(tensor).await?);
         }
 
         Ok(embeddings)
+    }
+}
+
+impl Bert {
+    /// Apply the search prefix to an embedding input if it's a query variant.
+    fn apply_search_prefix(&self, input: EmbeddingInput) -> String {
+        match (&*self.embedding_search_prefix, input.variant) {
+            (Some(prefix), EmbeddingVariant::Query) => {
+                let mut new_input = prefix.clone();
+                new_input.push_str(&input.text);
+                new_input
+            }
+            _ => input.text,
+        }
     }
 }
 
@@ -76,14 +92,7 @@ impl Embedder for Bert {
         &self,
         input: EmbeddingInput,
     ) -> impl Future<Output = Result<Embedding, Self::Error>> + WasmNotSend {
-        match (&*self.embedding_search_prefix, input.variant) {
-            (Some(prefix), EmbeddingVariant::Query) => {
-                let mut new_input = prefix.clone();
-                new_input.push_str(&input.text);
-                self.embed_string(new_input)
-            }
-            _ => self.embed_string(input.text),
-        }
+        self.embed_string(self.apply_search_prefix(input))
     }
 
     fn embed_vec_for(
@@ -92,16 +101,7 @@ impl Embedder for Bert {
     ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + WasmNotSend {
         let inputs = inputs
             .into_iter()
-            .map(
-                |input| match (&*self.embedding_search_prefix, input.variant) {
-                    (Some(prefix), EmbeddingVariant::Query) => {
-                        let mut new_input = prefix.clone();
-                        new_input.push_str(&input.text);
-                        new_input
-                    }
-                    _ => input.text,
-                },
-            )
+            .map(|input| self.apply_search_prefix(input))
             .collect::<Vec<_>>();
         self.embed_vec(inputs)
     }

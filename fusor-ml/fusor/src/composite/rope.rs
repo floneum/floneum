@@ -183,6 +183,16 @@ pub struct RopeCache {
     cos: Tensor<2, f32>,
 }
 
+/// Compute the base inverse frequency vector: `1 / θ^(2i/dim)` for i in 0..dim/2.
+///
+/// This is the standard RoPE frequency formula shared across all RoPE implementations.
+pub fn base_inverse_frequency(dim: usize, rope_theta: f32) -> Vec<f32> {
+    (0..dim)
+        .step_by(2)
+        .map(|i| 1. / (rope_theta.powf(i as f32 / dim as f32)))
+        .collect()
+}
+
 impl RopeCache {
     /// Create a RopeCache with standard inverse-frequency computation (no rope scaling).
     pub fn new(
@@ -191,10 +201,7 @@ impl RopeCache {
         rope_theta: f32,
         device: &Device,
     ) -> crate::Result<Self> {
-        let inverse_frequency: Vec<f32> = (0..head_dim)
-            .step_by(2)
-            .map(|i| 1. / (rope_theta.powf(i as f32 / head_dim as f32)))
-            .collect();
+        let inverse_frequency = base_inverse_frequency(head_dim, rope_theta);
         let inverse_frequency_len = inverse_frequency.len();
         let inverse_frequency = Tensor::new(device, &inverse_frequency)
             .reshape([1, inverse_frequency_len])
