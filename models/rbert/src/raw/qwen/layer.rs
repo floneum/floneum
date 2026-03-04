@@ -22,7 +22,8 @@ impl QwenLayer {
         eps: f32,
     ) -> Result<Self> {
         let attention_norm = RmsNorm::load(device, &mut vb.pp("attn_norm"), eps)?;
-        let attention = QwenSelfAttention::load(device, vb, num_heads, num_kv_heads, head_dim, eps)?;
+        let attention =
+            QwenSelfAttention::load(device, vb, num_heads, num_kv_heads, head_dim, eps)?;
         let ffn_norm = RmsNorm::load(device, &mut vb.pp("ffn_norm"), eps)?;
         let feed_forward = QwenFeedForward::load(device, vb)?;
 

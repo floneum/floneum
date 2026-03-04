@@ -2,9 +2,9 @@
 //!
 //! Bert embeddings contain word embeddings, embeddings about the token type and position information.
 
+use fusor::layers::{Embedding, LayerNorm};
 use fusor::{Device, VarBuilder};
 use fusor::{Result, Tensor};
-use fusor::layers::{Embedding, LayerNorm};
 
 // https://github.com/huggingface/transformers/blob/6eedfa6dd15dc1e22a55ae036f681914e5a0d9a1/src/transformers/models/bert/modeling_bert.py#L180
 pub(crate) struct BertEmbeddings {
@@ -47,7 +47,8 @@ impl BertEmbeddings {
         let [_bsize, seq_len] = input_ids.shape();
         let input_embeddings = self.word_embeddings.forward(input_ids);
         let token_type_embeddings = self.token_type_embeddings.forward(token_type_ids);
-        let mut embeddings: Tensor<3, f32> = (&input_embeddings + &token_type_embeddings).to_concrete();
+        let mut embeddings: Tensor<3, f32> =
+            (&input_embeddings + &token_type_embeddings).to_concrete();
         if let Some(position_embeddings) = &self.position_embeddings {
             let device = input_ids.device();
             let position_ids = fusor::arange(&device, 0u32, seq_len as u32);

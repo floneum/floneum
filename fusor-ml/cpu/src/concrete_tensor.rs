@@ -210,5 +210,3 @@ impl<T: SimdElement, const R: usize> ConcreteTensor<T, R> {
         }
     }
 }
-
-

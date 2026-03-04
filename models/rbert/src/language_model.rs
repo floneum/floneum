@@ -41,10 +41,7 @@ impl Bert {
         let mut tensors = self.embed_batch_raw(vec![input], pooling)?;
 
         let last = tensors.pop().unwrap();
-        let last_slice = last
-            .as_slice()
-            .await
-            .map_err(BertError::Fusor)?;
+        let last_slice = last.as_slice().await.map_err(BertError::Fusor)?;
         let slice_data = last_slice.to_vec2();
         Ok(Embedding::from(
             slice_data.into_iter().next().into_iter().next().unwrap(),
@@ -244,4 +241,3 @@ async fn test_qwen3_batch_embedding() {
         );
     }
 }
-

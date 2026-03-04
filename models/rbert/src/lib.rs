@@ -293,7 +293,11 @@ impl Bert {
         builder: BertBuilder,
         mut progress_handler: impl FnMut(ModelLoadingProgress) + Send + 'static,
     ) -> Result<Self, BertLoadingError> {
-        let BertBuilder { source, cache, device } = builder;
+        let BertBuilder {
+            source,
+            cache,
+            device,
+        } = builder;
         let BertSource {
             config,
             tokenizer,
@@ -304,11 +308,13 @@ impl Bert {
         let config_bytes = if let Some(config) = config {
             let source = format!("Config ({config})");
             let mut create_progress = ModelLoadingProgress::downloading_progress(source);
-            Some(cache
-                .get_bytes(&config, |progress| {
-                    progress_handler(create_progress(progress))
-                })
-                .await?)
+            Some(
+                cache
+                    .get_bytes(&config, |progress| {
+                        progress_handler(create_progress(progress))
+                    })
+                    .await?,
+            )
         } else {
             None
         };
@@ -468,9 +474,7 @@ impl Bert {
         });
         let attention_mask = Tensor::stack(attention_masks, 0);
 
-        let embeddings = self
-            .model
-            .forward(&token_ids, Some(&attention_mask));
+        let embeddings = self.model.forward(&token_ids, Some(&attention_mask));
 
         let shape = embeddings.shape();
         let n_tokens = shape[1];
@@ -481,18 +485,30 @@ impl Bert {
                 // For now, skip masking and just compute the mean
                 let embeddings = embeddings.sum::<2>(1).div_scalar(n_tokens as f32);
                 let embeddings = normalize_l2(&embeddings);
-                Ok(embeddings.chunk(n_sentences, 0).into_iter().map(|c| c.to_concrete()).collect())
+                Ok(embeddings
+                    .chunk(n_sentences, 0)
+                    .into_iter()
+                    .map(|c| c.to_concrete())
+                    .collect())
             }
             Pooling::CLS => {
                 // Index into the first token of each sentence which is the CLS token that contains the sentence embedding
                 let indexed_embeddings = embeddings.to_concrete().i((.., 0, ..));
-                Ok(indexed_embeddings.chunk(n_sentences, 0).into_iter().map(|c| c.to_concrete()).collect())
+                Ok(indexed_embeddings
+                    .chunk(n_sentences, 0)
+                    .into_iter()
+                    .map(|c| c.to_concrete())
+                    .collect())
             }
             Pooling::Last => {
                 // With left padding, the last token is always at the final position
                 let indexed_embeddings = embeddings.to_concrete().i((.., n_tokens - 1, ..));
                 let normalized = normalize_l2(&indexed_embeddings);
-                Ok(normalized.chunk(n_sentences, 0).into_iter().map(|c| c.to_concrete()).collect())
+                Ok(normalized
+                    .chunk(n_sentences, 0)
+                    .into_iter()
+                    .map(|c| c.to_concrete())
+                    .collect())
             }
         }
     }

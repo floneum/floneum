@@ -1,4 +1,4 @@
-use fusor::layers::{Linear, LayerNorm};
+use fusor::layers::{LayerNorm, Linear};
 use fusor::{Device, VarBuilder};
 use fusor::{Result, Tensor};
 

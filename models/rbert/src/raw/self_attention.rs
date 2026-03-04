@@ -60,14 +60,18 @@ impl BertSelfAttention {
         let value_layer = self.transpose_for_scores(&value_layer);
 
         let attention_scores = query_layer.mat_mul(&key_layer.t());
-        let mut attention_scores = attention_scores.div_scalar((self.attention_head_size as f32).sqrt());
+        let mut attention_scores =
+            attention_scores.div_scalar((self.attention_head_size as f32).sqrt());
 
         // If there is an attention mask, filter the attention scores by that mask
         if let Some(attention_mask) = attention_mask {
             // The attention mask is a tensor of shape (bsize, seq_len)
             // the attention scores are a tensor of shape (bsize, _, seq_len, seq_len)
             // We expand the attention mask to (bsize, 1, 1, seq_len)
-            let mask = attention_mask.unsqueeze::<3>(1).unsqueeze::<4>(2).to_concrete();
+            let mask = attention_mask
+                .unsqueeze::<3>(1)
+                .unsqueeze::<4>(2)
+                .to_concrete();
             let shape = attention_scores.shape();
             let mask: Tensor<4, f32> = mask.broadcast_as::<4>(shape).to_concrete().cast();
             // We use a value slightly larger that the true f32 min value to avoid NaN

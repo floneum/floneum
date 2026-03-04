@@ -229,9 +229,13 @@ async fn test_rope_cache() {
 
     let config: LlamaConfig<f32> = LlamaConfig::mock_test();
     let device = Device::new().await.unwrap();
-    let cache =
-        RopeCache::new(config.head_dimension, config.context_length, config.rope_theta, &device)
-            .unwrap();
+    let cache = RopeCache::new(
+        config.head_dimension,
+        config.context_length,
+        config.rope_theta,
+        &device,
+    )
+    .unwrap();
 
     let expected_cos: Tensor<2, f32> = Tensor::new(
         &device,

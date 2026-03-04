@@ -57,17 +57,20 @@ impl QwenSelfAttention {
         let mut query_states = hidden_states
             .q_mat_mul(&self.wq)
             .reshape([b_sz, seq_len, self.num_heads, self.head_dim])
-            .transpose(1, 2).to_concrete();
+            .transpose(1, 2)
+            .to_concrete();
 
         let mut key_states = hidden_states
             .q_mat_mul(&self.wk)
             .reshape([b_sz, seq_len, self.num_kv_heads, self.head_dim])
-            .transpose(1, 2).to_concrete();
+            .transpose(1, 2)
+            .to_concrete();
 
         let value_states = hidden_states
             .q_mat_mul(&self.wv)
             .reshape([b_sz, seq_len, self.num_kv_heads, self.head_dim])
-            .transpose(1, 2).to_concrete();
+            .transpose(1, 2)
+            .to_concrete();
 
         // Apply optional Q/K normalization
         if let Some(ref q_norm) = self.q_norm {
@@ -111,8 +114,10 @@ impl QwenSelfAttention {
 
         // Reshape and project output
         let attn_output = attn_output.transpose(1, 2);
-        let attn_output = attn_output.to_concrete()
-            .reshape([b_sz, seq_len, hidden_size]).to_concrete();
+        let attn_output = attn_output
+            .to_concrete()
+            .reshape([b_sz, seq_len, hidden_size])
+            .to_concrete();
 
         attn_output.q_mat_mul(&self.wo)
     }

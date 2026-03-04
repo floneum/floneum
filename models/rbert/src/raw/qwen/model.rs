@@ -1,4 +1,4 @@
-use fusor::layers::{RmsNorm, Embedding};
+use fusor::layers::{Embedding, RmsNorm};
 use fusor::{Device, Result, RopeCache, Tensor, VarBuilder};
 
 use super::layer::QwenLayer;
@@ -22,7 +22,9 @@ impl QwenConfig {
         let num_heads = vb
             .get_metadata(".attention.head_count")
             .and_then(|v| v.to_u32().ok())
-            .ok_or_else(|| fusor::Error::msg("Missing required GGUF metadata: .attention.head_count"))? as usize;
+            .ok_or_else(|| {
+                fusor::Error::msg("Missing required GGUF metadata: .attention.head_count")
+            })? as usize;
 
         let num_kv_heads = vb
             .get_metadata(".attention.head_count_kv")
@@ -32,14 +34,16 @@ impl QwenConfig {
         let num_layers = vb
             .get_metadata(".block_count")
             .and_then(|v| v.to_u32().ok())
-            .ok_or_else(|| fusor::Error::msg("Missing required GGUF metadata: .block_count"))? as usize;
+            .ok_or_else(|| fusor::Error::msg("Missing required GGUF metadata: .block_count"))?
+            as usize;
 
         let hidden_size = vb
             .get_metadata(".embedding_length")
             .and_then(|v| v.to_u32().ok())
-            .ok_or_else(|| fusor::Error::msg("Missing required GGUF metadata: .embedding_length"))? as usize;
+            .ok_or_else(|| fusor::Error::msg("Missing required GGUF metadata: .embedding_length"))?
+            as usize;
 
-        if hidden_size % num_heads != 0 {
+        if !hidden_size.is_multiple_of(num_heads) {
             return Err(fusor::Error::msg(format!(
                 "hidden_size ({hidden_size}) must be divisible by num_heads ({num_heads})"
             )));
@@ -100,7 +104,12 @@ impl QwenEmbeddingModel {
         let token_embeddings = Embedding::load(device, &mut vb.pp("token_embd"))?;
 
         // Create RoPE cache
-        let rope_cache = RopeCache::new(config.head_dimension, config.context_length, config.rope_theta, device)?;
+        let rope_cache = RopeCache::new(
+            config.head_dimension,
+            config.context_length,
+            config.rope_theta,
+            device,
+        )?;
 
         // Load transformer layers
         let mut layers = Vec::with_capacity(config.num_layers);
