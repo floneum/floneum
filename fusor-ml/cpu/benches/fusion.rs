@@ -33,8 +33,8 @@ fn bench_fusion(c: &mut Criterion) {
                 // This creates: Sqrt<Add<Mul<&CT, &CT>, &CT>>
                 // References avoid cloning - the expression tree holds refs to input data
                 // When to_concrete() is called, the entire tree is evaluated in one pass
-                let mul = (x_ref * y_ref);
-                let add = (mul + z_ref);
+                let mul = x_ref * y_ref;
+                let add = mul + z_ref;
                 let sqrt = add.sqrt();
                 let result = sqrt.to_concrete();
                 black_box(result)
