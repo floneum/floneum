@@ -1,6 +1,7 @@
 //! Conditional tensor operations: where_cond
 //! Selects elements based on condition tensor != 0
 
+use crate::expr::linear_to_indices;
 use crate::{ConcreteTensor, ResolvedTensor, SimdElement};
 
 /// Helper trait for types that can be compared to zero
@@ -84,6 +85,11 @@ where
         .try_into()
         .expect("Shape length mismatch");
 
+    debug_assert_eq!(cond.layout().shape(), on_true.layout().shape(),
+        "where_cond: cond and on_true shape mismatch");
+    debug_assert_eq!(cond.layout().shape(), on_false.layout().shape(),
+        "where_cond: cond and on_false shape mismatch");
+
     let all_contiguous = cond.layout().is_contiguous()
         && on_true.layout().is_contiguous()
         && on_false.layout().is_contiguous();
@@ -100,17 +106,8 @@ where
             }
         })
     } else {
-        let output_layout = fusor_types::Layout::contiguous(&shape);
-        let output_strides: Box<[usize]> = output_layout.strides().into();
-
         ConcreteTensor::from_fn(shape, |out_idx| {
-            // Convert linear index to multi-dimensional indices
-            let mut indices = vec![0usize; R];
-            let mut remaining = out_idx;
-            for i in 0..R {
-                indices[i] = remaining / output_strides[i];
-                remaining %= output_strides[i];
-            }
+            let indices = linear_to_indices::<R>(out_idx, &shape);
 
             let cond_idx = cond.layout().linear_index(&indices);
             let true_idx = on_true.layout().linear_index(&indices);
