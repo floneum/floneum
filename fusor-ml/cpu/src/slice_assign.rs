@@ -1,6 +1,5 @@
 //! Slice assign operation: replace a slice region with values from another tensor
 
-use std::mem::MaybeUninit;
 use std::ops::Range;
 
 use crate::{ConcreteTensor, ResolvedTensor, SimdElement};
@@ -112,13 +111,11 @@ where
         .shape()
         .try_into()
         .expect("Shape length mismatch");
-    let mut output = ConcreteTensor::<MaybeUninit<E>, R>::uninit(input_shape);
 
     let input_strides = input.layout().strides();
     let value_strides = value.layout().strides();
-    let total_elements: usize = input_shape.iter().product();
 
-    for out_linear in 0..total_elements {
+    ConcreteTensor::from_fn(input_shape, |out_linear| {
         // Convert linear index to multi-dimensional indices
         let mut indices = [0usize; R];
         let mut remaining = out_linear;
@@ -128,7 +125,7 @@ where
         }
 
         // Check if this position is in the slice region
-        let val = if is_in_slice(&indices, slices) {
+        if is_in_slice(&indices, slices) {
             // Get from value tensor
             let value_indices = to_value_indices(&indices, slices);
             let value_linear: usize = value_indices
@@ -140,12 +137,8 @@ where
         } else {
             // Copy from input tensor
             input.data()[out_linear]
-        };
-        output.as_mut_uninit_slice()[out_linear] = MaybeUninit::new(val);
-    }
-
-    // SAFETY: All elements were initialized in the loop above
-    unsafe { output.assume_init() }
+        }
+    })
 }
 
 /// General path for strided tensors
@@ -162,16 +155,15 @@ where
         .shape()
         .try_into()
         .expect("Shape length mismatch");
-    let mut output = ConcreteTensor::<MaybeUninit<E>, R>::uninit(input_shape);
 
-    let output_strides: Box<[usize]> = output.layout().strides().into();
+    let output_layout = fusor_types::Layout::contiguous(&input_shape);
+    let output_strides: Box<[usize]> = output_layout.strides().into();
     let input_strides = input.layout().strides();
     let value_strides = value.layout().strides();
     let input_offset = input.layout().offset();
     let value_offset = value.layout().offset();
-    let total_elements: usize = input_shape.iter().product();
 
-    for out_linear in 0..total_elements {
+    ConcreteTensor::from_fn(input_shape, |out_linear| {
         // Convert linear index to multi-dimensional indices
         let mut indices = [0usize; R];
         let mut remaining = out_linear;
@@ -181,7 +173,7 @@ where
         }
 
         // Check if this position is in the slice region
-        let val = if is_in_slice(&indices, slices) {
+        if is_in_slice(&indices, slices) {
             // Get from value tensor (with stride calculation)
             let value_indices = to_value_indices(&indices, slices);
             let value_linear: usize = value_offset
@@ -200,12 +192,8 @@ where
                     .map(|(&idx, &stride)| idx * stride)
                     .sum::<usize>();
             input.data()[input_linear]
-        };
-        output.as_mut_uninit_slice()[out_linear] = MaybeUninit::new(val);
-    }
-
-    // SAFETY: All elements were initialized in the loop above
-    unsafe { output.assume_init() }
+        }
+    })
 }
 
 #[cfg(test)]

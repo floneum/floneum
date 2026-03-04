@@ -5,8 +5,6 @@
 //! `x.mul_ref(&y).add_ref(&z).sqrt_ref()`), they are evaluated in a single
 //! SIMD loop instead of multiple passes.
 
-use std::mem::MaybeUninit;
-
 use pulp::{Arch, Simd, WithSimd};
 
 use crate::{ConcreteTensor, SimdElement, TensorBacking};
@@ -23,45 +21,29 @@ fn simd_lane_count<E: SimdElement, S: Simd>() -> usize {
 /// expression tree into a single pass over the data.
 struct TensorEvaluator<'a, T: TensorBacking<R>, const R: usize> {
     tensor: &'a T,
-    out_ptr: *mut MaybeUninit<T::Elem>,
-    count: usize,
+    out: &'a mut [T::Elem],
     /// Logical offset into the tensor for this chunk
     base_offset: usize,
 }
-
-// SAFETY: TensorEvaluator is only used within materialize_expr where each thread
-// gets a non-overlapping region of the output buffer. The raw pointer doesn't
-// implement Send by default, but our usage is safe because:
-// 1. Each thread writes to a distinct, non-overlapping portion of the output
-// 2. The output buffer outlives all threads (scoped threads)
-unsafe impl<T: TensorBacking<R> + Sync, const R: usize> Send for TensorEvaluator<'_, T, R> {}
 
 impl<T: TensorBacking<R>, const R: usize> WithSimd for TensorEvaluator<'_, T, R> {
     type Output = ();
 
     #[inline(always)]
     fn with_simd<S: Simd>(self, simd: S) -> Self::Output {
-        let lane_count = simd_lane_count::<T::Elem, S>();
-        let count = self.count;
-        let simd_count = count / lane_count;
-        let scalar_start = simd_count * lane_count;
+        let (simd_out, scalar_out) = T::Elem::as_mut_simd::<S>(self.out);
 
         // Main SIMD loop
-        for i in 0..simd_count {
+        let lane_count = simd_lane_count::<T::Elem, S>();
+        for (i, out_vec) in simd_out.iter_mut().enumerate() {
             let base_idx = self.base_offset + i * lane_count;
-            let val = self.tensor.eval_simd(simd, base_idx);
-            // SAFETY: i * lane_count + lane_count <= simd_count * lane_count <= count,
-            // and the output pointer is properly aligned (64-byte aligned from AVec).
-            unsafe {
-                self.out_ptr.add(i * lane_count).cast::<<T::Elem as SimdElement>::Simd<S>>().write(val);
-            }
+            *out_vec = self.tensor.eval_simd(simd, base_idx);
         }
 
         // Scalar tail - handles remaining elements
-        for i in 0..(count - scalar_start) {
-            let val = self.tensor.eval_scalar(self.base_offset + scalar_start + i);
-            // SAFETY: scalar_start + i < count, pointer is valid
-            unsafe { self.out_ptr.add(scalar_start + i).write(MaybeUninit::new(val)) };
+        let scalar_start = simd_out.len() * lane_count;
+        for (i, out_val) in scalar_out.iter_mut().enumerate() {
+            *out_val = self.tensor.eval_scalar(self.base_offset + scalar_start + i);
         }
     }
 }
@@ -87,21 +69,24 @@ pub fn materialize_expr<T: TensorBacking<R> + Sync, const R: usize>(
     tensor: &T,
     shape: [usize; R],
 ) -> ConcreteTensor<T::Elem, R> {
-    let mut output = ConcreteTensor::<MaybeUninit<T::Elem>, R>::uninit(shape);
-    let total_elements = output.len();
-    let out_ptr = output.as_mut_uninit_slice();
+    let mut output = ConcreteTensor::<T::Elem, R>::zeros(shape);
+    let total_elements = output.backing().len();
 
     let n_threads = crate::parallel::num_threads();
 
     // Use parallel execution for large tensors
     if total_elements >= PARALLEL_THRESHOLD && n_threads > 1 {
-        let chunk_size = total_elements.div_ceil(n_threads);
+        // Align chunk boundaries to MAX_SIMD_LANES to maintain SIMD alignment across chunks
+        let raw_chunk = total_elements.div_ceil(n_threads);
+        let chunk_size = raw_chunk.next_multiple_of(crate::MAX_SIMD_LANES);
+        let out_slice: &mut [T::Elem] = output.backing_mut();
 
         std::thread::scope(|scope| {
+            let mut remaining_slice = out_slice;
             let mut offset = 0;
 
             for thread_id in 0..n_threads {
-                if offset >= total_elements {
+                if remaining_slice.is_empty() {
                     break;
                 }
 
@@ -112,16 +97,14 @@ pub fn materialize_expr<T: TensorBacking<R> + Sync, const R: usize>(
                     chunk_size.min(remaining)
                 };
 
+                let (thread_slice, rest) = remaining_slice.split_at_mut(this_size);
+                remaining_slice = rest;
                 let current_offset = offset;
-                // SAFETY: Each thread gets a non-overlapping region of the output
-                let thread_ptr = unsafe { out_ptr.as_mut_ptr().add(current_offset) };
                 offset += this_size;
 
-                // Construct evaluator here so unsafe impl Send applies to the whole struct
                 let evaluator = TensorEvaluator {
                     tensor,
-                    out_ptr: thread_ptr,
-                    count: this_size,
+                    out: thread_slice,
                     base_offset: current_offset,
                 };
 
@@ -132,16 +115,15 @@ pub fn materialize_expr<T: TensorBacking<R> + Sync, const R: usize>(
         });
     } else {
         // Small tensor: single-threaded execution
+        let out_slice: &mut [T::Elem] = output.backing_mut();
         Arch::new().dispatch(TensorEvaluator {
             tensor,
-            out_ptr: out_ptr.as_mut_ptr(),
-            count: total_elements,
+            out: out_slice,
             base_offset: 0,
         });
     }
 
-    // SAFETY: All elements were initialized by TensorEvaluator
-    unsafe { output.assume_init() }
+    output
 }
 
 /// Convert a linear index to logical indices for a given shape.

@@ -1,7 +1,5 @@
 //! ConcreteTensor - the actual tensor storage implementation
 
-use std::mem::MaybeUninit;
-
 use aligned_vec::{ABox, AVec};
 use fusor_types::Layout;
 use pulp::Simd;
@@ -77,9 +75,9 @@ where
             self.backing[idx]
         } else {
             // Convert linear index to logical indices for strided access
-            let shape: &[usize; R] = unsafe { self.layout.shape().try_into().unwrap_unchecked() };
+            let shape: &[usize; R] = self.layout.shape().try_into().unwrap();
             let indices = linear_to_indices::<R>(idx, shape);
-            let phys_idx = unsafe { self.layout.linear_index_unchecked(&indices) };
+            let phys_idx = self.layout.linear_index(&indices);
             self.backing[phys_idx]
         }
     }
@@ -95,11 +93,10 @@ where
             // Optimized path: use SIMD gather for strided tensor access
             // Precompute physical indices for all SIMD lanes
             let lane_count = const { std::mem::size_of::<T::Simd<S>>() / std::mem::size_of::<T>() };
+            let shape: &[usize; R] = self.layout.shape().try_into().unwrap();
             let phys_indices: [usize; crate::MAX_SIMD_LANES] = std::array::from_fn(|i| {
-                let shape: &[usize; R] =
-                    unsafe { self.layout.shape().try_into().unwrap_unchecked() };
                 let indices = linear_to_indices::<R>(base_idx + i, shape);
-                unsafe { self.layout.linear_index_unchecked(&indices) }
+                self.layout.linear_index(&indices)
             });
 
             // Use SIMD gather instruction to load all elements at once
@@ -196,55 +193,22 @@ impl<T: SimdElement, const R: usize> ConcreteTensor<T, R> {
     pub(crate) fn backing_mut(&mut self) -> &mut ABox<[T]> {
         &mut self.backing
     }
-}
 
-impl<T: SimdElement, const R: usize> ConcreteTensor<MaybeUninit<T>, R> {
-    /// Allocate an uninitialized tensor with the given shape.
-    #[inline]
-    pub(crate) fn uninit(shape: [usize; R]) -> Self {
+    /// Create a new tensor with contiguous layout from shape, filled by a closure.
+    ///
+    /// The closure receives the linear index and returns the element value.
+    pub(crate) fn from_fn(shape: [usize; R], mut f: impl FnMut(usize) -> T) -> Self {
         let layout = Layout::contiguous(&shape);
-        let num_elements = layout.num_elements();
-        let mut vec: AVec<MaybeUninit<T>> = AVec::with_capacity(64, num_elements);
-        // SAFETY: MaybeUninit<T> does not require initialization
-        unsafe { vec.set_len(num_elements) };
+        let n = layout.num_elements();
+        let mut vec: AVec<T> = AVec::with_capacity(64, n);
+        for i in 0..n {
+            vec.push(f(i));
+        }
         Self {
             layout,
             backing: vec.into_boxed_slice(),
         }
     }
-
-    /// Mutable slice of MaybeUninit<T> for element-wise writes.
-    #[inline]
-    pub(crate) fn as_mut_uninit_slice(&mut self) -> &mut [MaybeUninit<T>] {
-        &mut self.backing
-    }
-
-    /// Get the layout.
-    #[inline]
-    pub(crate) fn layout(&self) -> &Layout {
-        &self.layout
-    }
-
-    /// Number of elements.
-    #[inline]
-    pub(crate) fn len(&self) -> usize {
-        self.backing.len()
-    }
-
-    /// Convert to ConcreteTensor<T, R>.
-    ///
-    /// # Safety
-    /// All elements must have been initialized.
-    #[inline]
-    pub(crate) unsafe fn assume_init(self) -> ConcreteTensor<T, R> {
-        ConcreteTensor {
-            layout: self.layout,
-            // SAFETY: MaybeUninit<T> has identical layout to T,
-            // and caller guarantees all elements are initialized.
-            backing: unsafe {
-                std::mem::transmute::<ABox<[MaybeUninit<T>]>, ABox<[T]>>(self.backing)
-            },
-        }
-    }
 }
+
 

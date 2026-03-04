@@ -1,6 +1,7 @@
 //! Index operations: index_select (gather)
 
-use std::mem::MaybeUninit;
+use aligned_vec::AVec;
+use fusor_types::Layout;
 
 use crate::{ConcreteTensor, ResolvedTensor, SimdElement};
 
@@ -36,15 +37,15 @@ where
     let num_indices = indices.data().len();
     let output_shape = index_select_output_shape::<R>(input_shape, dimension, num_indices);
 
-    let mut output = ConcreteTensor::<MaybeUninit<E>, R>::uninit(output_shape);
+    let layout = Layout::contiguous(&output_shape);
+    let total_elements = layout.num_elements();
+    let mut vec: AVec<E> = AVec::with_capacity(64, total_elements);
 
     // Compute strides for iteration
     let input_strides = input.layout().strides();
-    let output_strides: Box<[usize]> = output.layout().strides().into();
+    let output_strides: Box<[usize]> = layout.strides().into();
 
     // For each position in output, compute corresponding input position
-    let total_elements: usize = output_shape.iter().product();
-
     for out_linear in 0..total_elements {
         // Convert linear index to multi-dimensional indices for output
         let mut out_indices = [0usize; R];
@@ -67,11 +68,10 @@ where
             .map(|(&idx, &stride)| idx * stride)
             .sum();
 
-        output.as_mut_uninit_slice()[out_linear] = MaybeUninit::new(input.data()[in_linear]);
+        vec.push(input.data()[in_linear]);
     }
 
-    // SAFETY: All elements were initialized in the loop above
-    unsafe { output.assume_init() }
+    ConcreteTensor::from_parts(layout, vec.into_boxed_slice())
 }
 
 #[cfg(test)]

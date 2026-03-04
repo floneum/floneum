@@ -1,11 +1,7 @@
 //! Conditional tensor operations: where_cond
 //! Selects elements based on condition tensor != 0
 
-use std::mem::MaybeUninit;
-
-use pulp::{Arch, Simd, WithSimd};
-
-use crate::{ConcreteTensor, IndexIterator, ResolvedTensor, SimdElement};
+use crate::{ConcreteTensor, ResolvedTensor, SimdElement};
 
 /// Helper trait for types that can be compared to zero
 pub trait IsNonZero: SimdElement {
@@ -72,48 +68,6 @@ impl IsNonZero for u64 {
     }
 }
 
-/// Helper struct for dispatching where_cond operations via Arch::dispatch
-struct WhereCondDispatch<'a, E: SimdElement + IsNonZero> {
-    cond: &'a [E],
-    on_true: &'a [E],
-    on_false: &'a [E],
-    out: &'a mut [MaybeUninit<E>],
-}
-
-impl<E: SimdElement + IsNonZero> WithSimd for WhereCondDispatch<'_, E> {
-    type Output = ();
-
-    #[inline(always)]
-    fn with_simd<S: Simd>(self, _simd: S) -> Self::Output {
-        // No native SIMD select for arbitrary masks - process all elements via scalar path
-        for (((c, t), f), o) in self
-            .cond
-            .iter()
-            .zip(self.on_true.iter())
-            .zip(self.on_false.iter())
-            .zip(self.out.iter_mut())
-        {
-            *o = MaybeUninit::new(if c.is_nonzero() { *t } else { *f });
-        }
-    }
-}
-
-/// Perform where_cond operation on contiguous slices
-#[inline(always)]
-fn where_cond_contiguous<E: SimdElement + IsNonZero>(
-    cond: &[E],
-    on_true: &[E],
-    on_false: &[E],
-    out: &mut [MaybeUninit<E>],
-) {
-    Arch::new().dispatch(WhereCondDispatch::<E> {
-        cond,
-        on_true,
-        on_false,
-        out,
-    });
-}
-
 /// Conditional selection: where condition != 0, select on_true, else on_false
 #[inline(always)]
 pub(crate) fn where_cond_ref<E, const R: usize>(
@@ -129,45 +83,47 @@ where
         .shape()
         .try_into()
         .expect("Shape length mismatch");
-    let mut output = ConcreteTensor::<MaybeUninit<E>, R>::uninit(shape);
 
     let all_contiguous = cond.layout().is_contiguous()
         && on_true.layout().is_contiguous()
         && on_false.layout().is_contiguous();
 
     if all_contiguous {
-        where_cond_contiguous(
-            cond.data(),
-            on_true.data(),
-            on_false.data(),
-            output.as_mut_uninit_slice(),
-        );
+        let cond_data = cond.data();
+        let true_data = on_true.data();
+        let false_data = on_false.data();
+        ConcreteTensor::from_fn(shape, |i| {
+            if cond_data[i].is_nonzero() {
+                true_data[i]
+            } else {
+                false_data[i]
+            }
+        })
     } else {
-        let tensor_shape = cond.layout().shape();
-        let output_strides: Box<[usize]> = output.layout().strides().into();
-        for indices in IndexIterator::new(tensor_shape) {
+        let output_layout = fusor_types::Layout::contiguous(&shape);
+        let output_strides: Box<[usize]> = output_layout.strides().into();
+
+        ConcreteTensor::from_fn(shape, |out_idx| {
+            // Convert linear index to multi-dimensional indices
+            let mut indices = vec![0usize; R];
+            let mut remaining = out_idx;
+            for i in 0..R {
+                indices[i] = remaining / output_strides[i];
+                remaining %= output_strides[i];
+            }
+
             let cond_idx = cond.layout().linear_index(&indices);
             let true_idx = on_true.layout().linear_index(&indices);
             let false_idx = on_false.layout().linear_index(&indices);
-            // Output is contiguous, compute linear index from output strides
-            let out_idx: usize = indices
-                .iter()
-                .zip(output_strides.iter())
-                .map(|(&idx, &stride)| idx * stride)
-                .sum();
 
             let cond_val = cond.data()[cond_idx];
-            let val = if cond_val.is_nonzero() {
+            if cond_val.is_nonzero() {
                 on_true.data()[true_idx]
             } else {
                 on_false.data()[false_idx]
-            };
-            output.as_mut_uninit_slice()[out_idx] = MaybeUninit::new(val);
-        }
+            }
+        })
     }
-
-    // SAFETY: All elements were initialized in the loop/dispatch above
-    unsafe { output.assume_init() }
 }
 
 #[cfg(test)]
