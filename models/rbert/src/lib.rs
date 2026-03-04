@@ -482,8 +482,15 @@ impl Bert {
         match pooling {
             Pooling::Mean => {
                 // Take the mean embedding value for all tokens (except padding)
-                // For now, skip masking and just compute the mean
-                let embeddings = embeddings.sum::<2>(1).div_scalar(n_tokens as f32);
+                // Cast mask u32→f32, unsqueeze to [batch, seq_len, 1] for broadcasting
+                let mask_f32: Tensor<2, f32> = attention_mask.cast();
+                let mask_3d: Tensor<3, f32, _> = mask_f32.unsqueeze(2).to_concrete();
+                // Zero out padding positions, sum along seq dim → [batch, hidden_dim]
+                let masked_embeddings = (embeddings * mask_3d).to_concrete();
+                let summed = masked_embeddings.sum::<2>(1);
+                // Divide by valid token count [batch, 1] — broadcasts with [batch, hidden_dim]
+                let valid_count = mask_f32.sum_keepdim::<1>(1);
+                let embeddings = summed.div_(&valid_count);
                 let embeddings = normalize_l2(&embeddings);
                 Ok(embeddings
                     .chunk(n_sentences, 0)
@@ -515,5 +522,7 @@ impl Bert {
 }
 
 fn normalize_l2(v: &Tensor<2, f32>) -> Tensor<2, f32> {
-    v.div_(&v.sqr().to_concrete().sum_keepdim::<1>(1).sqrt())
+    let v_sqr = v.sqr().to_concrete();
+    let sum_sq = v_sqr.sum_keepdim::<1>(1);
+    v.div_(&(sum_sq + 1e-12f32).to_concrete().sqrt())
 }

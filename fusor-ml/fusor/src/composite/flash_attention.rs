@@ -58,9 +58,10 @@ where
     ) -> Self {
         match (self, k, v) {
             // GPU path - use the optimized fused kernel
-            // TODO: GPU flash_attention kernel currently only supports QKMask layout.
-            // BatchKeyMask is passed through but may not be interpreted correctly on GPU.
             (Tensor::Gpu(q), Tensor::Gpu(k), Tensor::Gpu(v)) => {
+                if let Some((_, MaskKind::BatchKeyMask)) = mask {
+                    panic!("GPU flash_attention does not yet support BatchKeyMask. Use CPU or convert to QKMask.");
+                }
                 let gpu_mask = mask.map(|(m, _kind)| match m {
                     Tensor::Gpu(mask) => mask,
                     _ => panic!("Mask must be on the same device as other tensors"),
@@ -148,14 +149,24 @@ where
 
         // Apply mask if provided
         let scores_masked = if let Some((m, kind)) = mask {
+            let m_shape = m.shape();
             let mask_4d: Tensor<4, D, _> = match kind {
                 MaskKind::QKMask => {
                     // Mask is [q_seq_len, kv_seq_len]
+                    assert_eq!(
+                        m_shape, [q_seq_len, kv_seq_len],
+                        "QKMask shape {:?} does not match expected [{}, {}]",
+                        m_shape, q_seq_len, kv_seq_len
+                    );
                     m.reshape([1, 1, q_seq_len, kv_seq_len])
                 }
                 MaskKind::BatchKeyMask => {
                     // Mask is [batch, kv_seq_len] — per-token validity mask
-                    let m_shape = m.shape();
+                    assert_eq!(
+                        m_shape, [batch, kv_seq_len],
+                        "BatchKeyMask shape {:?} does not match expected [{}, {}]",
+                        m_shape, batch, kv_seq_len
+                    );
                     m.reshape([m_shape[0], 1, 1, m_shape[1]])
                 }
             };
@@ -285,6 +296,50 @@ mod tests {
                         val.is_finite(),
                         "Non-finite value at [0, {}, {}, {}]: {}",
                         h,
+                        s,
+                        d,
+                        val
+                    );
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_flash_attention_cpu_with_batch_key_mask() {
+        // Test flash attention with a BatchKeyMask (padding mask)
+        // batch=2, heads=1, seq_len=3, dim=2
+        // Second sentence has last token masked (padding)
+        let q_data: Vec<f32> = (0..12).map(|i| (i as f32) * 0.1).collect();
+        let k_data: Vec<f32> = (0..12).map(|i| (i as f32) * 0.1 + 1.0).collect();
+        let v_data: Vec<f32> = (0..12).map(|i| (i as f32) * 0.1 + 2.0).collect();
+
+        let q: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 1, 3, 2], &q_data));
+        let k: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 1, 3, 2], &k_data));
+        let v: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 1, 3, 2], &v_data));
+
+        // BatchKeyMask: [batch=2, kv_seq_len=3]
+        // First sentence: all tokens valid. Second sentence: last token is padding.
+        let neg_inf = f32::NEG_INFINITY;
+        let mask_data = vec![0.0f32, 0.0, 0.0, 0.0, 0.0, neg_inf];
+        let mask: Tensor<2, f32> =
+            Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &mask_data));
+
+        let scale = 1.0 / (2.0_f32.sqrt());
+        let output = q.flash_attention(&k, &v, scale, Some((&mask, MaskKind::BatchKeyMask)));
+        let result = output.as_slice().await.unwrap();
+
+        assert_eq!(result.shape(), &[2, 1, 3, 2]);
+
+        // Verify all values are finite
+        for b in 0..2 {
+            for s in 0..3 {
+                for d in 0..2 {
+                    let val = result[[b, 0, s, d]];
+                    assert!(
+                        val.is_finite(),
+                        "Non-finite value at [{}, 0, {}, {}]: {}",
+                        b,
                         s,
                         d,
                         val

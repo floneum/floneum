@@ -1,6 +1,6 @@
 //! Type casting operations for tensors
 
-use crate::{ConcreteTensor, ResolvedTensor, SimdElement};
+use crate::{ConcreteTensor, LazyBacking, SimdElement};
 
 /// Trait for numeric types that can be cast to another type
 pub trait CastTo<T>: SimdElement {
@@ -100,7 +100,7 @@ where
         .shape()
         .try_into()
         .expect("Shape length mismatch");
-    ConcreteTensor::from_fn(shape, |i| input.data()[i].cast())
+    ConcreteTensor::from_fn(shape, |i| input.eval_scalar(i).cast())
 }
 
 #[cfg(test)]
