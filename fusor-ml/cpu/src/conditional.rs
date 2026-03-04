@@ -43,10 +43,16 @@ where
         .try_into()
         .expect("Shape length mismatch");
 
-    debug_assert_eq!(cond.layout().shape(), on_true.layout().shape(),
-        "where_cond: cond and on_true shape mismatch");
-    debug_assert_eq!(cond.layout().shape(), on_false.layout().shape(),
-        "where_cond: cond and on_false shape mismatch");
+    debug_assert_eq!(
+        cond.layout().shape(),
+        on_true.layout().shape(),
+        "where_cond: cond and on_true shape mismatch"
+    );
+    debug_assert_eq!(
+        cond.layout().shape(),
+        on_false.layout().shape(),
+        "where_cond: cond and on_false shape mismatch"
+    );
 
     let all_contiguous = cond.layout().is_contiguous()
         && on_true.layout().is_contiguous()

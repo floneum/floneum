@@ -638,13 +638,18 @@ fn process_range_with_acts<B: GgufBlock>(
     }
 
     // Handle remainder
-    for i in (n_tiles * NR)..chunk_n {
+    for (i, block) in out_chunk
+        .iter_mut()
+        .enumerate()
+        .take(chunk_n)
+        .skip(n_tiles * NR)
+    {
         let n_out = start_n + i;
         let mut sum = 0.0f32;
         for (block_idx, act) in act_blocks.iter().enumerate() {
             sum += rhs_blocks[n_out * blocks_per_weight_row + block_idx].vec_dot(act);
         }
-        out_chunk[i] = sum;
+        *block = sum;
     }
 }
 

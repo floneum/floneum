@@ -60,7 +60,9 @@ where
             // GPU path - use the optimized fused kernel
             (Tensor::Gpu(q), Tensor::Gpu(k), Tensor::Gpu(v)) => {
                 if let Some((_, MaskKind::BatchKeyMask)) = mask {
-                    panic!("GPU flash_attention does not yet support BatchKeyMask. Use CPU or convert to QKMask.");
+                    panic!(
+                        "GPU flash_attention does not yet support BatchKeyMask. Use CPU or convert to QKMask."
+                    );
                 }
                 let gpu_mask = mask.map(|(m, _kind)| match m {
                     Tensor::Gpu(mask) => mask,
@@ -154,18 +156,24 @@ where
                 MaskKind::QKMask => {
                     // Mask is [q_seq_len, kv_seq_len]
                     assert_eq!(
-                        m_shape, [q_seq_len, kv_seq_len],
+                        m_shape,
+                        [q_seq_len, kv_seq_len],
                         "QKMask shape {:?} does not match expected [{}, {}]",
-                        m_shape, q_seq_len, kv_seq_len
+                        m_shape,
+                        q_seq_len,
+                        kv_seq_len
                     );
                     m.reshape([1, 1, q_seq_len, kv_seq_len])
                 }
                 MaskKind::BatchKeyMask => {
                     // Mask is [batch, kv_seq_len] — per-token validity mask
                     assert_eq!(
-                        m_shape, [batch, kv_seq_len],
+                        m_shape,
+                        [batch, kv_seq_len],
                         "BatchKeyMask shape {:?} does not match expected [{}, {}]",
-                        m_shape, batch, kv_seq_len
+                        m_shape,
+                        batch,
+                        kv_seq_len
                     );
                     m.reshape([m_shape[0], 1, 1, m_shape[1]])
                 }
@@ -322,8 +330,7 @@ mod tests {
         // First sentence: all tokens valid. Second sentence: last token is padding.
         let neg_inf = f32::NEG_INFINITY;
         let mask_data = vec![0.0f32, 0.0, 0.0, 0.0, 0.0, neg_inf];
-        let mask: Tensor<2, f32> =
-            Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &mask_data));
+        let mask: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &mask_data));
 
         let scale = 1.0 / (2.0_f32.sqrt());
         let output = q.flash_attention(&k, &v, scale, Some((&mask, MaskKind::BatchKeyMask)));
