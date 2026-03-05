@@ -561,7 +561,7 @@ impl<'a> Resolver<'a> {
                     .collect();
 
                 // Each unique input needs a binding, plus 1 for output
-                if unique_inputs.len() + 1 > max_storage_bindings {
+                if unique_inputs.len() + 1 >= max_storage_bindings {
                     // Skip fusion - would exceed GPU binding limit
                     continue;
                 }

@@ -8,6 +8,7 @@ use crate::BertBuilder;
 use crate::BertError;
 use crate::BertLoadingError;
 use crate::Pooling;
+use fusor_core::ToVec2;
 pub use kalosm_language_model::{
     Embedder, EmbedderCacheExt, EmbedderExt, Embedding, EmbeddingInput, EmbeddingVariant,
 };
