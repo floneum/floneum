@@ -23,9 +23,6 @@ async fn main() {
     let summarizer = Summarizer::builder(model).build();
 
     let embedder = Bert::new().await.unwrap();
-    let chunked = summarizer
-        .chunk_batch(&documents, &embedder)
-        .await
-        .unwrap();
+    let chunked = summarizer.chunk_batch(&documents, &embedder).await.unwrap();
     println!("chunked: {chunked:?}");
 }
