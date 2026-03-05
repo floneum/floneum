@@ -20,10 +20,10 @@ async fn main() {
         .await
         .unwrap();
 
-    let hypothetical = Summarizer::builder(model).build();
+    let summarizer = Summarizer::builder(model).build();
 
     let embedder = Bert::new().await.unwrap();
-    let chunked = hypothetical
+    let chunked = summarizer
         .chunk_batch(&documents, &embedder)
         .await
         .unwrap();
