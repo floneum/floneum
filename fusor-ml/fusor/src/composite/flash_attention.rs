@@ -181,11 +181,18 @@ where
 
         // Softmax along last dimension
         // max(scores) for numerical stability
-        let max_scores = scores_masked.max_keepdim::<3>(3);
+        let scores_shape = scores_masked.shape();
+        let max_scores = scores_masked
+            .max_keepdim::<3>(3)
+            .broadcast_as(scores_shape)
+            .to_concrete();
         let scores_shifted = scores_masked - max_scores;
         // Materialize exp_scores since sum_keepdim is a reduction that needs concrete data
         let exp_scores = scores_shifted.exp();
-        let sum_exp = exp_scores.sum_keepdim::<3>(3);
+        let sum_exp = exp_scores
+            .sum_keepdim::<3>(3)
+            .broadcast_as(scores_shape)
+            .to_concrete();
         let attn_weights = exp_scores / sum_exp;
 
         // attn_weights @ V -> [batch, num_heads, q_seq_len, head_dim]
