@@ -57,29 +57,24 @@ where
         mask: Option<(&Tensor<2, D, ConcreteTensor<D, 2>>, MaskKind)>,
     ) -> Self {
         match (self, k, v) {
-            // GPU path - use the optimized fused kernel
-            (Tensor::Gpu(q), Tensor::Gpu(k), Tensor::Gpu(v)) => {
-                if let Some((_, MaskKind::BatchKeyMask)) = mask {
-                    panic!(
-                        "GPU flash_attention does not yet support BatchKeyMask. Use CPU or convert to QKMask."
-                    );
-                }
+            // GPU path - use the optimized fused kernel (QKMask only)
+            (Tensor::Gpu(q), Tensor::Gpu(k), Tensor::Gpu(v))
+                if !matches!(mask, Some((_, MaskKind::BatchKeyMask))) =>
+            {
                 let gpu_mask = mask.map(|(m, _kind)| match m {
                     Tensor::Gpu(mask) => mask,
                     _ => panic!("Mask must be on the same device as other tensors"),
                 });
                 Tensor::Gpu(q.flash_attention(k, v, scale, gpu_mask))
             }
-            // CPU path - use composite operations via Tensor methods
-            (Tensor::Cpu(_), Tensor::Cpu(_), Tensor::Cpu(_)) => {
-                self.flash_attention_cpu_impl(k, v, scale, mask)
-            }
-            _ => panic!("All tensors must be on the same device"),
+            // CPU path and GPU+BatchKeyMask fallback - use composite operations via Tensor methods
+            _ => self.flash_attention_composite_impl(k, v, scale, mask),
         }
     }
 
-    /// CPU implementation of flash attention using Tensor composite operations
-    fn flash_attention_cpu_impl(
+    /// Implementation of flash attention using Tensor composite operations.
+    /// Works on both CPU and GPU tensors (GPU uses individual ops instead of fused kernel).
+    fn flash_attention_composite_impl(
         &self,
         k: &Self,
         v: &Self,
