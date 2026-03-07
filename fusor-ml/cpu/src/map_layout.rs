@@ -64,9 +64,9 @@ impl<T: LazyBacking, const R: usize> LazyBacking for MapLayout<T, R> {
         if self.layout.is_contiguous() {
             self.backing.eval_scalar(idx)
         } else {
-            let shape: &[usize; R] = unsafe { self.layout.shape().try_into().unwrap_unchecked() };
+            let shape: &[usize; R] = self.layout.shape().try_into().unwrap();
             let logical_indices = linear_to_indices::<R>(idx, shape);
-            let physical_idx = unsafe { self.layout.linear_index_unchecked(&logical_indices) };
+            let physical_idx = self.layout.linear_index(&logical_indices);
             self.backing.eval_scalar(physical_idx)
         }
     }
@@ -80,12 +80,12 @@ impl<T: LazyBacking, const R: usize> LazyBacking for MapLayout<T, R> {
             let lane_count = std::mem::size_of::<<Self::Elem as SimdElement>::Simd<S>>()
                 / std::mem::size_of::<Self::Elem>();
 
-            let shape: &[usize; R] = unsafe { self.layout.shape().try_into().unwrap_unchecked() };
+            let shape: &[usize; R] = self.layout.shape().try_into().unwrap();
 
             let mut temp = [Self::Elem::default(); MAX_SIMD_LANES];
             for (i, temp_elem) in temp.iter_mut().enumerate().take(lane_count) {
                 let logical_indices = linear_to_indices::<R>(base_idx + i, shape);
-                let physical_idx = unsafe { self.layout.linear_index_unchecked(&logical_indices) };
+                let physical_idx = self.layout.linear_index(&logical_indices);
                 *temp_elem = self.backing.eval_scalar(physical_idx);
             }
 

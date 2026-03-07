@@ -4,7 +4,7 @@ use fusor::{
 };
 use fusor_gguf::GgufMetadata;
 
-use crate::raw::rope::RopeCache;
+use fusor::RopeCache;
 
 use super::{
     qwen_image_processing::process_image,
@@ -358,8 +358,8 @@ where
         // Work in f32 for cos/sin operations
         let rotary_pos_emb_f32: Tensor<2, f32> = rotary_pos_emb.cast();
         let rope_cache = RopeCache::from_parts(
-            rotary_pos_emb_f32.cos().cast(),
-            rotary_pos_emb_f32.sin().cast(),
+            rotary_pos_emb_f32.cos().to_concrete(),
+            rotary_pos_emb_f32.sin().to_concrete(),
         );
 
         let cu_seqlens = grid_thw

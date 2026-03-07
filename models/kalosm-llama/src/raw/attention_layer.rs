@@ -444,7 +444,7 @@ where
         key_states,
         value_states,
         scale as f32,
-        attention_mask.map(|m| m.mask()),
+        attention_mask.map(|m| (m.mask(), fusor::MaskKind::QKMask)),
     );
 
     let attn_output = attn_output.transpose(1, 2);

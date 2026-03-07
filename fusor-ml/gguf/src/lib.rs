@@ -169,65 +169,35 @@ impl TryFrom<u32> for GgufVersion {
     }
 }
 
-fn read_le_u8<R: std::io::Read>(reader: &mut R) -> Result<u8, GgufReadError> {
-    let mut bytes = [0; 1];
-    reader.read_exact(&mut bytes)?;
-    Ok(u8::from_le_bytes(bytes))
+macro_rules! define_read_le {
+    ($($ty:ty),*) => {
+        paste::paste! {
+            $(
+                fn [<read_le_ $ty>]<R: std::io::Read>(reader: &mut R) -> Result<$ty, GgufReadError> {
+                    let mut bytes = [0u8; std::mem::size_of::<$ty>()];
+                    reader.read_exact(&mut bytes)?;
+                    Ok(<$ty>::from_le_bytes(bytes))
+                }
+            )*
+        }
+    };
 }
 
-fn read_le_u16<R: std::io::Read>(reader: &mut R) -> Result<u16, GgufReadError> {
-    let mut bytes = [0; 2];
-    reader.read_exact(&mut bytes)?;
-    Ok(u16::from_le_bytes(bytes))
+macro_rules! define_write_le {
+    ($($ty:ty),*) => {
+        paste::paste! {
+            $(
+                fn [<write_le_ $ty>]<W: std::io::Write>(writer: &mut W, value: $ty) -> Result<(), GgufWriteError> {
+                    writer.write_all(&value.to_le_bytes())?;
+                    Ok(())
+                }
+            )*
+        }
+    };
 }
 
-fn read_le_u32<R: std::io::Read>(reader: &mut R) -> Result<u32, GgufReadError> {
-    let mut bytes = [0; 4];
-    reader.read_exact(&mut bytes)?;
-    Ok(u32::from_le_bytes(bytes))
-}
-
-fn read_le_u64<R: std::io::Read>(reader: &mut R) -> Result<u64, GgufReadError> {
-    let mut bytes = [0; 8];
-    reader.read_exact(&mut bytes)?;
-    Ok(u64::from_le_bytes(bytes))
-}
-
-fn read_le_i8<R: std::io::Read>(reader: &mut R) -> Result<i8, GgufReadError> {
-    let mut bytes = [0; 1];
-    reader.read_exact(&mut bytes)?;
-    Ok(i8::from_le_bytes(bytes))
-}
-
-fn read_le_i16<R: std::io::Read>(reader: &mut R) -> Result<i16, GgufReadError> {
-    let mut bytes = [0; 2];
-    reader.read_exact(&mut bytes)?;
-    Ok(i16::from_le_bytes(bytes))
-}
-
-fn read_le_i32<R: std::io::Read>(reader: &mut R) -> Result<i32, GgufReadError> {
-    let mut bytes = [0; 4];
-    reader.read_exact(&mut bytes)?;
-    Ok(i32::from_le_bytes(bytes))
-}
-
-fn read_le_i64<R: std::io::Read>(reader: &mut R) -> Result<i64, GgufReadError> {
-    let mut bytes = [0; 8];
-    reader.read_exact(&mut bytes)?;
-    Ok(i64::from_le_bytes(bytes))
-}
-
-fn read_le_f32<R: std::io::Read>(reader: &mut R) -> Result<f32, GgufReadError> {
-    let mut bytes = [0; 4];
-    reader.read_exact(&mut bytes)?;
-    Ok(f32::from_le_bytes(bytes))
-}
-
-fn read_le_f64<R: std::io::Read>(reader: &mut R) -> Result<f64, GgufReadError> {
-    let mut bytes = [0; 8];
-    reader.read_exact(&mut bytes)?;
-    Ok(f64::from_le_bytes(bytes))
-}
+define_read_le!(u8, u16, u32, u64, i8, i16, i32, i64, f32, f64);
+define_write_le!(u8, u16, u32, u64, i8, i16, i32, i64, f32, f64);
 
 fn read_array_length<R: std::io::Read>(
     reader: &mut R,
@@ -237,56 +207,6 @@ fn read_array_length<R: std::io::Read>(
         GgufVersion::V1 => read_le_u32(reader)? as usize,
         GgufVersion::V2 | GgufVersion::V3 => read_le_u64(reader)? as usize,
     })
-}
-
-fn write_le_u8<W: std::io::Write>(writer: &mut W, value: u8) -> Result<(), GgufWriteError> {
-    writer.write_all(&value.to_le_bytes())?;
-    Ok(())
-}
-
-fn write_le_u16<W: std::io::Write>(writer: &mut W, value: u16) -> Result<(), GgufWriteError> {
-    writer.write_all(&value.to_le_bytes())?;
-    Ok(())
-}
-
-fn write_le_u32<W: std::io::Write>(writer: &mut W, value: u32) -> Result<(), GgufWriteError> {
-    writer.write_all(&value.to_le_bytes())?;
-    Ok(())
-}
-
-fn write_le_u64<W: std::io::Write>(writer: &mut W, value: u64) -> Result<(), GgufWriteError> {
-    writer.write_all(&value.to_le_bytes())?;
-    Ok(())
-}
-
-fn write_le_i8<W: std::io::Write>(writer: &mut W, value: i8) -> Result<(), GgufWriteError> {
-    writer.write_all(&value.to_le_bytes())?;
-    Ok(())
-}
-
-fn write_le_i16<W: std::io::Write>(writer: &mut W, value: i16) -> Result<(), GgufWriteError> {
-    writer.write_all(&value.to_le_bytes())?;
-    Ok(())
-}
-
-fn write_le_i32<W: std::io::Write>(writer: &mut W, value: i32) -> Result<(), GgufWriteError> {
-    writer.write_all(&value.to_le_bytes())?;
-    Ok(())
-}
-
-fn write_le_i64<W: std::io::Write>(writer: &mut W, value: i64) -> Result<(), GgufWriteError> {
-    writer.write_all(&value.to_le_bytes())?;
-    Ok(())
-}
-
-fn write_le_f32<W: std::io::Write>(writer: &mut W, value: f32) -> Result<(), GgufWriteError> {
-    writer.write_all(&value.to_le_bytes())?;
-    Ok(())
-}
-
-fn write_le_f64<W: std::io::Write>(writer: &mut W, value: f64) -> Result<(), GgufWriteError> {
-    writer.write_all(&value.to_le_bytes())?;
-    Ok(())
 }
 
 fn write_array_length<W: std::io::Write>(
@@ -371,6 +291,32 @@ pub struct GgufMetadata {
     pub metadata: FxHashMap<Box<str>, GgufValue>,
     pub tensor_infos: FxHashMap<Box<str>, GgufTensorMetadata>,
     pub tensor_data_offset: u64,
+}
+
+impl GgufMetadata {
+    /// Look up a metadata value by key with suffix-aware matching.
+    ///
+    /// If the key starts with `.`, searches for metadata keys that end with the given suffix
+    /// and returns the value for the shortest matching key. This allows architecture-prefixed
+    /// keys like `qwen3.attention.head_count` to be found with `.attention.head_count`.
+    pub fn get_value(&self, key: &str) -> Option<&GgufValue> {
+        if key.starts_with('.') {
+            self.metadata
+                .iter()
+                .filter(|(k, _)| k.ends_with(key))
+                .min_by_key(|(k, _)| k.len())
+                .map(|(_, v)| v)
+        } else {
+            self.metadata.get(key)
+        }
+    }
+
+    /// Get the model architecture from the `general.architecture` metadata key.
+    pub fn architecture(&self) -> Option<String> {
+        self.get_value("general.architecture")
+            .and_then(|v| v.to_string().ok())
+            .map(|s| s.to_string())
+    }
 }
 
 fn read_string<R: std::io::Read>(
@@ -876,20 +822,51 @@ impl GgufBlock for BlockQ4_0 {
         }
     }
 
-    #[cfg(not(all(target_arch = "aarch64", nightly)))]
+    #[cfg(target_arch = "x86_64")]
     fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
-        const CENTER: i8 = 8;
-        let mut sum: i32 = 0;
+        let sum = if is_x86_feature_detected!("avx2") {
+            #[target_feature(enable = "avx2")]
+            unsafe fn dot_avx2(q4_data: *const u8, q8_data: *const i8) -> i32 {
+                use std::arch::x86_64::*;
+                unsafe {
+                    // Load 16 packed Q4_0 bytes
+                    let q4_packed = _mm_loadu_si128(q4_data as *const __m128i);
+                    // Unpack: low nibbles in lower lane, high nibbles in upper lane
+                    let lo = _mm256_castsi128_si256(q4_packed);
+                    let q4_256 = _mm256_inserti128_si256(lo, _mm_srli_epi32(q4_packed, 4), 1);
+                    let q4_bytes = _mm256_and_si256(q4_256, _mm256_set1_epi8(0x0F));
+                    // Center: subtract 8 (Q4_0 values 0-15 → -8..+7)
+                    let centered = _mm256_sub_epi8(q4_bytes, _mm256_set1_epi8(8));
+                    // Load 32 Q8_0 activation values
+                    let qy = _mm256_loadu_si256(q8_data as *const __m256i);
+                    // Sign trick for signed × signed dot product
+                    let qxabs = _mm256_sign_epi8(centered, centered);
+                    let qysign = _mm256_sign_epi8(qy, centered);
+                    // maddubs: pairs of u8 × i8 → saturated i16, then madd to i32
+                    let prod16 = _mm256_maddubs_epi16(qxabs, qysign);
+                    let prod32 = _mm256_madd_epi16(prod16, _mm256_set1_epi16(1));
+                    // Horizontal sum of 8 i32 lanes
+                    let hi128 = _mm256_extracti128_si256(prod32, 1);
+                    let lo128 = _mm256_castsi256_si128(prod32);
+                    let sum128 = _mm_add_epi32(lo128, hi128);
+                    let hi64 = _mm_shuffle_epi32(sum128, 0x4E);
+                    let sum64 = _mm_add_epi32(sum128, hi64);
+                    let hi32 = _mm_shuffle_epi32(sum64, 0xB1);
+                    let result = _mm_add_epi32(sum64, hi32);
+                    _mm_cvtsi128_si32(result)
+                }
+            }
+            unsafe { dot_avx2(self.data.as_ptr(), y.data.as_ptr()) }
+        } else {
+            q4_0_vec_dot_scalar(&self.data, &y.data)
+        };
+        let scale = self.scale.to_f32() * y.scale.to_f32();
+        (sum as f32) * scale
+    }
 
-        for i in 0..16 {
-            let byte = self.data[i];
-            let q4_lo = (byte & 0x0F) as i8 - CENTER;
-            let q4_hi = (byte >> 4) as i8 - CENTER;
-
-            sum += (q4_lo as i32) * (y.data[i] as i32);
-            sum += (q4_hi as i32) * (y.data[i + 16] as i32);
-        }
-
+    #[cfg(not(any(all(target_arch = "aarch64", nightly), target_arch = "x86_64")))]
+    fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
+        let sum = q4_0_vec_dot_scalar(&self.data, &y.data);
         let scale = self.scale.to_f32() * y.scale.to_f32();
         (sum as f32) * scale
     }
@@ -898,6 +875,20 @@ impl GgufBlock for BlockQ4_0 {
         let arr: &[f32; 32] = data.try_into().expect("data must have 32 elements");
         BlockQ8_0::quantize(arr)
     }
+}
+
+#[inline(always)]
+fn q4_0_vec_dot_scalar(data: &[u8; 16], y_data: &[i8; 32]) -> i32 {
+    const CENTER: i8 = 8;
+    let mut sum: i32 = 0;
+    for i in 0..16 {
+        let byte = data[i];
+        let q4_lo = (byte & 0x0F) as i8 - CENTER;
+        let q4_hi = (byte >> 4) as i8 - CENTER;
+        sum += (q4_lo as i32) * (y_data[i] as i32);
+        sum += (q4_hi as i32) * (y_data[i + 16] as i32);
+    }
+    sum
 }
 
 const Q5_0_BLOCK_SIZE: usize = 32;
@@ -1092,7 +1083,19 @@ impl BlockQ8_0 {
     /// This finds the maximum absolute value, computes a scale factor,
     /// and quantizes each value to an i8 in the range [-127, 127].
     pub fn quantize(data: &[f32; 32]) -> Self {
-        // Find max absolute value for scale
+        #[cfg(target_arch = "x86_64")]
+        {
+            if is_x86_feature_detected!("avx2") {
+                // Safety: AVX2 is detected at runtime
+                return unsafe { Self::quantize_avx2(data) };
+            }
+        }
+
+        Self::quantize_scalar(data)
+    }
+
+    #[inline(always)]
+    fn quantize_scalar(data: &[f32; 32]) -> Self {
         let max_abs = data.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
         let scale = max_abs / 127.0;
         let inv_scale = if max_abs != 0.0 { 127.0 / max_abs } else { 0.0 };
@@ -1105,6 +1108,72 @@ impl BlockQ8_0 {
         Self {
             scale: half::f16::from_f32(scale),
             data: qs,
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx2")]
+    unsafe fn quantize_avx2(data: &[f32; 32]) -> Self {
+        use std::arch::x86_64::*;
+        unsafe {
+            // Load 32 floats (4 × __m256)
+            let v0 = _mm256_loadu_ps(data.as_ptr());
+            let v1 = _mm256_loadu_ps(data.as_ptr().add(8));
+            let v2 = _mm256_loadu_ps(data.as_ptr().add(16));
+            let v3 = _mm256_loadu_ps(data.as_ptr().add(24));
+
+            // Find max absolute value (clear sign bit)
+            let abs_mask = _mm256_castsi256_ps(_mm256_set1_epi32(0x7FFF_FFFFu32 as i32));
+            let abs0 = _mm256_and_ps(v0, abs_mask);
+            let abs1 = _mm256_and_ps(v1, abs_mask);
+            let abs2 = _mm256_and_ps(v2, abs_mask);
+            let abs3 = _mm256_and_ps(v3, abs_mask);
+            let max_all = _mm256_max_ps(_mm256_max_ps(abs0, abs1), _mm256_max_ps(abs2, abs3));
+
+            // Horizontal max of 8 floats
+            let hi128 = _mm256_extractf128_ps(max_all, 1);
+            let lo128 = _mm256_castps256_ps128(max_all);
+            let max128 = _mm_max_ps(lo128, hi128);
+            let max64 = _mm_max_ps(max128, _mm_movehl_ps(max128, max128));
+            let max32 = _mm_max_ss(max64, _mm_shuffle_ps(max64, max64, 1));
+            let max_abs = _mm_cvtss_f32(max32);
+
+            let scale = max_abs / 127.0;
+            let inv_scale = if max_abs != 0.0 { 127.0 / max_abs } else { 0.0 };
+            let s = _mm256_set1_ps(inv_scale);
+
+            // Scale and round to nearest integer
+            let q0 = _mm256_cvtps_epi32(_mm256_mul_ps(v0, s));
+            let q1 = _mm256_cvtps_epi32(_mm256_mul_ps(v1, s));
+            let q2 = _mm256_cvtps_epi32(_mm256_mul_ps(v2, s));
+            let q3 = _mm256_cvtps_epi32(_mm256_mul_ps(v3, s));
+
+            // Pack i32 → i16 → i8 using SSE to avoid AVX2 lane interleaving
+            let q0_lo = _mm256_castsi256_si128(q0);
+            let q0_hi = _mm256_extracti128_si256(q0, 1);
+            let q1_lo = _mm256_castsi256_si128(q1);
+            let q1_hi = _mm256_extracti128_si256(q1, 1);
+            let q2_lo = _mm256_castsi256_si128(q2);
+            let q2_hi = _mm256_extracti128_si256(q2, 1);
+            let q3_lo = _mm256_castsi256_si128(q3);
+            let q3_hi = _mm256_extracti128_si256(q3, 1);
+
+            let p0 = _mm_packs_epi32(q0_lo, q0_hi); // data[0..8] as i16
+            let p1 = _mm_packs_epi32(q1_lo, q1_hi); // data[8..16] as i16
+            let p2 = _mm_packs_epi32(q2_lo, q2_hi); // data[16..24] as i16
+            let p3 = _mm_packs_epi32(q3_lo, q3_hi); // data[24..32] as i16
+
+            let b_lo = _mm_packs_epi16(p0, p1); // data[0..16] as i8
+            let b_hi = _mm_packs_epi16(p2, p3); // data[16..32] as i8
+
+            let mut qs = [0i8; 32];
+            _mm_storeu_si128(qs.as_mut_ptr() as *mut __m128i, b_lo);
+            _mm_storeu_si128(qs.as_mut_ptr().add(16) as *mut __m128i, b_hi);
+
+            Self {
+                scale: half::f16::from_f32(scale),
+                data: qs,
+            }
         }
     }
 }
@@ -1187,12 +1256,43 @@ impl GgufBlock for BlockQ8_0 {
         }
     }
 
-    #[cfg(not(all(target_arch = "aarch64", nightly)))]
+    #[cfg(target_arch = "x86_64")]
     fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
-        let mut sum: i32 = 0;
-        for i in 0..32 {
-            sum += (self.data[i] as i32) * (y.data[i] as i32);
-        }
+        let sum = if is_x86_feature_detected!("avx2") {
+            #[target_feature(enable = "avx2")]
+            unsafe fn dot_avx2(x_data: *const i8, y_data: *const i8) -> i32 {
+                use std::arch::x86_64::*;
+                unsafe {
+                    let qx = _mm256_loadu_si256(x_data as *const __m256i);
+                    let qy = _mm256_loadu_si256(y_data as *const __m256i);
+                    // Sign trick: abs(x) * (y * sign(x))
+                    let qxabs = _mm256_sign_epi8(qx, qx);
+                    let qysign = _mm256_sign_epi8(qy, qx);
+                    // maddubs: pairs of u8 × i8 → saturated i16, then madd to i32
+                    let prod16 = _mm256_maddubs_epi16(qxabs, qysign);
+                    let prod32 = _mm256_madd_epi16(prod16, _mm256_set1_epi16(1));
+                    // Horizontal sum of 8 i32 lanes
+                    let hi128 = _mm256_extracti128_si256(prod32, 1);
+                    let lo128 = _mm256_castsi256_si128(prod32);
+                    let sum128 = _mm_add_epi32(lo128, hi128);
+                    let hi64 = _mm_shuffle_epi32(sum128, 0x4E);
+                    let sum64 = _mm_add_epi32(sum128, hi64);
+                    let hi32 = _mm_shuffle_epi32(sum64, 0xB1);
+                    let result = _mm_add_epi32(sum64, hi32);
+                    _mm_cvtsi128_si32(result)
+                }
+            }
+            unsafe { dot_avx2(self.data.as_ptr(), y.data.as_ptr()) }
+        } else {
+            q8_0_vec_dot_scalar(&self.data, &y.data)
+        };
+        let scale = self.scale.to_f32() * y.scale.to_f32();
+        (sum as f32) * scale
+    }
+
+    #[cfg(not(any(all(target_arch = "aarch64", nightly), target_arch = "x86_64")))]
+    fn vec_dot(&self, y: &Self::ActivationBlock) -> f32 {
+        let sum = q8_0_vec_dot_scalar(&self.data, &y.data);
         let scale = self.scale.to_f32() * y.scale.to_f32();
         (sum as f32) * scale
     }
@@ -1201,6 +1301,15 @@ impl GgufBlock for BlockQ8_0 {
         let arr: &[f32; 32] = data.try_into().expect("data must have 32 elements");
         BlockQ8_0::quantize(arr)
     }
+}
+
+#[inline(always)]
+fn q8_0_vec_dot_scalar(x_data: &[i8; 32], y_data: &[i8; 32]) -> i32 {
+    let mut sum: i32 = 0;
+    for i in 0..32 {
+        sum += (x_data[i] as i32) * (y_data[i] as i32);
+    }
+    sum
 }
 
 const K_BLOCK_SIZE: usize = 256;

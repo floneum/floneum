@@ -74,7 +74,7 @@ where
         )
     }
 
-    /// Product along a specific axis, broadcasting result back to original shape.
+    /// Product along a specific axis, keeping the reduced dimension with size 1.
     pub fn product_keepdim<const OUT_RANK: usize>(&self, axis: usize) -> Tensor<R, D>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
@@ -87,7 +87,7 @@ where
             Tensor::Cpu(t) => {
                 let reduced = t.as_ref().prod_axis::<OUT_RANK>(axis);
                 let original_shape: [usize; R] = t.shape();
-                Tensor::Cpu(broadcast_reduced_to_original::<R, OUT_RANK, D>(
+                Tensor::Cpu(unsqueeze_at_axis::<R, OUT_RANK, D>(
                     &reduced,
                     original_shape,
                     axis,
@@ -97,12 +97,7 @@ where
         }
     }
 
-    /// Sum along a specific axis, broadcasting result back to original shape.
-    ///
-    /// For CPU: Returns a tensor with the original shape where values are repeated
-    /// along the reduced axis. This enables element-wise operations without explicit broadcasting.
-    ///
-    /// For GPU: Uses native keepdim which supports broadcasting.
+    /// Sum along a specific axis, keeping the reduced dimension with size 1.
     pub fn sum_keepdim<const OUT_RANK: usize>(&self, axis: usize) -> Tensor<R, D>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
@@ -113,10 +108,9 @@ where
     {
         match self {
             Tensor::Cpu(t) => {
-                // CPU: reduce, then broadcast back to original shape
                 let reduced = t.as_ref().sum_axis::<OUT_RANK>(axis);
                 let original_shape: [usize; R] = t.shape();
-                Tensor::Cpu(broadcast_reduced_to_original::<R, OUT_RANK, D>(
+                Tensor::Cpu(unsqueeze_at_axis::<R, OUT_RANK, D>(
                     &reduced,
                     original_shape,
                     axis,
@@ -126,7 +120,7 @@ where
         }
     }
 
-    /// Max along a specific axis, broadcasting result back to original shape.
+    /// Max along a specific axis, keeping the reduced dimension with size 1.
     pub fn max_keepdim<const OUT_RANK: usize>(&self, axis: usize) -> Tensor<R, D>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
@@ -139,7 +133,7 @@ where
             Tensor::Cpu(t) => {
                 let reduced = t.as_ref().max_axis::<OUT_RANK>(axis);
                 let original_shape: [usize; R] = t.shape();
-                Tensor::Cpu(broadcast_reduced_to_original::<R, OUT_RANK, D>(
+                Tensor::Cpu(unsqueeze_at_axis::<R, OUT_RANK, D>(
                     &reduced,
                     original_shape,
                     axis,
@@ -149,7 +143,7 @@ where
         }
     }
 
-    /// Min along a specific axis, broadcasting result back to original shape.
+    /// Min along a specific axis, keeping the reduced dimension with size 1.
     pub fn min_keepdim<const OUT_RANK: usize>(&self, axis: usize) -> Tensor<R, D>
     where
         ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
@@ -162,7 +156,7 @@ where
             Tensor::Cpu(t) => {
                 let reduced = t.as_ref().min_axis::<OUT_RANK>(axis);
                 let original_shape: [usize; R] = t.shape();
-                Tensor::Cpu(broadcast_reduced_to_original::<R, OUT_RANK, D>(
+                Tensor::Cpu(unsqueeze_at_axis::<R, OUT_RANK, D>(
                     &reduced,
                     original_shape,
                     axis,
@@ -262,10 +256,10 @@ where
     }
 }
 
-/// Helper function to broadcast a reduced tensor back to the original shape.
+/// Helper function to unsqueeze a reduced tensor back to original rank with size 1 at the axis.
 /// The reduced tensor has OUT_RANK dimensions (one less than original R).
-/// The result has the original R dimensions with values repeated along the reduced axis.
-fn broadcast_reduced_to_original<const R: usize, const OUT_RANK: usize, D>(
+/// The result has R dimensions with size 1 at the reduced axis (standard keepdim semantics).
+fn unsqueeze_at_axis<const R: usize, const OUT_RANK: usize, D>(
     reduced: &fusor_cpu::Tensor<OUT_RANK, ConcreteTensor<D, OUT_RANK>>,
     original_shape: [usize; R],
     axis: usize,
@@ -274,30 +268,27 @@ where
     D: SimdElement + Default,
     ConcreteTensor<D, R>: CpuLastRank<OUT_RANK, D>,
 {
-    let total_elements: usize = original_shape.iter().product();
+    // Build keepdim shape: same as original but with size 1 at axis
+    let mut keepdim_shape = original_shape;
+    keepdim_shape[axis] = 1;
+
+    // Collect all elements from the reduced tensor
+    let reduced_shape = reduced.shape();
+    let total_elements: usize = reduced_shape.iter().product();
     let reduced_concrete = reduced.to_concrete();
     let data: Vec<D> = (0..total_elements)
         .map(|i| {
-            // Convert linear index to original shape indices
-            let mut indices = [0usize; R];
+            // Convert linear index to reduced shape indices
+            let mut indices = [0usize; OUT_RANK];
             let mut remainder = i;
-            for dim in (0..R).rev() {
-                indices[dim] = remainder % original_shape[dim];
-                remainder /= original_shape[dim];
+            for dim in (0..OUT_RANK).rev() {
+                indices[dim] = remainder % reduced_shape[dim];
+                remainder /= reduced_shape[dim];
             }
-            // Map to reduced tensor indices (skip axis dimension)
-            let mut reduced_idx = [0usize; OUT_RANK];
-            let mut j = 0;
-            for (dim, &idx) in indices.iter().enumerate().take(R) {
-                if dim != axis {
-                    reduced_idx[j] = idx;
-                    j += 1;
-                }
-            }
-            reduced_concrete.get(reduced_idx)
+            reduced_concrete.get(indices)
         })
         .collect();
-    fusor_cpu::Tensor::from_slice(original_shape, &data)
+    fusor_cpu::Tensor::from_slice(keepdim_shape, &data)
 }
 
 #[cfg(test)]
@@ -362,20 +353,13 @@ mod tests {
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
         let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
 
-        // Sum along axis 1, broadcast back to original shape
+        // Sum along axis 1, keepdim -> shape [2, 1]
         // Row 0 sum: 1+2+3 = 6, Row 1 sum: 4+5+6 = 15
-        // Result: [[6, 6, 6], [15, 15, 15]]
         let result = t.sum_keepdim::<1>(1);
-        assert_eq!(result.shape(), [2, 3]); // Original shape, not [2, 1]
+        assert_eq!(result.shape(), [2, 1]); // Keepdim shape
         let slice = result.as_slice().await.unwrap();
-        // Row 0 all have the same sum value
         assert!((slice[[0, 0]] - 6.0).abs() < 0.001);
-        assert!((slice[[0, 1]] - 6.0).abs() < 0.001);
-        assert!((slice[[0, 2]] - 6.0).abs() < 0.001);
-        // Row 1 all have the same sum value
         assert!((slice[[1, 0]] - 15.0).abs() < 0.001);
-        assert!((slice[[1, 1]] - 15.0).abs() < 0.001);
-        assert!((slice[[1, 2]] - 15.0).abs() < 0.001);
     }
 
     #[tokio::test]
@@ -397,18 +381,12 @@ mod tests {
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
         let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
 
-        // Mean along axis 1, broadcast back: [[2, 2, 2], [5, 5, 5]]
+        // Mean along axis 1, keepdim -> shape [2, 1]
         let result = t.mean_keepdim::<1>(1);
-        assert_eq!(result.shape(), [2, 3]); // Original shape
+        assert_eq!(result.shape(), [2, 1]); // Keepdim shape
         let slice = result.as_slice().await.unwrap();
-        // Row 0: mean = 2
         assert!((slice[[0, 0]] - 2.0).abs() < 0.001);
-        assert!((slice[[0, 1]] - 2.0).abs() < 0.001);
-        assert!((slice[[0, 2]] - 2.0).abs() < 0.001);
-        // Row 1: mean = 5
         assert!((slice[[1, 0]] - 5.0).abs() < 0.001);
-        assert!((slice[[1, 1]] - 5.0).abs() < 0.001);
-        assert!((slice[[1, 2]] - 5.0).abs() < 0.001);
     }
 
     #[tokio::test]
@@ -452,15 +430,10 @@ mod tests {
         let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
 
         let result = t.var_keepdim::<1>(1);
-        assert_eq!(result.shape(), [2, 3]); // Original shape, broadcast
+        assert_eq!(result.shape(), [2, 1]); // Keepdim shape
         let slice = result.as_slice().await.unwrap();
         let expected = 2.0 / 3.0;
-        // Both rows have the same variance, broadcast across all columns
         assert!((slice[[0, 0]] - expected).abs() < 0.001);
-        assert!((slice[[0, 1]] - expected).abs() < 0.001);
-        assert!((slice[[0, 2]] - expected).abs() < 0.001);
         assert!((slice[[1, 0]] - expected).abs() < 0.001);
-        assert!((slice[[1, 1]] - expected).abs() < 0.001);
-        assert!((slice[[1, 2]] - expected).abs() < 0.001);
     }
 }

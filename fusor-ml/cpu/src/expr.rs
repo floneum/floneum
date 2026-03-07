@@ -7,7 +7,7 @@
 
 use pulp::{Arch, Simd, WithSimd};
 
-use crate::{ConcreteTensor, ResolvedTensor, SimdElement, TensorBacking};
+use crate::{ConcreteTensor, SimdElement, TensorBacking};
 
 /// Helper to get SIMD lane count for a given element type and SIMD architecture
 #[inline(always)]
@@ -15,13 +15,14 @@ fn simd_lane_count<E: SimdElement, S: Simd>() -> usize {
     std::mem::size_of::<E::Simd<S>>() / std::mem::size_of::<E>()
 }
 
-/// Evaluates a tensor backing into an output slice using SIMD.
+/// Evaluates a tensor backing into output memory using SIMD.
 ///
 /// This is the core evaluation loop that fuses all operations in an
 /// expression tree into a single pass over the data.
 struct TensorEvaluator<'a, T: TensorBacking<R>, const R: usize> {
     tensor: &'a T,
-    output: &'a mut [T::Elem],
+    out: &'a mut [T::Elem],
+    /// Logical offset into the tensor for this chunk
     base_offset: usize,
 }
 
@@ -30,19 +31,19 @@ impl<T: TensorBacking<R>, const R: usize> WithSimd for TensorEvaluator<'_, T, R>
 
     #[inline(always)]
     fn with_simd<S: Simd>(self, simd: S) -> Self::Output {
-        let lane_count = simd_lane_count::<T::Elem, S>();
-        let (out_simd, out_tail) = T::Elem::as_mut_simd::<S>(self.output);
+        let (simd_out, scalar_out) = T::Elem::as_mut_simd::<S>(self.out);
 
-        // Main SIMD loop - evaluates full vectors
-        for (i, out) in out_simd.iter_mut().enumerate() {
+        // Main SIMD loop
+        let lane_count = simd_lane_count::<T::Elem, S>();
+        for (i, out_vec) in simd_out.iter_mut().enumerate() {
             let base_idx = self.base_offset + i * lane_count;
-            *out = self.tensor.eval_simd(simd, base_idx);
+            *out_vec = self.tensor.eval_simd(simd, base_idx);
         }
 
         // Scalar tail - handles remaining elements
-        let simd_len = out_simd.len() * lane_count;
-        for (i, out) in out_tail.iter_mut().enumerate() {
-            *out = self.tensor.eval_scalar(self.base_offset + simd_len + i);
+        let scalar_start = simd_out.len() * lane_count;
+        for (i, out_val) in scalar_out.iter_mut().enumerate() {
+            *out_val = self.tensor.eval_scalar(self.base_offset + scalar_start + i);
         }
     }
 }
@@ -68,49 +69,56 @@ pub fn materialize_expr<T: TensorBacking<R> + Sync, const R: usize>(
     tensor: &T,
     shape: [usize; R],
 ) -> ConcreteTensor<T::Elem, R> {
-    let mut output = ConcreteTensor::uninit_unchecked(shape);
-    let total_elements = output.data_mut().len();
+    let mut output = ConcreteTensor::<T::Elem, R>::zeros(shape);
+    let total_elements = output.backing().len();
 
     let n_threads = crate::parallel::num_threads();
 
     // Use parallel execution for large tensors
     if total_elements >= PARALLEL_THRESHOLD && n_threads > 1 {
-        let chunk_size = total_elements.div_ceil(n_threads);
+        // Align chunk boundaries to MAX_SIMD_LANES to maintain SIMD alignment across chunks
+        let raw_chunk = total_elements.div_ceil(n_threads);
+        let chunk_size = raw_chunk.next_multiple_of(crate::MAX_SIMD_LANES);
+        let out_slice: &mut [T::Elem] = output.backing_mut();
 
         std::thread::scope(|scope| {
-            let mut remaining = output.data_mut() as &mut [T::Elem];
-            let mut base_offset = 0;
+            let mut remaining_slice = out_slice;
+            let mut offset = 0;
 
             for thread_id in 0..n_threads {
-                if remaining.is_empty() {
+                if remaining_slice.is_empty() {
                     break;
                 }
 
+                let remaining = total_elements - offset;
                 let this_size = if thread_id == n_threads - 1 {
-                    remaining.len()
+                    remaining
                 } else {
-                    chunk_size.min(remaining.len())
+                    chunk_size.min(remaining)
                 };
 
-                let (chunk, rest) = remaining.split_at_mut(this_size);
-                remaining = rest;
-                let current_offset = base_offset;
-                base_offset += this_size;
+                let (thread_slice, rest) = remaining_slice.split_at_mut(this_size);
+                remaining_slice = rest;
+                let current_offset = offset;
+                offset += this_size;
+
+                let evaluator = TensorEvaluator {
+                    tensor,
+                    out: thread_slice,
+                    base_offset: current_offset,
+                };
 
                 scope.spawn(move || {
-                    Arch::new().dispatch(TensorEvaluator {
-                        tensor,
-                        output: chunk,
-                        base_offset: current_offset,
-                    });
+                    Arch::new().dispatch(evaluator);
                 });
             }
         });
     } else {
         // Small tensor: single-threaded execution
+        let out_slice: &mut [T::Elem] = output.backing_mut();
         Arch::new().dispatch(TensorEvaluator {
             tensor,
-            output: output.data_mut(),
+            out: out_slice,
             base_offset: 0,
         });
     }

@@ -7,6 +7,17 @@ use crate::{
 use fusor_core::{DataType, FloatDataType};
 use fusor_cpu::{MatmulImpl, MaxOp, SimdReduceOp, SumOp};
 
+/// Describes how to interpret a 2D attention mask.
+#[derive(Debug, Clone, Copy)]
+pub enum MaskKind {
+    /// Mask is [q_seq_len, kv_seq_len] — applied identically to every (batch, head) pair.
+    /// Used for causal masks in decoder models.
+    QKMask,
+    /// Mask is [batch, kv_seq_len] — per-token validity mask broadcast across heads and queries.
+    /// Used for padding masks in encoder/embedding models.
+    BatchKeyMask,
+}
+
 impl<D> Tensor<4, D, ConcreteTensor<D, 4>>
 where
     D: SimdElement
@@ -37,38 +48,38 @@ where
     ///   - k: Key tensor with shape [batch, num_kv_heads, kv_seq_len, head_dim]
     ///   - v: Value tensor with shape [batch, num_kv_heads, kv_seq_len, head_dim]
     ///   - scale: Scale factor (typically 1/sqrt(head_dim))
-    ///   - mask: Optional attention mask with shape [q_seq_len, kv_seq_len]
+    ///   - mask: Optional attention mask with a [`MaskKind`] describing its layout
     pub fn flash_attention(
         &self,
         k: &Self,
         v: &Self,
         scale: f32,
-        mask: Option<&Tensor<2, D, ConcreteTensor<D, 2>>>,
+        mask: Option<(&Tensor<2, D, ConcreteTensor<D, 2>>, MaskKind)>,
     ) -> Self {
         match (self, k, v) {
-            // GPU path - use the optimized fused kernel
-            (Tensor::Gpu(q), Tensor::Gpu(k), Tensor::Gpu(v)) => {
-                let gpu_mask = mask.map(|m| match m {
+            // GPU path - use the optimized fused kernel (QKMask only)
+            (Tensor::Gpu(q), Tensor::Gpu(k), Tensor::Gpu(v))
+                if !matches!(mask, Some((_, MaskKind::BatchKeyMask))) =>
+            {
+                let gpu_mask = mask.map(|(m, _kind)| match m {
                     Tensor::Gpu(mask) => mask,
                     _ => panic!("Mask must be on the same device as other tensors"),
                 });
                 Tensor::Gpu(q.flash_attention(k, v, scale, gpu_mask))
             }
-            // CPU path - use composite operations via Tensor methods
-            (Tensor::Cpu(_), Tensor::Cpu(_), Tensor::Cpu(_)) => {
-                self.flash_attention_cpu_impl(k, v, scale, mask)
-            }
-            _ => panic!("All tensors must be on the same device"),
+            // CPU path and GPU+BatchKeyMask fallback - use composite operations via Tensor methods
+            _ => self.flash_attention_composite_impl(k, v, scale, mask),
         }
     }
 
-    /// CPU implementation of flash attention using Tensor composite operations
-    fn flash_attention_cpu_impl(
+    /// Implementation of flash attention using Tensor composite operations.
+    /// Works on both CPU and GPU tensors (GPU uses individual ops instead of fused kernel).
+    fn flash_attention_composite_impl(
         &self,
         k: &Self,
         v: &Self,
         scale: f32,
-        mask: Option<&Tensor<2, D, ConcreteTensor<D, 2>>>,
+        mask: Option<(&Tensor<2, D, ConcreteTensor<D, 2>>, MaskKind)>,
     ) -> Self {
         let q_shape = self.shape();
         let k_shape = k.shape();
@@ -134,9 +145,34 @@ where
         let scores_scaled = scores.mul_scalar(D::from_f32(scale));
 
         // Apply mask if provided
-        let scores_masked = if let Some(m) = mask {
-            // Mask is [q_seq_len, kv_seq_len], broadcast to [batch, num_heads, q_seq_len, kv_seq_len]
-            let mask_4d: Tensor<4, D, _> = m.reshape([1, 1, q_seq_len, kv_seq_len]);
+        let scores_masked = if let Some((m, kind)) = mask {
+            let m_shape = m.shape();
+            let mask_4d: Tensor<4, D, _> = match kind {
+                MaskKind::QKMask => {
+                    // Mask is [q_seq_len, kv_seq_len]
+                    assert_eq!(
+                        m_shape,
+                        [q_seq_len, kv_seq_len],
+                        "QKMask shape {:?} does not match expected [{}, {}]",
+                        m_shape,
+                        q_seq_len,
+                        kv_seq_len
+                    );
+                    m.reshape([1, 1, q_seq_len, kv_seq_len])
+                }
+                MaskKind::BatchKeyMask => {
+                    // Mask is [batch, kv_seq_len] — per-token validity mask
+                    assert_eq!(
+                        m_shape,
+                        [batch, kv_seq_len],
+                        "BatchKeyMask shape {:?} does not match expected [{}, {}]",
+                        m_shape,
+                        batch,
+                        kv_seq_len
+                    );
+                    m.reshape([m_shape[0], 1, 1, m_shape[1]])
+                }
+            };
             let mask_broadcast = mask_4d.broadcast_as([batch, num_heads, q_seq_len, kv_seq_len]);
             (scores_scaled + mask_broadcast).to_concrete()
         } else {
@@ -145,11 +181,18 @@ where
 
         // Softmax along last dimension
         // max(scores) for numerical stability
-        let max_scores = scores_masked.max_keepdim::<3>(3);
+        let scores_shape = scores_masked.shape();
+        let max_scores = scores_masked
+            .max_keepdim::<3>(3)
+            .broadcast_as(scores_shape)
+            .to_concrete();
         let scores_shifted = scores_masked - max_scores;
         // Materialize exp_scores since sum_keepdim is a reduction that needs concrete data
         let exp_scores = scores_shifted.exp();
-        let sum_exp = exp_scores.sum_keepdim::<3>(3);
+        let sum_exp = exp_scores
+            .sum_keepdim::<3>(3)
+            .broadcast_as(scores_shape)
+            .to_concrete();
         let attn_weights = exp_scores / sum_exp;
 
         // attn_weights @ V -> [batch, num_heads, q_seq_len, head_dim]
@@ -213,7 +256,7 @@ mod tests {
 
         let scale = 1.0 / (2.0_f32.sqrt());
 
-        let output = q.flash_attention(&k, &v, scale, Some(&mask));
+        let output = q.flash_attention(&k, &v, scale, Some((&mask, MaskKind::QKMask)));
         let result = output.as_slice().await.unwrap();
 
         // With causal mask, first row should only attend to first position
@@ -263,6 +306,49 @@ mod tests {
                         val.is_finite(),
                         "Non-finite value at [0, {}, {}, {}]: {}",
                         h,
+                        s,
+                        d,
+                        val
+                    );
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_flash_attention_cpu_with_batch_key_mask() {
+        // Test flash attention with a BatchKeyMask (padding mask)
+        // batch=2, heads=1, seq_len=3, dim=2
+        // Second sentence has last token masked (padding)
+        let q_data: Vec<f32> = (0..12).map(|i| (i as f32) * 0.1).collect();
+        let k_data: Vec<f32> = (0..12).map(|i| (i as f32) * 0.1 + 1.0).collect();
+        let v_data: Vec<f32> = (0..12).map(|i| (i as f32) * 0.1 + 2.0).collect();
+
+        let q: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 1, 3, 2], &q_data));
+        let k: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 1, 3, 2], &k_data));
+        let v: Tensor<4, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 1, 3, 2], &v_data));
+
+        // BatchKeyMask: [batch=2, kv_seq_len=3]
+        // First sentence: all tokens valid. Second sentence: last token is padding.
+        let neg_inf = f32::NEG_INFINITY;
+        let mask_data = vec![0.0f32, 0.0, 0.0, 0.0, 0.0, neg_inf];
+        let mask: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &mask_data));
+
+        let scale = 1.0 / (2.0_f32.sqrt());
+        let output = q.flash_attention(&k, &v, scale, Some((&mask, MaskKind::BatchKeyMask)));
+        let result = output.as_slice().await.unwrap();
+
+        assert_eq!(result.shape(), &[2, 1, 3, 2]);
+
+        // Verify all values are finite
+        for b in 0..2 {
+            for s in 0..3 {
+                for d in 0..2 {
+                    let val = result[[b, 0, s, d]];
+                    assert!(
+                        val.is_finite(),
+                        "Non-finite value at [{}, 0, {}, {}]: {}",
+                        b,
                         s,
                         d,
                         val

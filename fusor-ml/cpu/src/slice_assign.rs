@@ -111,13 +111,11 @@ where
         .shape()
         .try_into()
         .expect("Shape length mismatch");
-    let mut output = ConcreteTensor::<E, R>::uninit_unchecked(input_shape);
 
     let input_strides = input.layout().strides();
     let value_strides = value.layout().strides();
-    let total_elements: usize = input_shape.iter().product();
 
-    for out_linear in 0..total_elements {
+    ConcreteTensor::from_fn(input_shape, |out_linear| {
         // Convert linear index to multi-dimensional indices
         let mut indices = [0usize; R];
         let mut remaining = out_linear;
@@ -135,14 +133,12 @@ where
                 .zip(value_strides.iter())
                 .map(|(&idx, &stride)| idx * stride)
                 .sum();
-            output.data_mut()[out_linear] = value.data()[value_linear];
+            value.data()[value_linear]
         } else {
             // Copy from input tensor
-            output.data_mut()[out_linear] = input.data()[out_linear];
+            input.data()[out_linear]
         }
-    }
-
-    output
+    })
 }
 
 /// General path for strided tensors
@@ -159,16 +155,15 @@ where
         .shape()
         .try_into()
         .expect("Shape length mismatch");
-    let mut output = ConcreteTensor::<E, R>::uninit_unchecked(input_shape);
 
-    let output_strides: Box<[usize]> = output.layout().strides().into();
+    let output_layout = fusor_types::Layout::contiguous(&input_shape);
+    let output_strides: Box<[usize]> = output_layout.strides().into();
     let input_strides = input.layout().strides();
     let value_strides = value.layout().strides();
     let input_offset = input.layout().offset();
     let value_offset = value.layout().offset();
-    let total_elements: usize = input_shape.iter().product();
 
-    for out_linear in 0..total_elements {
+    ConcreteTensor::from_fn(input_shape, |out_linear| {
         // Convert linear index to multi-dimensional indices
         let mut indices = [0usize; R];
         let mut remaining = out_linear;
@@ -187,7 +182,7 @@ where
                     .zip(value_strides.iter())
                     .map(|(&idx, &stride)| idx * stride)
                     .sum::<usize>();
-            output.data_mut()[out_linear] = value.data()[value_linear];
+            value.data()[value_linear]
         } else {
             // Copy from input tensor (with stride calculation)
             let input_linear: usize = input_offset
@@ -196,11 +191,9 @@ where
                     .zip(input_strides.iter())
                     .map(|(&idx, &stride)| idx * stride)
                     .sum::<usize>();
-            output.data_mut()[out_linear] = input.data()[input_linear];
+            input.data()[input_linear]
         }
-    }
-
-    output
+    })
 }
 
 #[cfg(test)]

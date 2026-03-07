@@ -141,8 +141,19 @@ impl<'a> VarBuilder<'a> {
     }
 
     /// Get a metadata value by key.
+    ///
+    /// If the key starts with `.`, it will search for metadata keys that end with the given key
+    /// and return the value for the shortest matching key. This allows architecture-prefixed
+    /// keys like `qwen3.attention.head_count` to be found with `.attention.head_count`.
     pub fn get_metadata(&self, key: &str) -> Option<&GgufValue> {
-        self.metadata.metadata.get(key)
+        self.metadata.get_value(key)
+    }
+
+    /// Get the model architecture from GGUF metadata.
+    ///
+    /// Reads the "general.architecture" metadata key.
+    pub fn architecture(&self) -> Option<String> {
+        self.metadata.architecture()
     }
 }
 
@@ -159,21 +170,9 @@ impl<R: std::io::Read + std::io::Seek> ShardedVarBuilder<R> {
 
     /// Get a metadata value by key from any shard.
     pub fn get(&self, name: &str) -> crate::Result<&GgufValue> {
-        if name.starts_with('.') {
-            if let Some(value) = self
-                .contents
-                .iter()
-                .flat_map(|(k, _)| k.metadata.iter().filter(|(k, _)| k.ends_with(name)))
-                .min_by_key(|(k, _)| k.len())
-                .map(|(_, v)| v)
-            {
+        for (content, _) in &self.contents {
+            if let Some(value) = content.get_value(name) {
                 return Ok(value);
-            }
-        } else {
-            for (content, _) in &self.contents {
-                if let Some(value) = content.metadata.get(name) {
-                    return Ok(value);
-                }
             }
         }
         Err(crate::Error::VarBuilder(format!(

@@ -1,116 +1,31 @@
 //! Conditional tensor operations: where_cond
 //! Selects elements based on condition tensor != 0
 
-use pulp::{Arch, Simd, WithSimd};
-
-use crate::{ConcreteTensor, IndexIterator, ResolvedTensor, SimdElement};
+use crate::expr::linear_to_indices;
+use crate::{ConcreteTensor, ResolvedTensor, SimdElement};
 
 /// Helper trait for types that can be compared to zero
 pub trait IsNonZero: SimdElement {
     fn is_nonzero(&self) -> bool;
 }
 
-impl IsNonZero for f32 {
-    fn is_nonzero(&self) -> bool {
-        *self != 0.0
-    }
+macro_rules! impl_is_nonzero {
+    ($($ty:ty => $zero:expr),*) => {
+        $(
+            impl IsNonZero for $ty {
+                fn is_nonzero(&self) -> bool {
+                    *self != $zero
+                }
+            }
+        )*
+    };
 }
 
-impl IsNonZero for f64 {
-    fn is_nonzero(&self) -> bool {
-        *self != 0.0
-    }
-}
-
-impl IsNonZero for i8 {
-    fn is_nonzero(&self) -> bool {
-        *self != 0
-    }
-}
-
-impl IsNonZero for i16 {
-    fn is_nonzero(&self) -> bool {
-        *self != 0
-    }
-}
-
-impl IsNonZero for i32 {
-    fn is_nonzero(&self) -> bool {
-        *self != 0
-    }
-}
-
-impl IsNonZero for i64 {
-    fn is_nonzero(&self) -> bool {
-        *self != 0
-    }
-}
-
-impl IsNonZero for u8 {
-    fn is_nonzero(&self) -> bool {
-        *self != 0
-    }
-}
-
-impl IsNonZero for u16 {
-    fn is_nonzero(&self) -> bool {
-        *self != 0
-    }
-}
-
-impl IsNonZero for u32 {
-    fn is_nonzero(&self) -> bool {
-        *self != 0
-    }
-}
-
-impl IsNonZero for u64 {
-    fn is_nonzero(&self) -> bool {
-        *self != 0
-    }
-}
-
-/// Helper struct for dispatching where_cond operations via Arch::dispatch
-struct WhereCondDispatch<'a, E: SimdElement + IsNonZero> {
-    cond: &'a [E],
-    on_true: &'a [E],
-    on_false: &'a [E],
-    out: &'a mut [E],
-}
-
-impl<E: SimdElement + IsNonZero> WithSimd for WhereCondDispatch<'_, E> {
-    type Output = ();
-
-    #[inline(always)]
-    fn with_simd<S: Simd>(self, _simd: S) -> Self::Output {
-        // No native SIMD select for arbitrary masks - process all elements via scalar path
-        for (((c, t), f), o) in self
-            .cond
-            .iter()
-            .zip(self.on_true.iter())
-            .zip(self.on_false.iter())
-            .zip(self.out.iter_mut())
-        {
-            *o = if c.is_nonzero() { *t } else { *f };
-        }
-    }
-}
-
-/// Perform where_cond operation on contiguous slices
-#[inline(always)]
-fn where_cond_contiguous<E: SimdElement + IsNonZero>(
-    cond: &[E],
-    on_true: &[E],
-    on_false: &[E],
-    out: &mut [E],
-) {
-    Arch::new().dispatch(WhereCondDispatch::<E> {
-        cond,
-        on_true,
-        on_false,
-        out,
-    });
-}
+impl_is_nonzero!(
+    f32 => 0.0, f64 => 0.0,
+    i8 => 0, i16 => 0, i32 => 0, i64 => 0,
+    u8 => 0, u16 => 0, u32 => 0, u64 => 0
+);
 
 /// Conditional selection: where condition != 0, select on_true, else on_false
 #[inline(always)]
@@ -127,37 +42,49 @@ where
         .shape()
         .try_into()
         .expect("Shape length mismatch");
-    let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
+
+    debug_assert_eq!(
+        cond.layout().shape(),
+        on_true.layout().shape(),
+        "where_cond: cond and on_true shape mismatch"
+    );
+    debug_assert_eq!(
+        cond.layout().shape(),
+        on_false.layout().shape(),
+        "where_cond: cond and on_false shape mismatch"
+    );
 
     let all_contiguous = cond.layout().is_contiguous()
         && on_true.layout().is_contiguous()
         && on_false.layout().is_contiguous();
 
     if all_contiguous {
-        where_cond_contiguous(
-            cond.data(),
-            on_true.data(),
-            on_false.data(),
-            output.data_mut(),
-        );
+        let cond_data = cond.data();
+        let true_data = on_true.data();
+        let false_data = on_false.data();
+        ConcreteTensor::from_fn(shape, |i| {
+            if cond_data[i].is_nonzero() {
+                true_data[i]
+            } else {
+                false_data[i]
+            }
+        })
     } else {
-        let tensor_shape = cond.layout().shape();
-        for indices in IndexIterator::new(tensor_shape) {
+        ConcreteTensor::from_fn(shape, |out_idx| {
+            let indices = linear_to_indices::<R>(out_idx, &shape);
+
             let cond_idx = cond.layout().linear_index(&indices);
             let true_idx = on_true.layout().linear_index(&indices);
             let false_idx = on_false.layout().linear_index(&indices);
-            let out_idx = output.layout().linear_index(&indices);
 
             let cond_val = cond.data()[cond_idx];
-            output.data_mut()[out_idx] = if cond_val.is_nonzero() {
+            if cond_val.is_nonzero() {
                 on_true.data()[true_idx]
             } else {
                 on_false.data()[false_idx]
-            };
-        }
+            }
+        })
     }
-
-    output
 }
 
 #[cfg(test)]

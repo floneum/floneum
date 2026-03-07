@@ -236,7 +236,7 @@ pub fn batched_matmul<T: SimdElement + MatmulImpl, const R: usize>(
     let mut out_shape: [usize; R] = lhs_shape.try_into().expect("Shape length mismatch");
     out_shape[R - 1] = n;
 
-    let mut output = ConcreteTensor::<T, R>::uninit_unchecked(out_shape);
+    let mut output = ConcreteTensor::<T, R>::zeros(out_shape);
 
     // Compute total batch size (product of all batch dimensions)
     let batch_size: usize = lhs_shape[..R - 2].iter().product();

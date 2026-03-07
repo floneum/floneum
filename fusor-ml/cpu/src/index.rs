@@ -1,5 +1,8 @@
 //! Index operations: index_select (gather)
 
+use aligned_vec::AVec;
+use fusor_types::Layout;
+
 use crate::{ConcreteTensor, ResolvedTensor, SimdElement};
 
 /// Compute the output shape for index_select
@@ -34,15 +37,15 @@ where
     let num_indices = indices.data().len();
     let output_shape = index_select_output_shape::<R>(input_shape, dimension, num_indices);
 
-    let mut output = ConcreteTensor::<E, R>::uninit_unchecked(output_shape);
+    let layout = Layout::contiguous(&output_shape);
+    let total_elements = layout.num_elements();
+    let mut vec: AVec<E> = AVec::with_capacity(64, total_elements);
 
     // Compute strides for iteration
     let input_strides = input.layout().strides();
-    let output_strides: Box<[usize]> = output.layout().strides().into();
+    let output_strides: Box<[usize]> = layout.strides().into();
 
     // For each position in output, compute corresponding input position
-    let total_elements: usize = output_shape.iter().product();
-
     for out_linear in 0..total_elements {
         // Convert linear index to multi-dimensional indices for output
         let mut out_indices = [0usize; R];
@@ -65,10 +68,10 @@ where
             .map(|(&idx, &stride)| idx * stride)
             .sum();
 
-        output.data_mut()[out_linear] = input.data()[in_linear];
+        vec.push(input.data()[in_linear]);
     }
 
-    output
+    ConcreteTensor::from_parts(layout, vec.into_boxed_slice())
 }
 
 #[cfg(test)]

@@ -177,10 +177,9 @@ where
     }
 
     // Fallback to scalar gather
-    // SAFETY: Caller guarantees all indices are valid
     let mut temp = [T::default(); MAX_SIMD_LANES];
     for i in 0..lane_count {
-        temp[i] = unsafe { *slice.get_unchecked(indices[i]) };
+        temp[i] = slice[indices[i]];
     }
     let (simd_vec, _) = T::as_simd::<S>(&temp[..lane_count]);
     simd_vec[0]
