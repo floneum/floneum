@@ -63,6 +63,22 @@ impl Debug for DeviceInner {
     }
 }
 
+/// A weak reference to a [`Device`] that does not prevent cleanup.
+///
+/// Used internally to break reference cycles (e.g., between Device and ComputeGraph).
+#[derive(Clone, Debug)]
+pub struct WeakDevice {
+    inner: std::sync::Weak<DeviceInner>,
+}
+
+impl WeakDevice {
+    /// Attempt to upgrade to a strong [`Device`] reference.
+    /// Returns `None` if the device has already been dropped.
+    pub fn upgrade(&self) -> Option<Device> {
+        self.inner.upgrade().map(|inner| Device { inner })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Device {
     inner: Arc<DeviceInner>,
@@ -157,7 +173,7 @@ impl Device {
         // Initialize the compute graph now that we have a valid device
         inner
             .compute_graph
-            .set(ComputeGraph::new(device.clone()))
+            .set(ComputeGraph::new(&device))
             .ok()
             .expect("compute_graph should only be set once");
 
@@ -182,6 +198,13 @@ impl Device {
         });
 
         Ok(device)
+    }
+
+    /// Create a weak reference to this device that doesn't prevent cleanup.
+    pub fn downgrade(&self) -> WeakDevice {
+        WeakDevice {
+            inner: Arc::downgrade(&self.inner),
+        }
     }
 
     pub(crate) fn create_shader_module<'a>(
