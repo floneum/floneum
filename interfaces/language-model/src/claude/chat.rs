@@ -157,13 +157,19 @@ pub enum AnthropicCompatibleChatModelError {
     ReqwestError(#[from] reqwest::Error),
     /// An error occurred while receiving server side events from the Anthropic API.
     #[error("Error receiving server side events: {0}")]
-    EventSourceError(#[from] reqwest_eventsource::Error),
+    EventSourceError(Box<reqwest_eventsource::Error>),
     /// Failed to deserialize Anthropic API response.
     #[error("Failed to deserialize Anthropic API response: {0}")]
     DeserializeError(#[from] serde_json::Error),
     /// An error occurred while streaming the response from the Anthropic API.
     #[error("Error streaming response from Anthropic API: {0}")]
     StreamError(#[from] AnthropicCompatibleChatResponseError),
+}
+
+impl From<reqwest_eventsource::Error> for AnthropicCompatibleChatModelError {
+    fn from(e: reqwest_eventsource::Error) -> Self {
+        Self::EventSourceError(Box::new(e))
+    }
 }
 
 /// A chat session for the Anthropic compatible chat model.

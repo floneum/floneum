@@ -133,16 +133,16 @@ impl<B: GgufBlock> QuantizedTensor<B> {
             .as_ref()
             .try_into()
             .expect("Shape length mismatch in dequantize");
-        let mut output = ConcreteTensor::<f32, R>::uninit_unchecked(shape);
-        let out_data = output.data_mut();
+        let layout = fusor_types::Layout::contiguous(&shape);
+        let n = layout.num_elements();
+        let mut vec: AVec<f32> = AVec::with_capacity(64, n);
 
-        for (block_idx, block) in self.blocks.iter().enumerate() {
+        for block in self.blocks.iter() {
             let dequantized = block.dequantize();
-            let start = block_idx * B::BLOCK_SIZE;
-            out_data[start..start + B::BLOCK_SIZE].copy_from_slice(dequantized.as_ref());
+            vec.extend_from_slice(dequantized.as_ref());
         }
 
-        output
+        ConcreteTensor::from_parts(layout, vec.into_boxed_slice())
     }
 
     /// Create a lazy dequantization expression.
@@ -396,14 +396,15 @@ where
             ..
         } = self;
 
-        // Use integer dot products with NEON acceleration on aarch64.
-        // The vec_dot methods use NEON intrinsics for efficient i8 x i8 -> i32 computation.
-        // Special fast path for m=1 (common inference case): parallelize over output columns
         if m == 1 {
-            let n_threads = crate::parallel::num_threads();
+            // m=1 (token generation): memory-bandwidth bound, parallelize over output columns.
+            // Scale thread count based on work size: each thread needs enough vec_dot calls
+            // to amortize std::thread::scope's thread creation overhead (~10µs per thread).
+            let max_threads = crate::parallel::num_threads();
+            let total_work = n * blocks_per_weight_row;
+            let n_threads = (total_work / 16384).min(max_threads).max(1);
 
-            // For small n or single-threaded, don't parallelize
-            if n < 64 || n_threads == 1 {
+            if n_threads == 1 {
                 process_row_integer_tiled::<B>(
                     lhs_data,
                     rhs_blocks,
@@ -412,7 +413,8 @@ where
                     blocks_per_weight_row,
                 );
             } else {
-                // Parallelize over output column chunks using scoped threads
+                // Same CHUNK_SIZE=32 aligned thread distribution as before,
+                // but each thread quantizes activations once instead of per chunk.
                 const CHUNK_SIZE: usize = 32;
                 let total_chunks = n.div_ceil(CHUNK_SIZE);
                 let chunks_per_thread = total_chunks.div_ceil(n_threads);
@@ -439,52 +441,67 @@ where
                         start_n += this_size;
 
                         scope.spawn(move || {
-                            // Process each CHUNK_SIZE piece within this thread
+                            // Quantize activations ONCE per thread (not per chunk).
+                            let act_blocks: Vec<B::ActivationBlock> = (0..blocks_per_weight_row)
+                                .map(|block_idx| {
+                                    let start = block_idx * B::BLOCK_SIZE;
+                                    B::quantize_activation(&lhs_data[start..start + B::BLOCK_SIZE])
+                                })
+                                .collect();
+
                             for (i, out_chunk) in thread_chunk.chunks_mut(CHUNK_SIZE).enumerate() {
                                 let chunk_start = thread_start_n + i * CHUNK_SIZE;
-                                process_row_integer_range::<B>(
-                                    lhs_data,
-                                    rhs_blocks,
-                                    out_chunk,
-                                    chunk_start,
-                                    out_chunk.len(),
-                                    blocks_per_weight_row,
-                                );
+                                let chunk_n = out_chunk.len();
+                                for (idx, out_elem) in
+                                    out_chunk.iter_mut().enumerate().take(chunk_n)
+                                {
+                                    let n_out = chunk_start + idx;
+                                    let mut sum = 0.0f32;
+                                    for (block_idx, act_block) in act_blocks.iter().enumerate() {
+                                        sum += rhs_blocks
+                                            [n_out * blocks_per_weight_row + block_idx]
+                                            .vec_dot(act_block);
+                                    }
+                                    *out_elem = sum;
+                                }
                             }
                         });
                     }
                 });
             }
-        } else if m >= 4 {
+        } else {
+            // Multi-row path (m≥2): use outer-loop unrolled 3×4 tiling.
+            // Weight blocks are loaded once and reused across 3 LHS rows,
+            // reducing memory traffic by ~3× compared to row-at-a-time processing.
             let n_threads = crate::parallel::num_threads();
 
-            if n_threads == 1 {
-                // Sequential processing
-                for i in 0..m {
-                    let lhs_row = &lhs_data[i * k..(i + 1) * k];
-                    let out_row = &mut out_data[i * n..(i + 1) * n];
-                    process_row_integer_tiled::<B>(
-                        lhs_row,
-                        rhs_blocks,
-                        out_row,
-                        n,
-                        blocks_per_weight_row,
-                    );
-                }
+            // Use at most m/3 threads so each thread gets ≥3 rows,
+            // maximizing benefit of the 3-row kernel.
+            let effective_threads = (m / 3).min(n_threads).max(1);
+
+            if effective_threads <= 1 {
+                process_multi_row_tiled::<B>(
+                    lhs_data,
+                    rhs_blocks,
+                    out_data,
+                    m,
+                    k,
+                    n,
+                    blocks_per_weight_row,
+                );
             } else {
-                // Process rows in parallel using scoped threads
-                let rows_per_thread = m.div_ceil(n_threads);
+                let rows_per_thread = m.div_ceil(effective_threads);
 
                 std::thread::scope(|scope| {
                     let mut remaining_out = out_data;
                     let mut row_offset = 0;
 
-                    for thread_id in 0..n_threads {
+                    for thread_id in 0..effective_threads {
                         if remaining_out.is_empty() {
                             break;
                         }
 
-                        let this_rows = if thread_id == n_threads - 1 {
+                        let this_rows = if thread_id == effective_threads - 1 {
                             m - row_offset
                         } else {
                             rows_per_thread.min(m - row_offset)
@@ -497,69 +514,21 @@ where
                         row_offset += this_rows;
 
                         scope.spawn(move || {
-                            for i in 0..this_rows {
-                                let global_row = thread_row_offset + i;
-                                let lhs_row = &lhs_data[global_row * k..(global_row + 1) * k];
-                                let out_row = &mut thread_out[i * n..(i + 1) * n];
-                                process_row_integer_tiled::<B>(
-                                    lhs_row,
-                                    rhs_blocks,
-                                    out_row,
-                                    n,
-                                    blocks_per_weight_row,
-                                );
-                            }
+                            process_multi_row_tiled::<B>(
+                                &lhs_data
+                                    [thread_row_offset * k..(thread_row_offset + this_rows) * k],
+                                rhs_blocks,
+                                thread_out,
+                                this_rows,
+                                k,
+                                n,
+                                blocks_per_weight_row,
+                            );
                         });
                     }
                 });
             }
-        } else {
-            // Sequential processing for small matrices (m=2,3)
-            for i in 0..m {
-                let lhs_row = &lhs_data[i * k..(i + 1) * k];
-                let out_row = &mut out_data[i * n..(i + 1) * n];
-                process_row_integer_tiled::<B>(
-                    lhs_row,
-                    rhs_blocks,
-                    out_row,
-                    n,
-                    blocks_per_weight_row,
-                );
-            }
         }
-    }
-}
-
-/// Process a range of output columns for m=1 parallelization using integer dot products.
-/// Uses NEON intrinsics on aarch64 for efficient i8 x i8 -> i32 computation.
-#[inline(always)]
-fn process_row_integer_range<B: GgufBlock>(
-    lhs_row: &[f32],
-    rhs_blocks: &[B],
-    out_chunk: &mut [f32],
-    start_n: usize,
-    chunk_n: usize,
-    blocks_per_weight_row: usize,
-) where
-    B::ActivationBlock: Pod,
-{
-    // Quantize activations once for all output columns
-    let act_blocks: Vec<B::ActivationBlock> = (0..blocks_per_weight_row)
-        .map(|block_idx| {
-            let start = block_idx * B::BLOCK_SIZE;
-            let chunk = &lhs_row[start..start + B::BLOCK_SIZE];
-            B::quantize_activation(chunk)
-        })
-        .collect();
-
-    for (i, out_elem) in out_chunk.iter_mut().enumerate().take(chunk_n) {
-        let n_out = start_n + i;
-        let mut sum = 0.0f32;
-        for (block_idx, act_block) in act_blocks.iter().enumerate() {
-            let weight_block_idx = n_out * blocks_per_weight_row + block_idx;
-            sum += rhs_blocks[weight_block_idx].vec_dot(act_block);
-        }
-        *out_elem = sum;
     }
 }
 
@@ -633,6 +602,287 @@ fn process_row_integer_tiled<B: GgufBlock>(
                 rhs_blocks[j * blocks_per_weight_row + block_idx].vec_dot(&act_blocks[block_idx]);
         }
         out_row[j] = sum;
+    }
+}
+
+/// Process a range of output columns using pre-quantized activation blocks.
+/// Uses 4-way column tiling for instruction-level parallelism.
+#[allow(dead_code)]
+#[inline(always)]
+fn process_range_with_acts<B: GgufBlock>(
+    act_blocks: &[B::ActivationBlock],
+    rhs_blocks: &[B],
+    out_chunk: &mut [f32],
+    start_n: usize,
+    blocks_per_weight_row: usize,
+) where
+    B::ActivationBlock: Pod,
+{
+    let chunk_n = out_chunk.len();
+    const NR: usize = 4;
+    let n_tiles = chunk_n / NR;
+
+    for tile in 0..n_tiles {
+        let local_off = tile * NR;
+        let col = start_n + local_off;
+        let mut acc = [0.0f32; NR];
+
+        for (block_idx, act) in act_blocks.iter().enumerate() {
+            acc[0] += rhs_blocks[col * blocks_per_weight_row + block_idx].vec_dot(act);
+            acc[1] += rhs_blocks[(col + 1) * blocks_per_weight_row + block_idx].vec_dot(act);
+            acc[2] += rhs_blocks[(col + 2) * blocks_per_weight_row + block_idx].vec_dot(act);
+            acc[3] += rhs_blocks[(col + 3) * blocks_per_weight_row + block_idx].vec_dot(act);
+        }
+
+        out_chunk[local_off..local_off + NR].copy_from_slice(&acc);
+    }
+
+    // Handle remainder
+    for (i, block) in out_chunk
+        .iter_mut()
+        .enumerate()
+        .take(chunk_n)
+        .skip(n_tiles * NR)
+    {
+        let n_out = start_n + i;
+        let mut sum = 0.0f32;
+        for (block_idx, act) in act_blocks.iter().enumerate() {
+            sum += rhs_blocks[n_out * blocks_per_weight_row + block_idx].vec_dot(act);
+        }
+        *block = sum;
+    }
+}
+
+/// Process 3 LHS rows × all N output columns using 3×4 outer-loop unrolled tiling.
+///
+/// This is the key optimization from llamafile's matmul approach: by processing
+/// 3 rows simultaneously, each weight block is loaded once from memory and reused
+/// across all 3 rows. This reduces memory traffic for weights by ~3× compared to
+/// processing one row at a time.
+///
+/// Layout: lhs_data contains 3 contiguous rows of k elements each.
+///         out_data contains 3 contiguous rows of n elements each.
+#[inline(always)]
+fn process_3rows_integer_tiled<B: GgufBlock>(
+    lhs_data: &[f32],
+    rhs_blocks: &[B],
+    out_data: &mut [f32],
+    k: usize,
+    n: usize,
+    blocks_per_weight_row: usize,
+) where
+    B::ActivationBlock: Pod,
+{
+    // Pre-quantize all 3 rows
+    let mut act0: Vec<B::ActivationBlock> = Vec::with_capacity(blocks_per_weight_row);
+    let mut act1: Vec<B::ActivationBlock> = Vec::with_capacity(blocks_per_weight_row);
+    let mut act2: Vec<B::ActivationBlock> = Vec::with_capacity(blocks_per_weight_row);
+
+    for block_idx in 0..blocks_per_weight_row {
+        let s = block_idx * B::BLOCK_SIZE;
+        act0.push(B::quantize_activation(&lhs_data[s..s + B::BLOCK_SIZE]));
+        act1.push(B::quantize_activation(
+            &lhs_data[k + s..k + s + B::BLOCK_SIZE],
+        ));
+        act2.push(B::quantize_activation(
+            &lhs_data[2 * k + s..2 * k + s + B::BLOCK_SIZE],
+        ));
+    }
+
+    // 3×4 tiled inner loop
+    const NR: usize = 4;
+    let n_tiles = n / NR;
+
+    for tile in 0..n_tiles {
+        let col = tile * NR;
+
+        // 12 explicit accumulators (3 rows × 4 cols) to help register allocation
+        let (mut a00, mut a01, mut a02, mut a03) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        let (mut a10, mut a11, mut a12, mut a13) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        let (mut a20, mut a21, mut a22, mut a23) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+
+        for block_idx in 0..blocks_per_weight_row {
+            // Load 4 weight blocks ONCE (shared across all 3 rows)
+            let w0 = &rhs_blocks[col * blocks_per_weight_row + block_idx];
+            let w1 = &rhs_blocks[(col + 1) * blocks_per_weight_row + block_idx];
+            let w2 = &rhs_blocks[(col + 2) * blocks_per_weight_row + block_idx];
+            let w3 = &rhs_blocks[(col + 3) * blocks_per_weight_row + block_idx];
+
+            // Row 0: 4 dot products
+            let a = &act0[block_idx];
+            a00 += w0.vec_dot(a);
+            a01 += w1.vec_dot(a);
+            a02 += w2.vec_dot(a);
+            a03 += w3.vec_dot(a);
+
+            // Row 1: reusing same weight blocks from cache
+            let a = &act1[block_idx];
+            a10 += w0.vec_dot(a);
+            a11 += w1.vec_dot(a);
+            a12 += w2.vec_dot(a);
+            a13 += w3.vec_dot(a);
+
+            // Row 2: reusing same weight blocks from cache
+            let a = &act2[block_idx];
+            a20 += w0.vec_dot(a);
+            a21 += w1.vec_dot(a);
+            a22 += w2.vec_dot(a);
+            a23 += w3.vec_dot(a);
+        }
+
+        // Store results for all 3 rows
+        out_data[col] = a00;
+        out_data[col + 1] = a01;
+        out_data[col + 2] = a02;
+        out_data[col + 3] = a03;
+        out_data[n + col] = a10;
+        out_data[n + col + 1] = a11;
+        out_data[n + col + 2] = a12;
+        out_data[n + col + 3] = a13;
+        out_data[2 * n + col] = a20;
+        out_data[2 * n + col + 1] = a21;
+        out_data[2 * n + col + 2] = a22;
+        out_data[2 * n + col + 3] = a23;
+    }
+
+    // Handle remainder columns
+    for j in (n_tiles * NR)..n {
+        let (mut s0, mut s1, mut s2) = (0.0f32, 0.0f32, 0.0f32);
+        for block_idx in 0..blocks_per_weight_row {
+            let w = &rhs_blocks[j * blocks_per_weight_row + block_idx];
+            s0 += w.vec_dot(&act0[block_idx]);
+            s1 += w.vec_dot(&act1[block_idx]);
+            s2 += w.vec_dot(&act2[block_idx]);
+        }
+        out_data[j] = s0;
+        out_data[n + j] = s1;
+        out_data[2 * n + j] = s2;
+    }
+}
+
+/// Process 2 LHS rows × all N output columns using 2×4 outer-loop unrolled tiling.
+/// Same approach as the 3-row version but for the remainder when m % 3 == 2.
+#[inline(always)]
+fn process_2rows_integer_tiled<B: GgufBlock>(
+    lhs_data: &[f32],
+    rhs_blocks: &[B],
+    out_data: &mut [f32],
+    k: usize,
+    n: usize,
+    blocks_per_weight_row: usize,
+) where
+    B::ActivationBlock: Pod,
+{
+    let mut act0: Vec<B::ActivationBlock> = Vec::with_capacity(blocks_per_weight_row);
+    let mut act1: Vec<B::ActivationBlock> = Vec::with_capacity(blocks_per_weight_row);
+
+    for block_idx in 0..blocks_per_weight_row {
+        let s = block_idx * B::BLOCK_SIZE;
+        act0.push(B::quantize_activation(&lhs_data[s..s + B::BLOCK_SIZE]));
+        act1.push(B::quantize_activation(
+            &lhs_data[k + s..k + s + B::BLOCK_SIZE],
+        ));
+    }
+
+    const NR: usize = 4;
+    let n_tiles = n / NR;
+
+    for tile in 0..n_tiles {
+        let col = tile * NR;
+
+        let (mut a00, mut a01, mut a02, mut a03) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        let (mut a10, mut a11, mut a12, mut a13) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+
+        for block_idx in 0..blocks_per_weight_row {
+            let w0 = &rhs_blocks[col * blocks_per_weight_row + block_idx];
+            let w1 = &rhs_blocks[(col + 1) * blocks_per_weight_row + block_idx];
+            let w2 = &rhs_blocks[(col + 2) * blocks_per_weight_row + block_idx];
+            let w3 = &rhs_blocks[(col + 3) * blocks_per_weight_row + block_idx];
+
+            let a = &act0[block_idx];
+            a00 += w0.vec_dot(a);
+            a01 += w1.vec_dot(a);
+            a02 += w2.vec_dot(a);
+            a03 += w3.vec_dot(a);
+
+            let a = &act1[block_idx];
+            a10 += w0.vec_dot(a);
+            a11 += w1.vec_dot(a);
+            a12 += w2.vec_dot(a);
+            a13 += w3.vec_dot(a);
+        }
+
+        out_data[col] = a00;
+        out_data[col + 1] = a01;
+        out_data[col + 2] = a02;
+        out_data[col + 3] = a03;
+        out_data[n + col] = a10;
+        out_data[n + col + 1] = a11;
+        out_data[n + col + 2] = a12;
+        out_data[n + col + 3] = a13;
+    }
+
+    for j in (n_tiles * NR)..n {
+        let (mut s0, mut s1) = (0.0f32, 0.0f32);
+        for block_idx in 0..blocks_per_weight_row {
+            let w = &rhs_blocks[j * blocks_per_weight_row + block_idx];
+            s0 += w.vec_dot(&act0[block_idx]);
+            s1 += w.vec_dot(&act1[block_idx]);
+        }
+        out_data[j] = s0;
+        out_data[n + j] = s1;
+    }
+}
+
+/// Process m rows using outer-loop unrolled tiling.
+/// Groups rows into sets of 3 for maximum weight reuse, with
+/// 2-row and 1-row fallbacks for the remainder.
+#[inline(always)]
+fn process_multi_row_tiled<B: GgufBlock>(
+    lhs_data: &[f32],
+    rhs_blocks: &[B],
+    out_data: &mut [f32],
+    m: usize,
+    k: usize,
+    n: usize,
+    blocks_per_weight_row: usize,
+) where
+    B::ActivationBlock: Pod,
+{
+    const MR: usize = 3;
+    let full_groups = m / MR;
+    let remainder = m % MR;
+
+    for g in 0..full_groups {
+        let row = g * MR;
+        process_3rows_integer_tiled::<B>(
+            &lhs_data[row * k..(row + MR) * k],
+            rhs_blocks,
+            &mut out_data[row * n..(row + MR) * n],
+            k,
+            n,
+            blocks_per_weight_row,
+        );
+    }
+
+    let rem_start = full_groups * MR;
+    match remainder {
+        2 => {
+            process_2rows_integer_tiled::<B>(
+                &lhs_data[rem_start * k..(rem_start + 2) * k],
+                rhs_blocks,
+                &mut out_data[rem_start * n..(rem_start + 2) * n],
+                k,
+                n,
+                blocks_per_weight_row,
+            );
+        }
+        1 => {
+            let lhs_row = &lhs_data[rem_start * k..(rem_start + 1) * k];
+            let out_row = &mut out_data[rem_start * n..(rem_start + 1) * n];
+            process_row_integer_tiled::<B>(lhs_row, rhs_blocks, out_row, n, blocks_per_weight_row);
+        }
+        _ => {}
     }
 }
 

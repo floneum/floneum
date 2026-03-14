@@ -116,21 +116,24 @@ where
     {
         // Materialize to concrete first since we need it for operations
         let concrete = self.to_concrete();
+        let input_shape = concrete.shape();
 
         // max(x) with keepdim for broadcasting
         let max_val = concrete.max_keepdim::<OUT_RANK>(axis);
 
-        // x - max(x) (broadcasts automatically since max has size 1 in reduced dim)
-        let shifted = concrete - max_val;
+        // x - max(x): broadcast max_val to input shape before subtraction
+        let max_broadcast = max_val.broadcast_as(input_shape);
+        let shifted = (concrete - max_broadcast).to_concrete();
 
-        // exp(x - max(x)) - materialize since sum_keepdim is a reduction
-        let exp_val = shifted.exp();
+        // exp(x - max(x))
+        let exp_val = shifted.exp().to_concrete();
 
-        // sum(exp(...)) with keepdim
+        // sum(exp(...)) with keepdim, broadcast to input shape
         let sum_exp = exp_val.sum_keepdim::<OUT_RANK>(axis);
+        let sum_broadcast = sum_exp.broadcast_as(input_shape);
 
-        // exp / sum (broadcasts)
-        (exp_val / sum_exp).to_concrete()
+        // exp / sum
+        (exp_val / sum_broadcast).to_concrete()
     }
 
     /// RMS Normalization along the last axis.
@@ -161,6 +164,7 @@ where
 
         // Materialize to concrete first since we need it for operations
         let concrete = self.to_concrete();
+        let input_shape = concrete.shape();
 
         // x^2
         let x_sq = concrete.sqr();
@@ -171,11 +175,12 @@ where
         // mean(x^2) + eps - materialize first since add_scalar requires concrete tensor
         let mean_sq_eps = mean_sq.to_concrete().add_scalar(eps);
 
-        // sqrt(mean(x^2) + eps)
+        // sqrt(mean(x^2) + eps), broadcast to input shape
         let rms = mean_sq_eps.sqrt();
+        let rms_broadcast = rms.broadcast_as(input_shape);
 
         // x / rms
-        let normalized = &concrete / &rms;
+        let normalized = (concrete / rms_broadcast).to_concrete();
 
         // normalized * weight
         (&normalized * weight).to_concrete()
@@ -218,16 +223,13 @@ where
 
         // Materialize to concrete first since we need it for operations
         let concrete = self.to_concrete();
+        let input_shape = concrete.shape();
 
         // Optionally subtract mean
         let centered: Tensor<R, D> = if remove_mean {
             let mean = concrete.mean_keepdim::<OUT_RANK>(axis);
-            match (&concrete, &mean) {
-                (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a - b).to_concrete()),
-                // Use sub_ for broadcasting (mean has shape with last dim=1)
-                (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a.sub_::<R, R>(b)),
-                _ => panic!("Cannot mix CPU and GPU tensors"),
-            }
+            let mean_broadcast = mean.broadcast_as(input_shape);
+            (concrete - mean_broadcast).to_concrete()
         } else {
             concrete
         };
@@ -240,13 +242,9 @@ where
         let var_plus_eps = var.to_concrete().add_scalar(eps);
         let std = var_plus_eps.sqrt();
 
-        // centered / std
-        let normalized: Tensor<R, D> = match (&centered, &std) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).to_concrete()),
-            // Use div_ for broadcasting (std has shape with last dim=1)
-            (Tensor::Gpu(a), Tensor::Gpu(b)) => Tensor::Gpu(a.div_::<R, R>(b)),
-            _ => panic!("Cannot mix CPU and GPU tensors"),
-        };
+        // centered / std: broadcast std to input shape
+        let std_broadcast = std.broadcast_as(input_shape);
+        let normalized: Tensor<R, D> = (&centered / &std_broadcast).to_concrete();
 
         // normalized * weight
         let scaled: Tensor<R, D> = match (&normalized, weight) {
@@ -373,6 +371,7 @@ where
 
         // Materialize to concrete first since we need it for operations
         let concrete = self.to_concrete();
+        let input_shape = concrete.shape();
 
         // x^2
         let x_sq = concrete.sqr();
@@ -383,17 +382,12 @@ where
         // mean(x^2) + eps - materialize first since add_scalar requires concrete tensor
         let mean_sq_eps = mean_sq.to_concrete().add_scalar(eps_d);
 
-        // sqrt(mean(x^2) + eps)
+        // sqrt(mean(x^2) + eps), broadcast to input shape
         let rms = mean_sq_eps.sqrt();
+        let rms_broadcast = rms.broadcast_as(input_shape);
 
         // x / rms
-        let normalized: Tensor<R, D> = match (&concrete, &rms) {
-            (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a / b).to_concrete()),
-            _ => unreachable!(),
-        };
-
-        // Broadcast weight to input shape if needed and multiply
-        let input_shape = concrete.shape();
+        let normalized: Tensor<R, D> = (concrete / rms_broadcast).to_concrete();
         let weight_broadcast = weight.broadcast_as(input_shape);
         let scaled: Tensor<R, D> = match (&normalized, &weight_broadcast) {
             (Tensor::Cpu(a), Tensor::Cpu(b)) => Tensor::Cpu((a * b).to_concrete()),

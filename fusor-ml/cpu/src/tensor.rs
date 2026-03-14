@@ -1001,11 +1001,9 @@ where
             .shape()
             .try_into()
             .expect("Shape length mismatch");
-        let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
-        for (i, &val) in concrete.data().iter().enumerate() {
-            output.data_mut()[i] = val.powf(exponent);
-        }
-        Tensor::new(output)
+        Tensor::new(ConcreteTensor::from_fn(shape, |i| {
+            concrete.data()[i].powf(exponent)
+        }))
     }
 
     /// Element-wise maximum with a scalar
@@ -1017,11 +1015,9 @@ where
             .shape()
             .try_into()
             .expect("Shape length mismatch");
-        let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
-        for (i, &val) in concrete.data().iter().enumerate() {
-            output.data_mut()[i] = val.float_max(scalar);
-        }
-        Tensor::new(output)
+        Tensor::new(ConcreteTensor::from_fn(shape, |i| {
+            concrete.data()[i].float_max(scalar)
+        }))
     }
 
     /// Element-wise minimum with a scalar
@@ -1033,11 +1029,9 @@ where
             .shape()
             .try_into()
             .expect("Shape length mismatch");
-        let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
-        for (i, &val) in concrete.data().iter().enumerate() {
-            output.data_mut()[i] = val.float_min(scalar);
-        }
-        Tensor::new(output)
+        Tensor::new(ConcreteTensor::from_fn(shape, |i| {
+            concrete.data()[i].float_min(scalar)
+        }))
     }
 
     /// Clamp each element to a range [min, max]
@@ -1049,11 +1043,9 @@ where
             .shape()
             .try_into()
             .expect("Shape length mismatch");
-        let mut output = ConcreteTensor::<E, R>::uninit_unchecked(shape);
-        for (i, &val) in concrete.data().iter().enumerate() {
-            output.data_mut()[i] = val.float_max(min).float_min(max);
-        }
-        Tensor::new(output)
+        Tensor::new(ConcreteTensor::from_fn(shape, |i| {
+            concrete.data()[i].float_max(min).float_min(max)
+        }))
     }
 }
 

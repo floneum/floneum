@@ -2989,6 +2989,7 @@ dependencies = [
  "candle-core 0.9.1",
  "enumset",
  "half 2.7.1",
+ "paste",
  "pretty_assertions",
  "reqwest 0.12.28",
  "rustc-hash 2.1.1",
@@ -7054,7 +7055,7 @@ name = "rbert"
 version = "0.4.0"
 dependencies = [
  "anyhow",
- "fusor-core",
+ "fusor",
  "fusor-gguf",
  "kalosm",
  "kalosm-common",

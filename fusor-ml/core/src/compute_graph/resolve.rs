@@ -73,7 +73,8 @@ impl<'a> Resolver<'a> {
     }
 
     pub(crate) fn run(&mut self, graph: &mut ComputeGraphInner) -> ResolverResult {
-        let max_subgroup_size = graph.device.max_subgroup_size();
+        let device = graph.device();
+        let max_subgroup_size = device.max_subgroup_size();
 
         // Pass 1: Build execution graph
         self.build_execution_graph(graph, self.target);
@@ -111,7 +112,7 @@ impl<'a> Resolver<'a> {
 
         for (node, operation) in queued_operations {
             let new_inputs = operation.inputs(graph);
-            let constraint = operation.workgroup_shape_constraints(&graph.device);
+            let constraint = operation.workgroup_shape_constraints(&device);
             let mut new_merged = current_constraints.clone();
             new_merged.merge(&constraint);
             let old_best = current_constraints.solve(max_subgroup_size).unwrap_or_else(|| {
@@ -524,7 +525,7 @@ impl<'a> Resolver<'a> {
 
         // Get the max storage buffers limit from GPU
         let max_storage_bindings =
-            graph.device.limits().max_storage_buffers_per_shader_stage as usize;
+            graph.device().limits().max_storage_buffers_per_shader_stage as usize;
 
         for (input_idx, &input_inner) in nary.inputs.iter().enumerate() {
             if self.check_cached(graph, input_inner) {
@@ -1090,8 +1091,9 @@ impl<'a> Resolver<'a> {
             }
         }
         kernel.set_workgroup_size(workgroup_shape);
+        let device = graph.device();
         kernel.run(
-            &graph.device,
+            &device,
             all_input_values,
             self.command_encoder,
             max_dispatch_size,

@@ -90,9 +90,9 @@ pub(crate) fn sgemv(
     k_size: &str,
     graph: &crate::compute_graph::ComputeGraphInner,
 ) {
-    let device = &graph.device;
+    let device = graph.device();
     // Check if we can use specialized SGEMV (requires 2 subgroups per workgroup)
-    let use_specialized = can_use_specialized_sgemv(device);
+    let use_specialized = can_use_specialized_sgemv(&device);
     match op.matrix.datatype {
         GgmlType::Q6K if use_specialized => q6k_sgemv(
             op,

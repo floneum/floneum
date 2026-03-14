@@ -325,7 +325,8 @@ pub fn softmax_last_dim_fused<const R: usize>(
     // Total number of rows (product of all dims except last)
     let num_rows: usize = shape[..R - 1].iter().product();
 
-    let mut output = ConcreteTensor::<f32, R>::uninit_unchecked(shape);
+    // Use zeros() because softmax_row_simd needs to read back output in Pass 3
+    let mut output = ConcreteTensor::<f32, R>::zeros(shape);
 
     if tensor.layout().is_contiguous() {
         // Fast path: contiguous data
@@ -511,7 +512,8 @@ pub fn layer_norm_last_dim_fused<const R: usize>(
     let last_dim = shape[R - 1];
     let num_rows: usize = shape[..R - 1].iter().product();
 
-    let mut output = ConcreteTensor::<f32, R>::uninit_unchecked(shape);
+    // Use zeros() because layer_norm_row writes output via as_mut_simd
+    let mut output = ConcreteTensor::<f32, R>::zeros(shape);
 
     if tensor.layout().is_contiguous() && weight.layout().is_contiguous() {
         let in_data: &[f32] = tensor.data();

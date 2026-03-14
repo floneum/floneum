@@ -623,8 +623,9 @@ impl Operation for NaryOperation {
 
         let mut functions_cache: Vec<(String, Vec<DataTypeEnum>, Function)> = Vec::new();
 
+        let device = graph.device();
         build_visit_tiled_kernel(
-            &graph.device,
+            &device,
             &self.shape,
             TILE_SIZE,
             tiled_inputs,

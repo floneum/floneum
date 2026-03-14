@@ -117,7 +117,7 @@ pub enum OpenAICompatibleChatModelError {
     ReqwestError(#[from] reqwest::Error),
     /// An error occurred while receiving server side events from the OpenAI API.
     #[error("Error receiving server side events: {0}")]
-    EventSourceError(#[from] reqwest_eventsource::Error),
+    EventSourceError(Box<reqwest_eventsource::Error>),
     /// OpenAI API returned no message choices in the response.
     #[error("OpenAI API returned no message choices in the response")]
     NoMessageChoices,
@@ -130,6 +130,12 @@ pub enum OpenAICompatibleChatModelError {
     /// Function calls are not yet supported in kalosm with the OpenAI API.
     #[error("Function calls are not yet supported in kalosm with the OpenAI API")]
     FunctionCallsNotSupported,
+}
+
+impl From<reqwest_eventsource::Error> for OpenAICompatibleChatModelError {
+    fn from(e: reqwest_eventsource::Error) -> Self {
+        Self::EventSourceError(Box::new(e))
+    }
 }
 
 /// A chat session for the OpenAI compatible chat model.
