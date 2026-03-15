@@ -44,9 +44,7 @@ impl LayerNorm2d {
         let u: Tensor<4, f32> = xs.mean_keepdim(1);
         let u_broadcast: Tensor<4, f32> = u.broadcast_as(shape).to_concrete();
         let xs_centered: Tensor<4, f32> = (xs - &u_broadcast).to_concrete();
-        let s: Tensor<4, f32> = (&xs_centered * &xs_centered)
-            .to_concrete()
-            .mean_keepdim(1);
+        let s: Tensor<4, f32> = (&xs_centered * &xs_centered).to_concrete().mean_keepdim(1);
         let s_eps = (s + self.eps).to_concrete();
         let denom: Tensor<4, f32> = s_eps.sqrt().broadcast_as(shape).to_concrete();
         let xs_norm: Tensor<4, f32> = (&xs_centered / denom).to_concrete();

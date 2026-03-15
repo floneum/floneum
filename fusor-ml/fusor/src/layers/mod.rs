@@ -13,9 +13,9 @@ mod layer_norm_2d;
 mod linear;
 mod rms_norm;
 
+pub use conv_transpose_2d::ConvTranspose2d;
 pub use conv1d::{Conv1d, Conv1dConfig};
 pub use conv2d::{Conv2d, Conv2dConfig};
-pub use conv_transpose_2d::ConvTranspose2d;
 pub use embedding::Embedding;
 pub use layer_norm::LayerNorm;
 pub use layer_norm_2d::LayerNorm2d;

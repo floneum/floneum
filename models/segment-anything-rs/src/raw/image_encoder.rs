@@ -82,9 +82,7 @@ impl Attention {
         let c = shape[3];
 
         // Flatten to (b, h*w, c) for linear
-        let flat: Tensor<3, f32> = xs
-            .reshape([b, h * w, c])
-            .to_concrete();
+        let flat: Tensor<3, f32> = xs.reshape([b, h * w, c]).to_concrete();
         let qkv = self.qkv.forward(&flat);
 
         // Reshape to (b, h*w, 3, num_heads, c/num_heads)
@@ -106,9 +104,21 @@ impl Attention {
             .reshape([3, b * self.num_heads, h * w, c_per_head])
             .to_concrete();
 
-        let q: Tensor<3, f32> = qkv.narrow(0, 0, 1).to_concrete().reshape([b * self.num_heads, h * w, c_per_head]).to_concrete();
-        let k: Tensor<3, f32> = qkv.narrow(0, 1, 1).to_concrete().reshape([b * self.num_heads, h * w, c_per_head]).to_concrete();
-        let v: Tensor<3, f32> = qkv.narrow(0, 2, 1).to_concrete().reshape([b * self.num_heads, h * w, c_per_head]).to_concrete();
+        let q: Tensor<3, f32> = qkv
+            .narrow(0, 0, 1)
+            .to_concrete()
+            .reshape([b * self.num_heads, h * w, c_per_head])
+            .to_concrete();
+        let k: Tensor<3, f32> = qkv
+            .narrow(0, 1, 1)
+            .to_concrete()
+            .reshape([b * self.num_heads, h * w, c_per_head])
+            .to_concrete();
+        let v: Tensor<3, f32> = qkv
+            .narrow(0, 2, 1)
+            .to_concrete()
+            .reshape([b * self.num_heads, h * w, c_per_head])
+            .to_concrete();
 
         // attn = (q * scale) @ k^T
         let q_scaled = q.mul_scalar(self.scale);
@@ -156,9 +166,7 @@ impl Attention {
                 let b_nh = q_shape[0]; // b * num_heads
                 let dim = q_shape[2];
 
-                let r_q: Tensor<4, f32> = q
-                    .reshape([b_nh, q_h, q_w, dim])
-                    .to_concrete();
+                let r_q: Tensor<4, f32> = q.reshape([b_nh, q_h, q_w, dim]).to_concrete();
 
                 // rel_h = r_q @ r_h^T: (b_nh, q_h, q_w, dim) @ (q_h, k_h, dim)^T -> (b_nh, q_h, q_w, k_h)
                 let r_h_t: Tensor<3, f32> = r_h.transpose(1, 2).to_concrete(); // (q_h, dim, k_h)
@@ -175,15 +183,12 @@ impl Attention {
                     .broadcast_as([b_nh, q_w, dim, k_w])
                     .to_concrete();
                 let r_q_t: Tensor<4, f32> = r_q.transpose(1, 2).to_concrete(); // (b_nh, q_w, q_h, dim)
-                let rel_w: Tensor<4, f32> = r_q_t
-                    .mat_mul(&r_w_broadcast)
-                    .transpose(1, 2)
-                    .to_concrete(); // (b_nh, q_h, q_w, k_w)
+                let rel_w: Tensor<4, f32> =
+                    r_q_t.mat_mul(&r_w_broadcast).transpose(1, 2).to_concrete(); // (b_nh, q_h, q_w, k_w)
 
                 // attn = attn.reshape(b_nh, q_h, q_w, k_h, k_w) + rel_h.unsqueeze(4) + rel_w.unsqueeze(3)
-                let attn_5d: Tensor<5, f32> = attn
-                    .reshape([b_nh, q_h, q_w, k_h, k_w])
-                    .to_concrete();
+                let attn_5d: Tensor<5, f32> =
+                    attn.reshape([b_nh, q_h, q_w, k_h, k_w]).to_concrete();
                 // rel_h: (b_nh, q_h, q_w, k_h) -> (b_nh, q_h, q_w, k_h, 1)
                 let rel_h_5d: Tensor<5, f32> = rel_h
                     .reshape([b_nh, q_h, q_w, k_h, 1])
@@ -196,9 +201,7 @@ impl Attention {
                     .to_concrete();
 
                 let result: Tensor<5, f32> = (attn_5d + rel_h_5d + rel_w_5d).to_concrete();
-                result
-                    .reshape([b_nh, q_h * q_w, k_h * k_w])
-                    .to_concrete()
+                result.reshape([b_nh, q_h * q_w, k_h * k_w]).to_concrete()
             }
             _ => attn,
         }
@@ -235,16 +238,14 @@ fn get_rel_pos(
 
     // Convert relative coords to u32 indices for index_select
     // Since we're computing integer offsets, extract them as f32 and convert
-    let relative_coords_flat: Tensor<1, f32> = relative_coords
-        .reshape([q_size * k_size])
-        .to_concrete();
+    let relative_coords_flat: Tensor<1, f32> =
+        relative_coords.reshape([q_size * k_size]).to_concrete();
     // Build u32 index tensor from the f32 values
     let rc_slice = pollster::block_on(relative_coords_flat.to_concrete().as_slice())
         .expect("Failed to read relative coords");
-    let rc_data: Vec<u32> = {
-        rc_slice.as_slice().iter().map(|&v| v as u32).collect()
-    };
-    let relative_coords_u32: Tensor<1, u32> = Tensor::from_slice(&device, [q_size * k_size], &rc_data);
+    let rc_data: Vec<u32> = { rc_slice.as_slice().iter().map(|&v| v as u32).collect() };
+    let relative_coords_u32: Tensor<1, u32> =
+        Tensor::from_slice(&device, [q_size * k_size], &rc_data);
 
     // index_select from rel_pos
     let selected: Tensor<2, f32> = rel_pos.index_select(0, &relative_coords_u32);
@@ -457,11 +458,8 @@ impl ImageEncoderViT {
             blocks.push(block);
         }
 
-        let neck_conv1 = Conv2d::load_no_bias(
-            device,
-            &mut vb.pp("neck.0"),
-            Conv2dConfig::default(),
-        )?;
+        let neck_conv1 =
+            Conv2d::load_no_bias(device, &mut vb.pp("neck.0"), Conv2dConfig::default())?;
         let neck_ln1 = LayerNorm2d::load(device, &mut vb.pp("neck.1"), 1e-6)?;
         let cfg_pad1 = Conv2dConfig {
             padding: [1, 1],
@@ -526,9 +524,7 @@ fn layer_norm_bhwc(
     let w = shape[2];
     let c = shape[3];
     // Flatten to 3D (b*h, w, c) for layer_norm, then reshape back
-    let flat: Tensor<3, f32> = input
-        .reshape([b * h, w, c])
-        .to_concrete();
+    let flat: Tensor<3, f32> = input.reshape([b * h, w, c]).to_concrete();
     let normed = norm.forward(&flat);
     normed.reshape([b, h, w, c]).to_concrete()
 }

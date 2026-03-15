@@ -21,11 +21,7 @@ struct Conv2dBN {
 }
 
 impl Conv2dBN {
-    fn load(
-        device: &Device,
-        vb: &mut VarBuilder,
-        cfg: Conv2dConfig,
-    ) -> Result<Self> {
+    fn load(device: &Device, vb: &mut VarBuilder, cfg: Conv2dConfig) -> Result<Self> {
         // BN is fused into the conv at GGUF conversion time, so we load
         // a regular conv from the "c" sub-namespace with fused weights.
         let conv = Conv2d::load(device, &mut vb.pp("c"), cfg)?;
@@ -68,7 +64,13 @@ struct MBConv {
 }
 
 impl MBConv {
-    fn load(device: &Device, vb: &mut VarBuilder, in_: usize, _out: usize, expand_ratio: usize) -> Result<Self> {
+    fn load(
+        device: &Device,
+        vb: &mut VarBuilder,
+        in_: usize,
+        _out: usize,
+        expand_ratio: usize,
+    ) -> Result<Self> {
         let hidden = in_ * expand_ratio;
         let cfg_dw = Conv2dConfig {
             padding: [1, 1],
@@ -78,10 +80,17 @@ impl MBConv {
         let conv1 = Conv2dBN::load(device, &mut vb.pp("conv1"), Conv2dConfig::default())?;
         let conv2 = Conv2dBN::load(device, &mut vb.pp("conv2"), cfg_dw)?;
         let conv3 = Conv2dBN::load(device, &mut vb.pp("conv3"), Conv2dConfig::default())?;
-        Ok(Self { conv1, conv2, conv3 })
+        Ok(Self {
+            conv1,
+            conv2,
+            conv3,
+        })
     }
 
-    fn forward(&self, xs: &Tensor<4, f32, ConcreteTensor<f32, 4>>) -> Tensor<4, f32, ConcreteTensor<f32, 4>> {
+    fn forward(
+        &self,
+        xs: &Tensor<4, f32, ConcreteTensor<f32, 4>>,
+    ) -> Tensor<4, f32, ConcreteTensor<f32, 4>> {
         let shortcut = xs.to_concrete();
         let out = self.conv1.forward(xs);
         let out = out.gelu();
@@ -232,7 +241,12 @@ struct TinyMlp {
 }
 
 impl TinyMlp {
-    fn load(device: &Device, vb: &mut VarBuilder, _in_features: usize, _hidden: usize) -> Result<Self> {
+    fn load(
+        device: &Device,
+        vb: &mut VarBuilder,
+        _in_features: usize,
+        _hidden: usize,
+    ) -> Result<Self> {
         let norm = LayerNorm::load(device, &mut vb.pp("norm"), 1e-5)?;
         let fc1 = Linear::load(device, &mut vb.pp("fc1"))?;
         let fc2 = Linear::load(device, &mut vb.pp("fc2"))?;
@@ -360,7 +374,8 @@ impl TinyAttention {
             .mat_mul(&k.transpose(2, 3).to_concrete());
 
         // Add pre-computed attention bias: (num_heads, n, n) broadcast to (b, num_heads, n, n)
-        let ab_broadcast: Tensor<4, f32> = self.ab
+        let ab_broadcast: Tensor<4, f32> = self
+            .ab
             .reshape([1, self.num_heads, n, n])
             .broadcast_as([b, self.num_heads, n, n])
             .to_concrete();
@@ -627,11 +642,8 @@ impl TinyViT {
         }
 
         let _last_embed_dim = embed_dims[embed_dims.len() - 1];
-        let neck_conv1 = Conv2d::load_no_bias(
-            device,
-            &mut vb.pp("neck.0"),
-            Conv2dConfig::default(),
-        )?;
+        let neck_conv1 =
+            Conv2d::load_no_bias(device, &mut vb.pp("neck.0"), Conv2dConfig::default())?;
         let neck_ln1 = LayerNorm2d::load(device, &mut vb.pp("neck.1"), 1e-6)?;
         let cfg_pad1 = Conv2dConfig {
             padding: [1, 1],

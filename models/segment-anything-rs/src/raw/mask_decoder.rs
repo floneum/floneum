@@ -128,13 +128,9 @@ impl MaskDecoder {
         if multimask_output {
             // masks[:, 1:], iou_pred[:, 1:]
             let masks_shape = masks.shape();
-            let masks = masks
-                .narrow(1, 1, masks_shape[1] - 1)
-                .to_concrete();
+            let masks = masks.narrow(1, 1, masks_shape[1] - 1).to_concrete();
             let iou_shape = iou_pred.shape();
-            let iou_pred = iou_pred
-                .narrow(1, 1, iou_shape[1] - 1)
-                .to_concrete();
+            let iou_pred = iou_pred.narrow(1, 1, iou_shape[1] - 1).to_concrete();
             (masks, iou_pred)
         } else {
             // masks[:, 0:1], iou_pred[:, 0:1]
@@ -154,8 +150,7 @@ impl MaskDecoder {
         // Concatenate output tokens: [iou_token, mask_tokens]
         let iou_emb = self.iou_token.embeddings(); // (1, dim)
         let mask_emb = self.mask_tokens.embeddings(); // (num_mask_tokens, dim)
-        let output_tokens: Tensor<2, f32> =
-            Tensor::cat([iou_emb.clone(), mask_emb.clone()], 0); // (1+num_mask_tokens, dim)
+        let output_tokens: Tensor<2, f32> = Tensor::cat([iou_emb.clone(), mask_emb.clone()], 0); // (1+num_mask_tokens, dim)
 
         let sparse_shape = sparse_prompt_embeddings.shape();
         let batch_size = sparse_shape[0];
@@ -187,9 +182,12 @@ impl MaskDecoder {
         let (hs, src) = self.transformer.forward(&src, &pos_src, &tokens);
 
         // Extract token outputs
-        let iou_token_out: Tensor<2, f32> = hs.narrow(1, 0, 1).to_concrete().reshape([batch_size, dim]).to_concrete();
-        let mask_tokens_out: Tensor<3, f32> =
-            hs.narrow(1, 1, self.num_mask_tokens).to_concrete();
+        let iou_token_out: Tensor<2, f32> = hs
+            .narrow(1, 0, 1)
+            .to_concrete()
+            .reshape([batch_size, dim])
+            .to_concrete();
+        let mask_tokens_out: Tensor<3, f32> = hs.narrow(1, 1, self.num_mask_tokens).to_concrete();
 
         // Upscale mask embeddings
         let src: Tensor<4, f32> = src

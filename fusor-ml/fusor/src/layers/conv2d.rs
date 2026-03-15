@@ -95,9 +95,7 @@ where
                 self.config.padding,
                 self.config.stride,
             )
-        } else if self.config.groups == self.in_channels
-            && self.in_channels == self.out_channels
-        {
+        } else if self.config.groups == self.in_channels && self.in_channels == self.out_channels {
             // Depthwise convolution: each channel has its own filter
             // Fold channels into batch: (B, C, H, W) -> (B*C, 1, H, W)
             let shape = input.shape();
@@ -116,25 +114,28 @@ where
 
             // Use sliding_window_view approach directly:
             // 1. Pad input
-            let padded: Tensor<4, D, ConcreteTensor<D, 4>> = if self.config.padding[0] > 0 || self.config.padding[1] > 0 {
-                let mut result: Tensor<4, D> = input.clone().into();
-                if self.config.padding[0] > 0 {
-                    result = result.pad_axis(2, self.config.padding[0]);
-                }
-                if self.config.padding[1] > 0 {
-                    result = result.pad_axis(3, self.config.padding[1]);
-                }
-                result.to_concrete()
-            } else {
-                input.clone()
-            };
+            let padded: Tensor<4, D, ConcreteTensor<D, 4>> =
+                if self.config.padding[0] > 0 || self.config.padding[1] > 0 {
+                    let mut result: Tensor<4, D> = input.clone().into();
+                    if self.config.padding[0] > 0 {
+                        result = result.pad_axis(2, self.config.padding[0]);
+                    }
+                    if self.config.padding[1] > 0 {
+                        result = result.pad_axis(3, self.config.padding[1]);
+                    }
+                    result.to_concrete()
+                } else {
+                    input.clone()
+                };
 
             // 2. Create sliding windows: (B, C, oH, kH, oW, kW)
             use fusor_types::SlidingWindow;
-            let windows: Tensor<6, D, ConcreteTensor<D, 6>> = padded.sliding_window_view([
-                SlidingWindow::new(2, kh, self.config.stride[0]),
-                SlidingWindow::new(3, kw, self.config.stride[1]),
-            ]).to_concrete();
+            let windows: Tensor<6, D, ConcreteTensor<D, 6>> = padded
+                .sliding_window_view([
+                    SlidingWindow::new(2, kh, self.config.stride[0]),
+                    SlidingWindow::new(3, kw, self.config.stride[1]),
+                ])
+                .to_concrete();
 
             // windows shape: (B, C, oH, oW, kH, kW)
             // Reshape weight from (C, 1, kH, kW) to (1, C, 1, 1, kH, kW) for broadcasting

@@ -84,7 +84,9 @@ impl Linear<f32> {
         let output_2d = input_2d.q_mat_mul(&self.weight);
 
         // Reshape back to 3D: (batch, seq_len, out_features)
-        let output: Tensor<3, f32> = output_2d.reshape([batch, seq_len, out_features]).to_concrete();
+        let output: Tensor<3, f32> = output_2d
+            .reshape([batch, seq_len, out_features])
+            .to_concrete();
 
         if let Some(bias) = &self.bias {
             output.add_(bias)
@@ -133,11 +135,15 @@ where
         let out_features = self.weight.shape()[0];
 
         // Flatten to 2D: (batch * seq_len, in_features)
-        let input_2d: Tensor<2, f32> = input_f32.reshape([batch * seq_len, in_features]).to_concrete();
+        let input_2d: Tensor<2, f32> = input_f32
+            .reshape([batch * seq_len, in_features])
+            .to_concrete();
         let output_2d = input_2d.q_mat_mul(&self.weight);
 
         // Reshape back to 3D: (batch, seq_len, out_features)
-        let output_f32: Tensor<3, f32> = output_2d.reshape([batch, seq_len, out_features]).to_concrete();
+        let output_f32: Tensor<3, f32> = output_2d
+            .reshape([batch, seq_len, out_features])
+            .to_concrete();
 
         // Add bias if present (in f32)
         let output_f32 = if let Some(bias) = &self.bias {

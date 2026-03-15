@@ -178,8 +178,7 @@ mod tests {
         let gpu_slice = gpu_result.as_slice().await.unwrap();
 
         // CPU reference
-        let cpu_tensor: Tensor<1, f32> =
-            Tensor::Cpu(fusor_cpu::Tensor::from_slice([8], &data));
+        let cpu_tensor: Tensor<1, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([8], &data));
         let cpu_result = cpu_tensor.gelu();
         let cpu_slice = cpu_result.as_slice().await.unwrap();
 
@@ -202,7 +201,11 @@ mod tests {
         let tanh_result = tanh_tensor.tanh();
         let tanh_slice = tanh_result.as_slice().await.unwrap();
         for i in 0..5 {
-            eprintln!("GPU tanh({:>10.1}) = {}", tanh_data[i], tanh_slice.as_slice()[i]);
+            eprintln!(
+                "GPU tanh({:>10.1}) = {}",
+                tanh_data[i],
+                tanh_slice.as_slice()[i]
+            );
         }
 
         // Test x * x for large values
@@ -211,14 +214,24 @@ mod tests {
         let sq_result = (&sq_tensor * &sq_tensor).to_concrete();
         let sq_slice = sq_result.clone().as_slice().await.unwrap();
         for i in 0..5 {
-            eprintln!("GPU {}^2 = {} (expected {})", sq_data[i], sq_slice.as_slice()[i], sq_data[i] * sq_data[i]);
+            eprintln!(
+                "GPU {}^2 = {} (expected {})",
+                sq_data[i],
+                sq_slice.as_slice()[i],
+                sq_data[i] * sq_data[i]
+            );
         }
 
         // Test the inner factor: 0.044715 * x^2 + 1
         let inner_factor = (sq_result * 0.044715f32 + 1.0f32).to_concrete();
         let inner_slice = inner_factor.as_slice().await.unwrap();
         for i in 0..5 {
-            eprintln!("GPU inner_factor({}) = {} (expected {})", sq_data[i], inner_slice.as_slice()[i], 0.044715 * sq_data[i] * sq_data[i] + 1.0);
+            eprintln!(
+                "GPU inner_factor({}) = {} (expected {})",
+                sq_data[i],
+                inner_slice.as_slice()[i],
+                0.044715 * sq_data[i] * sq_data[i] + 1.0
+            );
         }
 
         // For large positive x, gelu(x) ≈ x

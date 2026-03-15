@@ -840,10 +840,12 @@ impl<'a> Resolver<'a> {
         };
 
         let mut new_reduce = reduce_op.clone();
-        let mut existing_post = new_reduce.post_element_wise.functions.clone();
-        existing_post.extend(el_op.functions.functions.iter().cloned());
+        // New element-wise functions are applied AFTER existing post functions,
+        // so they are "outermost" and must come FIRST (convention: [outer..inner])
+        let mut new_post = el_op.functions.functions.clone();
+        new_post.extend(new_reduce.post_element_wise.functions.iter().cloned());
         new_reduce.post_element_wise =
-            ElementWiseFunctions::new(existing_post, reduce_op.post_element_wise.input_datatype());
+            ElementWiseFunctions::new(new_post, reduce_op.post_element_wise.input_datatype());
 
         self.execution_graph[node_idx].variant =
             ComputeGraphNodeVariant::Reduce(new_reduce.clone());
@@ -878,10 +880,12 @@ impl<'a> Resolver<'a> {
                 let input_variant = self.execution_graph[input_exec_idx].variant.clone();
                 if let ComputeGraphNodeVariant::MatMul(matmul_op) = input_variant {
                     let mut new_matmul = matmul_op.clone();
-                    let mut existing_post = new_matmul.post_element_wise.functions.clone();
-                    existing_post.extend(el_op.functions.functions.iter().cloned());
+                    // New element-wise functions are applied AFTER existing post functions,
+                    // so they are "outermost" and must come FIRST (convention: [outer..inner])
+                    let mut new_post = el_op.functions.functions.clone();
+                    new_post.extend(new_matmul.post_element_wise.functions.iter().cloned());
                     new_matmul.post_element_wise = ElementWiseFunctions::new(
-                        existing_post,
+                        new_post,
                         matmul_op.post_element_wise.input_datatype(),
                     );
 
@@ -993,9 +997,11 @@ impl<'a> Resolver<'a> {
         };
 
         let mut new_deq = deq_op.clone();
-        let mut existing_post = new_deq.post_dequantize.functions.clone();
-        existing_post.extend(el_op.functions.functions.iter().cloned());
-        new_deq.post_dequantize = ElementWiseFunctions::new(existing_post, deq_op.datatype);
+        // New element-wise functions are applied AFTER existing post functions,
+        // so they are "outermost" and must come FIRST (convention: [outer..inner])
+        let mut new_post = el_op.functions.functions.clone();
+        new_post.extend(new_deq.post_dequantize.functions.iter().cloned());
+        new_deq.post_dequantize = ElementWiseFunctions::new(new_post, deq_op.datatype);
 
         self.execution_graph[node_idx].variant = ComputeGraphNodeVariant::Dequantize(new_deq);
 

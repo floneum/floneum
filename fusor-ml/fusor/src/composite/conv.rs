@@ -150,7 +150,8 @@ where
         //   ...
         //   swap(DIFF, DIFF+1): (B, oD1, ..., oDn, C, kD1, ...)
 
-        let mut windows_permuted: Tensor<R2, D, ConcreteTensor<D, R2>> = windows_tensor.to_concrete();
+        let mut windows_permuted: Tensor<R2, D, ConcreteTensor<D, R2>> =
+            windows_tensor.to_concrete();
         for i in 0..DIFF {
             windows_permuted = windows_permuted.transpose(1 + i, 2 + i).to_concrete();
         }
@@ -583,10 +584,26 @@ mod tests {
         // [0,1]: 1+2+3+5+6+7+9+10+11 = 54
         // [1,0]: 4+5+6+8+9+10+12+13+14 = 81
         // [1,1]: 5+6+7+9+10+11+13+14+15 = 90
-        assert!((result[[0, 0, 0, 0]] - 45.0).abs() < 1e-4, "ch0[0,0] got {} expected 45", result[[0, 0, 0, 0]]);
-        assert!((result[[0, 0, 0, 1]] - 54.0).abs() < 1e-4, "ch0[0,1] got {} expected 54", result[[0, 0, 0, 1]]);
-        assert!((result[[0, 0, 1, 0]] - 81.0).abs() < 1e-4, "ch0[1,0] got {} expected 81", result[[0, 0, 1, 0]]);
-        assert!((result[[0, 0, 1, 1]] - 90.0).abs() < 1e-4, "ch0[1,1] got {} expected 90", result[[0, 0, 1, 1]]);
+        assert!(
+            (result[[0, 0, 0, 0]] - 45.0).abs() < 1e-4,
+            "ch0[0,0] got {} expected 45",
+            result[[0, 0, 0, 0]]
+        );
+        assert!(
+            (result[[0, 0, 0, 1]] - 54.0).abs() < 1e-4,
+            "ch0[0,1] got {} expected 54",
+            result[[0, 0, 0, 1]]
+        );
+        assert!(
+            (result[[0, 0, 1, 0]] - 81.0).abs() < 1e-4,
+            "ch0[1,0] got {} expected 81",
+            result[[0, 0, 1, 0]]
+        );
+        assert!(
+            (result[[0, 0, 1, 1]] - 90.0).abs() < 1e-4,
+            "ch0[1,1] got {} expected 90",
+            result[[0, 0, 1, 1]]
+        );
 
         // Channel 1 with center-only kernel: picks out center element of each 3x3 window
         // Input ch1: [[100,101,102,103],[104,105,106,107],[108,109,110,111],[112,113,114,115]]
@@ -594,10 +611,26 @@ mod tests {
         // [0,1]: center of (0:3,1:4) = 106
         // [1,0]: center of (1:4,0:3) = 109
         // [1,1]: center of (1:4,1:4) = 110
-        assert!((result[[0, 1, 0, 0]] - 105.0).abs() < 1e-4, "ch1[0,0] got {} expected 105", result[[0, 1, 0, 0]]);
-        assert!((result[[0, 1, 0, 1]] - 106.0).abs() < 1e-4, "ch1[0,1] got {} expected 106", result[[0, 1, 0, 1]]);
-        assert!((result[[0, 1, 1, 0]] - 109.0).abs() < 1e-4, "ch1[1,0] got {} expected 109", result[[0, 1, 1, 0]]);
-        assert!((result[[0, 1, 1, 1]] - 110.0).abs() < 1e-4, "ch1[1,1] got {} expected 110", result[[0, 1, 1, 1]]);
+        assert!(
+            (result[[0, 1, 0, 0]] - 105.0).abs() < 1e-4,
+            "ch1[0,0] got {} expected 105",
+            result[[0, 1, 0, 0]]
+        );
+        assert!(
+            (result[[0, 1, 0, 1]] - 106.0).abs() < 1e-4,
+            "ch1[0,1] got {} expected 106",
+            result[[0, 1, 0, 1]]
+        );
+        assert!(
+            (result[[0, 1, 1, 0]] - 109.0).abs() < 1e-4,
+            "ch1[1,0] got {} expected 109",
+            result[[0, 1, 1, 0]]
+        );
+        assert!(
+            (result[[0, 1, 1, 1]] - 110.0).abs() < 1e-4,
+            "ch1[1,1] got {} expected 110",
+            result[[0, 1, 1, 1]]
+        );
     }
 
     #[tokio::test]
@@ -606,13 +639,8 @@ mod tests {
 
         // Input: (batch=1, channels=2, height=3, width=3)
         let input_data: Vec<f32> = vec![
-            1.0, 2.0, 3.0,
-            4.0, 5.0, 6.0,
-            7.0, 8.0, 9.0,
-            // ch1
-            10.0, 20.0, 30.0,
-            40.0, 50.0, 60.0,
-            70.0, 80.0, 90.0,
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, // ch1
+            10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0,
         ];
         let input: Tensor<4, f32, ConcreteTensor<f32, 4>> =
             Tensor::Cpu(fusor_cpu::Tensor::from_slice([1, 2, 3, 3], &input_data));
@@ -637,14 +665,30 @@ mod tests {
         // padded: [[0,0,0,0,0],[0,1,2,3,0],[0,4,5,6,0],[0,7,8,9,0],[0,0,0,0,0]]
         // [0,0]: 0+0+0+0+1+2+0+4+5 = 12
         // [1,1]: 1+2+3+4+5+6+7+8+9 = 45 (center, no padding effect)
-        assert!((result[[0, 0, 0, 0]] - 12.0).abs() < 1e-4, "ch0[0,0] got {} expected 12", result[[0, 0, 0, 0]]);
-        assert!((result[[0, 0, 1, 1]] - 45.0).abs() < 1e-4, "ch0[1,1] got {} expected 45", result[[0, 0, 1, 1]]);
+        assert!(
+            (result[[0, 0, 0, 0]] - 12.0).abs() < 1e-4,
+            "ch0[0,0] got {} expected 12",
+            result[[0, 0, 0, 0]]
+        );
+        assert!(
+            (result[[0, 0, 1, 1]] - 45.0).abs() < 1e-4,
+            "ch0[1,1] got {} expected 45",
+            result[[0, 0, 1, 1]]
+        );
 
         // Channel 1: same but 10x values
         // [0,0]: 0+0+0+0+10+20+0+40+50 = 120
         // [1,1]: 10+20+30+40+50+60+70+80+90 = 450
-        assert!((result[[0, 1, 0, 0]] - 120.0).abs() < 1e-4, "ch1[0,0] got {} expected 120", result[[0, 1, 0, 0]]);
-        assert!((result[[0, 1, 1, 1]] - 450.0).abs() < 1e-4, "ch1[1,1] got {} expected 450", result[[0, 1, 1, 1]]);
+        assert!(
+            (result[[0, 1, 0, 0]] - 120.0).abs() < 1e-4,
+            "ch1[0,0] got {} expected 120",
+            result[[0, 1, 0, 0]]
+        );
+        assert!(
+            (result[[0, 1, 1, 1]] - 450.0).abs() < 1e-4,
+            "ch1[1,1] got {} expected 450",
+            result[[0, 1, 1, 1]]
+        );
     }
 
     #[tokio::test]
@@ -726,17 +770,23 @@ mod tests {
                 assert!(
                     (result[[0, 0, h, w]] - 10.0).abs() < 1e-5,
                     "ch0[{},{}] got {} expected 10",
-                    h, w, result[[0, 0, h, w]]
+                    h,
+                    w,
+                    result[[0, 0, h, w]]
                 );
                 assert!(
                     (result[[0, 1, h, w]] - 20.0).abs() < 1e-5,
                     "ch1[{},{}] got {} expected 20",
-                    h, w, result[[0, 1, h, w]]
+                    h,
+                    w,
+                    result[[0, 1, h, w]]
                 );
                 assert!(
                     (result[[0, 2, h, w]] - 30.0).abs() < 1e-5,
                     "ch2[{},{}] got {} expected 30",
-                    h, w, result[[0, 2, h, w]]
+                    h,
+                    w,
+                    result[[0, 2, h, w]]
                 );
             }
         }

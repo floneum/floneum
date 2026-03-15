@@ -154,3 +154,106 @@ async fn test_nary_fusion_respects_binding_limit() {
     assert_eq!(output[[0, 0]], expected_00);
     assert_eq!(output[[1, 1]], expected_11);
 }
+
+/// Regression test: when a single node feeds two consumers (sin + cos),
+/// the GPU must produce correct results for both.
+/// Variant 1: resolving sin and cos separately
+#[tokio::test]
+async fn test_dual_consumer_sin_cos() {
+    let device = Device::new().await.unwrap();
+
+    // Create a matmul to produce a non-trivial intermediate
+    let a = Tensor::new(&device, &[[1.0f32, 2.0], [3.0, 4.0], [5.0, 6.0]]);
+    let b = Tensor::new(&device, &[[0.1f32, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8]]);
+    let mm = a.mat_mul(&b);
+
+    // scaled is consumed by BOTH sin and cos (dual consumer)
+    let scaled = mm * (2.0 * std::f32::consts::PI);
+    let sin_out = scaled.sin();
+    let cos_out = scaled.cos();
+
+    let sin_slice = sin_out.as_slice().await.unwrap();
+    let cos_slice = cos_out.as_slice().await.unwrap();
+
+    // Compute expected values on CPU
+    let a_data = [[1.0f32, 2.0], [3.0, 4.0], [5.0, 6.0]];
+    let b_data = [[0.1f32, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8]];
+    for i in 0..3 {
+        for j in 0..4 {
+            let mm_val = a_data[i][0] * b_data[0][j] + a_data[i][1] * b_data[1][j];
+            let scaled_val = mm_val * 2.0 * std::f32::consts::PI;
+            let expected_sin = scaled_val.sin();
+            let expected_cos = scaled_val.cos();
+            assert!(
+                (sin_slice[[i, j]] - expected_sin).abs() < 0.01,
+                "sin mismatch at [{}, {}]: got {} expected {}",
+                i,
+                j,
+                sin_slice[[i, j]],
+                expected_sin,
+            );
+            assert!(
+                (cos_slice[[i, j]] - expected_cos).abs() < 0.01,
+                "cos mismatch at [{}, {}]: got {} expected {}",
+                i,
+                j,
+                cos_slice[[i, j]],
+                expected_cos,
+            );
+        }
+    }
+}
+
+/// Regression test: when a single node feeds two consumers (sin + cos),
+/// both resolved together via cat (single resolve call).
+#[tokio::test]
+async fn test_dual_consumer_sin_cos_cat() {
+    let device = Device::new().await.unwrap();
+
+    // Create a matmul to produce a non-trivial intermediate
+    let a = Tensor::new(&device, &[[1.0f32, 2.0], [3.0, 4.0], [5.0, 6.0]]);
+    let b = Tensor::new(&device, &[[0.1f32, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8]]);
+    let mm = a.mat_mul(&b);
+
+    // scaled is consumed by BOTH sin and cos (dual consumer)
+    let scaled = mm * (2.0 * std::f32::consts::PI);
+    let sin_out = scaled.sin();
+    let cos_out = scaled.cos();
+
+    // Concatenate sin and cos - resolved together in one graph pass
+    let result = Tensor::cat([sin_out, cos_out], 1);
+    let result_slice = result.as_slice().await.unwrap();
+
+    // Compute expected values on CPU
+    let a_data = [[1.0f32, 2.0], [3.0, 4.0], [5.0, 6.0]];
+    let b_data = [[0.1f32, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8]];
+    for i in 0..3 {
+        for j in 0..4 {
+            let mm_val = a_data[i][0] * b_data[0][j] + a_data[i][1] * b_data[1][j];
+            let scaled_val = mm_val * 2.0 * std::f32::consts::PI;
+            let expected_sin = scaled_val.sin();
+            let expected_cos = scaled_val.cos();
+            // sin values are in columns 0..4, cos values in columns 4..8
+            let sin_diff = (result_slice[[i, j]] - expected_sin).abs();
+            let cos_diff = (result_slice[[i, j + 4]] - expected_cos).abs();
+            assert!(
+                sin_diff < 0.01,
+                "sin mismatch at [{}, {}]: got {} expected {} diff {}",
+                i,
+                j,
+                result_slice[[i, j]],
+                expected_sin,
+                sin_diff,
+            );
+            assert!(
+                cos_diff < 0.01,
+                "cos mismatch at [{}, {}]: got {} expected {} diff {}",
+                i,
+                j + 4,
+                result_slice[[i, j + 4]],
+                expected_cos,
+                cos_diff,
+            );
+        }
+    }
+}

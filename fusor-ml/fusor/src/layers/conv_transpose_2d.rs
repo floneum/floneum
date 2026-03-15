@@ -61,10 +61,8 @@ impl ConvTranspose2d {
             .to_concrete();
 
         // Reshape weight from (in_ch, out_ch, kh, kw) to (in_ch, out_ch * kh * kw)
-        let weight_flat: Tensor<2, f32, ConcreteTensor<f32, 2>> = self
-            .weight
-            .reshape([in_ch, out_ch * kh * kw])
-            .to_concrete();
+        let weight_flat: Tensor<2, f32, ConcreteTensor<f32, 2>> =
+            self.weight.reshape([in_ch, out_ch * kh * kw]).to_concrete();
 
         // Matmul: (b*h*w, in_ch) @ (in_ch, out_ch*kh*kw) -> (b*h*w, out_ch*kh*kw)
         let result = input_flat.mat_mul(&weight_flat);
@@ -97,11 +95,7 @@ impl ConvTranspose2d {
     }
 
     /// Load ConvTranspose2d layer from VarBuilder
-    pub fn load(
-        device: &Device,
-        vb: &mut VarBuilder,
-        stride: [usize; 2],
-    ) -> crate::Result<Self> {
+    pub fn load(device: &Device, vb: &mut VarBuilder, stride: [usize; 2]) -> crate::Result<Self> {
         let weight: Tensor<4, f32> = vb.get("weight", device)?.dequantize();
         let bias: Option<Tensor<1, f32, ConcreteTensor<f32, 1>>> =
             vb.get("bias", device).ok().map(|b| b.dequantize());

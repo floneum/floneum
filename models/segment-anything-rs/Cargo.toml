@@ -20,7 +20,7 @@ image.workspace = true
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-candle-core = { workspace = true }
+candle-core = { workspace = true, features = ["metal"] }
 candle-nn = { workspace = true }
 candle-transformers = { workspace = true }
 

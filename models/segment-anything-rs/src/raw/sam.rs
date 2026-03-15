@@ -47,9 +47,9 @@ impl Sam {
         Self::load_vit(
             device,
             vb,
-            768,  // embed_dim
-            12,   // depth
-            12,   // num_heads
+            768,            // embed_dim
+            12,             // depth
+            12,             // num_heads
             &[2, 5, 8, 11], // global_attn_indexes
         )
     }
@@ -74,9 +74,9 @@ impl Sam {
             encoder_depth,
             encoder_num_heads,
             PROMPT_EMBED_DIM,
-            true,  // use_rel_pos
-            true,  // use_abs_pos
-            14,    // window_size
+            true, // use_rel_pos
+            true, // use_abs_pos
+            14,   // window_size
             encoder_global_attn_indexes,
         )?;
 
@@ -92,8 +92,8 @@ impl Sam {
             device,
             &mut vb.pp("mask_decoder"),
             PROMPT_EMBED_DIM,
-            3,  // num_multimask_outputs
-            3,  // iou_head_depth
+            3, // num_multimask_outputs
+            3, // iou_head_depth
         )?;
 
         Ok(Self {
@@ -123,8 +123,8 @@ impl Sam {
             device,
             &mut vb.pp("mask_decoder"),
             PROMPT_EMBED_DIM,
-            3,  // num_multimask_outputs
-            3,  // iou_head_depth
+            3, // num_multimask_outputs
+            3, // iou_head_depth
         )?;
 
         Ok(Self {
@@ -137,16 +137,12 @@ impl Sam {
     }
 
     /// Compute image embeddings.
-    pub fn embeddings(
-        &self,
-        img: &Tensor<3, f32, ConcreteTensor<f32, 3>>,
-    ) -> Tensor<4, f32> {
+    pub fn embeddings(&self, img: &Tensor<3, f32, ConcreteTensor<f32, 3>>) -> Tensor<4, f32> {
         let img = self.preprocess(img);
         // Add batch dim: (C, H, W) -> (1, C, H, W)
         let shape = img.shape();
-        let img: Tensor<4, f32, ConcreteTensor<f32, 4>> = img
-            .reshape([1, shape[0], shape[1], shape[2]])
-            .to_concrete();
+        let img: Tensor<4, f32, ConcreteTensor<f32, 4>> =
+            img.reshape([1, shape[0], shape[1], shape[2]]).to_concrete();
         self.image_encoder.forward(&img)
     }
 
@@ -180,9 +176,10 @@ impl Sam {
         );
 
         // Upsample to IMAGE_SIZE
-        let upscaled: Tensor<4, f32> = low_res_mask
-            .to_concrete()
-            .upsample_nearest2d(IMAGE_SIZE / low_res_mask.shape()[2], IMAGE_SIZE / low_res_mask.shape()[3]);
+        let upscaled: Tensor<4, f32> = low_res_mask.to_concrete().upsample_nearest2d(
+            IMAGE_SIZE / low_res_mask.shape()[2],
+            IMAGE_SIZE / low_res_mask.shape()[3],
+        );
 
         // Crop to original size: narrow on H and W dims
         let cropped = upscaled
@@ -313,8 +310,7 @@ fn generate_crop_boxes(
 
     for layer_idx in 1..=n_layers {
         let n_crops_per_side = 1 << layer_idx;
-        let overlap =
-            (overlap_ratio * short_side as f64 * 2.0 / n_crops_per_side as f64) as usize;
+        let overlap = (overlap_ratio * short_side as f64 * 2.0 / n_crops_per_side as f64) as usize;
         let crop_w = crop_len(im_w, n_crops_per_side, overlap);
         let crop_h = crop_len(im_h, n_crops_per_side, overlap);
 
