@@ -38,6 +38,9 @@ pub trait DataType:
     + AnyBitPattern
     + Debug
     + Display
+    + Send
+    + Sync
+    + 'static
 {
     const WGSL_TYPE: DataTypeEnum;
 
@@ -235,6 +238,11 @@ impl LazyTensorData {
         }
     }
 
+    pub(crate) fn reference(device: Device, info: TensorInfo, key: NodeIndex) -> Self {
+        device.compute_graph().add_reference(key);
+        Self { device, info, key }
+    }
+
     pub(crate) fn from_parts(device: Device, info: TensorInfo, key: NodeIndex) -> Self {
         Self { device, info, key }
     }
@@ -349,6 +357,18 @@ impl LazyTensorData {
     pub(crate) fn materialize(&self) -> (TensorData, usize) {
         let result = self.device.compute_graph().resolve(self.key, &self.device);
         (result.data, result.total_kernels)
+    }
+
+    pub(crate) fn device(&self) -> &Device {
+        &self.device
+    }
+
+    pub(crate) fn info(&self) -> &TensorInfo {
+        &self.info
+    }
+
+    pub(crate) fn key(&self) -> NodeIndex {
+        self.key
     }
 
     pub fn graphvis(&self) -> Graph {

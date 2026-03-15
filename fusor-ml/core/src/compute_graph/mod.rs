@@ -9,6 +9,7 @@ use wgpu::CommandEncoderDescriptor;
 
 mod layout_pass;
 mod queue;
+mod backward;
 mod resolve;
 mod visualize;
 
@@ -18,8 +19,13 @@ use crate::{
     compute_graph::resolve::ResolverResult, dequantize::DequantizeOperation,
     index_select::IndexSelectOperation, map_layout::MapLayoutOperation, mir::operation::Operation,
     nary_wise::NaryOperation, quantized::matmul::QMatMulOperation, resize::ResizeOperation,
-    slice_assign::SliceAssignOperation, tensor::TensorData, visit_tiled::MaybeQData,
+    slice_assign::SliceAssignOperation,
+    tensor::{LazyTensorData, TensorData},
+    visit_tiled::MaybeQData,
 };
+
+pub(crate) type BackwardRule =
+    Arc<dyn Fn(LazyTensorData) -> crate::Result<Vec<(NodeIndex, LazyTensorData)>> + Send + Sync>;
 
 #[derive(Clone)]
 pub(crate) struct ComputeGraph {
@@ -106,10 +112,18 @@ impl ComputeGraph {
             .create_command_encoder(&CommandEncoderDescriptor {
                 label: Some("ComputeGraph Encoder"),
             });
-        let data = self.with_mut(|inner| {
-            let mut resolver = Resolver::new(inner, key, &mut encoder);
-            resolver.run(inner)
-        });
+        let (data, removed) = {
+            let mut inner = self.inner.write();
+            let mut removed = Vec::new();
+            let mut resolver = Resolver::new(&mut inner, key, &mut encoder);
+            let data = resolver.run(&mut inner, &mut removed);
+            #[cfg(feature = "extra_assertions")]
+            {
+                inner.verify_integrity()
+            }
+            (data, removed)
+        };
+        drop(removed);
         device.wgpu_queue().submit(Some(encoder.finish()));
         // Reset the written flag on all buffers
         device.reset_initialized_buffers();
@@ -137,8 +151,31 @@ impl ComputeGraph {
         self.with_mut(|inner| inner.add_reference(key));
     }
 
+    pub(crate) fn set_backward_rule(&self, key: NodeIndex, backward: BackwardRule) {
+        let replaced = {
+            let mut inner = self.inner.write();
+            let replaced = inner.set_backward_rule(key, backward);
+            #[cfg(feature = "extra_assertions")]
+            {
+                inner.verify_integrity()
+            }
+            replaced
+        };
+        drop(replaced);
+    }
+
     pub(crate) fn remove_reference(&self, key: NodeIndex) {
-        self.with_mut(|inner| inner.remove_reference(key));
+        let removed = {
+            let mut inner = self.inner.write();
+            let mut removed = Vec::new();
+            inner.remove_reference(key, &mut removed);
+            #[cfg(feature = "extra_assertions")]
+            {
+                inner.verify_integrity()
+            }
+            removed
+        };
+        drop(removed);
     }
 }
 
@@ -151,6 +188,7 @@ pub(crate) struct ComputeGraphNode {
     variant: ComputeGraphNodeVariant,
     reference_count: u32,
     cached: Option<TensorData>,
+    backward: Option<BackwardRule>,
 }
 
 #[derive(Clone, Debug)]
@@ -242,6 +280,7 @@ impl ComputeGraphInner {
             variant: node,
             reference_count: 1,
             cached: None,
+            backward: None,
         });
         self.add_dependency_edges(node);
         node
@@ -251,6 +290,13 @@ impl ComputeGraphInner {
         let node = self.nodes.nodes.node_weight_mut(key).unwrap();
 
         node.reference_count += 1;
+    }
+
+    fn set_backward_rule(&mut self, key: NodeIndex, backward: BackwardRule) -> Option<BackwardRule> {
+        self.nodes
+            .nodes
+            .node_weight_mut(key)
+            .and_then(|node| node.backward.replace(backward))
     }
 
     fn add_dependency_edges(&mut self, key: NodeIndex) {
@@ -269,13 +315,13 @@ impl ComputeGraphInner {
         }
     }
 
-    fn remove_reference(&mut self, key: NodeIndex) {
+    fn remove_reference(&mut self, key: NodeIndex, removed: &mut Vec<ComputeGraphNode>) {
         let node = self.nodes.nodes.node_weight_mut(key).unwrap();
         node.reference_count = node.reference_count.saturating_sub(1);
-        self.check_life(key);
+        self.check_life(key, removed);
     }
 
-    fn check_life(&mut self, key: NodeIndex) {
+    fn check_life(&mut self, key: NodeIndex, removed: &mut Vec<ComputeGraphNode>) {
         // Check the reference count
         let ref_count = self.nodes.nodes.node_weight(key).map(|n| n.reference_count);
         match ref_count {
@@ -315,17 +361,19 @@ impl ComputeGraphInner {
 
         // If no other nodes depend on this key and it has zero references, it is dead
         // remove it from the graph
-        self.remove_key(key);
+        self.remove_key(key, removed);
 
         // Then check if any nodes it depends on are alive
         for dependency in dependencies {
-            self.check_life(dependency);
+            self.check_life(dependency, removed);
         }
     }
 
-    fn remove_key(&mut self, key: NodeIndex) {
+    fn remove_key(&mut self, key: NodeIndex, removed: &mut Vec<ComputeGraphNode>) {
         // Remove the node from the graph (this also removes all edges)
-        self.nodes.nodes.remove_node(key);
+        if let Some(node) = self.nodes.nodes.remove_node(key) {
+            removed.push(node);
+        }
     }
 
     pub(crate) fn get_result_or_qmatrix(&self, key: NodeIndex) -> Option<MaybeQData> {

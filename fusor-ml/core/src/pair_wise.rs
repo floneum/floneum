@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    ElementWiseFunction, MaxRank, Tensor,
+    BackwardTarget, ElementWiseFunction, MaxRank, Tensor,
     compute_graph::NodeIndex,
     tensor::{DataType, DataTypeEnum},
 };
@@ -87,6 +87,21 @@ impl PairWiseFunction {
     }
 }
 
+fn pairwise_with_backward<const R: usize, T: DataType>(
+    lhs: &Tensor<R, T>,
+    rhs: &Tensor<R, T>,
+    function: PairWiseFunction,
+    backward: impl Fn(Tensor<R, T>, &Tensor<R, T>, &Tensor<R, T>) -> Vec<BackwardTarget>
+        + Send
+        + Sync
+        + 'static,
+) -> Tensor<R, T> {
+    let output = lhs.pair_wise(rhs, function);
+    let lhs = lhs.clone();
+    let rhs = rhs.clone();
+    output.with_backwards(move |grad| Ok(backward(grad, &lhs, &rhs)))
+}
+
 /// Macro to implement pairwise operators (Add, Sub, Mul, Div) for Tensor.
 ///
 /// Generates all four combinations of owned/reference implementations:
@@ -97,7 +112,7 @@ impl PairWiseFunction {
 ///
 /// Also generates a broadcast method `op_()` for tensors of different ranks.
 macro_rules! impl_pairwise_op {
-    ($trait:ident, $method:ident, $op_str:literal, $op_name:literal, $broadcast_method:ident, {$op:tt}) => {
+    ($trait:ident, $method:ident, $op_str:literal, $op_name:literal, $broadcast_method:ident, {$op:tt}, $backward:expr) => {
         // Owned + Owned: delegates to ref + ref
         impl<const R: usize, T: DataType> $trait<Tensor<R, T>> for Tensor<R, T> {
             type Output = Tensor<R, T>;
@@ -112,13 +127,15 @@ macro_rules! impl_pairwise_op {
             type Output = Tensor<R, T>;
 
             fn $method(self, rhs: &Tensor<R, T>) -> Self::Output {
-                self.pair_wise(
+                pairwise_with_backward(
+                    self,
                     rhs,
                     PairWiseFunction::new(
                         concat!("let output = a ", $op_str, " b;"),
                         T::WGSL_TYPE,
                     )
                     .with_name($op_name),
+                    $backward,
                 )
             }
         }
@@ -156,7 +173,18 @@ macro_rules! impl_pairwise_op {
     };
 }
 
-impl_pairwise_op!(Add, add, "+", "add", add_, {+});
+impl_pairwise_op!(
+    Add,
+    add,
+    "+",
+    "add",
+    add_,
+    {+},
+    |grad, lhs, rhs| vec![
+        BackwardTarget::wrt(lhs, grad.clone()),
+        BackwardTarget::wrt(rhs, grad),
+    ]
+);
 
 #[cfg(test)]
 #[tokio::test]
@@ -312,7 +340,18 @@ async fn test_pair_wise_add_sparse() {
     assert_eq!(as_slice[[2, 0]], 5. + 5.);
 }
 
-impl_pairwise_op!(Sub, sub, "-", "sub", sub_, {-});
+impl_pairwise_op!(
+    Sub,
+    sub,
+    "-",
+    "sub",
+    sub_,
+    {-},
+    |grad, lhs, rhs| vec![
+        BackwardTarget::wrt(lhs, grad.clone()),
+        BackwardTarget::wrt(rhs, -grad),
+    ]
+);
 
 #[cfg(test)]
 #[tokio::test]
@@ -338,7 +377,18 @@ async fn test_pair_wise_sub() {
     assert_eq!(as_slice[[2, 1]], 6. - 6.);
 }
 
-impl_pairwise_op!(Mul, mul, "*", "mul", mul_, {*});
+impl_pairwise_op!(
+    Mul,
+    mul,
+    "*",
+    "mul",
+    mul_,
+    {*},
+    |grad, lhs, rhs| vec![
+        BackwardTarget::wrt(lhs, grad.clone() * rhs),
+        BackwardTarget::wrt(rhs, grad * lhs),
+    ]
+);
 
 #[cfg(test)]
 #[tokio::test]
@@ -364,7 +414,18 @@ async fn test_pair_wise_mul() {
     assert_eq!(as_slice[[2, 1]], 6. * 6.);
 }
 
-impl_pairwise_op!(Div, div, "/", "div", div_, {/});
+impl_pairwise_op!(
+    Div,
+    div,
+    "/",
+    "div",
+    div_,
+    {/},
+    |grad, lhs, rhs| vec![
+        BackwardTarget::wrt(lhs, grad.clone() / rhs),
+        BackwardTarget::wrt(rhs, -((grad * lhs) / &(rhs * rhs))),
+    ]
+);
 
 #[cfg(test)]
 #[tokio::test]
@@ -395,13 +456,15 @@ async fn test_pair_wise_div() {
 /// Unlike `impl_pairwise_op!` which implements std::ops traits, this macro generates
 /// regular methods on Tensor for operations that don't have corresponding operators.
 macro_rules! impl_pairwise_method {
-    ($method:ident, $wgsl_op:literal, $op_name:literal, $broadcast_method:ident, |$a:ident, $b:ident| $expr:expr) => {
+    ($method:ident, $wgsl_op:literal, $op_name:literal, $broadcast_method:ident, |$a:ident, $b:ident| $expr:expr, $backward:expr) => {
         impl<const R: usize, T: DataType> Tensor<R, T> {
             pub fn $method(&self, other: &Self) -> Self {
-                self.pair_wise(
+                pairwise_with_backward(
+                    self,
                     other,
                     PairWiseFunction::new(concat!("let output = ", $wgsl_op, ";"), T::WGSL_TYPE)
                         .with_name($op_name),
+                    $backward,
                 )
             }
 
@@ -418,7 +481,17 @@ macro_rules! impl_pairwise_method {
     };
 }
 
-impl_pairwise_method!(pow, "pow(a, b)", "pow", pow_, |a, b| a.pow(&b));
+impl_pairwise_method!(
+    pow,
+    "pow(a, b)",
+    "pow",
+    pow_,
+    |a, b| a.pow(&b),
+    |grad, lhs, rhs| vec![
+        BackwardTarget::wrt(lhs, (grad.clone() * rhs) * &lhs.pow(&(rhs.clone() - T::one()))),
+        BackwardTarget::wrt(rhs, (grad * &lhs.pow(rhs)) * &lhs.log()),
+    ]
+);
 
 #[cfg(test)]
 #[tokio::test]

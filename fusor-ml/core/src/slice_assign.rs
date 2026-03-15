@@ -1,7 +1,7 @@
 use std::{fmt::Write, ops::Range};
 
 use crate::{
-    TILE_SIZE, Tensor, TensorData,
+    BackwardTarget, TILE_SIZE, Tensor, TensorData,
     compute_graph::{ComputeGraphInner, NodeIndex},
     mir::{
         inputs::MirValue,
@@ -184,7 +184,18 @@ impl Operation for SliceAssignOperation {
 
 impl<const R: usize, T: crate::DataType> Tensor<R, T> {
     pub fn slice_assign(&self, slices: [Range<usize>; R], value: &Self) -> Self {
-        self.add_slice_assign(value, slices)
+        let output = self.add_slice_assign(value, slices.clone());
+        let input = self.clone();
+        let value = value.clone();
+        output.with_backwards(move |grad| {
+            Ok(vec![
+                BackwardTarget::wrt(
+                    &input,
+                    grad.slice_assign(slices.clone(), &Tensor::zeros(grad.device(), *value.shape())),
+                ),
+                BackwardTarget::wrt(&value, grad.slice(slices.clone())),
+            ])
+        })
     }
 }
 

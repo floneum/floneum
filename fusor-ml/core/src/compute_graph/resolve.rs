@@ -20,7 +20,7 @@ use crate::{
     tensor::TensorData,
 };
 
-use super::{ComputeGraphInner, ComputeGraphNodeVariant, NodeIndex};
+use super::{ComputeGraphInner, ComputeGraphNode, ComputeGraphNodeVariant, NodeIndex};
 
 pub(crate) struct ResolverResult {
     pub(crate) data: TensorData,
@@ -72,7 +72,11 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    pub(crate) fn run(&mut self, graph: &mut ComputeGraphInner) -> ResolverResult {
+    pub(crate) fn run(
+        &mut self,
+        graph: &mut ComputeGraphInner,
+        removed: &mut Vec<ComputeGraphNode>,
+    ) -> ResolverResult {
         let device = graph.device();
         let max_subgroup_size = device.max_subgroup_size();
 
@@ -134,6 +138,7 @@ impl<'a> Resolver<'a> {
                         &inputs,
                         &all_input_values,
                         old_best,
+                        removed,
                     );
                     pending_operations.clear();
                     all_input_values.clear();
@@ -184,6 +189,7 @@ impl<'a> Resolver<'a> {
                 &inputs,
                 &all_input_values,
                 old_best,
+                removed,
             );
         }
 
@@ -1051,6 +1057,7 @@ impl<'a> Resolver<'a> {
         inputs: &[Vec<MirValue>],
         all_input_values: &[KernelInputValue],
         workgroup_shape: workgroup_shape::WorkgroupShape,
+        removed: &mut Vec<ComputeGraphNode>,
     ) {
         let mut max_dispatch_size = [0; 3];
         for ((key, operation), inputs) in queued_operations.iter().zip(inputs) {
@@ -1087,7 +1094,7 @@ impl<'a> Resolver<'a> {
                 dependencies.push(dependent_key);
             });
             for dependency in dependencies {
-                graph.check_life(dependency);
+                graph.check_life(dependency, removed);
             }
         }
         kernel.set_workgroup_size(workgroup_shape);
