@@ -1,0 +1,88 @@
+What does Rust help with?	Rust helps build fast software with strong memory safety.
+Why use attention?	Attention lets each token gather the context it needs.
+What are embeddings?	Embeddings turn discrete symbols into useful dense vectors.
+Why does layer norm matter?	Layer norm keeps activations stable during training.
+How do transformers predict text?	Transformers use context to score the next token.
+What does gradient descent do?	Gradient descent nudges weights toward lower loss.
+Why use residual connections?	Residual connections help information and gradients flow.
+What does softmax produce?	Softmax turns scores into smooth probabilities.
+How does causal masking work?	Causal masking blocks attention to future positions.
+What makes tiny models useful?	Tiny models are great for learning and debugging ideas.
+How do position embeddings help?	Position embeddings tell the model where each token is.
+What is this demo training?	This demo trains a tiny chat model on simple explanations.
+What is a tensor?	A tensor is a multidimensional array that stores model values.
+Why train on examples?	Training on examples teaches the model which outputs fit each prompt.
+What does a loss measure?	A loss measures how far predictions are from the desired targets.
+What is a parameter?	A parameter is a learned weight that changes during optimization.
+What is a model?	A model is a function with learned parameters.
+Why do we need data?	Data gives the model patterns to imitate and compress.
+What is a token?	A token is a unit the model predicts one step at a time.
+Why keep the context window fixed?	A fixed context window keeps training batches simple and uniform.
+What does the optimizer update?	The optimizer updates parameters using gradient information.
+Why does the learning rate matter?	The learning rate controls how large each parameter update is.
+What happens if the learning rate is too high?	A learning rate that is too high can make training unstable.
+What happens if the learning rate is too low?	A learning rate that is too low makes learning very slow.
+Why use a validation set?	A validation set checks whether the model generalizes beyond training data.
+What is overfitting?	Overfitting means the model memorizes training examples too narrowly.
+What is generalization?	Generalization is the ability to handle related prompts not seen exactly before.
+Why shuffle batches?	Shuffling batches exposes the model to examples in varied order.
+What is a batch?	A batch is a small set of examples processed together.
+Why do batches help?	Batches make training more efficient on modern hardware.
+What does normalization do?	Normalization keeps values in a healthier range for learning.
+Why use a feed forward layer?	A feed forward layer adds extra nonlinear capacity after attention.
+What is nonlinear about relu?	Relu keeps positive values and clips negative values to zero.
+Why do models need nonlinear layers?	Nonlinear layers let models represent more complex functions.
+What does self attention compare?	Self attention compares each token with the other tokens in context.
+Why is context useful?	Context helps the model resolve meaning from nearby words.
+What is next token prediction?	Next token prediction trains the model to continue a sequence.
+Why does cross entropy work well?	Cross entropy strongly rewards putting probability on the correct token.
+What does a probability distribution mean here?	It means the model assigns relative likelihood to each next token.
+What is a logit?	A logit is an unnormalized score before softmax.
+Why do we subtract the max in softmax?	Subtracting the max keeps exponentials numerically stable.
+What is decoding?	Decoding turns model scores into concrete generated tokens.
+What is greedy decoding?	Greedy decoding always picks the highest scoring next token.
+Why can greedy decoding help this demo?	Greedy decoding makes a weak toy model easier to inspect.
+What is temperature in sampling?	Temperature changes how sharp or flat the sampling distribution is.
+Why use a compact vocabulary?	A compact vocabulary avoids wasting probability mass on unused symbols.
+What is a chat format?	A chat format wraps prompts and replies in role marked text.
+Why add system text?	System text gives the model a consistent behavior target.
+What is an assistant reply?	It is the portion of text the model should generate after the prompt.
+Why end examples with a stop token?	A stop token teaches the model when a reply should end.
+What is a prompt?	A prompt is the text that conditions the next generated tokens.
+Why do prompts matter?	Prompts shape the context the model uses to answer.
+What does inference mean?	Inference is the process of generating outputs from a trained model.
+What does training mean?	Training is the process of adjusting weights to reduce loss.
+Why can tiny datasets still help?	Tiny datasets help us debug the training loop and model behavior.
+What is the compute graph?	The compute graph records how tensors depend on earlier tensors.
+Why is backpropagation useful?	Backpropagation efficiently computes gradients through the graph.
+What is a gradient?	A gradient shows how changing a parameter would change the loss.
+Why detach updated parameters?	Detaching makes the next training step start from fresh leaf tensors.
+What does caching save?	Caching saves repeated work or repeated transfers.
+Why keep optimizer updates on the gpu?	Keeping updates on the gpu avoids slow host round trips.
+What does a mask do in the loss?	A loss mask ignores padded positions that should not count.
+Why pad sequences?	Padding lets sequences of different lengths share one tensor shape.
+What is a hidden dimension?	A hidden dimension is the feature width used inside the model.
+Why can wider models help?	Wider models can store richer representations.
+What does depth add?	Depth lets the model refine representations over multiple layers.
+Why do residual paths help deep models?	Residual paths make it easier for gradients to move through depth.
+What is memorization in a toy demo?	Memorization means the model can reproduce the small training set well.
+Why is memorization acceptable here?	Memorization is fine here because the goal is to verify the pipeline.
+What does a corpus contain?	A corpus contains the text examples used for training.
+Why use short answers?	Short answers make the tiny dataset easier for the model to learn.
+What is instruction tuning?	Instruction tuning teaches the model to answer user requests in a desired style.
+Why does a role prefix help?	A role prefix tells the model which speaker is currently talking.
+What is a response style?	A response style is the tone and structure the model learns to imitate.
+Why can repeated patterns help?	Repeated patterns make the training signal clearer for small models.
+What should this demo reply like?	This demo should reply with short clear factual explanations.
+What does the assistant know?	The assistant knows only the small concepts shown in the chat data.
+Why does more data help this crate?	More data gives the tiny model more completions to imitate.
+What is a good first debugging sign?	A steadily falling loss is a good first debugging sign.
+What is a better final sign?	A better final sign is readable answers to held prompts.
+Why compare prompts after training?	Comparing prompts after training shows whether generation improved.
+What is the purpose of this crate?	The purpose of this crate is to train a tiny chat transformer with fusor.
+How should the assistant answer?	The assistant should answer briefly clearly and helpfully.
+What does the crate demonstrate?	The crate demonstrates data loading training autograd and generation.
+Why is this called nanochat?	It is called nanochat because it is a very small chat style model.
+What does fusor provide here?	Fusor provides tensor ops compute graphs and backpropagation.
+Why are examples important?	Examples show how the library works in an end to end task.
+What is the final goal of the demo?	The final goal is a tiny assistant that produces readable toy answers.

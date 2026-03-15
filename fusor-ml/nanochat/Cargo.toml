@@ -1,0 +1,10 @@
+[package]
+name = "fusor-nanochat"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+fusor-core.workspace = true
+pollster = "0.4.0"
+rand.workspace = true
