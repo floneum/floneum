@@ -307,12 +307,13 @@ impl PromptEncoder {
 
         let dense_embeddings = match masks {
             None => {
+                let batch = sparse_embeddings.shape()[0];
                 let emb = self.no_mask_embed.embeddings(); // (1, embed_dim)
                 let emb_shape = emb.shape();
                 let embed_dim = emb_shape[1];
                 emb.reshape([1, embed_dim, 1, 1])
                     .broadcast_as([
-                        1,
+                        batch,
                         embed_dim,
                         self.image_embedding_size.0,
                         self.image_embedding_size.1,

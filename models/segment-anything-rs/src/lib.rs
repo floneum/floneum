@@ -378,72 +378,92 @@ impl SegmentAnything {
 
         let mut candidates: Vec<MaskCandidate> = Vec::new();
 
-        for &(px, py) in &point_grid {
-            let point = [(px, py, true)];
-            let (low_res_masks, iou_preds) = self.sam.forward_for_embeddings(
+        const BATCH_SIZE: usize = 64;
+
+        for chunk in point_grid.chunks(BATCH_SIZE) {
+            let batch_points: Vec<(f64, f64, bool)> =
+                chunk.iter().map(|&(px, py)| (px, py, true)).collect();
+
+            let (low_res_masks, iou_preds) = self.sam.forward_for_embeddings_batched(
                 &img_embeddings,
                 original_h,
                 original_w,
-                &point,
+                &batch_points,
                 true, // multimask_output: get 3 mask alternatives per point
             );
 
-            // Read masks and IoU predictions to CPU
-            let masks_shape = low_res_masks.shape(); // (1, 3, h, w)
-            let n_masks = masks_shape[1];
+            // Read masks and IoU predictions to CPU in one shot
+            let masks_shape = low_res_masks.shape(); // (batch, 3, h, w)
+            let batch = masks_shape[0];
+            let n_masks_per_point = masks_shape[1];
             let mask_h = masks_shape[2];
             let mask_w = masks_shape[3];
-            let total = n_masks * mask_h * mask_w;
+            let mask_pixels = mask_h * mask_w;
+            let total_mask_elems = batch * n_masks_per_point * mask_pixels;
+
+            // The low-res masks are at 1/4 of IMAGE_SIZE (256x256) and represent the
+            // padded 1024x1024 image space. The actual image occupies only the top-left
+            // (original_h, original_w) region of that 1024x1024 space. Compute the
+            // corresponding crop region at the low-res mask scale.
+            let crop_h = (original_h * mask_h) / IMAGE_SIZE;
+            let crop_w = (original_w * mask_w) / IMAGE_SIZE;
 
             let masks_flat: Tensor<1, f32, ConcreteTensor<f32, 1>> =
-                low_res_masks.reshape([total]).to_concrete();
+                low_res_masks.reshape([total_mask_elems]).to_concrete();
             let masks_slice = masks_flat
                 .as_slice()
                 .await
                 .expect("Failed to read mask data");
             let masks_vec = masks_slice.as_slice();
 
+            let total_iou_elems = batch * n_masks_per_point;
             let iou_flat: Tensor<1, f32, ConcreteTensor<f32, 1>> =
-                iou_preds.reshape([n_masks]).to_concrete();
+                iou_preds.reshape([total_iou_elems]).to_concrete();
             let iou_slice = iou_flat
                 .as_slice()
                 .await
                 .expect("Failed to read IoU data");
             let iou_vec = iou_slice.as_slice();
 
-            for mask_idx in 0..n_masks {
-                let iou = iou_vec[mask_idx];
-                if iou < PRED_IOU_THRESH {
-                    continue;
+            for point_idx in 0..batch {
+                for mask_idx in 0..n_masks_per_point {
+                    let flat_idx = point_idx * n_masks_per_point + mask_idx;
+                    let iou = iou_vec[flat_idx];
+                    if iou < PRED_IOU_THRESH {
+                        continue;
+                    }
+
+                    let mask_start = flat_idx * mask_pixels;
+
+                    // Crop the mask to the actual image region (remove padding)
+                    let mut cropped_mask = Vec::with_capacity(crop_h * crop_w);
+                    for y in 0..crop_h {
+                        let row_start = mask_start + y * mask_w;
+                        cropped_mask.extend_from_slice(&masks_vec[row_start..row_start + crop_w]);
+                    }
+
+                    // Compute stability score on the cropped mask
+                    let hi_thresh = MODEL_MASK_THRESHOLD + STABILITY_SCORE_OFFSET;
+                    let lo_thresh = MODEL_MASK_THRESHOLD - STABILITY_SCORE_OFFSET;
+                    let intersections =
+                        cropped_mask.iter().filter(|&&v| v >= hi_thresh).count() as f32;
+                    let unions = cropped_mask.iter().filter(|&&v| v >= lo_thresh).count() as f32;
+                    let stability_score = if unions > 0.0 {
+                        intersections / unions
+                    } else {
+                        0.0
+                    };
+                    if stability_score < STABILITY_SCORE_THRESHOLD {
+                        continue;
+                    }
+
+                    candidates.push(MaskCandidate {
+                        mask_data: cropped_mask,
+                        iou,
+                        h: crop_h,
+                        w: crop_w,
+                    });
                 }
-
-                let mask_start = mask_idx * mask_h * mask_w;
-                let mask_end = mask_start + mask_h * mask_w;
-                let mask_data = &masks_vec[mask_start..mask_end];
-
-                // Compute stability score on CPU:
-                // intersections = count(mask >= threshold + offset)
-                // unions = count(mask >= threshold - offset)
-                let hi_thresh = MODEL_MASK_THRESHOLD + STABILITY_SCORE_OFFSET;
-                let lo_thresh = MODEL_MASK_THRESHOLD - STABILITY_SCORE_OFFSET;
-                let intersections =
-                    mask_data.iter().filter(|&&v| v >= hi_thresh).count() as f32;
-                let unions = mask_data.iter().filter(|&&v| v >= lo_thresh).count() as f32;
-                let stability_score = if unions > 0.0 {
-                    intersections / unions
-                } else {
-                    0.0
-                };
-                if stability_score < STABILITY_SCORE_THRESHOLD {
-                    continue;
-                }
-
-                candidates.push(MaskCandidate {
-                    mask_data: mask_data.to_vec(),
-                    iou,
-                    h: mask_h,
-                    w: mask_w,
-                });
             }
         }
 
@@ -486,7 +506,7 @@ impl SegmentAnything {
                 image::ImageBuffer::from_raw(candidate.w as u32, candidate.h as u32, rgb_pixels)
                     .ok_or(SegmentAnythingInferenceError::MergeMasks)?;
 
-            let image = image::DynamicImage::from(mask_img).resize_to_fill(
+            let image = image::DynamicImage::from(mask_img).resize_exact(
                 image_width,
                 image_height,
                 image::imageops::FilterType::CatmullRom,
@@ -983,6 +1003,128 @@ mod tests {
         eprintln!(
             "  Fusor vs Candle CPU: {:.2}x",
             candle_dec.as_secs_f64() / fusor_dec.as_secs_f64()
+        );
+    }
+
+    /// Compare batched vs unbatched forward_for_embeddings to verify numerical equivalence.
+    /// Uses the exact same reshape+as_slice reading pattern as segment_everything.
+    #[tokio::test]
+    async fn test_batched_vs_unbatched() {
+        let gguf_path = Path::new("/tmp/mobile_sam-tiny-vitt.gguf");
+        if !gguf_path.exists() {
+            return;
+        }
+
+        let model = SegmentAnything::from_gguf_path(gguf_path, true)
+            .await
+            .expect("Failed to load model");
+
+        let image_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/landscape.jpg");
+        let image = image::open(&image_path).expect("Failed to open test image");
+        let image_tensor = model.image_to_tensor(image);
+        let original_h = image_tensor.shape()[1];
+        let original_w = image_tensor.shape()[2];
+
+        let img_embeddings = model.sam.embeddings(&image_tensor);
+
+        // Use 8 test points (more than 4 to stress-test)
+        let test_points: Vec<(f64, f64, bool)> = vec![
+            (0.25, 0.25, true),
+            (0.5, 0.25, true),
+            (0.75, 0.5, true),
+            (0.5, 0.75, true),
+            (0.1, 0.1, true),
+            (0.9, 0.9, true),
+            (0.3, 0.7, true),
+            (0.7, 0.3, true),
+        ];
+
+        // --- Batched: all points at once, read via reshape+as_slice (same as segment_everything) ---
+        let (batched_masks, batched_iou) = model.sam.forward_for_embeddings_batched(
+            &img_embeddings,
+            original_h,
+            original_w,
+            &test_points,
+            true,
+        );
+        let bm_shape = batched_masks.shape(); // (batch, 3, h, w)
+        let batch = bm_shape[0];
+        let n_masks = bm_shape[1];
+        let mask_h = bm_shape[2];
+        let mask_w = bm_shape[3];
+        let mask_pixels = mask_h * mask_w;
+
+        // Read masks via reshape+as_slice (the pattern used in segment_everything)
+        let total_mask = batch * n_masks * mask_pixels;
+        let masks_flat: Tensor<1, f32, ConcreteTensor<f32, 1>> =
+            batched_masks.reshape([total_mask]).to_concrete();
+        let masks_slice = masks_flat.as_slice().await.unwrap();
+        let batched_masks_data = masks_slice.as_slice();
+
+        let total_iou = batch * n_masks;
+        let iou_flat: Tensor<1, f32, ConcreteTensor<f32, 1>> =
+            batched_iou.reshape([total_iou]).to_concrete();
+        let iou_slice = iou_flat.as_slice().await.unwrap();
+        let batched_iou_data = iou_slice.as_slice();
+
+        // --- Unbatched: one point at a time, read via reshape+as_slice ---
+        let mut unbatched_masks_data = Vec::new();
+        let mut unbatched_iou_data = Vec::new();
+        for point in &test_points {
+            let (masks, iou) = model.sam.forward_for_embeddings(
+                &img_embeddings,
+                original_h,
+                original_w,
+                &[*point],
+                true,
+            );
+            let ms = masks.shape();
+            let m_total = ms[0] * ms[1] * ms[2] * ms[3];
+            let mf: Tensor<1, f32, ConcreteTensor<f32, 1>> =
+                masks.reshape([m_total]).to_concrete();
+            let ms_data = mf.as_slice().await.unwrap();
+            unbatched_masks_data.extend_from_slice(ms_data.as_slice());
+
+            let is = iou.shape();
+            let i_total = is[0] * is[1];
+            let if_: Tensor<1, f32, ConcreteTensor<f32, 1>> =
+                iou.reshape([i_total]).to_concrete();
+            let is_data = if_.as_slice().await.unwrap();
+            unbatched_iou_data.extend_from_slice(is_data.as_slice());
+        }
+
+        // --- Compare ---
+        let mask_diff = max_diff(batched_masks_data, &unbatched_masks_data);
+        let iou_diff = max_diff(batched_iou_data, &unbatched_iou_data);
+
+        eprintln!("=== Batched vs Unbatched (reshape+as_slice) ===");
+        eprintln!("  Batch={batch}, n_masks={n_masks}, mask_size={mask_h}x{mask_w}");
+        eprintln!("  Mask max diff:  {mask_diff}");
+        eprintln!("  IoU  max diff:  {iou_diff}");
+        eprintln!(
+            "  Total mask elements:  batched={} unbatched={}",
+            batched_masks_data.len(),
+            unbatched_masks_data.len()
+        );
+
+        // Also verify per-point IoU values match
+        for i in 0..test_points.len() {
+            for m in 0..n_masks {
+                let idx = i * n_masks + m;
+                eprintln!(
+                    "  Point {i} Mask {m}: batched_iou={:.4} unbatched_iou={:.4}",
+                    batched_iou_data[idx], unbatched_iou_data[idx]
+                );
+            }
+        }
+
+        assert!(
+            mask_diff < 0.01,
+            "Batched vs unbatched mask divergence too large: {mask_diff}"
+        );
+        assert!(
+            iou_diff < 0.01,
+            "Batched vs unbatched IoU divergence too large: {iou_diff}"
         );
     }
 }

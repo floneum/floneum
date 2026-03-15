@@ -12,9 +12,9 @@ const PROMPT_EMBED_DIM: usize = 256;
 /// The expected image size (both width and height) for the SAM model.
 pub const IMAGE_SIZE: usize = 1024;
 const VIT_PATCH_SIZE: usize = 16;
-pub(crate) const PRED_IOU_THRESH: f32 = 0.88;
+pub(crate) const PRED_IOU_THRESH: f32 = 0.78;
 pub(crate) const STABILITY_SCORE_OFFSET: f32 = 1.0;
-pub(crate) const STABILITY_SCORE_THRESHOLD: f32 = 0.95;
+pub(crate) const STABILITY_SCORE_THRESHOLD: f32 = 0.88;
 pub(crate) const MODEL_MASK_THRESHOLD: f32 = 0.0;
 pub(crate) const CROP_NMS_THRESH: f32 = 0.7;
 
@@ -232,6 +232,57 @@ impl Sam {
 
         let (sparse_prompt_embeddings, dense_prompt_embeddings) =
             self.prompt_encoder.forward(points_ref, None, None);
+
+        self.mask_decoder.forward(
+            img_embeddings,
+            &image_pe,
+            &sparse_prompt_embeddings,
+            &dense_prompt_embeddings,
+            multimask_output,
+        )
+    }
+
+    /// Generate masks and IoU predictions for a batch of single-point prompts
+    /// from pre-computed image embeddings.
+    ///
+    /// Each element in `points` is `(x, y, is_foreground)` and becomes one batch item.
+    /// All points are processed in a single pass through the prompt encoder and mask decoder.
+    ///
+    /// Returns `(masks, iou_predictions)`:
+    /// - masks: `(batch, n_masks, h, w)` where n_masks=3 if multimask_output
+    /// - iou_predictions: `(batch, n_masks)`
+    pub fn forward_for_embeddings_batched(
+        &self,
+        img_embeddings: &Tensor<4, f32>,
+        original_h: usize,
+        original_w: usize,
+        points: &[(f64, f64, bool)],
+        multimask_output: bool,
+    ) -> (Tensor<4, f32>, Tensor<2, f32>) {
+        let device = img_embeddings.device();
+        let image_pe = self.prompt_encoder.get_dense_pe();
+        let batch_size = points.len();
+
+        // Build batched point tensors: (batch_size, 1, 2) and (batch_size, 1)
+        let xys: Vec<f32> = points
+            .iter()
+            .flat_map(|(x, y, _b)| {
+                let x = (*x as f32) * (original_w as f32);
+                let y = (*y as f32) * (original_h as f32);
+                [x, y]
+            })
+            .collect();
+        let labels: Vec<f32> = points
+            .iter()
+            .map(|(_x, _y, b)| if *b { 1f32 } else { 0f32 })
+            .collect();
+
+        let pts: Tensor<3, f32> = Tensor::from_slice(&device, [batch_size, 1, 2], &xys);
+        let lbls: Tensor<2, f32> = Tensor::from_slice(&device, [batch_size, 1], &labels);
+
+        let (sparse_prompt_embeddings, dense_prompt_embeddings) =
+            self.prompt_encoder
+                .forward(Some((&pts, &lbls)), None, None);
 
         self.mask_decoder.forward(
             img_embeddings,

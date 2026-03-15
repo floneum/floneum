@@ -190,17 +190,35 @@ impl MaskDecoder {
         let mask_tokens_out: Tensor<3, f32> = hs.narrow(1, 1, self.num_mask_tokens).to_concrete();
 
         // Upscale mask embeddings
+        // Process each batch item individually through the upscaling pipeline
+        // to work around a GPU framework issue with batch > 1 in ConvTranspose2d/LayerNorm2d.
         let src: Tensor<4, f32> = src
             .transpose(1, 2)
             .to_concrete()
             .reshape([batch_size, c, h, w])
             .to_concrete();
 
-        let upscaled = self.output_upscaling_conv1.forward(&src);
-        let upscaled = self.output_upscaling_ln.forward(&upscaled);
-        let upscaled = upscaled.gelu();
-        let upscaled = self.output_upscaling_conv2.forward(&upscaled.to_concrete());
-        let upscaled = upscaled.gelu();
+        let upscaled = if batch_size == 1 {
+            let upscaled = self.output_upscaling_conv1.forward(&src);
+            let upscaled = self.output_upscaling_ln.forward(&upscaled);
+            let upscaled = upscaled.gelu();
+            let upscaled = self.output_upscaling_conv2.forward(&upscaled.to_concrete());
+            upscaled.gelu().to_concrete()
+        } else {
+            let mut upscaled_items = Vec::with_capacity(batch_size);
+            for i in 0..batch_size {
+                let src_i: Tensor<4, f32> = src
+                    .narrow(0, i, 1)
+                    .to_concrete();
+                let up_i = self.output_upscaling_conv1.forward(&src_i);
+                let up_i = self.output_upscaling_ln.forward(&up_i);
+                let up_i = up_i.gelu();
+                let up_i = self.output_upscaling_conv2.forward(&up_i.to_concrete());
+                let up_i = up_i.gelu();
+                upscaled_items.push(up_i.to_concrete());
+            }
+            Tensor::cat(upscaled_items, 0).to_concrete()
+        };
 
         // Predict masks using hypernetwork MLPs
         let mut hyper_in_list = Vec::with_capacity(self.num_mask_tokens);
