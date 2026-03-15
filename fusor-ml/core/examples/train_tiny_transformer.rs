@@ -9,6 +9,7 @@ const FF_DIM: usize = 16;
 const EPOCHS: usize = 120;
 const LEARNING_RATE: f32 = 0.08;
 const EPS: f32 = 1e-5;
+const LOG_EVERY: usize = 20;
 
 #[derive(Clone)]
 struct TinyTransformer {
@@ -95,25 +96,25 @@ impl TinyTransformer {
         output.mat_mul(&self.lm_head.broadcast_as([BATCH_SIZE, MODEL_DIM, VOCAB_SIZE]))
     }
 
-    async fn step(self, gradients: &Gradients, device: &Device) -> Self {
+    fn step(self, gradients: &Gradients) -> Self {
         Self {
-            token_projection: sgd_step_2d::<VOCAB_SIZE, MODEL_DIM>(&self.token_projection, gradients, device).await,
-            position_projection: sgd_step_2d::<SEQ_LEN, MODEL_DIM>(&self.position_projection, gradients, device).await,
-            ln1_weight: sgd_step_1d::<MODEL_DIM>(&self.ln1_weight, gradients, device).await,
-            ln1_bias: sgd_step_1d::<MODEL_DIM>(&self.ln1_bias, gradients, device).await,
-            w_q: sgd_step_2d::<MODEL_DIM, MODEL_DIM>(&self.w_q, gradients, device).await,
-            w_k: sgd_step_2d::<MODEL_DIM, MODEL_DIM>(&self.w_k, gradients, device).await,
-            w_v: sgd_step_2d::<MODEL_DIM, MODEL_DIM>(&self.w_v, gradients, device).await,
-            w_o: sgd_step_2d::<MODEL_DIM, MODEL_DIM>(&self.w_o, gradients, device).await,
-            ln2_weight: sgd_step_1d::<MODEL_DIM>(&self.ln2_weight, gradients, device).await,
-            ln2_bias: sgd_step_1d::<MODEL_DIM>(&self.ln2_bias, gradients, device).await,
-            w1: sgd_step_2d::<MODEL_DIM, FF_DIM>(&self.w1, gradients, device).await,
-            b1: sgd_step_1d::<FF_DIM>(&self.b1, gradients, device).await,
-            w2: sgd_step_2d::<FF_DIM, MODEL_DIM>(&self.w2, gradients, device).await,
-            b2: sgd_step_1d::<MODEL_DIM>(&self.b2, gradients, device).await,
-            ln_out_weight: sgd_step_1d::<MODEL_DIM>(&self.ln_out_weight, gradients, device).await,
-            ln_out_bias: sgd_step_1d::<MODEL_DIM>(&self.ln_out_bias, gradients, device).await,
-            lm_head: sgd_step_2d::<MODEL_DIM, VOCAB_SIZE>(&self.lm_head, gradients, device).await,
+            token_projection: sgd_step_2d(&self.token_projection, gradients),
+            position_projection: sgd_step_2d(&self.position_projection, gradients),
+            ln1_weight: sgd_step_1d(&self.ln1_weight, gradients),
+            ln1_bias: sgd_step_1d(&self.ln1_bias, gradients),
+            w_q: sgd_step_2d(&self.w_q, gradients),
+            w_k: sgd_step_2d(&self.w_k, gradients),
+            w_v: sgd_step_2d(&self.w_v, gradients),
+            w_o: sgd_step_2d(&self.w_o, gradients),
+            ln2_weight: sgd_step_1d(&self.ln2_weight, gradients),
+            ln2_bias: sgd_step_1d(&self.ln2_bias, gradients),
+            w1: sgd_step_2d(&self.w1, gradients),
+            b1: sgd_step_1d(&self.b1, gradients),
+            w2: sgd_step_2d(&self.w2, gradients),
+            b2: sgd_step_1d(&self.b2, gradients),
+            ln_out_weight: sgd_step_1d(&self.ln_out_weight, gradients),
+            ln_out_bias: sgd_step_1d(&self.ln_out_bias, gradients),
+            lm_head: sgd_step_2d(&self.lm_head, gradients),
         }
     }
 }
@@ -139,11 +140,16 @@ async fn main() {
             .sum::<0>(0)
             / (BATCH_SIZE * SEQ_LEN * VOCAB_SIZE) as f32;
 
-        let loss_value = loss.to_scalar().await.unwrap();
         let gradients = loss.backward().unwrap();
-        model = model.step(&gradients, &device).await;
+        let should_log = epoch % LOG_EVERY == 0 || epoch + 1 == EPOCHS;
+        let loss_value = if should_log {
+            Some(loss.to_scalar().await.unwrap())
+        } else {
+            None
+        };
+        model = model.step(&gradients);
 
-        if epoch % 20 == 0 || epoch + 1 == EPOCHS {
+        if let Some(loss_value) = loss_value {
             println!("epoch {:>3}: loss={loss_value:.6}", epoch + 1);
         }
     }
@@ -217,29 +223,20 @@ fn zeros<const LEN: usize>(device: &Device) -> Tensor<1, f32> {
     Tensor::new(device, &[0.0; LEN])
 }
 
-async fn sgd_step_1d<const LEN: usize>(
+fn sgd_step_1d(
     parameter: &Tensor<1, f32>,
     gradients: &Gradients,
-    device: &Device,
 ) -> Tensor<1, f32> {
     let gradient = gradients.get(parameter).unwrap();
-    let next = parameter - &(gradient * LEARNING_RATE);
-    let host = next.to_vec1().await.unwrap();
-    let host: [f32; LEN] = host.try_into().unwrap();
-    Tensor::new(device, &host)
+    (parameter - &(gradient * LEARNING_RATE)).detach()
 }
 
-async fn sgd_step_2d<const ROWS: usize, const COLS: usize>(
+fn sgd_step_2d(
     parameter: &Tensor<2, f32>,
     gradients: &Gradients,
-    device: &Device,
 ) -> Tensor<2, f32> {
     let gradient = gradients.get(parameter).unwrap();
-    let next = parameter - &(gradient * LEARNING_RATE);
-    let host = next.to_vec2().await.unwrap();
-    let host: [[f32; COLS]; ROWS] =
-        std::array::from_fn(|row| std::array::from_fn(|col| host[row][col]));
-    Tensor::new(device, &host)
+    (parameter - &(gradient * LEARNING_RATE)).detach()
 }
 
 fn argmax_last_dim(logits: Vec<Vec<Vec<f32>>>) -> Vec<Vec<usize>> {

@@ -246,6 +246,25 @@ async fn test_backward_after_materializing_loss_scalar() {
 
 #[cfg(test)]
 #[tokio::test]
+async fn test_detach_cuts_history() {
+    let device = crate::Device::test_instance();
+
+    let x = Tensor::new(&device, &[1.0f32, 2.0, 3.0]);
+    let detached = (&x * 2.0).detach();
+    let loss: Tensor<0, f32> = detached.sum::<0>(0);
+
+    let gradients = loss.backward().unwrap();
+
+    assert!(gradients.get(&x).is_none());
+
+    let d_detached = gradients.get(&detached).unwrap().as_slice().await.unwrap();
+    assert_close(d_detached[[0]], 1.0);
+    assert_close(d_detached[[1]], 1.0);
+    assert_close(d_detached[[2]], 1.0);
+}
+
+#[cfg(test)]
+#[tokio::test]
 async fn test_backward_tiny_transformer_parameter_grads_present() {
     use crate::cache::AttentionMask;
 

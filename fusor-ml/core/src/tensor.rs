@@ -893,6 +893,13 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         }
     }
 
+    /// Resolve the current tensor value on device and return a fresh leaf tensor
+    /// that no longer carries the original compute graph history.
+    pub fn detach(&self) -> Self {
+        let (data, _) = self.data.materialize();
+        Self::from_parts(LazyTensorData::new(data))
+    }
+
     /// How many kernel calls are needed to fully resolve this tensor
     pub fn count_kernels_to_resolve(&self) -> usize {
         let (_, count) = self.data.materialize();
