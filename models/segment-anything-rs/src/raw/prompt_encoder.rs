@@ -5,8 +5,8 @@ use fusor::{ConcreteTensor, Device, Tensor, VarBuilder};
 
 use super::Result;
 
-struct PositionEmbeddingRandom {
-    positional_encoding_gaussian_matrix: Tensor<2, f32, ConcreteTensor<f32, 2>>,
+pub(crate) struct PositionEmbeddingRandom {
+    pub(crate) positional_encoding_gaussian_matrix: Tensor<2, f32, ConcreteTensor<f32, 2>>,
 }
 
 impl PositionEmbeddingRandom {
@@ -32,14 +32,17 @@ impl PositionEmbeddingRandom {
             .to_concrete();
         let coords = coords.mat_mul(&gm);
         // coords * 2 * pi
-        let coords = coords.mul_scalar(2.0 * std::f32::consts::PI);
+        // Workaround: use separate mul_scalar calls for sin and cos to avoid
+        // GPU compute graph dual-consumer buffer reuse bug
+        let coords_for_sin = coords.mul_scalar(2.0 * std::f32::consts::PI);
+        let coords_for_cos = coords.mul_scalar(2.0 * std::f32::consts::PI);
         // cat([sin, cos], last_dim)
-        let sin_coords: Tensor<3, f32> = coords.sin().to_concrete();
-        let cos_coords: Tensor<3, f32> = coords.cos().to_concrete();
+        let sin_coords: Tensor<3, f32> = coords_for_sin.sin().to_concrete();
+        let cos_coords: Tensor<3, f32> = coords_for_cos.cos().to_concrete();
         Tensor::cat([sin_coords, cos_coords], 2)
     }
 
-    fn forward(&self, h: usize, w: usize) -> Tensor<3, f32> {
+    pub(crate) fn forward(&self, h: usize, w: usize) -> Tensor<3, f32> {
         let device = self.positional_encoding_gaussian_matrix.device();
         // Create grid coordinates
         let x_embed: Tensor<1, f32> =
@@ -107,7 +110,7 @@ impl PositionEmbeddingRandom {
 }
 
 pub struct PromptEncoder {
-    pe_layer: PositionEmbeddingRandom,
+    pub(crate) pe_layer: PositionEmbeddingRandom,
     point_embeddings: Vec<Embedding<f32>>,
     not_a_point_embed: Embedding<f32>,
     mask_downscaling_conv1: Conv2d<f32>,

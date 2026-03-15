@@ -46,15 +46,15 @@ impl MlpMaskDecoder {
 }
 
 pub struct MaskDecoder {
-    iou_token: Embedding<f32>,
-    mask_tokens: Embedding<f32>,
+    pub(crate) iou_token: Embedding<f32>,
+    pub(crate) mask_tokens: Embedding<f32>,
     iou_prediction_head: MlpMaskDecoder,
-    output_upscaling_conv1: ConvTranspose2d,
-    output_upscaling_ln: LayerNorm2d,
-    output_upscaling_conv2: ConvTranspose2d,
-    num_mask_tokens: usize,
+    pub(crate) output_upscaling_conv1: ConvTranspose2d,
+    pub(crate) output_upscaling_ln: LayerNorm2d,
+    pub(crate) output_upscaling_conv2: ConvTranspose2d,
+    pub(crate) num_mask_tokens: usize,
     output_hypernetworks_mlps: Vec<MlpMaskDecoder>,
-    transformer: TwoWayTransformer,
+    pub(crate) transformer: TwoWayTransformer,
 }
 
 impl MaskDecoder {

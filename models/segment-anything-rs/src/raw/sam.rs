@@ -35,8 +35,8 @@ impl ImageEncoder {
 /// The Segment Anything Model.
 pub struct Sam {
     pub(crate) image_encoder: ImageEncoder,
-    prompt_encoder: PromptEncoder,
-    mask_decoder: MaskDecoder,
+    pub(crate) prompt_encoder: PromptEncoder,
+    pub(crate) mask_decoder: MaskDecoder,
     pub(crate) pixel_mean: [f32; 3],
     pub(crate) pixel_std: [f32; 3],
 }

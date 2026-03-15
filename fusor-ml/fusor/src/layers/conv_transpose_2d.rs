@@ -85,7 +85,12 @@ impl ConvTranspose2d {
             .to_concrete();
 
         if let Some(bias) = &self.bias {
-            result.add_(bias)
+            // Reshape bias from [out_ch] to [1, out_ch, 1, 1] for correct channel-dim broadcasting
+            let bias_4d: Tensor<4, f32, ConcreteTensor<f32, 4>> = bias
+                .reshape([1, out_ch, 1, 1])
+                .broadcast_as([b, out_ch, out_h, out_w])
+                .to_concrete();
+            (result + bias_4d).to_concrete()
         } else {
             result
         }
