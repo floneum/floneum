@@ -98,7 +98,20 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
                     other.shape()[0] // N dimension
                 }
             });
-            let weight_broadcast: Tensor<R, T> = weight_t.reshape(weight_shape);
+            let weight_reshaped: Tensor<R, T> = weight_t.reshape(weight_shape);
+
+            // Broadcast to match input batch dimensions
+            let self_shape = self.shape();
+            let broadcast_shape: [usize; R] = std::array::from_fn(|i| {
+                if i < R - 2 {
+                    self_shape[i] // Match input batch dimensions
+                } else if i == R - 2 {
+                    other.shape()[1] // K dimension
+                } else {
+                    other.shape()[0] // N dimension
+                }
+            });
+            let weight_broadcast: Tensor<R, T> = weight_reshaped.broadcast_as(broadcast_shape);
 
             return self.mat_mul(&weight_broadcast);
         }

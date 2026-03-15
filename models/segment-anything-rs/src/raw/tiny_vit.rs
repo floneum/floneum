@@ -1,0 +1,695 @@
+//! TinyViT image encoder for MobileSAM.
+//!
+//! BatchNorm is fused into conv weights at GGUF conversion time,
+//! so Conv2dBN becomes plain Conv2d here.
+
+use fusor::layers::{Conv2d, Conv2dConfig, LayerNorm, LayerNorm2d, Linear};
+use fusor::{ConcreteTensor, Device, Tensor, VarBuilder};
+
+use super::Result;
+
+const MBCONV_EXPAND_RATIO: usize = 4;
+const MLP_RATIO: usize = 4;
+const LOCAL_CONV_SIZE: usize = 3;
+const IMG_SIZE: usize = 1024;
+const IN_CHANNELS: usize = 3;
+
+/// Conv2d with fused BatchNorm (BN fused into weights at conversion time).
+/// At runtime, this is just a Conv2d with no bias (bias comes from fused BN).
+struct Conv2dBN {
+    conv: Conv2d<f32>,
+}
+
+impl Conv2dBN {
+    fn load(
+        device: &Device,
+        vb: &mut VarBuilder,
+        cfg: Conv2dConfig,
+    ) -> Result<Self> {
+        // BN is fused into the conv at GGUF conversion time, so we load
+        // a regular conv from the "c" sub-namespace with fused weights.
+        let conv = Conv2d::load(device, &mut vb.pp("c"), cfg)?;
+        Ok(Self { conv })
+    }
+
+    fn forward(&self, xs: &Tensor<4, f32, ConcreteTensor<f32, 4>>) -> Tensor<4, f32> {
+        self.conv.forward(xs)
+    }
+}
+
+pub(crate) struct PatchEmbed {
+    conv1: Conv2dBN,
+    conv2: Conv2dBN,
+}
+
+impl PatchEmbed {
+    fn load(device: &Device, vb: &mut VarBuilder, _embed_dim: usize) -> Result<Self> {
+        let cfg = Conv2dConfig {
+            padding: [1, 1],
+            stride: [2, 2],
+            groups: 1,
+        };
+        let conv1 = Conv2dBN::load(device, &mut vb.pp("seq.0"), cfg)?;
+        let conv2 = Conv2dBN::load(device, &mut vb.pp("seq.2"), cfg)?;
+        Ok(Self { conv1, conv2 })
+    }
+
+    pub(crate) fn forward(&self, xs: &Tensor<4, f32, ConcreteTensor<f32, 4>>) -> Tensor<4, f32> {
+        let xs = self.conv1.forward(xs);
+        let xs = xs.gelu();
+        self.conv2.forward(&xs.to_concrete())
+    }
+}
+
+struct MBConv {
+    conv1: Conv2dBN,
+    conv2: Conv2dBN,
+    conv3: Conv2dBN,
+}
+
+impl MBConv {
+    fn load(device: &Device, vb: &mut VarBuilder, in_: usize, _out: usize, expand_ratio: usize) -> Result<Self> {
+        let hidden = in_ * expand_ratio;
+        let cfg_dw = Conv2dConfig {
+            padding: [1, 1],
+            stride: [1, 1],
+            groups: hidden,
+        };
+        let conv1 = Conv2dBN::load(device, &mut vb.pp("conv1"), Conv2dConfig::default())?;
+        let conv2 = Conv2dBN::load(device, &mut vb.pp("conv2"), cfg_dw)?;
+        let conv3 = Conv2dBN::load(device, &mut vb.pp("conv3"), Conv2dConfig::default())?;
+        Ok(Self { conv1, conv2, conv3 })
+    }
+
+    fn forward(&self, xs: &Tensor<4, f32, ConcreteTensor<f32, 4>>) -> Tensor<4, f32, ConcreteTensor<f32, 4>> {
+        let shortcut = xs.to_concrete();
+        let out = self.conv1.forward(xs);
+        let out = out.gelu();
+        let out = self.conv2.forward(&out.to_concrete());
+        let out = out.gelu();
+        let out = self.conv3.forward(&out.to_concrete());
+        (out + &shortcut).to_concrete().gelu().to_concrete()
+    }
+}
+
+struct PatchMerging {
+    conv1: Conv2dBN,
+    conv2: Conv2dBN,
+    conv3: Conv2dBN,
+    input_resolution: (usize, usize),
+}
+
+impl PatchMerging {
+    fn load(
+        device: &Device,
+        vb: &mut VarBuilder,
+        input_resolution: (usize, usize),
+        _dim: usize,
+        out: usize,
+    ) -> Result<Self> {
+        let stride = if [320, 448, 576].contains(&out) { 1 } else { 2 };
+        let cfg_dw = Conv2dConfig {
+            padding: [1, 1],
+            stride: [stride, stride],
+            groups: out,
+        };
+        let conv1 = Conv2dBN::load(device, &mut vb.pp("conv1"), Conv2dConfig::default())?;
+        let conv2 = Conv2dBN::load(device, &mut vb.pp("conv2"), cfg_dw)?;
+        let conv3 = Conv2dBN::load(device, &mut vb.pp("conv3"), Conv2dConfig::default())?;
+        Ok(Self {
+            conv1,
+            conv2,
+            conv3,
+            input_resolution,
+        })
+    }
+
+    fn forward(&self, xs: &Tensor<3, f32>) -> Tensor<3, f32> {
+        let shape = xs.shape();
+        let b = shape[0];
+        let _l = shape[1];
+        let c = shape[2];
+        let (h, w) = self.input_resolution;
+
+        // If rank is 3, reshape to (B, H, W, C) then permute to (B, C, H, W)
+        let xs: Tensor<4, f32, ConcreteTensor<f32, 4>> = xs
+            .reshape([b, h, w, c])
+            .to_concrete()
+            .transpose(2, 3) // (B, H, C, W)
+            .to_concrete()
+            .transpose(1, 2) // (B, C, H, W)
+            .to_concrete();
+
+        let xs = self.conv1.forward(&xs);
+        let xs = xs.gelu();
+        let xs = self.conv2.forward(&xs.to_concrete());
+        let xs = xs.gelu();
+        let xs = self.conv3.forward(&xs.to_concrete());
+
+        // Flatten spatial dims and transpose to (B, L, C)
+        let out_shape = xs.shape();
+        let out_c = out_shape[1];
+        let out_h = out_shape[2];
+        let out_w = out_shape[3];
+        xs.to_concrete()
+            .reshape([b, out_c, out_h * out_w])
+            .to_concrete()
+            .transpose(1, 2) // (B, L, C)
+            .to_concrete()
+    }
+}
+
+pub(crate) struct ConvLayer {
+    blocks: Vec<MBConv>,
+    downsample: Option<PatchMerging>,
+}
+
+impl ConvLayer {
+    fn load(
+        device: &Device,
+        vb: &mut VarBuilder,
+        dim: usize,
+        out: usize,
+        input_resolution: (usize, usize),
+        depth: usize,
+        downsample: bool,
+        conv_expand_ratio: usize,
+    ) -> Result<Self> {
+        let mut blocks = Vec::with_capacity(depth);
+        for i in 0..depth {
+            let block = MBConv::load(
+                device,
+                &mut vb.pp(&format!("blocks.{i}")),
+                dim,
+                dim,
+                conv_expand_ratio,
+            )?;
+            blocks.push(block);
+        }
+        let downsample = if downsample {
+            Some(PatchMerging::load(
+                device,
+                &mut vb.pp("downsample"),
+                input_resolution,
+                dim,
+                out,
+            )?)
+        } else {
+            None
+        };
+        Ok(Self { blocks, downsample })
+    }
+
+    pub(crate) fn forward(&self, xs: &Tensor<4, f32, ConcreteTensor<f32, 4>>) -> Tensor<3, f32> {
+        let mut xs = xs.to_concrete();
+        for block in &self.blocks {
+            xs = block.forward(&xs);
+        }
+        // After ConvLayer blocks the output is still BCHW.
+        // Downsample expects BLC format (3D), so flatten + transpose.
+        let shape = xs.shape();
+        let b = shape[0];
+        let c = shape[1];
+        let h = shape[2];
+        let w = shape[3];
+        let flat: Tensor<3, f32> = xs
+            .reshape([b, c, h * w])
+            .to_concrete()
+            .transpose(1, 2) // (B, L, C)
+            .to_concrete();
+        match &self.downsample {
+            Some(ds) => ds.forward(&flat),
+            None => flat,
+        }
+    }
+}
+
+/// MLP for TinyViTBlock: LayerNorm -> Linear -> GELU -> Linear
+struct TinyMlp {
+    norm: LayerNorm<1, f32>,
+    fc1: Linear<f32>,
+    fc2: Linear<f32>,
+}
+
+impl TinyMlp {
+    fn load(device: &Device, vb: &mut VarBuilder, _in_features: usize, _hidden: usize) -> Result<Self> {
+        let norm = LayerNorm::load(device, &mut vb.pp("norm"), 1e-5)?;
+        let fc1 = Linear::load(device, &mut vb.pp("fc1"))?;
+        let fc2 = Linear::load(device, &mut vb.pp("fc2"))?;
+        Ok(Self { norm, fc1, fc2 })
+    }
+
+    fn forward(&self, xs: &Tensor<3, f32>) -> Tensor<3, f32> {
+        let xs = self.norm.forward(xs);
+        let xs = self.fc1.forward(&xs);
+        let xs = xs.gelu();
+        self.fc2.forward(&xs)
+    }
+}
+
+/// Attention module for TinyViTBlock.
+/// Uses pre-computed attention biases (indexed at load time).
+struct TinyAttention {
+    norm: LayerNorm<1, f32>,
+    qkv: Linear<f32>,
+    proj: Linear<f32>,
+    ab: Tensor<3, f32, ConcreteTensor<f32, 3>>, // (num_heads, n_points, n_points)
+    key_dim: usize,
+    num_heads: usize,
+    d: usize,
+    dh: usize,
+    scale: f32,
+}
+
+impl TinyAttention {
+    fn load(
+        device: &Device,
+        vb: &mut VarBuilder,
+        _dim: usize,
+        key_dim: usize,
+        num_heads: usize,
+        attn_ratio: usize,
+        resolution: (usize, usize),
+    ) -> Result<Self> {
+        let d = attn_ratio * key_dim;
+        let dh = d * num_heads;
+        let nh_kd = key_dim * num_heads;
+        let _h = dh + nh_kd * 2;
+
+        let norm = LayerNorm::load(device, &mut vb.pp("norm"), 1e-5)?;
+        let qkv = Linear::load(device, &mut vb.pp("qkv"))?;
+        let proj = Linear::load(device, &mut vb.pp("proj"))?;
+
+        // Build attention bias index table
+        let points: Vec<(i64, i64)> = (0..resolution.0)
+            .flat_map(|x| (0..resolution.1).map(move |y| (x as i64, y as i64)))
+            .collect();
+        let mut attention_offsets = std::collections::HashMap::new();
+        let mut idxs = Vec::with_capacity(points.len() * points.len());
+        for &(x1, y1) in &points {
+            for &(x2, y2) in &points {
+                let offset = ((x2 - x1).unsigned_abs(), (y2 - y1).unsigned_abs());
+                let l = attention_offsets.len();
+                let idx = *attention_offsets.entry(offset).or_insert(l);
+                idxs.push(idx as u32);
+            }
+        }
+
+        // Load attention_biases: (num_heads, num_offsets)
+        let attention_biases: Tensor<2, f32> = vb.get("attention_biases", device)?.dequantize();
+
+        // index_select along dim 1 to get (num_heads, n_points * n_points)
+        let n_points = points.len();
+        let idxs_tensor: Tensor<1, u32> = Tensor::from_slice(device, [idxs.len()], &idxs);
+        let selected: Tensor<2, f32> = attention_biases.index_select(1, &idxs_tensor);
+        // Reshape to (num_heads, n_points, n_points)
+        let ab: Tensor<3, f32> = selected
+            .reshape([num_heads, n_points, n_points])
+            .to_concrete();
+
+        let scale = 1.0 / (key_dim as f32).sqrt();
+
+        Ok(Self {
+            norm,
+            qkv,
+            proj,
+            ab,
+            key_dim,
+            num_heads,
+            d,
+            dh,
+            scale,
+        })
+    }
+
+    fn forward(&self, xs: &Tensor<3, f32>) -> Tensor<3, f32> {
+        let shape = xs.shape();
+        let b = shape[0];
+        let n = shape[1];
+
+        let xs = self.norm.forward(xs);
+        let qkv = self.qkv.forward(&xs);
+
+        // (b, n, num_heads, key_dim + key_dim + d) -> split into q, k, v
+        let qkv: Tensor<4, f32> = qkv
+            .reshape([b, n, self.num_heads, self.key_dim * 2 + self.d])
+            .to_concrete();
+
+        // q: (b, n, num_heads, key_dim) -> (b, num_heads, n, key_dim)
+        let q: Tensor<4, f32> = qkv
+            .narrow(3, 0, self.key_dim)
+            .to_concrete()
+            .transpose(1, 2) // (b, num_heads, n, key_dim)
+            .to_concrete();
+        // k: (b, n, num_heads, key_dim) -> (b, num_heads, n, key_dim)
+        let k: Tensor<4, f32> = qkv
+            .narrow(3, self.key_dim, self.key_dim)
+            .to_concrete()
+            .transpose(1, 2)
+            .to_concrete();
+        // v: (b, n, num_heads, d) -> (b, num_heads, n, d)
+        let v: Tensor<4, f32> = qkv
+            .narrow(3, 2 * self.key_dim, self.d)
+            .to_concrete()
+            .transpose(1, 2)
+            .to_concrete();
+
+        // attn = q * scale @ k^T
+        let attn: Tensor<4, f32> = q
+            .mul_scalar(self.scale)
+            .mat_mul(&k.transpose(2, 3).to_concrete());
+
+        // Add pre-computed attention bias: (num_heads, n, n) broadcast to (b, num_heads, n, n)
+        let ab_broadcast: Tensor<4, f32> = self.ab
+            .reshape([1, self.num_heads, n, n])
+            .broadcast_as([b, self.num_heads, n, n])
+            .to_concrete();
+        let attn: Tensor<4, f32> = (attn + ab_broadcast).to_concrete();
+
+        // Softmax
+        let attn: Tensor<4, f32> = attn.softmax_last_dim::<3>();
+
+        // attn @ v -> (b, num_heads, n, d)
+        let out: Tensor<4, f32> = attn.mat_mul(&v);
+
+        // transpose -> (b, n, num_heads, d) -> reshape to (b, n, dh)
+        let out: Tensor<3, f32> = out
+            .transpose(1, 2) // (b, n, num_heads, d)
+            .to_concrete()
+            .reshape([b, n, self.dh])
+            .to_concrete();
+
+        self.proj.forward(&out)
+    }
+}
+
+struct TinyViTBlock {
+    attn: TinyAttention,
+    local_conv: Conv2dBN,
+    mlp: TinyMlp,
+    window_size: usize,
+    input_resolution: (usize, usize),
+}
+
+impl TinyViTBlock {
+    fn load(
+        device: &Device,
+        vb: &mut VarBuilder,
+        dim: usize,
+        input_resolution: (usize, usize),
+        num_heads: usize,
+        window_size: usize,
+    ) -> Result<Self> {
+        let head_dim = dim / num_heads;
+        let attn = TinyAttention::load(
+            device,
+            &mut vb.pp("attn"),
+            dim,
+            head_dim,
+            num_heads,
+            1, // attn_ratio
+            (window_size, window_size),
+        )?;
+        let mlp = TinyMlp::load(device, &mut vb.pp("mlp"), dim, dim * MLP_RATIO)?;
+        let cfg_local = Conv2dConfig {
+            padding: [LOCAL_CONV_SIZE / 2, LOCAL_CONV_SIZE / 2],
+            stride: [1, 1],
+            groups: dim,
+        };
+        let local_conv = Conv2dBN::load(device, &mut vb.pp("local_conv"), cfg_local)?;
+        Ok(Self {
+            attn,
+            local_conv,
+            mlp,
+            window_size,
+            input_resolution,
+        })
+    }
+
+    fn forward(&self, xs: &Tensor<3, f32>) -> Tensor<3, f32> {
+        let shape = xs.shape();
+        let b = shape[0];
+        let l = shape[1];
+        let c = shape[2];
+        let (h, w) = self.input_resolution;
+
+        let res_x = xs.to_concrete();
+
+        let xs = if h == self.window_size && w == self.window_size {
+            self.attn.forward(xs)
+        } else {
+            // Reshape to (B, H, W, C)
+            let xs: Tensor<4, f32> = xs.reshape([b, h, w, c]).to_concrete();
+
+            let pad_b = (self.window_size - h % self.window_size) % self.window_size;
+            let pad_r = (self.window_size - w % self.window_size) % self.window_size;
+
+            let xs = if pad_b > 0 {
+                xs.pad_with_zeros(1, 0, pad_b)
+            } else {
+                xs.to_concrete()
+            };
+            let xs = if pad_r > 0 {
+                xs.pad_with_zeros(2, 0, pad_r)
+            } else {
+                xs
+            };
+
+            let p_h = h + pad_b;
+            let p_w = w + pad_r;
+            let n_h = p_h / self.window_size;
+            let n_w = p_w / self.window_size;
+
+            // Window partition: (B, n_h, ws, n_w, ws, C) -> transpose(2,3) -> reshape
+            let xs: Tensor<3, f32> = xs
+                .reshape([b, n_h, self.window_size, n_w, self.window_size, c])
+                .to_concrete()
+                .transpose(2, 3) // (B, n_h, n_w, ws, ws, C)
+                .to_concrete()
+                .reshape([b * n_h * n_w, self.window_size * self.window_size, c])
+                .to_concrete();
+
+            let xs = self.attn.forward(&xs);
+
+            // Window unpartition
+            let xs: Tensor<4, f32> = xs
+                .reshape([b, n_h, n_w, self.window_size, self.window_size, c])
+                .to_concrete()
+                .transpose(2, 3) // (B, n_h, ws, n_w, ws, C)
+                .to_concrete()
+                .reshape([b, p_h, p_w, c])
+                .to_concrete();
+
+            // Remove padding
+            let xs = if pad_r > 0 {
+                xs.narrow(2, 0, w).to_concrete()
+            } else {
+                xs
+            };
+            let xs = if pad_b > 0 {
+                xs.narrow(1, 0, h).to_concrete()
+            } else {
+                xs
+            };
+
+            // Flatten back to (B, L, C)
+            xs.reshape([b, l, c]).to_concrete()
+        };
+
+        // Residual
+        let xs: Tensor<3, f32> = (xs + &res_x).to_concrete();
+
+        // Local conv: (B, L, C) -> (B, C, H, W) -> conv -> (B, C, L) -> (B, L, C)
+        let xs_conv: Tensor<4, f32, ConcreteTensor<f32, 4>> = xs
+            .transpose(1, 2) // (B, C, L)
+            .to_concrete()
+            .reshape([b, c, h, w])
+            .to_concrete();
+        let xs_conv = self.local_conv.forward(&xs_conv);
+        let xs_conv_shape = xs_conv.shape();
+        let xs: Tensor<3, f32> = xs_conv
+            .to_concrete()
+            .reshape([b, c, xs_conv_shape[2] * xs_conv_shape[3]])
+            .to_concrete()
+            .transpose(1, 2) // (B, L, C)
+            .to_concrete();
+
+        // MLP residual
+        let mlp_out = self.mlp.forward(&xs);
+        (&xs + mlp_out).to_concrete()
+    }
+}
+
+pub(crate) struct BasicLayer {
+    blocks: Vec<TinyViTBlock>,
+    downsample: Option<PatchMerging>,
+}
+
+impl BasicLayer {
+    fn load(
+        device: &Device,
+        vb: &mut VarBuilder,
+        dim: usize,
+        input_resolution: (usize, usize),
+        depth: usize,
+        num_heads: usize,
+        window_size: usize,
+        downsample: bool,
+        out: usize,
+    ) -> Result<Self> {
+        let mut blocks = Vec::with_capacity(depth);
+        for i in 0..depth {
+            let block = TinyViTBlock::load(
+                device,
+                &mut vb.pp(&format!("blocks.{i}")),
+                dim,
+                input_resolution,
+                num_heads,
+                window_size,
+            )?;
+            blocks.push(block);
+        }
+        let downsample = if downsample {
+            Some(PatchMerging::load(
+                device,
+                &mut vb.pp("downsample"),
+                input_resolution,
+                dim,
+                out,
+            )?)
+        } else {
+            None
+        };
+        Ok(Self { blocks, downsample })
+    }
+
+    pub(crate) fn forward(&self, xs: &Tensor<3, f32>) -> Tensor<3, f32> {
+        let mut xs = xs.to_concrete();
+        for block in &self.blocks {
+            xs = block.forward(&xs).to_concrete();
+        }
+        match &self.downsample {
+            Some(ds) => ds.forward(&xs),
+            None => xs.to_concrete(),
+        }
+    }
+}
+
+pub struct TinyViT {
+    pub(crate) patch_embed: PatchEmbed,
+    pub(crate) layer0: ConvLayer,
+    pub(crate) layers: Vec<BasicLayer>,
+    neck_conv1: Conv2d<f32>,
+    neck_ln1: LayerNorm2d,
+    neck_conv2: Conv2d<f32>,
+    neck_ln2: LayerNorm2d,
+}
+
+impl TinyViT {
+    pub fn load(
+        device: &Device,
+        vb: &mut VarBuilder,
+        embed_dims: &[usize],
+        depths: &[usize],
+        num_heads: &[usize],
+        window_sizes: &[usize],
+    ) -> Result<Self> {
+        let patch_embed = PatchEmbed::load(device, &mut vb.pp("patch_embed"), embed_dims[0])?;
+        let patches_resolution = IMG_SIZE / 4;
+
+        let layer0 = ConvLayer::load(
+            device,
+            &mut vb.pp("layers.0"),
+            embed_dims[0],
+            embed_dims[1],
+            (patches_resolution, patches_resolution),
+            depths[0],
+            true, // downsample
+            MBCONV_EXPAND_RATIO,
+        )?;
+
+        let num_layers = embed_dims.len();
+        let mut layers = Vec::with_capacity(num_layers - 1);
+        for i_layer in 1..num_layers {
+            let patches_resolution = patches_resolution / (1 << usize::min(i_layer, 2));
+            let layer = BasicLayer::load(
+                device,
+                &mut vb.pp(&format!("layers.{i_layer}")),
+                embed_dims[i_layer],
+                (patches_resolution, patches_resolution),
+                depths[i_layer],
+                num_heads[i_layer],
+                window_sizes[i_layer],
+                i_layer < num_layers - 1,
+                embed_dims[usize::min(i_layer + 1, num_layers - 1)],
+            )?;
+            layers.push(layer);
+        }
+
+        let _last_embed_dim = embed_dims[embed_dims.len() - 1];
+        let neck_conv1 = Conv2d::load_no_bias(
+            device,
+            &mut vb.pp("neck.0"),
+            Conv2dConfig::default(),
+        )?;
+        let neck_ln1 = LayerNorm2d::load(device, &mut vb.pp("neck.1"), 1e-6)?;
+        let cfg_pad1 = Conv2dConfig {
+            padding: [1, 1],
+            stride: [1, 1],
+            groups: 1,
+        };
+        let neck_conv2 = Conv2d::load_no_bias(device, &mut vb.pp("neck.2"), cfg_pad1)?;
+        let neck_ln2 = LayerNorm2d::load(device, &mut vb.pp("neck.3"), 1e-6)?;
+
+        Ok(Self {
+            patch_embed,
+            layer0,
+            layers,
+            neck_conv1,
+            neck_ln1,
+            neck_conv2,
+            neck_ln2,
+        })
+    }
+
+    pub fn forward(&self, xs: &Tensor<4, f32, ConcreteTensor<f32, 4>>) -> Tensor<4, f32> {
+        // PatchEmbed: (B, C, H, W) -> (B, C', H/4, W/4)
+        let xs = self.patch_embed.forward(xs);
+
+        // ConvLayer0: still BCHW -> output flattened to BLC
+        let mut xs = self.layer0.forward(&xs.to_concrete());
+
+        for layer in self.layers.iter() {
+            xs = layer.forward(&xs);
+        }
+
+        // Reshape to (B, 64, 64, C) then permute to (B, C, 64, 64)
+        let shape = xs.shape();
+        let b = shape[0];
+        let c = shape[2];
+        let xs: Tensor<4, f32, ConcreteTensor<f32, 4>> = xs
+            .reshape([b, 64, 64, c])
+            .to_concrete()
+            .transpose(2, 3) // (B, 64, C, 64)
+            .to_concrete()
+            .transpose(1, 2) // (B, C, 64, 64)
+            .to_concrete();
+
+        // Neck
+        let xs = self.neck_conv1.forward(&xs);
+        let xs = self.neck_ln1.forward(&xs);
+        let xs = self.neck_conv2.forward(&xs.to_concrete());
+        self.neck_ln2.forward(&xs)
+    }
+}
+
+pub fn tiny_vit_5m(device: &Device, vb: &mut VarBuilder) -> Result<TinyViT> {
+    TinyViT::load(
+        device,
+        vb,
+        &[64, 128, 160, 320],
+        &[2, 2, 6, 2],
+        &[2, 4, 5, 10],
+        &[7, 7, 14, 7],
+    )
+}

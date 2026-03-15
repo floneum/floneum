@@ -1094,19 +1094,32 @@ where
                 let rhs_transposed = rhs_tensor.transpose(0, 1);
 
                 // Reshape to R dimensions: [1, 1, ..., K, N]
+                let lhs_eval = lhs.to_concrete();
+                let lhs_shape = lhs_eval.inner().layout().shape().to_vec();
                 let weight_shape: [usize; R] = std::array::from_fn(|i| {
                     if i < R - 2 {
-                        1 // Broadcast batch dimensions
+                        1
                     } else if i == R - 2 {
-                        k // K dimension
+                        k
                     } else {
-                        n // N dimension
+                        n
                     }
                 });
-                let rhs_broadcast = rhs_transposed.reshape(weight_shape);
+                let rhs_reshaped = rhs_transposed.reshape(weight_shape);
+
+                // Broadcast to match lhs batch dimensions
+                let broadcast_shape: [usize; R] = std::array::from_fn(|i| {
+                    if i < R - 2 {
+                        lhs_shape[i]
+                    } else if i == R - 2 {
+                        k
+                    } else {
+                        n
+                    }
+                });
+                let rhs_broadcast = rhs_reshaped.broadcast_as(broadcast_shape);
 
                 // Do regular matmul
-                let lhs_eval = lhs.to_concrete();
                 let result = lhs_eval.matmul(rhs_broadcast);
                 Tensor::Cpu(result)
             }
@@ -1134,19 +1147,32 @@ where
                 let rhs_transposed = rhs_tensor.transpose(0, 1);
 
                 // Reshape to R dimensions: [1, 1, ..., K, N]
+                let lhs_eval = lhs.to_concrete();
+                let lhs_shape = lhs_eval.inner().layout().shape().to_vec();
                 let weight_shape: [usize; R] = std::array::from_fn(|i| {
                     if i < R - 2 {
-                        1 // Broadcast batch dimensions
+                        1
                     } else if i == R - 2 {
-                        k // K dimension
+                        k
                     } else {
-                        n // N dimension
+                        n
                     }
                 });
-                let rhs_broadcast = rhs_transposed.reshape(weight_shape);
+                let rhs_reshaped = rhs_transposed.reshape(weight_shape);
+
+                // Broadcast to match lhs batch dimensions
+                let broadcast_shape: [usize; R] = std::array::from_fn(|i| {
+                    if i < R - 2 {
+                        lhs_shape[i]
+                    } else if i == R - 2 {
+                        k
+                    } else {
+                        n
+                    }
+                });
+                let rhs_broadcast = rhs_reshaped.broadcast_as(broadcast_shape);
 
                 // Do regular matmul
-                let lhs_eval = lhs.to_concrete();
                 let result = lhs_eval.matmul(rhs_broadcast);
                 Tensor::Cpu(result)
             }

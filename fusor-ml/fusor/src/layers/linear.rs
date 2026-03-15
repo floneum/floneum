@@ -73,6 +73,33 @@ impl Linear<f32> {
     where
         B: fusor_cpu::TensorBacking<3, Elem = f32>,
     {
+        let shape = input.shape();
+        let batch = shape[0];
+        let seq_len = shape[1];
+        let in_features = shape[2];
+        let out_features = self.out_features();
+
+        // Flatten to 2D: (batch * seq_len, in_features)
+        let input_2d: Tensor<2, f32> = input.reshape([batch * seq_len, in_features]).to_concrete();
+        let output_2d = input_2d.q_mat_mul(&self.weight);
+
+        // Reshape back to 3D: (batch, seq_len, out_features)
+        let output: Tensor<3, f32> = output_2d.reshape([batch, seq_len, out_features]).to_concrete();
+
+        if let Some(bias) = &self.bias {
+            output.add_(bias)
+        } else {
+            output
+        }
+    }
+    /// Forward pass for 2D input (batch, in_features)
+    ///
+    /// Input shape: (batch, in_features)
+    /// Output shape: (batch, out_features)
+    pub fn forward_2d<B>(&self, input: &Tensor<2, f32, B>) -> Tensor<2, f32>
+    where
+        B: fusor_cpu::TensorBacking<2, Elem = f32>,
+    {
         let output = input.q_mat_mul(&self.weight);
 
         if let Some(bias) = &self.bias {
@@ -99,8 +126,18 @@ where
         // Cast input to f32
         let input_f32 = input.cast::<f32>();
 
-        // Do quantized matmul in f32
-        let output_f32 = input_f32.q_mat_mul(&self.weight);
+        let shape = input_f32.shape();
+        let batch = shape[0];
+        let seq_len = shape[1];
+        let in_features = shape[2];
+        let out_features = self.weight.shape()[0];
+
+        // Flatten to 2D: (batch * seq_len, in_features)
+        let input_2d: Tensor<2, f32> = input_f32.reshape([batch * seq_len, in_features]).to_concrete();
+        let output_2d = input_2d.q_mat_mul(&self.weight);
+
+        // Reshape back to 3D: (batch, seq_len, out_features)
+        let output_f32: Tensor<3, f32> = output_2d.reshape([batch, seq_len, out_features]).to_concrete();
 
         // Add bias if present (in f32)
         let output_f32 = if let Some(bias) = &self.bias {
