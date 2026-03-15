@@ -22,7 +22,10 @@ mod raw;
 
 use fusor::{ConcreteTensor, Device, Tensor, VarBuilder};
 use image::{DynamicImage, GenericImage, GenericImageView, ImageBuffer, Rgba};
-use raw::sam::{Sam, IMAGE_SIZE};
+use raw::sam::{
+    build_point_grid, Sam, CROP_NMS_THRESH, IMAGE_SIZE, MODEL_MASK_THRESHOLD, PRED_IOU_THRESH,
+    STABILITY_SCORE_OFFSET, STABILITY_SCORE_THRESHOLD,
+};
 
 /// A builder for [`SegmentAnything`].
 #[derive(Default)]
@@ -354,13 +357,144 @@ impl SegmentAnything {
         &self,
         image: DynamicImage,
     ) -> Result<Vec<DynamicImage>, SegmentAnythingInferenceError> {
-        // For now, a simplified version that returns masks from a grid of points
-        // Full generate_masks with NMS is available in raw::sam but would need
-        // additional tensor operations (ge, sum) for stability scoring
-        let _image_tensor = self.image_to_tensor(image);
+        let image_width = image.width();
+        let image_height = image.height();
+        let image_tensor = self.image_to_tensor(image);
+        let original_h = image_tensor.shape()[1];
+        let original_w = image_tensor.shape()[2];
 
-        // TODO: Implement full generate_masks pipeline
-        Ok(Vec::new())
+        // Compute image embeddings once
+        let img_embeddings = self.sam.embeddings(&image_tensor);
+
+        // Build a 32x32 grid of points (1024 points)
+        let point_grid = build_point_grid(32);
+
+        struct MaskCandidate {
+            mask_data: Vec<f32>,
+            iou: f32,
+            h: usize,
+            w: usize,
+        }
+
+        let mut candidates: Vec<MaskCandidate> = Vec::new();
+
+        for &(px, py) in &point_grid {
+            let point = [(px, py, true)];
+            let (low_res_masks, iou_preds) = self.sam.forward_for_embeddings(
+                &img_embeddings,
+                original_h,
+                original_w,
+                &point,
+                true, // multimask_output: get 3 mask alternatives per point
+            );
+
+            // Read masks and IoU predictions to CPU
+            let masks_shape = low_res_masks.shape(); // (1, 3, h, w)
+            let n_masks = masks_shape[1];
+            let mask_h = masks_shape[2];
+            let mask_w = masks_shape[3];
+            let total = n_masks * mask_h * mask_w;
+
+            let masks_flat: Tensor<1, f32, ConcreteTensor<f32, 1>> =
+                low_res_masks.reshape([total]).to_concrete();
+            let masks_slice = masks_flat
+                .as_slice()
+                .await
+                .expect("Failed to read mask data");
+            let masks_vec = masks_slice.as_slice();
+
+            let iou_flat: Tensor<1, f32, ConcreteTensor<f32, 1>> =
+                iou_preds.reshape([n_masks]).to_concrete();
+            let iou_slice = iou_flat
+                .as_slice()
+                .await
+                .expect("Failed to read IoU data");
+            let iou_vec = iou_slice.as_slice();
+
+            for mask_idx in 0..n_masks {
+                let iou = iou_vec[mask_idx];
+                if iou < PRED_IOU_THRESH {
+                    continue;
+                }
+
+                let mask_start = mask_idx * mask_h * mask_w;
+                let mask_end = mask_start + mask_h * mask_w;
+                let mask_data = &masks_vec[mask_start..mask_end];
+
+                // Compute stability score on CPU:
+                // intersections = count(mask >= threshold + offset)
+                // unions = count(mask >= threshold - offset)
+                let hi_thresh = MODEL_MASK_THRESHOLD + STABILITY_SCORE_OFFSET;
+                let lo_thresh = MODEL_MASK_THRESHOLD - STABILITY_SCORE_OFFSET;
+                let intersections =
+                    mask_data.iter().filter(|&&v| v >= hi_thresh).count() as f32;
+                let unions = mask_data.iter().filter(|&&v| v >= lo_thresh).count() as f32;
+                let stability_score = if unions > 0.0 {
+                    intersections / unions
+                } else {
+                    0.0
+                };
+                if stability_score < STABILITY_SCORE_THRESHOLD {
+                    continue;
+                }
+
+                candidates.push(MaskCandidate {
+                    mask_data: mask_data.to_vec(),
+                    iou,
+                    h: mask_h,
+                    w: mask_w,
+                });
+            }
+        }
+
+        // NMS: sort by IoU descending, suppress overlapping masks
+        candidates.sort_by(|a, b| b.iou.partial_cmp(&a.iou).unwrap_or(std::cmp::Ordering::Equal));
+        let mut keep = vec![true; candidates.len()];
+        for i in 0..candidates.len() {
+            if !keep[i] {
+                continue;
+            }
+            for j in (i + 1)..candidates.len() {
+                if !keep[j] {
+                    continue;
+                }
+                let iou = mask_iou(&candidates[i].mask_data, &candidates[j].mask_data);
+                if iou > CROP_NMS_THRESH {
+                    keep[j] = false;
+                }
+            }
+        }
+
+        // Convert surviving masks to images
+        let mut masks = Vec::new();
+        for (i, candidate) in candidates.iter().enumerate() {
+            if !keep[i] {
+                continue;
+            }
+
+            // Threshold mask at 0.0 -> binary 0/255
+            let rgb_pixels: Vec<u8> = candidate
+                .mask_data
+                .iter()
+                .flat_map(|&v| {
+                    let p = if v >= MODEL_MASK_THRESHOLD { 255u8 } else { 0u8 };
+                    [p, p, p]
+                })
+                .collect();
+
+            let mask_img: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
+                image::ImageBuffer::from_raw(candidate.w as u32, candidate.h as u32, rgb_pixels)
+                    .ok_or(SegmentAnythingInferenceError::MergeMasks)?;
+
+            let image = image::DynamicImage::from(mask_img).resize_to_fill(
+                image_width,
+                image_height,
+                image::imageops::FilterType::CatmullRom,
+            );
+            masks.push(image);
+        }
+
+        Ok(masks)
     }
 
     /// Load from a local GGUF file path on the GPU.
@@ -380,6 +514,27 @@ impl SegmentAnything {
             raw::sam::Sam::load_vit_b(&device, &mut vb)?
         };
         Ok(Self { sam, device })
+    }
+}
+
+/// Compute IoU (Intersection over Union) between two masks on CPU.
+/// Masks are raw float values; pixels >= MODEL_MASK_THRESHOLD count as foreground.
+fn mask_iou(a: &[f32], b: &[f32]) -> f32 {
+    let mut intersection = 0u32;
+    let mut area_a = 0u32;
+    let mut area_b = 0u32;
+    for (&av, &bv) in a.iter().zip(b.iter()) {
+        let a_fg = av >= MODEL_MASK_THRESHOLD;
+        let b_fg = bv >= MODEL_MASK_THRESHOLD;
+        area_a += a_fg as u32;
+        area_b += b_fg as u32;
+        intersection += (a_fg && b_fg) as u32;
+    }
+    let union = area_a + area_b - intersection;
+    if union > 0 {
+        intersection as f32 / union as f32
+    } else {
+        0.0
     }
 }
 

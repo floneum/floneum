@@ -12,11 +12,11 @@ const PROMPT_EMBED_DIM: usize = 256;
 /// The expected image size (both width and height) for the SAM model.
 pub const IMAGE_SIZE: usize = 1024;
 const VIT_PATCH_SIZE: usize = 16;
-const PRED_IOU_THRESH: f32 = 0.88;
-const STABILITY_SCORE_OFFSET: f32 = 1.0;
-const STABILITY_SCORE_THRESHOLD: f32 = 0.95;
-const MODEL_MASK_THRESHOLD: f32 = 0.0;
-const CROP_NMS_THRESH: f32 = 0.7;
+pub(crate) const PRED_IOU_THRESH: f32 = 0.88;
+pub(crate) const STABILITY_SCORE_OFFSET: f32 = 1.0;
+pub(crate) const STABILITY_SCORE_THRESHOLD: f32 = 0.95;
+pub(crate) const MODEL_MASK_THRESHOLD: f32 = 0.0;
+pub(crate) const CROP_NMS_THRESH: f32 = 0.7;
 
 pub(crate) enum ImageEncoder {
     Original(Box<ImageEncoderViT>),
@@ -334,7 +334,7 @@ fn generate_crop_boxes(
     crop_boxes
 }
 
-fn build_point_grid(n_per_side: usize) -> Vec<(f64, f64)> {
+pub(crate) fn build_point_grid(n_per_side: usize) -> Vec<(f64, f64)> {
     let offset = 1f64 / (2 * n_per_side) as f64;
     let mut points = Vec::with_capacity(n_per_side * n_per_side);
     for i_x in 0..n_per_side {
