@@ -3,8 +3,8 @@ use fusor_core::{Device, Tensor};
 const LEARNING_RATE: f32 = 0.05;
 const EPOCHS: usize = 80;
 
-#[tokio::main]
-async fn main() {
+fn main() {
+    pollster::block_on(async {
     let device = Device::new().await.unwrap();
 
     // Learn y = 2x + 1 from a tiny synthetic dataset.
@@ -51,4 +51,5 @@ async fn main() {
 
     let final_prediction = inputs.mat_mul(&weight) + &bias.broadcast_as([inputs.shape()[0], 1]);
     println!("final predictions: {:?}", final_prediction.as_slice().await.unwrap());
+    });
 }

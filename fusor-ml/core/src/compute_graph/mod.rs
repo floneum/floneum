@@ -4,6 +4,7 @@ use parking_lot::RwLock;
 pub(crate) use petgraph::graph::NodeIndex;
 use petgraph::prelude::StableGraph;
 use resolve::Resolver;
+use rustc_hash::FxHashSet;
 use tabbycat::Graph;
 use wgpu::CommandEncoderDescriptor;
 
@@ -344,13 +345,12 @@ impl ComputeGraphInner {
             .collect();
 
         for dependant in dependents {
-            // If the dependant still exists and it hasn't been computed yet
-            // keep this node alive
-            if let Some(dep_node) = self.nodes.nodes.node_weight(dependant) {
-                let computed = dep_node.cached.is_some();
-                if !computed {
-                    return;
-                }
+            // Keep dependencies alive while any downstream dependent is materially
+            // live, even if intermediate nodes have already been computed. This
+            // preserves the full ancestry needed for backprop after materializing
+            // a live output tensor.
+            if self.has_materially_live_dependant(dependant, &mut FxHashSet::default()) {
+                return;
             }
         }
 
@@ -367,6 +367,29 @@ impl ComputeGraphInner {
         for dependency in dependencies {
             self.check_life(dependency, removed);
         }
+    }
+
+    fn has_materially_live_dependant(
+        &self,
+        key: NodeIndex,
+        visited: &mut FxHashSet<NodeIndex>,
+    ) -> bool {
+        if !visited.insert(key) {
+            return false;
+        }
+
+        let Some(node) = self.nodes.nodes.node_weight(key) else {
+            return false;
+        };
+
+        if node.reference_count > 0 || node.cached.is_none() {
+            return true;
+        }
+
+        self.nodes
+            .nodes
+            .neighbors_directed(key, petgraph::Direction::Outgoing)
+            .any(|dependant| self.has_materially_live_dependant(dependant, visited))
     }
 
     fn remove_key(&mut self, key: NodeIndex, removed: &mut Vec<ComputeGraphNode>) {
