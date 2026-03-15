@@ -216,34 +216,17 @@ fn get_rel_pos(
     // For SAM, q_size == k_size and rel_pos has shape (2*q_size-1, head_dim)
     let device = rel_pos.device();
 
-    // Create coordinate indices
-    let q_coords: Tensor<2, f32> = fusor::arange::<f32>(&device, 0.0, q_size as f32)
-        .reshape([q_size, 1])
-        .to_concrete();
-    let k_coords: Tensor<2, f32> = fusor::arange::<f32>(&device, 0.0, k_size as f32)
-        .reshape([1, k_size])
-        .to_concrete();
-
     let q_scale = f32::max(1.0, k_size as f32 / q_size as f32);
     let k_scale = f32::max(1.0, q_size as f32 / k_size as f32);
-
-    let q_coords = q_coords.mul_scalar(q_scale);
-    let k_coords = k_coords.mul_scalar(k_scale);
-
-    // relative_coords = q_coords - k_coords + (k_size - 1) * max(1, q_size/k_size)
     let offset = (k_size as f32 - 1.0) * q_scale;
-    let q_broadcast: Tensor<2, f32> = q_coords.broadcast_as([q_size, k_size]).to_concrete();
-    let k_broadcast: Tensor<2, f32> = k_coords.broadcast_as([q_size, k_size]).to_concrete();
-    let relative_coords: Tensor<2, f32> = (q_broadcast - k_broadcast + offset).to_concrete();
 
-    // Convert relative coords to u32 indices for index_select
-    // Since we're computing integer offsets, extract them as f32 and convert
-    let relative_coords_flat: Tensor<1, f32> =
-        relative_coords.reshape([q_size * k_size]).to_concrete();
-    // Build u32 index tensor from the f32 values
-    let rc_slice = pollster::block_on(relative_coords_flat.to_concrete().as_slice())
-        .expect("Failed to read relative coords");
-    let rc_data: Vec<u32> = { rc_slice.as_slice().iter().map(|&v| v as u32).collect() };
+    // Compute relative coordinate indices entirely on the CPU — these are
+    // deterministic integer offsets derived from q_size and k_size.
+    let rc_data: Vec<u32> = (0..q_size)
+        .flat_map(|q| {
+            (0..k_size).map(move |k| (q as f32 * q_scale - k as f32 * k_scale + offset) as u32)
+        })
+        .collect();
     let relative_coords_u32: Tensor<1, u32> =
         Tensor::from_slice(&device, [q_size * k_size], &rc_data);
 
