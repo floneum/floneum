@@ -390,6 +390,15 @@ impl GenericKernel {
         let module = self.kernel.get_or_init(|| {
             let mut kernel = String::new();
             self.kernel(&mut kernel, device).unwrap();
+            if let Ok(path) = std::env::var("FUSOR_DUMP_WGSL") {
+                let dump_path = format!(
+                    "{}.{}.wgsl",
+                    path,
+                    self.name.replace("/", "_").replace(" ", "_")
+                );
+                let _ = std::fs::write(&dump_path, &kernel);
+                eprintln!("Dumped WGSL to {dump_path} (name={})", self.name);
+            }
             device
                 .shader_module_cache()
                 .write()

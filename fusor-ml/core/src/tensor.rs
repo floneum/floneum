@@ -568,6 +568,18 @@ impl<const R: usize, D> Clone for Tensor<R, D> {
     }
 }
 
+impl<const R: usize, D> Tensor<R, D> {
+    /// Resolve the current tensor value on device and return a fresh leaf tensor
+    /// that no longer carries the original compute graph history.
+    pub fn detach(&self) -> Self {
+        let (data, _) = self.data.materialize();
+        Self {
+            data: LazyTensorData::new(data),
+            datatype: PhantomData,
+        }
+    }
+}
+
 impl<D: DataType> fusor_types::FromArray<0, D, (), Device> for Tensor<0, D> {
     fn from_array(_data: (), device: &Device) -> Self {
         let iter = std::iter::empty();
@@ -891,13 +903,6 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
                 }
             }
         }
-    }
-
-    /// Resolve the current tensor value on device and return a fresh leaf tensor
-    /// that no longer carries the original compute graph history.
-    pub fn detach(&self) -> Self {
-        let (data, _) = self.data.materialize();
-        Self::from_parts(LazyTensorData::new(data))
     }
 
     /// How many kernel calls are needed to fully resolve this tensor

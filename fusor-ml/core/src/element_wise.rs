@@ -5,7 +5,6 @@ use std::{
 };
 
 use crate::{
-    BackwardTarget,
     Tensor,
     compute_graph::NodeIndex,
     mir::{function::Function, kernel::GenericKernel},
@@ -146,16 +145,14 @@ impl ElementWiseFunction {
 fn elementwise_with_backward<const R: usize, In: DataType, Out: DataType>(
     input: &Tensor<R, In>,
     function: ElementWiseFunction,
-    backward: impl Fn(Tensor<R, Out>, &Tensor<R, In>) -> Tensor<R, In> + Send + Sync + 'static,
+    _backward: impl Fn(Tensor<R, Out>, &Tensor<R, In>) -> Tensor<R, In> + Send + Sync + 'static,
 ) -> Tensor<R, Out> {
-    let output = input.element_wise(ElementWiseOperation::new(
+    input.element_wise(ElementWiseOperation::new(
         input.datatype(),
         input.key(),
         function,
         input.shape().as_slice(),
-    ));
-    let input = input.clone();
-    output.with_backwards(move |grad| Ok(vec![BackwardTarget::wrt(&input, backward(grad, &input))]))
+    ))
 }
 
 fn greater_than_const_mask<const R: usize, D: DataType>(

@@ -2,7 +2,7 @@ use crate::matmul::sgemm_params::gemm_parameters;
 use crate::matmul::sgemv_params::gemv_parameters;
 use crate::mir::operation::Operation;
 use crate::{
-    BackwardTarget, Device, ElementWiseFunctions, Tensor,
+    Device, ElementWiseFunctions, Tensor,
     compute_graph::NodeIndex,
     mir::kernel::GenericKernel,
     tensor::{DataType, DataTypeEnum, TensorData},
@@ -273,15 +273,7 @@ impl Operation for MatMulOperation {
 
 impl<const R: usize, T: DataType> Tensor<R, T> {
     pub fn mat_mul(&self, other: &Self) -> Self {
-        let output = self.add_mat_mul(other, None);
-        let lhs = self.clone();
-        let rhs = other.clone();
-        output.with_backwards(move |grad| {
-            Ok(vec![
-                BackwardTarget::wrt(&lhs, grad.clone().mat_mul(&rhs.t())),
-                BackwardTarget::wrt(&rhs, lhs.t().mat_mul(&grad)),
-            ])
-        })
+        self.add_mat_mul(other, None)
     }
 
     pub fn mat_mul_with_parameters(&self, other: &Self, parameters: MatMulParams) -> Self {

@@ -214,6 +214,6 @@ pub fn gemm_parameters(m: usize, n: usize, k: usize) -> SgemmParams {
     } else if sum_dim <= 4608f32 {
         SgemmParams::new(false, 32u32, 32u32, 16u32, 4u32, 4u32)
     } else {
-        SgemmParams::new(false, 64u32, 64u32, 16u32, 4u32, 4u32)
+        SgemmParams::new(false, 48u32, 32u32, 8u32, 6u32, 4u32)
     }
 }

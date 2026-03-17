@@ -10,23 +10,25 @@ use wgpu::CommandEncoderDescriptor;
 
 mod layout_pass;
 mod queue;
-mod backward;
 mod resolve;
 mod visualize;
 
 use crate::{
     DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, QMatrix,
-    ReduceOperation, composite::where_cond::WhereCondOperation,
-    compute_graph::resolve::ResolverResult, dequantize::DequantizeOperation,
-    index_select::IndexSelectOperation, map_layout::MapLayoutOperation, mir::operation::Operation,
-    nary_wise::NaryOperation, quantized::matmul::QMatMulOperation, resize::ResizeOperation,
+    ReduceOperation,
+    composite::where_cond::WhereCondOperation,
+    compute_graph::resolve::ResolverResult,
+    dequantize::DequantizeOperation,
+    index_select::IndexSelectOperation,
+    map_layout::MapLayoutOperation,
+    mir::operation::Operation,
+    nary_wise::NaryOperation,
+    quantized::matmul::QMatMulOperation,
+    resize::ResizeOperation,
     slice_assign::SliceAssignOperation,
-    tensor::{LazyTensorData, TensorData},
+    tensor::TensorData,
     visit_tiled::MaybeQData,
 };
-
-pub(crate) type BackwardRule =
-    Arc<dyn Fn(LazyTensorData) -> crate::Result<Vec<(NodeIndex, LazyTensorData)>> + Send + Sync>;
 
 #[derive(Clone)]
 pub(crate) struct ComputeGraph {
@@ -152,19 +154,6 @@ impl ComputeGraph {
         self.with_mut(|inner| inner.add_reference(key));
     }
 
-    pub(crate) fn set_backward_rule(&self, key: NodeIndex, backward: BackwardRule) {
-        let replaced = {
-            let mut inner = self.inner.write();
-            let replaced = inner.set_backward_rule(key, backward);
-            #[cfg(feature = "extra_assertions")]
-            {
-                inner.verify_integrity()
-            }
-            replaced
-        };
-        drop(replaced);
-    }
-
     pub(crate) fn remove_reference(&self, key: NodeIndex) {
         let removed = {
             let mut inner = self.inner.write();
@@ -189,7 +178,6 @@ pub(crate) struct ComputeGraphNode {
     variant: ComputeGraphNodeVariant,
     reference_count: u32,
     cached: Option<TensorData>,
-    backward: Option<BackwardRule>,
 }
 
 #[derive(Clone, Debug)]
@@ -281,7 +269,6 @@ impl ComputeGraphInner {
             variant: node,
             reference_count: 1,
             cached: None,
-            backward: None,
         });
         self.add_dependency_edges(node);
         node
@@ -291,13 +278,6 @@ impl ComputeGraphInner {
         let node = self.nodes.nodes.node_weight_mut(key).unwrap();
 
         node.reference_count += 1;
-    }
-
-    fn set_backward_rule(&mut self, key: NodeIndex, backward: BackwardRule) -> Option<BackwardRule> {
-        self.nodes
-            .nodes
-            .node_weight_mut(key)
-            .and_then(|node| node.backward.replace(backward))
     }
 
     fn add_dependency_edges(&mut self, key: NodeIndex) {
@@ -382,7 +362,7 @@ impl ComputeGraphInner {
             return false;
         };
 
-        if node.reference_count > 0 || node.cached.is_none() {
+        if node.reference_count > 0 {
             return true;
         }
 

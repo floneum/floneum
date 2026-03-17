@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use crate::{
-    BackwardTarget, DataTypeEnum, Layout, SmallerRank, TILE_SIZE, Tensor, TensorData,
+    DataTypeEnum, Layout, SmallerRank, TILE_SIZE, Tensor, TensorData,
     compute_graph::NodeIndex,
     map_layout::MapLayoutOperation,
     mir::{
@@ -251,14 +251,12 @@ impl<const R: usize, T: crate::DataType> Tensor<R, T> {
         );
         let new_shape: Box<[usize]> = new_shape.into();
         let input = self.key();
-        let output = self.add_resize(ResizeOperation::new(
+        self.add_resize(ResizeOperation::new(
             input,
             (*self.shape()).into(),
             new_shape.clone(),
             new_shape.clone(),
-        ));
-        let input = self.clone();
-        output.with_backwards(move |grad| Ok(vec![BackwardTarget::wrt(&input, grad.reshape(*input.shape()))]))
+        ))
     }
 
     pub fn flatten_last_n<const FROM_END: usize, const O: usize>(&self) -> Tensor<O, T>

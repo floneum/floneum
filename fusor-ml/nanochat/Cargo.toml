@@ -5,6 +5,14 @@ edition = "2024"
 publish = false
 
 [dependencies]
-fusor-core.workspace = true
+bytemuck = "1.23.2"
+dotenvy = "0.15.7"
+flate2 = "1.1.2"
+fusor.workspace = true
+fusor-gguf.workspace = true
+half = "2.7.1"
+midly = "0.5.3"
 pollster = "0.4.0"
 rand.workspace = true
+reqwest = "0.12.15"
+tar = "0.4.44"

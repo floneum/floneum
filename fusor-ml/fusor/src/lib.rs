@@ -8,6 +8,7 @@
 //! - CPU kernel fusion is preserved (expression types stay lazy)
 //! - GPU laziness is preserved (compute graph batching)
 
+pub mod autograd;
 pub mod cache;
 mod composite;
 mod device;

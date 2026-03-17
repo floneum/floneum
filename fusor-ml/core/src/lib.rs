@@ -11,7 +11,6 @@ pub use rank::*;
 pub use reduce::*;
 pub use tensor::MappedBuffer;
 pub use tensor::*;
-pub use autograd::{BackwardTarget, Gradients};
 
 // Re-export wasm-compatible Send/Sync traits
 pub use wgpu::{WasmNotSend, WasmNotSendSync, WasmNotSync};
@@ -22,7 +21,6 @@ pub(crate) use pair_wise::*;
 pub use resize::ShapeWithOneHole;
 pub use varbuilder::{ShardedVarBuilder, VarBuilder};
 
-mod autograd;
 pub mod cache;
 mod composite;
 pub use composite::{ToVec1, ToVec2, ToVec3};

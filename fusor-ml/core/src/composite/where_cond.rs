@@ -1,4 +1,4 @@
-use crate::{BackwardTarget, DataType, Tensor, compute_graph::NodeIndex, tensor::DataTypeEnum};
+use crate::{DataType, Tensor, compute_graph::NodeIndex, tensor::DataTypeEnum};
 
 impl<const R: usize, D: DataType> Tensor<R, D> {
     pub fn where_cond<D2>(self, on_true: &Tensor<R, D2>, on_false: &Tensor<R, D2>) -> Tensor<R, D2>
@@ -14,17 +14,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             self.shape(),
         );
         let data = on_true.data();
-        let output = Tensor::from_parts(data.where_cond(operation));
-        let condition = self.clone();
-        let on_true = on_true.clone();
-        let on_false = on_false.clone();
-        output.with_backwards(move |grad| {
-            let zeros = Tensor::zeros(grad.device(), *grad.shape());
-            Ok(vec![
-                BackwardTarget::wrt(&on_true, condition.clone().where_cond(&grad, &zeros)),
-                BackwardTarget::wrt(&on_false, condition.clone().where_cond(&zeros, &grad)),
-            ])
-        })
+        Tensor::from_parts(data.where_cond(operation))
     }
 }
 
