@@ -28,7 +28,7 @@ use std::{
 
 use crate::config::{RuntimeConfig, SaveQuantization};
 
-const COMPARISON_SEEDS: [u64; 12] = [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112];
+const COMPARISON_SAMPLE_LIMIT: usize = 12;
 const DATASET_GALLERY_LIMIT: usize = 24;
 
 #[tokio::main]
@@ -67,18 +67,7 @@ async fn main() {
         let evaluation_dataset =
             preferred_eval_dataset(&validation_dataset, &test_dataset, &train_dataset);
         let mut rng = StdRng::seed_from_u64(runtime.seed);
-        let train_position_values = position_indexes(runtime.batch_size, runtime.block_size);
-        let train_position_inputs: Tensor<2, u32> = Tensor::new(&device, &train_position_values);
-        let sample_position_values = position_indexes(1, runtime.block_size);
-        let sample_position_inputs: Tensor<2, u32> = Tensor::new(&device, &sample_position_values);
         let mut model = NanoChatModel::new(&device, &mut rng, tokenizer.vocab_size(), &runtime);
-        let causal_mask = causal_mask_tensor(
-            model.graph(),
-            &device,
-            runtime.batch_size.max(1),
-            runtime.block_size,
-        );
-        let sample_causal_mask = causal_mask_tensor(model.graph(), &device, 1, runtime.block_size);
         let mut optimizer = AdamW::new(
             &device,
             &model,
@@ -119,7 +108,8 @@ async fn main() {
         let mut global_step: usize = 0;
         for epoch in 0..runtime.epochs {
             let batches = train_dataset.epoch_batches(&mut rng, tokenizer.eot_token(), &runtime);
-            for batch in batches {
+            let epoch_batch_count = batches.len().max(1);
+            for (batch_index, batch) in batches.into_iter().enumerate() {
                 global_step += 1;
                 let learning_rate = scheduled_learning_rate(global_step, total_steps, &runtime);
                 optimizer.set_learning_rate(learning_rate);
@@ -128,7 +118,15 @@ async fn main() {
                 let target_values = windows_to_token_targets(&batch.windows);
                 let token_inputs: Tensor<2, u32> = Tensor::new(&device, &input_values);
                 let targets: Tensor<2, u32> = Tensor::new(&device, &target_values);
-                let logits = model.forward(&token_inputs, &train_position_inputs, &causal_mask);
+                let position_values = position_indexes(batch.windows.len().max(1), runtime.block_size);
+                let position_inputs: Tensor<2, u32> = Tensor::new(&device, &position_values);
+                let causal_mask = causal_mask_tensor(
+                    model.graph(),
+                    &device,
+                    batch.windows.len().max(1),
+                    runtime.block_size,
+                );
+                let logits = model.forward(&token_inputs, &position_inputs, &causal_mask);
                 let loss = masked_cross_entropy_autograd(
                     model.graph(),
                     &device,
@@ -160,8 +158,13 @@ async fn main() {
                     )
                     .await;
                     println!(
-                        "epoch {epoch} step {:>6}/{total_steps} | lr={learning_rate:.6} | loss={loss_value:.6} | train_bpt={train_bits_per_token:.4} | eval_bpt={validation_bits_per_token:.4}",
-                        global_step
+                        "epoch {}/{} batch {:>3}/{} | global {:>6}/{} | lr={learning_rate:.6} | loss={loss_value:.6} | train_bpt={train_bits_per_token:.4} | eval_bpt={validation_bits_per_token:.4}",
+                        epoch + 1,
+                        runtime.epochs,
+                        batch_index + 1,
+                        epoch_batch_count,
+                        global_step,
+                        total_steps,
                     );
                 }
 
@@ -182,16 +185,75 @@ async fn main() {
             println!("skipped final gguf save");
         }
 
-        let metrics = evaluate_continuation(
-            &model,
-            &device,
-            &sample_position_inputs,
-            &sample_causal_mask,
-            &tokenizer,
-            evaluation_dataset,
-            &runtime,
-        )
-        .await;
+        drop(optimizer);
+
+        let (metrics, sample_generated) = if runtime.save_final_model {
+            drop(model);
+            let interactive_model = load_interactive_model(&device, &tokenizer, &runtime);
+            let metrics = evaluate_interactive_continuation(
+                &interactive_model,
+                &device,
+                &tokenizer,
+                evaluation_dataset,
+                &runtime,
+            )
+            .await;
+            let sample_generated = if let Some(file) = evaluation_dataset.files().first() {
+                let prompt_tokens = continuation_prompt_tokens(&tokenizer, file, &runtime);
+                Some(
+                    generate_interactive_completion(
+                        &interactive_model,
+                        &device,
+                        &tokenizer,
+                        &runtime,
+                        runtime.seed,
+                        &prompt_tokens,
+                        runtime.sample_tokens,
+                        SamplingMode::Sample,
+                    )
+                    .await,
+                )
+            } else {
+                None
+            };
+            (metrics, sample_generated)
+        } else {
+            let sample_position_values = position_indexes(1, runtime.block_size);
+            let sample_position_inputs: Tensor<2, u32> =
+                Tensor::new(&device, &sample_position_values);
+            let sample_causal_mask =
+                causal_mask_tensor(model.graph(), &device, 1, runtime.block_size);
+            let metrics = evaluate_continuation(
+                &model,
+                &device,
+                &sample_position_inputs,
+                &sample_causal_mask,
+                &tokenizer,
+                evaluation_dataset,
+                &runtime,
+            )
+            .await;
+            let sample_generated = if let Some(file) = evaluation_dataset.files().first() {
+                let prompt_tokens = continuation_prompt_tokens(&tokenizer, file, &runtime);
+                Some(
+                    generate_completion(
+                        &model,
+                        &device,
+                        &sample_position_inputs,
+                        &sample_causal_mask,
+                        &runtime,
+                        &prompt_tokens,
+                        tokenizer.eot_token(),
+                        &mut rng,
+                        SamplingMode::Sample,
+                    )
+                    .await,
+                )
+            } else {
+                None
+            };
+            (metrics, sample_generated)
+        };
 
         println!(
             "\ncontinuation token accuracy: {}/{} ({:.2}%)",
@@ -208,18 +270,7 @@ async fn main() {
 
         if let Some(file) = evaluation_dataset.files().first() {
             let prompt_tokens = continuation_prompt_tokens(&tokenizer, file, &runtime);
-            let generated = generate_completion(
-                &model,
-                &device,
-                &sample_position_inputs,
-                &sample_causal_mask,
-                &runtime,
-                &prompt_tokens,
-                tokenizer.eot_token(),
-                &mut rng,
-                SamplingMode::Sample,
-            )
-            .await;
+            let generated = sample_generated.unwrap_or_default();
             let expected = expected_continuation_tokens(
                 file,
                 prompt_tokens.len().saturating_sub(1),
@@ -786,64 +837,140 @@ async fn evaluate_continuation(
     let mut correct_tokens = 0;
     let mut total_tokens = 0;
     let mut exact_matches = 0;
-    let exact_match_examples = dataset.files().len();
+    let files = dataset.files();
+    let exact_match_examples = files.len();
+    let batch_size = runtime.batch_size.max(1);
+    let total_batches = files.len().div_ceil(batch_size).max(1);
+    let mut processed_files = 0;
+    let mut greedy_rng = StdRng::seed_from_u64(0);
 
     println!(
-        "evaluating continuation token accuracy across {} files...",
-        dataset.files().len()
+        "evaluating continuation token accuracy in {} batches of up to {} files...",
+        total_batches, batch_size
     );
 
-    for file in dataset.files() {
-        let prompt_tokens = continuation_prompt_tokens(tokenizer, file, runtime);
-        let predicted = generate_completion(
-            model,
-            device,
-            position_inputs,
-            causal_mask,
-            runtime,
-            &prompt_tokens,
-            tokenizer.eot_token(),
-            &mut StdRng::seed_from_u64(0),
-            SamplingMode::Greedy,
-        )
-        .await;
+    for (batch_index, chunk) in files.chunks(batch_size).enumerate() {
+        let batch_start = Instant::now();
 
-        let continuation = expected_continuation_tokens(
-            file,
-            prompt_tokens.len().saturating_sub(1),
-            runtime.sample_tokens,
-        );
-        for (position, target) in continuation.iter().copied().enumerate() {
-            total_tokens += 1;
-            if predicted.get(position).copied() == Some(target) {
-                correct_tokens += 1;
+        for file in chunk {
+            let prompt_tokens = continuation_prompt_tokens(tokenizer, file, runtime);
+            let generated = generate_completion(
+                model,
+                device,
+                position_inputs,
+                causal_mask,
+                runtime,
+                &prompt_tokens,
+                tokenizer.eot_token(),
+                &mut greedy_rng,
+                SamplingMode::Greedy,
+            )
+            .await;
+            let expected = expected_continuation_tokens(
+                file,
+                prompt_tokens.len().saturating_sub(1),
+                runtime.sample_tokens,
+            );
+
+            total_tokens += expected.len();
+            correct_tokens += expected
+                .iter()
+                .copied()
+                .zip(generated.iter().copied())
+                .filter(|(target, predicted)| predicted == target)
+                .count();
+            if generated == expected {
+                exact_matches += 1;
             }
         }
+
+        processed_files += chunk.len();
+        println!(
+            "continuation eval batch {}/{} | files {}/{} | token_acc={:.2}% | exact_match={:.2}% | elapsed={:.2?}",
+            batch_index + 1,
+            total_batches,
+            processed_files,
+            exact_match_examples,
+            correct_tokens as f32 / total_tokens.max(1) as f32 * 100.0,
+            exact_matches as f32 / processed_files.max(1) as f32 * 100.0,
+            batch_start.elapsed(),
+        );
     }
 
-    for file in dataset.files() {
-        let prompt_tokens = continuation_prompt_tokens(tokenizer, file, runtime);
-        let generated = generate_completion(
-            model,
-            device,
-            position_inputs,
-            causal_mask,
-            runtime,
-            &prompt_tokens,
-            tokenizer.eot_token(),
-            &mut StdRng::seed_from_u64(0),
-            SamplingMode::Greedy,
-        )
-        .await;
-        let expected = expected_continuation_tokens(
-            file,
-            prompt_tokens.len().saturating_sub(1),
-            runtime.sample_tokens,
-        );
+    PrefixMetrics {
+        correct_tokens,
+        total_tokens,
+        exact_matches,
+        exact_match_examples,
+    }
+}
 
-        if generated == expected {
-            exact_matches += 1;
+async fn evaluate_interactive_continuation(
+    model: &InteractiveNanoChatModel,
+    device: &Device,
+    tokenizer: &StrokeTokenizer,
+    dataset: &SourceDataset,
+    runtime: &RuntimeConfig,
+) -> PrefixMetrics {
+    let mut correct_tokens = 0;
+    let mut total_tokens = 0;
+    let mut exact_matches = 0;
+    let files = dataset.files();
+    let exact_match_examples = files.len();
+    let batch_size = runtime.batch_size.min(8).max(1);
+    let total_batches = files.len().div_ceil(batch_size).max(1);
+    let mut processed_files = 0;
+
+    println!(
+        "evaluating continuation token accuracy in {} interactive batches of up to {} files...",
+        total_batches, batch_size
+    );
+
+    for (batch_index, chunk) in files.chunks(batch_size).enumerate() {
+        let batch_start = Instant::now();
+
+        for (offset, file) in chunk.iter().enumerate() {
+            let prompt_tokens = continuation_prompt_tokens(tokenizer, file, runtime);
+            let generated = generate_interactive_completion(
+                model,
+                device,
+                tokenizer,
+                runtime,
+                runtime.seed + processed_files as u64 + offset as u64,
+                &prompt_tokens,
+                runtime.sample_tokens,
+                SamplingMode::Greedy,
+            )
+            .await;
+            let expected = expected_continuation_tokens(
+                file,
+                prompt_tokens.len().saturating_sub(1),
+                runtime.sample_tokens,
+            );
+
+            total_tokens += expected.len();
+            correct_tokens += expected
+                .iter()
+                .copied()
+                .zip(generated.iter().copied())
+                .filter(|(target, predicted)| predicted == target)
+                .count();
+            if generated == expected {
+                exact_matches += 1;
+            }
         }
+
+        processed_files += chunk.len();
+        println!(
+            "interactive continuation eval batch {}/{} | files {}/{} | token_acc={:.2}% | exact_match={:.2}% | elapsed={:.2?}",
+            batch_index + 1,
+            total_batches,
+            processed_files,
+            exact_match_examples,
+            correct_tokens as f32 / total_tokens.max(1) as f32 * 100.0,
+            exact_matches as f32 / processed_files.max(1) as f32 * 100.0,
+            batch_start.elapsed(),
+        );
     }
 
     PrefixMetrics {
@@ -901,13 +1028,15 @@ enum SamplingMode {
 async fn run_inference(device: &Device, tokenizer: &StrokeTokenizer, runtime: &RuntimeConfig) {
     let model = load_interactive_model(device, tokenizer, runtime);
     println!("generating {} tokens...", runtime.sample_tokens);
-    let generated = generate_interactive_sample(
+    let generated = generate_interactive_completion(
         &model,
         device,
         tokenizer,
         runtime,
         runtime.seed,
         &[tokenizer.bos_token()],
+        runtime.sample_tokens,
+        SamplingMode::Sample,
     )
     .await;
     let sample_output_path = resolve_output_path(&runtime.sample_output_path);
@@ -927,9 +1056,20 @@ async fn run_comparison_report(
 ) {
     let datasets = synthetic_dataset_split(tokenizer, runtime);
     let train_dataset = datasets.train;
+    let validation_dataset = datasets.validation;
+    let test_dataset = datasets.test;
     assert!(
         train_dataset.num_docs() > 0,
         "synthetic stroke training split is empty"
+    );
+    let compare_dataset = if test_dataset.num_docs() > 0 {
+        &test_dataset
+    } else {
+        preferred_eval_dataset(&validation_dataset, &test_dataset, &train_dataset)
+    };
+    assert!(
+        compare_dataset.num_docs() > 0,
+        "comparison dataset is empty"
     );
 
     let model = load_interactive_model(device, tokenizer, runtime);
@@ -942,46 +1082,62 @@ async fn run_comparison_report(
     });
 
     let mut samples = Vec::new();
-    for seed in COMPARISON_SEEDS {
-        let generated = generate_interactive_sample(
+    for (index, file) in compare_dataset
+        .files()
+        .iter()
+        .take(COMPARISON_SAMPLE_LIMIT)
+        .enumerate()
+    {
+        let prompt = file
+            .target_tokens()
+            .iter()
+            .copied()
+            .take(runtime.sample_prefix_tokens)
+            .collect::<Vec<_>>();
+        let expected = &file.target_tokens()[prompt.len()..];
+        let mut model_prompt = vec![tokenizer.bos_token()];
+        model_prompt.extend_from_slice(&prompt);
+        let generated = generate_interactive_completion(
             &model,
             device,
             tokenizer,
             runtime,
-            seed,
-            &[tokenizer.bos_token()],
+            runtime.seed + index as u64,
+            &model_prompt,
+            expected.len(),
+            SamplingMode::Greedy,
         )
         .await;
-        let generated_name = format!("generated-{seed}.svg");
+        let generated_name = format!("generated-{index:03}.svg");
         write_tokens_to_svg_file(
             tokenizer,
-            &[],
+            &prompt,
             &generated,
             &report_dir.join(&generated_name),
         );
 
-        let nearest = nearest_training_match(train_dataset.files(), &generated);
-        let match_name = format!("match-{seed}.svg");
+        let expected_name = format!("expected-{index:03}.svg");
         write_tokens_to_svg_file(
             tokenizer,
-            &[],
-            nearest.file.target_tokens(),
-            &report_dir.join(&match_name),
+            &prompt,
+            expected,
+            &report_dir.join(&expected_name),
         );
 
         samples.push(ComparisonSample {
-            seed,
+            example_label: format!("Example {:03}", index),
+            source_path: file.path().to_string(),
+            shape: shape_name_from_path(file.path()).to_string(),
+            prompt_tokens: tokenizer.describe_tokens(&prompt, 80),
             generated_name,
+            expected_name,
             generated_tokens: tokenizer.describe_tokens(&generated, 80),
-            nearest_name: match_name,
-            nearest_path: nearest.file.path().to_string(),
-            nearest_shape: shape_name_from_path(nearest.file.path()).to_string(),
-            nearest_tokens: tokenizer.describe_tokens(nearest.file.target_tokens(), 80),
-            edit_distance: nearest.edit_distance,
+            expected_tokens: tokenizer.describe_tokens(expected, 80),
+            edit_distance: token_edit_distance(&generated, expected),
             similarity: similarity_score(
                 &generated,
-                nearest.file.target_tokens(),
-                nearest.edit_distance,
+                expected,
+                token_edit_distance(&generated, expected),
             ),
         });
     }
@@ -1008,7 +1164,12 @@ async fn run_comparison_report(
         });
     }
 
-    let report = comparison_report_html(train_dataset.num_docs(), &samples, &dataset_gallery);
+    let report = comparison_report_html(
+        train_dataset.num_docs(),
+        compare_dataset.num_docs(),
+        &samples,
+        &dataset_gallery,
+    );
     let report_path = report_dir.join("index.html");
     fs::write(&report_path, report).unwrap_or_else(|error| {
         panic!(
@@ -1025,13 +1186,13 @@ async fn run_comparison_report(
         .collect::<BTreeSet<_>>()
         .len();
     println!(
-        "comparison summary: generated_samples={} unique_sequences={} avg_nearest_similarity={:.1}%",
+        "comparison summary: prompted_examples={} unique_completions={} avg_completion_similarity={:.1}%",
         samples.len(),
         unique_sequences,
         average_similarity * 100.0
     );
-    for (shape, count) in nearest_shape_counts(&samples) {
-        println!("nearest_train_shape {shape}: {count}");
+    for (shape, count) in comparison_shape_counts(&samples) {
+        println!("comparison_shape {shape}: {count}");
     }
     println!("wrote comparison report: {}", report_path.display());
 }
@@ -1060,13 +1221,15 @@ fn load_interactive_model(
         .unwrap_or_else(|e| panic!("could not load model: {e}"))
 }
 
-async fn generate_interactive_sample(
+async fn generate_interactive_completion(
     model: &InteractiveNanoChatModel,
     device: &Device,
     tokenizer: &StrokeTokenizer,
     runtime: &RuntimeConfig,
     seed: u64,
     prompt_tokens: &[u32],
+    max_tokens: usize,
+    mode: SamplingMode,
 ) -> Vec<u32> {
     let block_size = model.block_size().min(runtime.block_size);
     let position_values = position_indexes(1, block_size);
@@ -1075,18 +1238,21 @@ async fn generate_interactive_sample(
     let mut rng = StdRng::seed_from_u64(seed);
     let mut tokens = prompt_tokens.to_vec();
 
-    for _ in 0..runtime.sample_tokens {
+    for _ in 0..max_tokens {
         let (context, last_index) =
             autoregressive_context(&tokens, tokenizer.eot_token(), block_size);
         let token_inputs: Tensor<2, u32> = Tensor::new(device, &[context]);
         let logits = model.forward(&token_inputs, &position_inputs, &causal_mask);
         let logits_data = logits.as_slice().await.unwrap().to_vec3();
-        let next = sample_from_logits(
-            &mut rng,
-            &logits_data[0][last_index],
-            runtime.sample_temperature,
-            runtime.sample_top_k,
-        );
+        let next = match mode {
+            SamplingMode::Greedy => argmax_from_logits(&logits_data[0][last_index]),
+            SamplingMode::Sample => sample_from_logits(
+                &mut rng,
+                &logits_data[0][last_index],
+                runtime.sample_temperature,
+                runtime.sample_top_k,
+            ),
+        };
         tokens.push(next);
         if next == tokenizer.eot_token() {
             break;
@@ -1101,13 +1267,14 @@ async fn generate_interactive_sample(
 }
 
 struct ComparisonSample {
-    seed: u64,
+    example_label: String,
+    source_path: String,
+    shape: String,
+    prompt_tokens: String,
     generated_name: String,
+    expected_name: String,
     generated_tokens: String,
-    nearest_name: String,
-    nearest_path: String,
-    nearest_shape: String,
-    nearest_tokens: String,
+    expected_tokens: String,
     edit_distance: usize,
     similarity: f32,
 }
@@ -1117,32 +1284,6 @@ struct DatasetGalleryItem {
     path: String,
     shape: String,
     tokens: String,
-}
-
-struct TrainingMatch<'a> {
-    file: &'a SourceFile,
-    edit_distance: usize,
-}
-
-fn nearest_training_match<'a>(files: &'a [SourceFile], generated: &[u32]) -> TrainingMatch<'a> {
-    files
-        .iter()
-        .map(|file| TrainingMatch {
-            file,
-            edit_distance: token_edit_distance(generated, file.target_tokens()),
-        })
-        .min_by(|left, right| {
-            left.edit_distance
-                .cmp(&right.edit_distance)
-                .then_with(|| {
-                    left.file
-                        .target_tokens()
-                        .len()
-                        .cmp(&right.file.target_tokens().len())
-                })
-                .then_with(|| left.file.path().cmp(right.file.path()))
-        })
-        .unwrap()
 }
 
 fn token_edit_distance(left: &[u32], right: &[u32]) -> usize {
@@ -1176,31 +1317,27 @@ fn shape_name_from_path(path: &str) -> &str {
         .unwrap_or(stem)
 }
 
-fn nearest_shape_counts(samples: &[ComparisonSample]) -> BTreeMap<&str, usize> {
+fn comparison_shape_counts(samples: &[ComparisonSample]) -> BTreeMap<&str, usize> {
     let mut counts = BTreeMap::new();
     for sample in samples {
-        *counts.entry(sample.nearest_shape.as_str()).or_insert(0) += 1;
+        *counts.entry(sample.shape.as_str()).or_insert(0) += 1;
     }
     counts
 }
 
 fn comparison_report_html(
     train_examples: usize,
+    compare_examples: usize,
     samples: &[ComparisonSample],
     dataset_gallery: &[DatasetGalleryItem],
 ) -> String {
-    let unique_sequences = samples
-        .iter()
-        .map(|sample| sample.generated_tokens.as_str())
-        .collect::<BTreeSet<_>>()
-        .len();
     let average_similarity =
         samples.iter().map(|sample| sample.similarity).sum::<f32>() / samples.len().max(1) as f32;
-    let nearest_shapes = nearest_shape_counts(samples)
+    let comparison_shapes = comparison_shape_counts(samples)
         .into_iter()
         .map(|(shape, count)| {
             format!(
-                "<li><strong>{}</strong>: {} nearest matches</li>",
+                "<li><strong>{}</strong>: {} prompted comparisons</li>",
                 html_escape(shape),
                 count
             )
@@ -1211,16 +1348,17 @@ fn comparison_report_html(
         .iter()
         .map(|sample| {
             format!(
-                "<article class=\"compare-card\"><div class=\"compare-head\"><h2>Seed {seed}</h2><p>Nearest training stroke: <strong>{shape}</strong> from <code>{path}</code></p></div><div class=\"pair\"><figure><img src=\"{generated_name}\" alt=\"generated seed {seed}\"><figcaption>Generated</figcaption></figure><figure><img src=\"{nearest_name}\" alt=\"nearest training example for seed {seed}\"><figcaption>Nearest training sample</figcaption></figure></div><dl class=\"metrics\"><div><dt>Edit distance</dt><dd>{distance}</dd></div><div><dt>Similarity</dt><dd>{similarity:.1}%</dd></div></dl><p><strong>Generated tokens</strong><br><code>{generated_tokens}</code></p><p><strong>Training tokens</strong><br><code>{nearest_tokens}</code></p></article>",
-                seed = sample.seed,
-                shape = html_escape(&sample.nearest_shape),
-                path = html_escape(&sample.nearest_path),
+                "<article class=\"compare-card\"><div class=\"compare-head\"><h2>{label}</h2><p>Prompted from <strong>{shape}</strong> in <code>{path}</code></p><p><strong>Prompt</strong><br><code>{prompt_tokens}</code></p></div><div class=\"pair\"><figure><img src=\"{generated_name}\" alt=\"generated completion for {label}\"><figcaption>Model completion</figcaption></figure><figure><img src=\"{expected_name}\" alt=\"expected continuation for {label}\"><figcaption>Expected completion</figcaption></figure></div><dl class=\"metrics\"><div><dt>Edit distance</dt><dd>{distance}</dd></div><div><dt>Similarity</dt><dd>{similarity:.1}%</dd></div></dl><p><strong>Model continuation</strong><br><code>{generated_tokens}</code></p><p><strong>Expected continuation</strong><br><code>{expected_tokens}</code></p></article>",
+                label = html_escape(&sample.example_label),
+                shape = html_escape(&sample.shape),
+                path = html_escape(&sample.source_path),
+                prompt_tokens = html_escape(&sample.prompt_tokens),
                 generated_name = html_escape(&sample.generated_name),
-                nearest_name = html_escape(&sample.nearest_name),
+                expected_name = html_escape(&sample.expected_name),
                 distance = sample.edit_distance,
                 similarity = sample.similarity * 100.0,
                 generated_tokens = html_escape(&sample.generated_tokens),
-                nearest_tokens = html_escape(&sample.nearest_tokens),
+                expected_tokens = html_escape(&sample.expected_tokens),
             )
         })
         .collect::<Vec<_>>()
@@ -1240,12 +1378,12 @@ fn comparison_report_html(
         .join("");
 
     format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Nanochat Comparison Report</title><style>:root{{--bg:#f5efe3;--panel:#fffaf0;--ink:#2f261c;--muted:#6f6558;--line:#deceb2;--accent:#d96c42;--accent-soft:#f1c9b8;}}body{{margin:0;font-family:\"Iowan Old Style\",\"Palatino Linotype\",serif;background:radial-gradient(circle at top,#fdf7ec 0%,var(--bg) 58%,#eadcc4 100%);color:var(--ink);}}main{{max-width:1320px;margin:0 auto;padding:32px 20px 56px;}}h1,h2,h3,p,ul{{margin:0;}}header{{padding:28px;border:1px solid var(--line);border-radius:24px;background:rgba(255,250,240,0.92);box-shadow:0 20px 60px rgba(83,58,26,0.08);}}header p{{margin-top:10px;color:var(--muted);font-size:18px;line-height:1.45;}}.stats{{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:18px;}}.stat{{padding:14px 16px;border-radius:16px;background:#fffdf7;border:1px solid var(--line);}}.stat strong{{display:block;font-size:28px;color:var(--accent);}}section{{margin-top:28px;}}.shape-list{{margin-top:14px;padding-left:20px;color:var(--muted);}}.compare-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:18px;}}.compare-card,.gallery-card{{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:16px;box-shadow:0 14px 36px rgba(83,58,26,0.08);}}.compare-head h2{{font-size:24px;}}.compare-head p{{margin-top:6px;color:var(--muted);line-height:1.4;}}.pair{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:16px;}}figure{{margin:0;}}img{{display:block;width:100%;aspect-ratio:1;border-radius:14px;background:white;border:1px solid #eadcc4;}}figcaption{{margin-top:8px;font-size:14px;color:var(--muted);text-align:center;}}.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:16px 0;}}.metrics div{{padding:10px 12px;border-radius:14px;background:#fffdf7;border:1px solid var(--line);}}dt{{font-size:13px;color:var(--muted);}}dd{{margin:6px 0 0;font-size:22px;font-weight:700;color:var(--accent);}}code{{font-family:\"SFMono-Regular\",Menlo,Consolas,monospace;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word;}}.gallery-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;}}.gallery-card h3{{margin-top:10px;font-size:20px;}}.gallery-card p{{margin-top:8px;color:var(--muted);line-height:1.4;}}@media (max-width: 720px){{.pair{{grid-template-columns:1fr;}}}}</style></head><body><main><header><h1>Nanochat vs Training Data</h1><p>Comparison report for the current single-stroke checkpoint. Each model sample was generated from <code>&lt;bos&gt;</code> only, then matched against the nearest training example from the current seeded train split using token edit distance.</p><div class=\"stats\"><div class=\"stat\"><strong>{train_examples}</strong>train examples</div><div class=\"stat\"><strong>{sample_count}</strong>generated samples</div><div class=\"stat\"><strong>{unique_sequences}</strong>unique generated sequences</div><div class=\"stat\"><strong>{average_similarity:.1}%</strong>avg nearest similarity</div></div><ul class=\"shape-list\">{nearest_shapes}</ul></header><section><div class=\"compare-grid\">{sample_cards}</div></section><section><header><h2>Training Gallery</h2><p>Representative examples from the current training split, rendered with the same SVG exporter as the generated samples.</p></header><div class=\"gallery-grid\">{gallery_cards}</div></section></main></body></html>",
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Nanochat Comparison Report</title><style>:root{{--bg:#f5efe3;--panel:#fffaf0;--ink:#2f261c;--muted:#6f6558;--line:#deceb2;--accent:#d96c42;--accent-soft:#f1c9b8;--prompt:#264653;}}body{{margin:0;font-family:\"Iowan Old Style\",\"Palatino Linotype\",serif;background:radial-gradient(circle at top,#fdf7ec 0%,var(--bg) 58%,#eadcc4 100%);color:var(--ink);}}main{{max-width:1320px;margin:0 auto;padding:32px 20px 56px;}}h1,h2,h3,p,ul{{margin:0;}}header{{padding:28px;border:1px solid var(--line);border-radius:24px;background:rgba(255,250,240,0.92);box-shadow:0 20px 60px rgba(83,58,26,0.08);}}header p{{margin-top:10px;color:var(--muted);font-size:18px;line-height:1.45;}}.stats{{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:18px;}}.stat{{padding:14px 16px;border-radius:16px;background:#fffdf7;border:1px solid var(--line);}}.stat strong{{display:block;font-size:28px;color:var(--accent);}}section{{margin-top:28px;}}.shape-list{{margin-top:14px;padding-left:20px;color:var(--muted);}}.compare-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:18px;}}.compare-card,.gallery-card{{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:16px;box-shadow:0 14px 36px rgba(83,58,26,0.08);}}.compare-head h2{{font-size:24px;}}.compare-head p{{margin-top:6px;color:var(--muted);line-height:1.4;}}.pair{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:16px;}}figure{{margin:0;}}img{{display:block;width:100%;aspect-ratio:1;border-radius:14px;background:white;border:1px solid #eadcc4;}}figcaption{{margin-top:8px;font-size:14px;color:var(--muted);text-align:center;}}.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:16px 0;}}.metrics div{{padding:10px 12px;border-radius:14px;background:#fffdf7;border:1px solid var(--line);}}dt{{font-size:13px;color:var(--muted);}}dd{{margin:6px 0 0;font-size:22px;font-weight:700;color:var(--accent);}}code{{font-family:\"SFMono-Regular\",Menlo,Consolas,monospace;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word;}}.gallery-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;}}.gallery-card h3{{margin-top:10px;font-size:20px;}}.gallery-card p{{margin-top:8px;color:var(--muted);line-height:1.4;}}.legend{{display:flex;gap:14px;flex-wrap:wrap;margin-top:14px;color:var(--muted);font-size:14px;}}.swatch{{display:inline-block;width:14px;height:14px;border-radius:999px;vertical-align:-2px;margin-right:6px;border:1px solid rgba(0,0,0,0.08);}}.swatch.prompt{{background:var(--prompt);}}.swatch.cont{{background:var(--accent);}}@media (max-width: 720px){{.pair{{grid-template-columns:1fr;}}}}</style></head><body><main><header><h1>Nanochat Prompted Completion</h1><p>Each comparison starts from the first two commands of a held-out evaluation example. The teal segment is the prompt, and the orange segment is either the model's completion or the expected continuation from the same test example.</p><div class=\"stats\"><div class=\"stat\"><strong>{train_examples}</strong>train examples</div><div class=\"stat\"><strong>{compare_examples}</strong>eval examples</div><div class=\"stat\"><strong>{sample_count}</strong>prompted comparisons</div><div class=\"stat\"><strong>{average_similarity:.1}%</strong>avg completion similarity</div></div><div class=\"legend\"><span><span class=\"swatch prompt\"></span>Prompt</span><span><span class=\"swatch cont\"></span>Continuation</span></div><ul class=\"shape-list\">{comparison_shapes}</ul></header><section><div class=\"compare-grid\">{sample_cards}</div></section><section><header><h2>Training Gallery</h2><p>Representative examples from the current training split, rendered with the same SVG exporter as the prompted completions.</p></header><div class=\"gallery-grid\">{gallery_cards}</div></section></main></body></html>",
         train_examples = train_examples,
+        compare_examples = compare_examples,
         sample_count = samples.len(),
-        unique_sequences = unique_sequences,
         average_similarity = average_similarity * 100.0,
-        nearest_shapes = nearest_shapes,
+        comparison_shapes = comparison_shapes,
         sample_cards = sample_cards,
         gallery_cards = gallery_cards,
     )

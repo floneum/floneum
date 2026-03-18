@@ -21,6 +21,8 @@ struct CachedBuffer {
     buffer: Arc<wgpu::Buffer>,
 }
 
+const MAX_FREE_BUFFERS_PER_BUCKET: usize = 4;
+
 impl CachedBuffer {
     fn new(buffer: Arc<wgpu::Buffer>, writen: bool) -> Self {
         Self { writen, buffer }
@@ -331,9 +333,10 @@ impl Device {
     pub fn reset_initialized_buffers(&self) {
         let mut cache = self.inner.buffer_allocation_cache.write();
         for (_, buffers) in cache.iter_mut() {
-            for buffer in buffers {
+            for buffer in buffers.iter_mut() {
                 buffer.writen = false;
             }
+            prune_cached_buffers(buffers);
         }
     }
 
@@ -384,6 +387,14 @@ impl Device {
                     .write()
                     .get_or_insert_mut((size, usage), Vec::new)
                     .push(CachedBuffer::new(buffer.clone(), to_initilize));
+                if let Some(buffers) = self
+                    .inner
+                    .buffer_allocation_cache
+                    .write()
+                    .get_mut(&(size, usage))
+                {
+                    prune_cached_buffers(buffers);
+                }
                 buffer
             })
     }
@@ -427,6 +438,23 @@ impl Device {
             .get()
             .expect("compute_graph should be initialized")
     }
+}
+
+fn prune_cached_buffers(buffers: &mut Vec<CachedBuffer>) {
+    let mut kept_free_buffers = 0;
+    buffers.retain(|cached| {
+        let is_free = Arc::strong_count(&cached.buffer) == 1;
+        if !is_free {
+            return true;
+        }
+
+        if kept_free_buffers < MAX_FREE_BUFFERS_PER_BUCKET {
+            kept_free_buffers += 1;
+            true
+        } else {
+            false
+        }
+    });
 }
 
 #[cfg(test)]

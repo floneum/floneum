@@ -207,6 +207,37 @@ impl NanoChatModel {
         &self.graph
     }
 
+    fn into_graph(self, graph: Graph) -> Self {
+        let NanoChatModel {
+            graph: _,
+            shape,
+            attention_period,
+            vocab_size,
+            wte,
+            wpe,
+            blocks,
+            ln_f_weight,
+            ln_f_bias,
+            lm_head,
+        } = self;
+
+        Self {
+            graph: graph.clone(),
+            shape,
+            attention_period,
+            vocab_size,
+            wte: regraph_tensor(&graph, wte),
+            wpe: regraph_tensor(&graph, wpe),
+            blocks: blocks
+                .into_iter()
+                .map(|block| block.into_graph(&graph))
+                .collect(),
+            ln_f_weight: regraph_tensor(&graph, ln_f_weight),
+            ln_f_bias: regraph_tensor(&graph, ln_f_bias),
+            lm_head: regraph_tensor(&graph, lm_head),
+        }
+    }
+
     pub fn vocab_size(&self) -> usize {
         self.vocab_size
     }
@@ -333,7 +364,7 @@ impl AdamWModel for NanoChatModel {
             .map(|(block, block_state)| block_state.step(block, gradients, step, settings))
             .collect();
 
-        NanoChatModel {
+        let updated = NanoChatModel {
             graph,
             shape,
             attention_period,
@@ -350,7 +381,9 @@ impl AdamWModel for NanoChatModel {
             ),
             ln_f_bias: adamw_update(&ln_f_bias, &mut state.ln_f_bias, gradients, step, settings),
             lm_head: adamw_update(&lm_head, &mut state.lm_head, gradients, step, settings),
-        }
+        };
+
+        updated.into_graph(Graph::new())
     }
 }
 
@@ -416,6 +449,17 @@ impl TransformerBlock {
         log_materialize_start(&format!("{prefix}.ln_2.bias"), &self.ln_2_bias.shape());
         push_tensor_1d(tensors, &format!("{prefix}.ln_2.bias"), &self.ln_2_bias).await;
         self.mlp.append_named_tensors(&prefix, tensors).await;
+    }
+
+    fn into_graph(self, graph: &Graph) -> Self {
+        Self {
+            ln_1_weight: regraph_tensor(graph, self.ln_1_weight),
+            ln_1_bias: regraph_tensor(graph, self.ln_1_bias),
+            mixer: self.mixer.into_graph(graph),
+            ln_2_weight: regraph_tensor(graph, self.ln_2_weight),
+            ln_2_bias: regraph_tensor(graph, self.ln_2_bias),
+            mlp: self.mlp.into_graph(graph),
+        }
     }
 }
 
@@ -499,6 +543,15 @@ impl CausalSelfAttention {
         log_materialize_start(&format!("{prefix}.attn_proj.weight"), &self.c_proj.shape());
         push_tensor_2d(tensors, &format!("{prefix}.attn_proj.weight"), &self.c_proj).await;
     }
+
+    fn into_graph(self, graph: &Graph) -> Self {
+        Self {
+            c_attn_q: regraph_tensor(graph, self.c_attn_q),
+            c_attn_k: regraph_tensor(graph, self.c_attn_k),
+            c_attn_v: regraph_tensor(graph, self.c_attn_v),
+            c_proj: regraph_tensor(graph, self.c_proj),
+        }
+    }
 }
 
 impl ConvMixer {
@@ -571,6 +624,18 @@ impl ConvMixer {
         )
         .await;
     }
+
+    fn into_graph(self, graph: &Graph) -> Self {
+        Self {
+            kernels: self
+                .kernels
+                .into_iter()
+                .map(|kernel| regraph_tensor(graph, kernel))
+                .collect(),
+            bias: regraph_tensor(graph, self.bias),
+            out_proj: regraph_tensor(graph, self.out_proj),
+        }
+    }
 }
 
 impl SequenceMixer {
@@ -598,6 +663,13 @@ impl SequenceMixer {
         match self {
             SequenceMixer::Attention(attn) => attn.append_named_tensors(prefix, tensors).await,
             SequenceMixer::Conv(conv) => conv.append_named_tensors(prefix, tensors).await,
+        }
+    }
+
+    fn into_graph(self, graph: &Graph) -> Self {
+        match self {
+            SequenceMixer::Attention(attn) => SequenceMixer::Attention(attn.into_graph(graph)),
+            SequenceMixer::Conv(conv) => SequenceMixer::Conv(conv.into_graph(graph)),
         }
     }
 }
@@ -669,6 +741,15 @@ impl Mlp {
             &self.c_proj_bias,
         )
         .await;
+    }
+
+    fn into_graph(self, graph: &Graph) -> Self {
+        Self {
+            c_fc: regraph_tensor(graph, self.c_fc),
+            c_fc_bias: regraph_tensor(graph, self.c_fc_bias),
+            c_proj: regraph_tensor(graph, self.c_proj),
+            c_proj_bias: regraph_tensor(graph, self.c_proj_bias),
+        }
     }
 }
 
@@ -901,6 +982,10 @@ fn zeros(graph: &Graph, device: &Device, len: usize) -> Tensor<1> {
 
 fn tensor_len<const R: usize>(tensor: &Tensor<R>) -> usize {
     tensor.shape().iter().product()
+}
+
+fn regraph_tensor<const R: usize>(graph: &Graph, tensor: Tensor<R>) -> Tensor<R> {
+    Tensor::from_raw(graph, tensor.into_raw())
 }
 
 async fn push_tensor_1d(tensors: &mut Vec<NamedTensor>, name: &str, tensor: &Tensor<1>) {

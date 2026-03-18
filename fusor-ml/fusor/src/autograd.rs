@@ -388,11 +388,11 @@ impl<const R: usize> Tensor<R> {
     pub fn reshape<const OUT: usize>(&self, shape: [usize; OUT]) -> Tensor<OUT> {
         let input_shape = self.shape();
         let value = self.value.reshape(shape).to_concrete();
-        let input = self.handle.clone();
+        let input_id = self.handle.id;
         let backward: BackwardRule = Arc::new(move |gradient| {
             let gradient = downcast_tensor::<OUT>(&*gradient, "reshape")?;
             Ok(vec![BackwardTarget {
-                node: input.id,
+                node: input_id,
                 gradient: Box::new(gradient.reshape(input_shape).to_concrete()),
             }])
         });
@@ -401,11 +401,11 @@ impl<const R: usize> Tensor<R> {
 
     pub fn transpose(&self, dim0: usize, dim1: usize) -> Self {
         let value = self.value.transpose(dim0, dim1).to_concrete();
-        let input = self.handle.clone();
+        let input_id = self.handle.id;
         let backward: BackwardRule = Arc::new(move |gradient| {
             let gradient = downcast_tensor::<R>(&*gradient, "transpose")?;
             Ok(vec![BackwardTarget {
-                node: input.id,
+                node: input_id,
                 gradient: Box::new(gradient.transpose(dim0, dim1).to_concrete()),
             }])
         });
@@ -415,12 +415,12 @@ impl<const R: usize> Tensor<R> {
     pub fn slice(&self, slices: [Range<usize>; R]) -> Self {
         let input_shape = self.shape();
         let value = self.value.slice(slices.clone()).to_concrete();
-        let input = self.handle.clone();
+        let input_id = self.handle.id;
         let backward: BackwardRule = Arc::new(move |gradient| {
             let gradient = downcast_tensor::<R>(&*gradient, "slice")?;
             let zeros = RawTensor::zeros(&gradient.device(), input_shape);
             Ok(vec![BackwardTarget {
-                node: input.id,
+                node: input_id,
                 gradient: Box::new(zeros.slice_assign(slices.clone(), &gradient).to_concrete()),
             }])
         });
@@ -430,12 +430,12 @@ impl<const R: usize> Tensor<R> {
     pub fn broadcast_as<const OUT: usize>(&self, shape: [usize; OUT]) -> Tensor<OUT> {
         let input_shape = self.shape();
         let value = self.value.broadcast_as(shape).to_concrete();
-        let input = self.handle.clone();
+        let input_id = self.handle.id;
         let backward: BackwardRule = Arc::new(move |gradient| {
             let gradient = downcast_tensor::<OUT>(&*gradient, "broadcast_as")?;
             let reduced = reduce_broadcast_gradient(gradient, input_shape)?;
             Ok(vec![BackwardTarget {
-                node: input.id,
+                node: input_id,
                 gradient: reduced,
             }])
         });
@@ -450,12 +450,12 @@ impl<const R: usize> Tensor<R> {
         + Sync
         + 'static,
     ) -> Self {
-        let input = self.handle.clone();
+        let input_id = self.handle.id;
         let output = value.clone();
         let backward: BackwardRule = Arc::new(move |gradient| {
             let gradient = downcast_tensor::<R>(&*gradient, "unary")?;
             Ok(vec![BackwardTarget {
-                node: input.id,
+                node: input_id,
                 gradient: Box::new(backward(gradient, output.clone()).to_concrete()),
             }])
         });
@@ -479,8 +479,8 @@ impl<const R: usize> Tensor<R> {
             Arc::ptr_eq(&self.handle.graph, &rhs.handle.graph),
             "cannot mix autograd tensors from different graphs"
         );
-        let lhs = self.handle.clone();
-        let rhs_handle = rhs.handle.clone();
+        let lhs_id = self.handle.id;
+        let rhs_id = rhs.handle.id;
         let lhs_value = self.value.clone();
         let rhs_value = rhs.value.clone();
         let backward: BackwardRule = Arc::new(move |gradient| {
@@ -488,11 +488,11 @@ impl<const R: usize> Tensor<R> {
             let gradients = backward(gradient, lhs_value.clone(), rhs_value.clone());
             Ok(vec![
                 BackwardTarget {
-                    node: lhs.id,
+                    node: lhs_id,
                     gradient: Box::new(gradients[0].clone().to_concrete()),
                 },
                 BackwardTarget {
-                    node: rhs_handle.id,
+                    node: rhs_id,
                     gradient: Box::new(gradients[1].clone().to_concrete()),
                 },
             ])
@@ -509,11 +509,11 @@ impl Tensor<1> {
     pub fn sum(&self) -> Tensor<0> {
         let input_shape = self.shape();
         let value = self.value.sum::<0>(0);
-        let input = self.handle.clone();
+        let input_id = self.handle.id;
         let backward: BackwardRule = Arc::new(move |gradient| {
             let gradient = downcast_tensor::<0>(&*gradient, "sum")?;
             Ok(vec![BackwardTarget {
-                node: input.id,
+                node: input_id,
                 gradient: Box::new(gradient.broadcast_as(input_shape).to_concrete()),
             }])
         });
@@ -522,11 +522,11 @@ impl Tensor<1> {
 
     pub fn unsqueeze(&self, dim: usize) -> Tensor<2> {
         let value = self.value.unsqueeze(dim).to_concrete();
-        let input = self.handle.clone();
+        let input_id = self.handle.id;
         let backward: BackwardRule = Arc::new(move |gradient| {
             let gradient = downcast_tensor::<2>(&*gradient, "unsqueeze")?;
             Ok(vec![BackwardTarget {
-                node: input.id,
+                node: input_id,
                 gradient: Box::new(gradient.squeeze(dim).to_concrete()),
             }])
         });
@@ -538,19 +538,19 @@ impl Tensor<2> {
     pub fn mat_mul(&self, rhs: &Tensor<2>) -> Tensor<2> {
         assert_same_graph(self, rhs);
         let value = self.value.mat_mul(&rhs.value);
-        let lhs = self.handle.clone();
-        let rhs_handle = rhs.handle.clone();
+        let lhs_id = self.handle.id;
+        let rhs_id = rhs.handle.id;
         let lhs_value = self.value.clone();
         let rhs_value = rhs.value.clone();
         let backward: BackwardRule = Arc::new(move |gradient| {
             let gradient = downcast_tensor::<2>(&*gradient, "mat_mul")?;
             Ok(vec![
                 BackwardTarget {
-                    node: lhs.id,
+                    node: lhs_id,
                     gradient: Box::new(gradient.clone().mat_mul(&rhs_value.transpose(0, 1))),
                 },
                 BackwardTarget {
-                    node: rhs_handle.id,
+                    node: rhs_id,
                     gradient: Box::new(lhs_value.transpose(0, 1).mat_mul(&gradient)),
                 },
             ])
@@ -564,11 +564,11 @@ impl Tensor<2> {
 
     pub fn squeeze(&self, dim: usize) -> Tensor<1> {
         let value = self.value.squeeze(dim).to_concrete();
-        let input = self.handle.clone();
+        let input_id = self.handle.id;
         let backward: BackwardRule = Arc::new(move |gradient| {
             let gradient = downcast_tensor::<1>(&*gradient, "squeeze")?;
             Ok(vec![BackwardTarget {
-                node: input.id,
+                node: input_id,
                 gradient: Box::new(gradient.unsqueeze(dim).to_concrete()),
             }])
         });
@@ -577,11 +577,11 @@ impl Tensor<2> {
 
     pub fn unsqueeze(&self, dim: usize) -> Tensor<3> {
         let value = self.value.unsqueeze(dim).to_concrete();
-        let input = self.handle.clone();
+        let input_id = self.handle.id;
         let backward: BackwardRule = Arc::new(move |gradient| {
             let gradient = downcast_tensor::<3>(&*gradient, "unsqueeze")?;
             Ok(vec![BackwardTarget {
-                node: input.id,
+                node: input_id,
                 gradient: Box::new(gradient.squeeze(dim).to_concrete()),
             }])
         });
@@ -591,11 +591,11 @@ impl Tensor<2> {
     pub fn sum(&self, axis: usize) -> Tensor<1> {
         let input_shape = self.shape();
         let value = self.value.sum::<1>(axis).to_concrete();
-        let input = self.handle.clone();
+        let input_id = self.handle.id;
         let backward: BackwardRule = Arc::new(move |gradient| {
             let gradient = downcast_tensor::<1>(&*gradient, "sum")?;
             Ok(vec![BackwardTarget {
-                node: input.id,
+                node: input_id,
                 gradient: Box::new(
                     gradient
                         .unsqueeze(axis)
@@ -610,11 +610,11 @@ impl Tensor<2> {
     pub fn sum_keepdim(&self, axis: usize) -> Tensor<2> {
         let input_shape = self.shape();
         let value = self.value.sum_keepdim::<1>(axis).to_concrete();
-        let input = self.handle.clone();
+        let input_id = self.handle.id;
         let backward: BackwardRule = Arc::new(move |gradient| {
             let gradient = downcast_tensor::<2>(&*gradient, "sum_keepdim")?;
             Ok(vec![BackwardTarget {
-                node: input.id,
+                node: input_id,
                 gradient: Box::new(gradient.broadcast_as(input_shape).to_concrete()),
             }])
         });
@@ -649,7 +649,7 @@ impl Tensor<2> {
         let linear_indices_tensor = RawTensor::from_slice(&device, [shape[0]], &linear_indices);
         let flat = self.value.reshape([shape[0] * width]).to_concrete();
         let value = flat.index_select(0, &linear_indices_tensor).to_concrete();
-        let input = self.handle.clone();
+        let input_id = self.handle.id;
         let backward: BackwardRule = Arc::new(move |gradient| {
             let gradient = downcast_tensor::<1>(&*gradient, "gather_last")?;
             let gradient_values = pollster::block_on(gradient.clone().as_slice())?.to_vec1();
@@ -658,7 +658,7 @@ impl Tensor<2> {
                 input_gradient[linear_index as usize] += gradient_values[row];
             }
             Ok(vec![BackwardTarget {
-                node: input.id,
+                node: input_id,
                 gradient: Box::new(RawTensor::from_slice(&device, shape, &input_gradient)),
             }])
         });
@@ -668,7 +668,7 @@ impl Tensor<2> {
     pub fn embedding(&self, indices: &RawTensor<2, u32>) -> Tensor<3> {
         let value: RawTensor<3, f32> =
             Embedding::new_from_tensor(self.value.clone()).forward(indices);
-        let table = self.handle.clone();
+        let table_id = self.handle.id;
         let table_shape = self.shape();
         let device = self.device();
         let indices = indices.clone();
@@ -701,7 +701,7 @@ impl Tensor<2> {
             }
 
             Ok(vec![BackwardTarget {
-                node: table.id,
+                node: table_id,
                 gradient: Box::new(embedding_gradient),
             }])
         });
@@ -713,19 +713,19 @@ impl Tensor<3> {
     pub fn mat_mul(&self, rhs: &Tensor<3>) -> Tensor<3> {
         assert_same_graph(self, rhs);
         let value = self.value.mat_mul(&rhs.value);
-        let lhs = self.handle.clone();
-        let rhs_handle = rhs.handle.clone();
+        let lhs_id = self.handle.id;
+        let rhs_id = rhs.handle.id;
         let lhs_value = self.value.clone();
         let rhs_value = rhs.value.clone();
         let backward: BackwardRule = Arc::new(move |gradient| {
             let gradient = downcast_tensor::<3>(&*gradient, "mat_mul")?;
             Ok(vec![
                 BackwardTarget {
-                    node: lhs.id,
+                    node: lhs_id,
                     gradient: Box::new(gradient.clone().mat_mul(&rhs_value.transpose(1, 2))),
                 },
                 BackwardTarget {
-                    node: rhs_handle.id,
+                    node: rhs_id,
                     gradient: Box::new(lhs_value.transpose(1, 2).mat_mul(&gradient)),
                 },
             ])
@@ -739,11 +739,11 @@ impl Tensor<3> {
 
     pub fn squeeze(&self, dim: usize) -> Tensor<2> {
         let value = self.value.squeeze(dim).to_concrete();
-        let input = self.handle.clone();
+        let input_id = self.handle.id;
         let backward: BackwardRule = Arc::new(move |gradient| {
             let gradient = downcast_tensor::<2>(&*gradient, "squeeze")?;
             Ok(vec![BackwardTarget {
-                node: input.id,
+                node: input_id,
                 gradient: Box::new(gradient.unsqueeze(dim).to_concrete()),
             }])
         });
@@ -753,11 +753,11 @@ impl Tensor<3> {
     pub fn sum(&self, axis: usize) -> Tensor<2> {
         let input_shape = self.shape();
         let value = self.value.sum::<2>(axis).to_concrete();
-        let input = self.handle.clone();
+        let input_id = self.handle.id;
         let backward: BackwardRule = Arc::new(move |gradient| {
             let gradient = downcast_tensor::<2>(&*gradient, "sum")?;
             Ok(vec![BackwardTarget {
-                node: input.id,
+                node: input_id,
                 gradient: Box::new(
                     gradient
                         .unsqueeze(axis)
@@ -772,11 +772,11 @@ impl Tensor<3> {
     pub fn sum_keepdim(&self, axis: usize) -> Tensor<3> {
         let input_shape = self.shape();
         let value = self.value.sum_keepdim::<2>(axis).to_concrete();
-        let input = self.handle.clone();
+        let input_id = self.handle.id;
         let backward: BackwardRule = Arc::new(move |gradient| {
             let gradient = downcast_tensor::<3>(&*gradient, "sum_keepdim")?;
             Ok(vec![BackwardTarget {
-                node: input.id,
+                node: input_id,
                 gradient: Box::new(gradient.broadcast_as(input_shape).to_concrete()),
             }])
         });
@@ -795,7 +795,7 @@ impl Tensor<3> {
             .iter()
             .map(|tensor| tensor.handle.clone())
             .collect::<Vec<_>>();
-        let backward_parents = parents.clone();
+        let parent_ids = parents.iter().map(|parent| parent.id).collect::<Vec<_>>();
         let slices = tensors
             .iter()
             .scan(0usize, |offset, tensor| {
@@ -807,8 +807,8 @@ impl Tensor<3> {
             .collect::<Vec<_>>();
         let backward: BackwardRule = Arc::new(move |gradient| {
             let gradient = downcast_tensor::<3>(&*gradient, "cat")?;
-            let mut targets = Vec::with_capacity(backward_parents.len());
-            for (parent, slice) in backward_parents.iter().zip(slices.iter()) {
+            let mut targets = Vec::with_capacity(parent_ids.len());
+            for (&parent_id, slice) in parent_ids.iter().zip(slices.iter()) {
                 let grad_slice = match dim {
                     0 => gradient.slice([
                         slice.clone(),
@@ -829,7 +829,7 @@ impl Tensor<3> {
                 }
                 .to_concrete();
                 targets.push(BackwardTarget {
-                    node: parent.id,
+                    node: parent_id,
                     gradient: Box::new(grad_slice),
                 });
             }
@@ -1302,5 +1302,30 @@ mod tests {
         assert_close(dvalues[1][0], 1.0);
         assert_close(dvalues[1][1], 0.0);
         assert_close(dvalues[1][2], 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_cpu_graph_drops_after_backward() {
+        let graph = Graph::new();
+        let weak = Arc::downgrade(&graph.inner);
+        let device = Device::cpu();
+
+        let x: Tensor<2> = Tensor::new(&graph, &device, &[[1.0f32, 2.0], [3.0, 4.0]]);
+        let w: Tensor<2> = Tensor::new(&graph, &device, &[[0.5f32, -1.0], [1.5, 2.0]]);
+        let loss = x.mat_mul(&w).sum(1).sum();
+        let gradients = loss.backward().unwrap();
+        assert!(gradients.get(&x).is_some());
+        assert!(gradients.get(&w).is_some());
+
+        drop(gradients);
+        drop(loss);
+        drop(x);
+        drop(w);
+        drop(graph);
+
+        assert!(
+            weak.upgrade().is_none(),
+            "autograd graph stayed alive after all tensors were dropped",
+        );
     }
 }
