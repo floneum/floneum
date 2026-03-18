@@ -1072,22 +1072,14 @@ impl<'a> Resolver<'a> {
             for (new, max) in dispatch_size.iter().zip(max_dispatch_size.iter_mut()) {
                 *max = (*max).max(*new);
             }
-            if cfg!(debug_assertions) {
-                writeln!(&mut kernel, "{{ // start {}", operation.name()).unwrap();
-            } else {
-                writeln!(&mut kernel, "{{").unwrap();
-            }
+            writeln!(&mut kernel, "{{").unwrap();
             operation.build_kernel(graph, &workgroup_shape, inputs, kernel);
             let name = kernel.name_mut();
             if !name.is_empty() {
                 *name += "->";
             }
             *name += &operation.name();
-            if cfg!(debug_assertions) {
-                writeln!(&mut kernel, "}} // end {}", operation.name()).unwrap();
-            } else {
-                writeln!(&mut kernel, "}}").unwrap();
-            }
+            writeln!(&mut kernel, "}}").unwrap();
             // Check if that makes any of this node's dependencies dead
             let mut dependencies = Vec::new();
             graph.visit_dependencies(*key, &mut |dependent_key| {

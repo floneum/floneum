@@ -22,6 +22,10 @@ struct CachedBuffer {
 }
 
 const MAX_FREE_BUFFERS_PER_BUCKET: usize = 4;
+const BIND_GROUP_LAYOUT_CACHE_SIZE: usize = 256;
+const PIPELINE_LAYOUT_CACHE_SIZE: usize = 256;
+const SHADER_MODULE_CACHE_SIZE: usize = 128;
+const COMPUTE_PIPELINE_CACHE_SIZE: usize = 128;
 
 impl CachedBuffer {
     fn new(buffer: Arc<wgpu::Buffer>, writen: bool) -> Self {
@@ -165,15 +169,22 @@ impl Device {
             (None, None)
         };
 
-        let cache_size = const { NonZeroUsize::new(2048).unwrap() };
-        let bind_group_layout_cache =
-            RwLock::new(LruCache::with_hasher(cache_size, Default::default()));
-        let pipeline_layout_cache =
-            RwLock::new(LruCache::with_hasher(cache_size, Default::default()));
-        let shader_module_cache =
-            RwLock::new(LruCache::with_hasher(cache_size, Default::default()));
-        let compute_pipeline_cache =
-            RwLock::new(LruCache::with_hasher(cache_size, Default::default()));
+        let bind_group_layout_cache = RwLock::new(LruCache::with_hasher(
+            NonZeroUsize::new(BIND_GROUP_LAYOUT_CACHE_SIZE).unwrap(),
+            Default::default(),
+        ));
+        let pipeline_layout_cache = RwLock::new(LruCache::with_hasher(
+            NonZeroUsize::new(PIPELINE_LAYOUT_CACHE_SIZE).unwrap(),
+            Default::default(),
+        ));
+        let shader_module_cache = RwLock::new(LruCache::with_hasher(
+            NonZeroUsize::new(SHADER_MODULE_CACHE_SIZE).unwrap(),
+            Default::default(),
+        ));
+        let compute_pipeline_cache = RwLock::new(LruCache::with_hasher(
+            NonZeroUsize::new(COMPUTE_PIPELINE_CACHE_SIZE).unwrap(),
+            Default::default(),
+        ));
         let buffer_allocation_cache = RwLock::new(LruCache::with_hasher(
             const { NonZeroUsize::new(128).unwrap() },
             Default::default(),

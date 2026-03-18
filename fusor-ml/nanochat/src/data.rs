@@ -838,7 +838,7 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
             );
         }
         ShapeKind::Square => {
-            let side = rng.random_range(1..=5);
+            let side = rng.random_range(1..=2);
             let rotation = rng.random_range(0..Direction::all().len());
             trace_moves(
                 &mut tokens,
@@ -854,44 +854,38 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
             );
         }
         ShapeKind::Rectangle => {
-            let width = rng.random_range(2..=5);
-            let mut height = rng.random_range(1..=4);
-            while height == width {
-                height = rng.random_range(1..=4);
-            }
             let rotation = rng.random_range(0..Direction::all().len());
             let mirror = rng.random_bool(0.5);
             trace_moves(
                 &mut tokens,
                 tokenizer,
                 &[
-                    (Direction::E, width),
-                    (Direction::S, height),
-                    (Direction::W, width),
-                    (Direction::N, height),
+                    (Direction::E, 2),
+                    (Direction::S, 1),
+                    (Direction::W, 2),
+                    (Direction::N, 1),
                 ],
                 rotation,
                 mirror,
             );
         }
         ShapeKind::Triangle => {
-            let edge = rng.random_range(1..=4);
             let rotation = rng.random_range(0..4) * 2;
             let mirror = rng.random_bool(0.5);
             trace_moves(
                 &mut tokens,
                 tokenizer,
                 &[
-                    (Direction::E, edge * 2),
-                    (Direction::NW, edge),
-                    (Direction::SW, edge),
+                    (Direction::E, 2),
+                    (Direction::NW, 1),
+                    (Direction::SW, 1),
                 ],
                 rotation,
                 mirror,
             );
         }
         ShapeKind::Diamond => {
-            let edge = rng.random_range(1..=5);
+            let edge = rng.random_range(1..=2);
             let rotation = rng.random_range(0..Direction::all().len());
             trace_moves(
                 &mut tokens,
@@ -907,7 +901,7 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
             );
         }
         ShapeKind::Hexagon => {
-            let edge = rng.random_range(1..=3);
+            let edge = rng.random_range(1..=2);
             let rotation = rng.random_range(0..Direction::all().len());
             let mirror = rng.random_bool(0.5);
             trace_moves(
@@ -948,45 +942,43 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
             );
         }
         ShapeKind::House => {
-            let roof = rng.random_range(1_usize..=2);
-            let base = rng.random_range((roof * 2)..=5);
-            let wall = rng.random_range(2_usize..=4);
-            let rotation = rng.random_range(0..4) * 2;
-            let mirror = rng.random_bool(0.5);
-            let floor_return = base.saturating_sub(roof * 2);
-            let mut segments = vec![
-                (Direction::E, base),
-                (Direction::N, wall),
-                (Direction::NW, roof),
-                (Direction::SW, roof),
-            ];
-            if floor_return > 0 {
-                segments.push((Direction::W, floor_return));
-            }
-            segments.push((Direction::S, wall));
-            trace_moves(&mut tokens, tokenizer, &segments, rotation, mirror);
-        }
-        ShapeKind::Trapezoid => {
-            let top = rng.random_range(2..=4);
-            let slope = rng.random_range(1..=2);
-            let bottom = top + slope * 2;
+            // roof=1, base=2 (=roof*2), wall 1..=2. All segments ≤ 2.
+            let wall = rng.random_range(1..=2);
             let rotation = rng.random_range(0..4) * 2;
             let mirror = rng.random_bool(0.5);
             trace_moves(
                 &mut tokens,
                 tokenizer,
                 &[
-                    (Direction::E, bottom),
-                    (Direction::NW, slope),
-                    (Direction::W, top),
-                    (Direction::SW, slope),
+                    (Direction::E, 2),
+                    (Direction::N, wall),
+                    (Direction::NW, 1),
+                    (Direction::SW, 1),
+                    (Direction::S, wall),
+                ],
+                rotation,
+                mirror,
+            );
+        }
+        ShapeKind::Trapezoid => {
+            // Right trapezoid: bottom=2, top=1, one sloped side, one vertical.
+            let rotation = rng.random_range(0..4) * 2;
+            let mirror = rng.random_bool(0.5);
+            trace_moves(
+                &mut tokens,
+                tokenizer,
+                &[
+                    (Direction::E, 2),
+                    (Direction::NW, 1),
+                    (Direction::W, 1),
+                    (Direction::S, 1),
                 ],
                 rotation,
                 mirror,
             );
         }
         ShapeKind::Parallelogram => {
-            let width = rng.random_range(2..=5);
+            let width = rng.random_range(1..=2);
             let lean = rng.random_range(1..=2);
             let rotation = rng.random_range(0..Direction::all().len());
             let mirror = rng.random_bool(0.5);
@@ -1055,41 +1047,37 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
         }
         ShapeKind::Arrow => {
             // Symmetric arrow: rectangular shaft with centered triangular head.
-            // The arrowhead extends `head-1` units beyond the shaft on each side.
-            let shaft = rng.random_range(2..=5);
-            let head = rng.random_range(1_usize..=2);
-            let rotation = rng.random_range(0..4) * 2;
-            let mirror = rng.random_bool(0.5);
-            let overhang = head - 1;
-            let mut segments = vec![(Direction::E, shaft)];
-            if overhang > 0 {
-                segments.push((Direction::S, overhang));
-            }
-            segments.push((Direction::NE, head));
-            segments.push((Direction::NW, head));
-            if overhang > 0 {
-                segments.push((Direction::S, overhang));
-            }
-            segments.push((Direction::W, shaft));
-            segments.push((Direction::S, 2));
-            trace_moves(&mut tokens, tokenizer, &segments, rotation, mirror);
-        }
-        ShapeKind::Pentagon => {
-            // Irregular pentagon using 5 direction changes.
-            // Must use even rotation (multiples of 90°) because this shape
-            // mixes cardinal and diagonal directions.
-            let edge = rng.random_range(1..=3);
+            // shaft ≤ 2, head=1 so S(head*2)=S(2) ≤ 2.
+            let shaft = rng.random_range(1..=2);
             let rotation = rng.random_range(0..4) * 2;
             let mirror = rng.random_bool(0.5);
             trace_moves(
                 &mut tokens,
                 tokenizer,
                 &[
-                    (Direction::E, edge * 2),
-                    (Direction::NW, edge),
-                    (Direction::N, edge),
-                    (Direction::SW, edge),
-                    (Direction::S, edge),
+                    (Direction::E, shaft),
+                    (Direction::NE, 1),
+                    (Direction::NW, 1),
+                    (Direction::W, shaft),
+                    (Direction::S, 2),
+                ],
+                rotation,
+                mirror,
+            );
+        }
+        ShapeKind::Pentagon => {
+            // Irregular pentagon: edge=1 so edge*2=2. All segments ≤ 2.
+            let rotation = rng.random_range(0..4) * 2;
+            let mirror = rng.random_bool(0.5);
+            trace_moves(
+                &mut tokens,
+                tokenizer,
+                &[
+                    (Direction::E, 2),
+                    (Direction::NW, 1),
+                    (Direction::N, 1),
+                    (Direction::SW, 1),
+                    (Direction::S, 1),
                 ],
                 rotation,
                 mirror,
@@ -1104,6 +1092,12 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
         (0, 0),
         "{} does not close back to the origin",
         shape.name()
+    );
+    debug_assert!(
+        max_straight_run(tokenizer, &tokens) <= 2,
+        "{} has a straight run of {} (max 2)",
+        shape.name(),
+        max_straight_run(tokenizer, &tokens)
     );
     debug_assert!(
         !has_overlapping_points(tokenizer, &tokens),
@@ -1142,6 +1136,25 @@ fn token_points(tokenizer: &StrokeTokenizer, tokens: &[u32]) -> Vec<(i32, i32)> 
         }
     }
     points
+}
+
+/// Returns the longest consecutive run of the same direction in the token sequence.
+fn max_straight_run(tokenizer: &StrokeTokenizer, tokens: &[u32]) -> usize {
+    let mut max_run = 0;
+    let mut current_run = 0;
+    let mut last_direction: Option<Direction> = None;
+    for &token in tokens {
+        if let TokenKind::Move(direction) = tokenizer.decode_token_kind(token) {
+            if last_direction == Some(direction) {
+                current_run += 1;
+            } else {
+                current_run = 1;
+                last_direction = Some(direction);
+            }
+            max_run = max_run.max(current_run);
+        }
+    }
+    max_run
 }
 
 /// Returns `true` when the path visits any grid point more than once
@@ -1419,6 +1432,25 @@ mod tests {
                     (0, 0),
                     "{} should close back to the origin",
                     shape.name()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn synthetic_shapes_have_no_long_straight_runs() {
+        let tokenizer = StrokeTokenizer::new();
+        for shape in ShapeKind::all() {
+            for seed in 0..32 {
+                let mut rng = StdRng::seed_from_u64(seed);
+                let tokens = shape_tokens(shape, &tokenizer, &mut rng);
+                let run = max_straight_run(&tokenizer, &tokens);
+                assert!(
+                    run <= 2,
+                    "{} (seed {}) has a straight run of {} (max 2)",
+                    shape.name(),
+                    seed,
+                    run,
                 );
             }
         }

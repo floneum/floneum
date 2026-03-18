@@ -139,7 +139,8 @@ async fn main() {
 
                 let is_last = global_step == total_steps;
                 let should_log = global_step % runtime.log_every == 0 || is_last;
-                let loss_value = if should_log {
+                let materialize_live_metrics = should_materialize_live_training_metrics(&device);
+                let loss_value = if should_log && materialize_live_metrics {
                     Some(loss.raw().to_scalar().await.unwrap())
                 } else {
                     None
@@ -159,6 +160,16 @@ async fn main() {
                     .await;
                     println!(
                         "epoch {}/{} batch {:>3}/{} | global {:>6}/{} | lr={learning_rate:.6} | loss={loss_value:.6} | train_bpt={train_bits_per_token:.4} | eval_bpt={validation_bits_per_token:.4}",
+                        epoch + 1,
+                        runtime.epochs,
+                        batch_index + 1,
+                        epoch_batch_count,
+                        global_step,
+                        total_steps,
+                    );
+                } else if should_log {
+                    println!(
+                        "epoch {}/{} batch {:>3}/{} | global {:>6}/{} | lr={learning_rate:.6} | metrics=skipped_on_gpu",
                         epoch + 1,
                         runtime.epochs,
                         batch_index + 1,
@@ -786,6 +797,10 @@ async fn evaluate_bits_per_token(
     }
 
     nats_to_bits(total_nats / total_valid_tokens.max(1.0))
+}
+
+fn should_materialize_live_training_metrics(device: &Device) -> bool {
+    device.is_cpu()
 }
 
 fn scheduled_learning_rate(step: usize, total_steps: usize, runtime: &RuntimeConfig) -> f32 {
