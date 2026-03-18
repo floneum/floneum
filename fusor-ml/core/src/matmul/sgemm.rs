@@ -454,7 +454,7 @@ pub(super) fn build_kernel(
         let indexed_reg_m = maybe_vec_storage_index(thread_m_size, "regM", res_idx_m);
         writeln!(
             kernel,
-            "        threadResults[{res_idx_m}] += {thread_n_dtype}({indexed_reg_m}) * regN;"
+            "        threadResults[{res_idx_m}] = fma({thread_n_dtype}({indexed_reg_m}), regN, threadResults[{res_idx_m}]);"
         )
         .unwrap();
     }

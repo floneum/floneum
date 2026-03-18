@@ -2,7 +2,7 @@ use std::{env, fmt::Display, path::PathBuf, str::FromStr};
 
 #[derive(Clone, Debug)]
 pub struct RuntimeConfig {
-    pub train_steps: usize,
+    pub epochs: usize,
     pub warmup_steps: usize,
     pub learning_rate: f32,
     pub min_learning_rate: f32,
@@ -30,7 +30,9 @@ pub struct RuntimeConfig {
     pub save_every_steps: usize,
     pub save_final_model: bool,
     pub save_quantization: SaveQuantization,
-    pub dataset_cache_dir: PathBuf,
+    pub train_examples: usize,
+    pub validation_examples: usize,
+    pub test_examples: usize,
     pub gguf_path: PathBuf,
     pub sample_output_path: PathBuf,
 }
@@ -83,7 +85,7 @@ impl RuntimeConfig {
         let batch_size = read_env("NANOCHAT_BATCH_SIZE", 12);
 
         Self {
-            train_steps: read_env("NANOCHAT_TRAIN_STEPS", 540),
+            epochs: read_env("NANOCHAT_EPOCHS", 1),
             warmup_steps: read_env("NANOCHAT_WARMUP_STEPS", 20),
             learning_rate: read_env("NANOCHAT_LEARNING_RATE", 1e-3),
             min_learning_rate: read_env("NANOCHAT_MIN_LEARNING_RATE", 1e-4),
@@ -111,12 +113,11 @@ impl RuntimeConfig {
             save_every_steps: read_env("NANOCHAT_SAVE_EVERY_STEPS", 0),
             save_final_model: read_env("NANOCHAT_SAVE_FINAL_MODEL", true),
             save_quantization: read_env("NANOCHAT_SAVE_QUANTIZATION", SaveQuantization::F32),
-            dataset_cache_dir: read_env_path_with_default(
-                "NANOCHAT_DATASET_CACHE_DIR",
-                std::env::temp_dir().join("nanochat-midi"),
-            ),
+            train_examples: read_env("NANOCHAT_TRAIN_EXAMPLES", 64),
+            validation_examples: read_env("NANOCHAT_VALID_EXAMPLES", 16),
+            test_examples: read_env("NANOCHAT_TEST_EXAMPLES", 16),
             gguf_path: read_env_path("NANOCHAT_GGUF_PATH", "nanochat.gguf"),
-            sample_output_path: read_env_path("NANOCHAT_SAMPLE_OUTPUT_PATH", "nanochat-sample.mid"),
+            sample_output_path: read_env_path("NANOCHAT_SAMPLE_OUTPUT_PATH", "nanochat-sample.svg"),
         }
     }
 }
@@ -143,14 +144,6 @@ fn read_env_path(key: &str, default: &str) -> PathBuf {
     match env::var(key) {
         Ok(value) => PathBuf::from(value),
         Err(env::VarError::NotPresent) => PathBuf::from(default),
-        Err(error) => panic!("failed to read {key}: {error}"),
-    }
-}
-
-fn read_env_path_with_default(key: &str, default: PathBuf) -> PathBuf {
-    match env::var(key) {
-        Ok(value) => PathBuf::from(value),
-        Err(env::VarError::NotPresent) => default,
         Err(error) => panic!("failed to read {key}: {error}"),
     }
 }

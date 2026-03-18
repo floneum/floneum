@@ -739,8 +739,9 @@ impl BlockQ4_0 {
         let mut packed = [0u8; Q4_0_BLOCK_SIZE / 2];
         for i in 0..Q4_0_BLOCK_SIZE / 2 {
             let low_val = (data[i] * inv_scale).round().clamp(-8.0, 7.0) as i8;
-            let high_val =
-                (data[i + Q4_0_BLOCK_SIZE / 2] * inv_scale).round().clamp(-8.0, 7.0) as i8;
+            let high_val = (data[i + Q4_0_BLOCK_SIZE / 2] * inv_scale)
+                .round()
+                .clamp(-8.0, 7.0) as i8;
             let low_u = (low_val + 8) as u8; // shift to unsigned 0..15
             let high_u = (high_val + 8) as u8;
             packed[i] = low_u | (high_u << 4);

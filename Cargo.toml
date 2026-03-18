@@ -35,6 +35,7 @@ members = [
     "fusor-ml/cli",
     "fusor-ml/cpu",
     "fusor-ml/fusor",
+    "fusor-ml/train",
     "fusor-ml/types",
     "fusor-ml/nanochat",
 ]
@@ -64,6 +65,7 @@ kalosm-ocr = { path = "./models/kalosm-ocr", version = "0.4.0" }
 fusor = { path = "./fusor-ml/fusor", version = "0.1.0" }
 fusor-core = { path = "./fusor-ml/core", version = "0.1.0" }
 fusor-gguf = { path = "./fusor-ml/gguf", version = "0.1.0" }
+fusor-train = { path = "./fusor-ml/train", version = "0.1.0" }
 fusor-types = { path = "./fusor-ml/types", version = "0.1.0" }
 llm-samplers = { git = "https://github.com/ealmloff/llm-samplers" }
 tokenizers = { version = "0.21.0", default-features = false }

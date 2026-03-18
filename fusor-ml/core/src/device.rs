@@ -63,6 +63,21 @@ impl Debug for DeviceInner {
     }
 }
 
+impl Drop for DeviceInner {
+    fn drop(&mut self) {
+        // Flush pipeline cache to disk on shutdown
+        if let (Some(pipeline_cache), Some(cache_file)) =
+            (self.cache.as_ref(), self.cache_file.as_ref())
+        {
+            if let Some(data) = pipeline_cache.get_data() {
+                let temp_file = cache_file.with_extension("temp");
+                let _ = std::fs::write(&temp_file, &data);
+                let _ = std::fs::rename(&temp_file, cache_file);
+            }
+        }
+    }
+}
+
 /// A weak reference to a [`Device`] that does not prevent cleanup.
 ///
 /// Used internally to break reference cycles (e.g., between Device and ComputeGraph).
@@ -109,11 +124,21 @@ impl Device {
         if adapter.features().contains(wgpu::Features::SHADER_F16) {
             required_features |= wgpu::Features::SHADER_F16;
         }
+        let mut experimental_features = wgpu::ExperimentalFeatures::default();
+        if adapter
+            .features()
+            .contains(wgpu::Features::EXPERIMENTAL_COOPERATIVE_MATRIX)
+        {
+            required_features |= wgpu::Features::EXPERIMENTAL_COOPERATIVE_MATRIX;
+            // SAFETY: cooperative matrix is an experimental feature that requires opting in
+            experimental_features = unsafe { wgpu::ExperimentalFeatures::enabled() };
+        }
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("Fusor ML Device"),
                 required_features,
                 required_limits: adapter.limits(),
+                experimental_features,
                 ..Default::default()
             })
             .await?;
@@ -207,10 +232,7 @@ impl Device {
         }
     }
 
-    pub(crate) fn create_shader_module<'a>(
-        &self,
-        source: impl Into<Cow<'a, str>>,
-    ) -> wgpu::ShaderModule {
+    pub fn create_shader_module<'a>(&self, source: impl Into<Cow<'a, str>>) -> wgpu::ShaderModule {
         // SAFTEY: All kernels don't access memory outside of bounds and don't have unbounded loops
         unsafe {
             self.inner.device.create_shader_module_trusted(
@@ -247,6 +269,11 @@ impl Device {
         self.features().contains(wgpu::Features::SHADER_F16)
     }
 
+    pub fn cooperative_matrix_supported(&self) -> bool {
+        self.features()
+            .contains(wgpu::Features::EXPERIMENTAL_COOPERATIVE_MATRIX)
+    }
+
     pub fn wgpu_adapter(&self) -> &wgpu::Adapter {
         &self.inner.adapter
     }
@@ -255,8 +282,16 @@ impl Device {
         &self.inner.device
     }
 
-    pub(crate) fn wgpu_queue(&self) -> &wgpu::Queue {
+    pub fn wgpu_queue(&self) -> &wgpu::Queue {
         &self.inner.queue
+    }
+
+    /// Block until all submitted GPU work has completed.
+    pub fn poll_wait(&self) {
+        self.inner
+            .device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("Failed to poll GPU device");
     }
 
     pub(crate) fn wgpu_cache(&self) -> Option<&wgpu::PipelineCache> {

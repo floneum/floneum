@@ -8,12 +8,16 @@ use crate::{
     tensor::{DataType, DataTypeEnum, TensorData},
 };
 
+pub mod coop_gemm;
 pub mod sgemm;
 mod sgemm_params;
 pub mod sgemv;
 mod sgemv_params;
 
-pub fn get_optimal_params(m: usize, n: usize, k: usize) -> MatMulParams {
+pub fn get_optimal_params(m: usize, n: usize, k: usize, device: &Device) -> MatMulParams {
+    if device.cooperative_matrix_supported() && m >= 128 && n >= 64 && k >= 16 {
+        return MatMulParams::CoopMatMul(coop_gemm::CoopGemmParams::default());
+    }
     match (m, n, k) {
         (_, 0..=64, _) => MatMulParams::Vector(gemv_parameters(m, n, k)),
         (_, _, _) => MatMulParams::MatMul(gemm_parameters(m, n, k)),
@@ -24,6 +28,7 @@ pub fn get_optimal_params(m: usize, n: usize, k: usize) -> MatMulParams {
 pub enum MatMulParams {
     Vector(sgemv::SgemvParams),
     MatMul(sgemm::SgemmParams),
+    CoopMatMul(coop_gemm::CoopGemmParams),
 }
 
 #[derive(Debug, Clone)]
@@ -47,13 +52,13 @@ impl MatMulOperation {
         first_shape: &[usize],
         second_shape: &[usize],
         parameters: Option<MatMulParams>,
+        device: &Device,
     ) -> Self {
-        // Check if this is a matrix-vector multiplication (second matrix has 1 column and first matrix has multiple rows)
         let parameters = parameters.unwrap_or_else(|| {
             let n = second_shape[second_shape.len() - 1];
             let m = first_shape[first_shape.len() - 2];
             let k = first_shape[first_shape.len() - 1];
-            get_optimal_params(m, n, k)
+            get_optimal_params(m, n, k, device)
         });
         Self::new_with_parameters(
             datatype,
@@ -125,6 +130,9 @@ impl Operation for MatMulOperation {
             MatMulParams::MatMul(sgemm_params) => {
                 sgemm::workgroup_shape_constraints(self, device, sgemm_params)
             }
+            MatMulParams::CoopMatMul(coop_params) => {
+                coop_gemm::workgroup_shape_constraints(self, device, coop_params)
+            }
         }
     }
 
@@ -160,6 +168,13 @@ impl Operation for MatMulOperation {
                 batch_size,
                 workgroup_shape,
                 sgemm_params,
+            ),
+            MatMulParams::CoopMatMul(coop_params) => coop_gemm::dispatch_size(
+                last_dim_size,
+                second_to_last_dim_size,
+                batch_size,
+                workgroup_shape,
+                coop_params,
             ),
         }
     }
@@ -240,6 +255,14 @@ impl Operation for MatMulOperation {
                 inputs,
                 generic_kernel,
                 sgemm_params,
+            ),
+            MatMulParams::CoopMatMul(coop_params) => coop_gemm::build_kernel(
+                self,
+                graph,
+                workgroup_shape,
+                inputs,
+                generic_kernel,
+                coop_params,
             ),
         }
     }
@@ -599,6 +622,64 @@ async fn fuzz_matmul() {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_coop_matmul_aligned() {
+    // Test with perfectly aligned sizes for cooperative matmul (128x64 block)
+    let device = Device::test_instance();
+    for (size1, size2, size3) in [
+        (128, 16, 64),
+        (128, 17, 64),
+        (128, 32, 64),
+        (128, 33, 64),
+        (256, 100, 128),
+    ] {
+        // Use all-ones; expected result = size2 at every position
+        let data_a: Vec<Vec<f32>> = (0..size1)
+            .map(|_| (0..size2).map(|_| 1.0f32).collect())
+            .collect();
+        let data_b: Vec<Vec<f32>> = (0..size2)
+            .map(|_| (0..size3).map(|_| 1.0f32).collect())
+            .collect();
+
+        let tensor_a = Tensor::new(&device, &data_a);
+        let tensor_b = Tensor::new(&device, &data_b);
+
+        let mut ndarray_a = ndarray::Array2::zeros((size1, size2));
+        for i in 0..size1 {
+            for j in 0..size2 {
+                ndarray_a[[i, j]] = data_a[i][j];
+            }
+        }
+        let mut ndarray_b = ndarray::Array2::zeros((size2, size3));
+        for i in 0..size2 {
+            for j in 0..size3 {
+                ndarray_b[[i, j]] = data_b[i][j];
+            }
+        }
+
+        let dot = ndarray_a.dot(&ndarray_b);
+        let tensor = tensor_a.mat_mul(&tensor_b);
+        let as_slice = tensor.as_slice().await.unwrap();
+
+        let mut max_err = 0.0f32;
+        for i in 0..size1 {
+            for j in 0..size3 {
+                let err = (as_slice[[i, j]] - dot[[i, j]]).abs();
+                max_err = max_err.max(err);
+                if err > 0.01 {
+                    panic!(
+                        "Mismatch at ({i}, {j}): gpu={} ref={} err={err} for ({size1}x{size2})*({size2}x{size3})",
+                        as_slice[[i, j]],
+                        dot[[i, j]]
+                    );
+                }
+            }
+        }
+        println!("({size1}x{size2})*({size2}x{size3}): max_err={max_err}");
     }
 }
 

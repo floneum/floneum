@@ -1,48 +1,23 @@
-use std::{
-    collections::VecDeque,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashSet, fs, path::Path};
 
-use flate2::read::GzDecoder;
 use fusor::VarBuilder;
 use fusor_gguf::GgufValue;
-use midly::{
-    Format, Header, MetaMessage, MidiMessage, Smf, Timing, TrackEvent, TrackEventKind,
-    num::{u4, u7, u15, u24, u28},
-};
-use rand::{Rng, rngs::StdRng};
-use tar::Archive;
+use rand::{Rng, SeedableRng, rngs::StdRng, seq::SliceRandom};
 
 use crate::config::RuntimeConfig;
 
-const NESMDB_ARCHIVE_NAME: &str = "nesmdb_midi.tar.gz";
-const NESMDB_DOWNLOAD_URL: &str = "https://drive.usercontent.google.com/download?id=1w2uo1Cmio4gz6nGUhZOtzF54kPkoKyo7&export=download&confirm=t";
 const BOS_TOKEN: &str = "<bos>";
 const EOT_TOKEN: &str = "<eot>";
-const WAIT_CHUNK_MAX: u32 = 100;
-const MIDI_TICKS_PER_BEAT: u16 = 100;
-const MIDI_TEMPO_US_PER_BEAT: u32 = 1_000_000;
-const QUANTIZATION_US_PER_STEP: u64 = 10_000;
-const DEFAULT_TEMPO_US_PER_BEAT: u32 = 500_000;
-const VELOCITY_CONTROLLER: u8 = 11;
-const TIMBRE_CONTROLLER: u8 = 12;
+const STEP_LEVELS: u8 = 2;
+const CANVAS_SIZE: f32 = 128.0;
+const CANVAS_PADDING: f32 = 14.0;
 
 #[derive(Clone)]
-pub struct MidiTokenizer {
+pub struct StrokeTokenizer {
     tokens: Vec<String>,
     bos_token: u32,
     eot_token: u32,
-    wait_start: u32,
-    voice_offsets: [VoiceTokenOffsets; 4],
-}
-
-#[derive(Clone, Copy)]
-struct VoiceTokenOffsets {
-    note_on_start: u32,
-    note_off_start: u32,
-    velocity_start: Option<u32>,
-    timbre_start: Option<u32>,
+    move_start: u32,
 }
 
 pub struct SourceDataset {
@@ -55,7 +30,6 @@ pub struct SourceFile {
     tokens: Vec<u32>,
     prompt_tokens: Vec<u32>,
     target_tokens: Vec<u32>,
-    target_start: usize,
 }
 
 pub struct DatasetSplit {
@@ -64,187 +38,174 @@ pub struct DatasetSplit {
     pub test: SourceDataset,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-enum Voice {
-    P1,
-    P2,
-    Tr,
-    No,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Direction {
+    N,
+    NE,
+    E,
+    SE,
+    S,
+    SW,
+    W,
+    NW,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TokenKind {
     Bos,
     Eot,
-    Wait(u32),
-    NoteOn(Voice, u8),
-    NoteOff(Voice, u8),
-    Velocity(Voice, u8),
-    Timbre(Voice, u8),
+    Move(Direction, u8),
 }
 
 #[derive(Clone)]
-struct MidiEvent {
-    step: u32,
-    sequence: usize,
-    kind: RenderEventKind,
-}
-
-#[derive(Clone)]
-enum RenderEventKind {
-    NoteOn { voice: Voice, note: u8 },
-    NoteOff { voice: Voice, note: u8 },
-    Velocity { voice: Voice, value: u8 },
-    Timbre { voice: Voice, value: u8 },
+struct RenderState {
+    cursor: (i32, i32),
+    current_stroke: Vec<(i32, i32)>,
+    completed_strokes: Vec<Vec<(i32, i32)>>,
 }
 
 #[derive(Clone, Copy)]
-struct TempoSegment {
-    start_tick: u64,
-    start_us: u64,
-    tempo_us_per_beat: u32,
+enum ShapeKind {
+    Circle,
+    Square,
+    Rectangle,
+    Triangle,
+    Diamond,
+    Hexagon,
+    Octagon,
+    House,
+    Trapezoid,
+    Parallelogram,
 }
 
-impl Voice {
-    fn all() -> [Self; 4] {
-        [Self::P1, Self::P2, Self::Tr, Self::No]
+pub struct Batch {
+    pub windows: Vec<Vec<u32>>,
+    pub masks: Vec<Vec<f32>>,
+    pub valid_tokens: f32,
+}
+
+impl Direction {
+    fn all() -> [Self; 8] {
+        [
+            Self::N,
+            Self::NE,
+            Self::E,
+            Self::SE,
+            Self::S,
+            Self::SW,
+            Self::W,
+            Self::NW,
+        ]
     }
 
     fn index(self) -> usize {
         match self {
-            Self::P1 => 0,
-            Self::P2 => 1,
-            Self::Tr => 2,
-            Self::No => 3,
+            Self::N => 0,
+            Self::NE => 1,
+            Self::E => 2,
+            Self::SE => 3,
+            Self::S => 4,
+            Self::SW => 5,
+            Self::W => 6,
+            Self::NW => 7,
         }
     }
 
-    fn channel(self) -> u8 {
+    fn as_str(self) -> &'static str {
         match self {
-            Self::P1 => 0,
-            Self::P2 => 1,
-            Self::Tr => 2,
-            Self::No => 3,
+            Self::N => "N",
+            Self::NE => "NE",
+            Self::E => "E",
+            Self::SE => "SE",
+            Self::S => "S",
+            Self::SW => "SW",
+            Self::W => "W",
+            Self::NW => "NW",
         }
     }
 
-    fn track_name(self) -> &'static [u8] {
+    fn delta(self, step: u8) -> (i32, i32) {
+        let step = step as i32;
         match self {
-            Self::P1 => b"P1",
-            Self::P2 => b"P2",
-            Self::Tr => b"TR",
-            Self::No => b"NO",
+            Self::N => (0, -step),
+            Self::NE => (step, -step),
+            Self::E => (step, 0),
+            Self::SE => (step, step),
+            Self::S => (0, step),
+            Self::SW => (-step, step),
+            Self::W => (-step, 0),
+            Self::NW => (-step, -step),
         }
     }
 
-    fn token_prefix(self) -> &'static str {
+    fn rotate(self, steps: usize) -> Self {
+        Self::all()[(self.index() + steps) % Self::all().len()]
+    }
+
+    fn mirror_horizontal(self) -> Self {
         match self {
-            Self::P1 => "P1",
-            Self::P2 => "P2",
-            Self::Tr => "TR",
-            Self::No => "NO",
-        }
-    }
-
-    fn supports_expression(self) -> bool {
-        !matches!(self, Self::Tr)
-    }
-
-    fn from_channel(channel: u8) -> Option<Self> {
-        match channel {
-            0 => Some(Self::P1),
-            1 => Some(Self::P2),
-            2 => Some(Self::Tr),
-            3 | 9 => Some(Self::No),
-            _ => None,
-        }
-    }
-
-    fn from_track_name(name: &str) -> Option<Self> {
-        let normalized = name
-            .chars()
-            .filter(|ch| ch.is_ascii_alphanumeric())
-            .collect::<String>()
-            .to_ascii_lowercase();
-        if normalized.contains("pulse1") || normalized.contains("square1") || normalized == "p1" {
-            Some(Self::P1)
-        } else if normalized.contains("pulse2")
-            || normalized.contains("square2")
-            || normalized == "p2"
-        {
-            Some(Self::P2)
-        } else if normalized.contains("triangle") || normalized == "tr" {
-            Some(Self::Tr)
-        } else if normalized.contains("noise") || normalized == "no" {
-            Some(Self::No)
-        } else {
-            None
+            Self::N => Self::N,
+            Self::NE => Self::NW,
+            Self::E => Self::W,
+            Self::SE => Self::SW,
+            Self::S => Self::S,
+            Self::SW => Self::SE,
+            Self::W => Self::E,
+            Self::NW => Self::NE,
         }
     }
 }
 
-impl MidiTokenizer {
+impl ShapeKind {
+    fn all() -> [Self; 10] {
+        [
+            Self::Circle,
+            Self::Square,
+            Self::Rectangle,
+            Self::Triangle,
+            Self::Diamond,
+            Self::Hexagon,
+            Self::Octagon,
+            Self::House,
+            Self::Trapezoid,
+            Self::Parallelogram,
+        ]
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Circle => "circle",
+            Self::Square => "square",
+            Self::Rectangle => "rectangle",
+            Self::Triangle => "triangle",
+            Self::Diamond => "diamond",
+            Self::Hexagon => "hexagon",
+            Self::Octagon => "octagon",
+            Self::House => "house",
+            Self::Trapezoid => "trapezoid",
+            Self::Parallelogram => "parallelogram",
+        }
+    }
+}
+
+impl StrokeTokenizer {
     pub fn new() -> Self {
         let mut tokens = vec![BOS_TOKEN.to_string(), EOT_TOKEN.to_string()];
         let bos_token = 0;
         let eot_token = 1;
-        let wait_start = tokens.len() as u32;
-        for wait in 1..=WAIT_CHUNK_MAX {
-            tokens.push(format!("WAIT_{wait}"));
-        }
+        let move_start = tokens.len() as u32;
 
-        let mut voice_offsets = [VoiceTokenOffsets {
-            note_on_start: 0,
-            note_off_start: 0,
-            velocity_start: None,
-            timbre_start: None,
-        }; 4];
-
-        for voice in Voice::all() {
-            let note_on_start = tokens.len() as u32;
-            for note in 0..=127 {
-                tokens.push(format!("{}_NOTE_ON_{note}", voice.token_prefix()));
+        for direction in Direction::all() {
+            for step in 1..=STEP_LEVELS {
+                tokens.push(format!("MOVE_{}_{}", direction.as_str(), step));
             }
-
-            let note_off_start = tokens.len() as u32;
-            for note in 0..=127 {
-                tokens.push(format!("{}_NOTE_OFF_{note}", voice.token_prefix()));
-            }
-
-            let velocity_start = if voice.supports_expression() {
-                let start = tokens.len() as u32;
-                for value in 0..=127 {
-                    tokens.push(format!("{}_VELOCITY_{value}", voice.token_prefix()));
-                }
-                Some(start)
-            } else {
-                None
-            };
-
-            let timbre_start = if voice.supports_expression() {
-                let start = tokens.len() as u32;
-                for value in 0..=127 {
-                    tokens.push(format!("{}_TIMBRE_{value}", voice.token_prefix()));
-                }
-                Some(start)
-            } else {
-                None
-            };
-
-            voice_offsets[voice.index()] = VoiceTokenOffsets {
-                note_on_start,
-                note_off_start,
-                velocity_start,
-                timbre_start,
-            };
         }
 
         Self {
             tokens,
             bos_token,
             eot_token,
-            wait_start,
-            voice_offsets,
+            move_start,
         }
     }
 
@@ -279,85 +240,6 @@ impl MidiTokenizer {
         } else {
             shown
         }
-    }
-
-    pub fn push_wait_tokens(&self, out: &mut Vec<u32>, mut steps: u32) {
-        while steps > 0 {
-            let chunk = steps.min(WAIT_CHUNK_MAX);
-            out.push(self.wait_token(chunk));
-            steps -= chunk;
-        }
-    }
-
-    fn wait_token(&self, steps: u32) -> u32 {
-        assert!((1..=WAIT_CHUNK_MAX).contains(&steps));
-        self.wait_start + steps - 1
-    }
-
-    fn note_on_token(&self, voice: Voice, note: u8) -> u32 {
-        self.voice_offsets[voice.index()].note_on_start + note as u32
-    }
-
-    fn note_off_token(&self, voice: Voice, note: u8) -> u32 {
-        self.voice_offsets[voice.index()].note_off_start + note as u32
-    }
-
-    fn velocity_token(&self, voice: Voice, value: u8) -> u32 {
-        self.voice_offsets[voice.index()]
-            .velocity_start
-            .expect("voice does not support velocity")
-            + value as u32
-    }
-
-    fn timbre_token(&self, voice: Voice, value: u8) -> u32 {
-        self.voice_offsets[voice.index()]
-            .timbre_start
-            .expect("voice does not support timbre")
-            + value as u32
-    }
-
-    fn render_event_token(&self, kind: &RenderEventKind) -> u32 {
-        match *kind {
-            RenderEventKind::NoteOn { voice, note } => self.note_on_token(voice, note),
-            RenderEventKind::NoteOff { voice, note } => self.note_off_token(voice, note),
-            RenderEventKind::Velocity { voice, value } => self.velocity_token(voice, value),
-            RenderEventKind::Timbre { voice, value } => self.timbre_token(voice, value),
-        }
-    }
-
-    fn decode_token_kind(&self, token: u32) -> TokenKind {
-        if token == self.bos_token {
-            return TokenKind::Bos;
-        }
-        if token == self.eot_token {
-            return TokenKind::Eot;
-        }
-        let wait_end = self.wait_start + WAIT_CHUNK_MAX;
-        if (self.wait_start..wait_end).contains(&token) {
-            return TokenKind::Wait(token - self.wait_start + 1);
-        }
-
-        for voice in Voice::all() {
-            let offsets = self.voice_offsets[voice.index()];
-            if token >= offsets.note_on_start && token < offsets.note_on_start + 128 {
-                return TokenKind::NoteOn(voice, (token - offsets.note_on_start) as u8);
-            }
-            if token >= offsets.note_off_start && token < offsets.note_off_start + 128 {
-                return TokenKind::NoteOff(voice, (token - offsets.note_off_start) as u8);
-            }
-            if let Some(velocity_start) = offsets.velocity_start {
-                if token >= velocity_start && token < velocity_start + 128 {
-                    return TokenKind::Velocity(voice, (token - velocity_start) as u8);
-                }
-            }
-            if let Some(timbre_start) = offsets.timbre_start {
-                if token >= timbre_start && token < timbre_start + 128 {
-                    return TokenKind::Timbre(voice, (token - timbre_start) as u8);
-                }
-            }
-        }
-
-        panic!("unknown MIDI token id {token}");
     }
 
     pub fn gguf_metadata(&self) -> Vec<(String, GgufValue)> {
@@ -431,7 +313,7 @@ impl MidiTokenizer {
             .map_err(fusor::Error::msg)?;
         if loaded_tokens != tokenizer.tokens {
             return Err(fusor::Error::msg(
-                "GGUF tokenizer vocabulary does not match the expected fixed MIDI vocabulary",
+                "GGUF tokenizer vocabulary does not match the expected stroke vocabulary",
             ));
         }
 
@@ -447,11 +329,36 @@ impl MidiTokenizer {
             .map_err(|error| fusor::Error::msg(error.to_string()))?;
         if bos_token != tokenizer.bos_token || eot_token != tokenizer.eot_token {
             return Err(fusor::Error::msg(
-                "GGUF tokenizer special token ids do not match the expected MIDI tokenizer ids",
+                "GGUF tokenizer special token ids do not match the expected stroke tokenizer ids",
             ));
         }
 
         Ok(tokenizer)
+    }
+
+    fn move_token(&self, direction: Direction, step: u8) -> u32 {
+        assert!((1..=STEP_LEVELS).contains(&step));
+        self.move_start + (direction.index() * STEP_LEVELS as usize + (step as usize - 1)) as u32
+    }
+
+    fn decode_token_kind(&self, token: u32) -> TokenKind {
+        if token == self.bos_token {
+            return TokenKind::Bos;
+        }
+        if token == self.eot_token {
+            return TokenKind::Eot;
+        }
+
+        let move_token_count = Direction::all().len() as u32 * STEP_LEVELS as u32;
+        let move_end = self.move_start + move_token_count;
+        if (self.move_start..move_end).contains(&token) {
+            let offset = token - self.move_start;
+            let direction = Direction::all()[(offset / STEP_LEVELS as u32) as usize];
+            let step = (offset % STEP_LEVELS as u32) as u8 + 1;
+            return TokenKind::Move(direction, step);
+        }
+
+        panic!("unknown stroke token id {token}");
     }
 }
 
@@ -464,11 +371,8 @@ impl SourceDataset {
         self.files.iter().map(|file| file.tokens.len()).sum()
     }
 
-    pub fn num_training_windows(&self, block_size: usize) -> usize {
-        self.files
-            .iter()
-            .map(|file| file.training_window_count(block_size))
-            .sum()
+    pub fn num_training_windows(&self, _block_size: usize) -> usize {
+        self.files.len()
     }
 
     pub fn max_tokens_per_example(&self) -> usize {
@@ -484,11 +388,18 @@ impl SourceDataset {
     }
 
     pub fn sample_batch(&self, rng: &mut StdRng, pad_token: u32, config: &RuntimeConfig) -> Batch {
-        let (file_offsets, total_training_windows) = self.window_offsets(config.block_size);
+        if self.files.is_empty() {
+            return Batch {
+                windows: Vec::new(),
+                masks: Vec::new(),
+                valid_tokens: 0.0,
+            };
+        }
+
         let sampled = (0..config.batch_size)
             .map(|_| {
-                let global_position = rng.random_range(0..total_training_windows.max(1));
-                self.sample_window_at(global_position, &file_offsets, pad_token, config.block_size)
+                let file_index = rng.random_range(0..self.files.len());
+                self.sample_window_at(file_index, pad_token, config.block_size)
             })
             .collect::<Vec<_>>();
 
@@ -502,24 +413,58 @@ impl SourceDataset {
         }
     }
 
+    pub fn epoch_batches(
+        &self,
+        rng: &mut StdRng,
+        pad_token: u32,
+        config: &RuntimeConfig,
+    ) -> Vec<Batch> {
+        if self.files.is_empty() {
+            return Vec::new();
+        }
+
+        let mut indices: Vec<usize> = (0..self.files.len()).collect();
+        indices.shuffle(rng);
+
+        let mut batches = Vec::with_capacity(indices.len().div_ceil(config.batch_size));
+        for chunk in indices.chunks(config.batch_size) {
+            let sampled: Vec<_> = chunk
+                .iter()
+                .map(|&index| self.sample_window_at(index, pad_token, config.block_size))
+                .collect();
+            batches.push(Batch {
+                windows: sampled
+                    .iter()
+                    .map(|(window, _, _)| window.clone())
+                    .collect(),
+                masks: sampled.iter().map(|(_, mask, _)| mask.clone()).collect(),
+                valid_tokens: sampled.iter().map(|(_, _, valid)| *valid).sum(),
+            });
+        }
+        batches
+    }
+
+    pub fn steps_per_epoch(&self, _block_size: usize, batch_size: usize) -> usize {
+        self.files.len().div_ceil(batch_size).max(1)
+    }
+
     pub fn evaluation_batches(&self, pad_token: u32, config: &RuntimeConfig) -> Vec<Batch> {
-        let (file_offsets, total_training_windows) = self.window_offsets(config.block_size);
-        if total_training_windows == 0 {
+        if self.files.is_empty() {
             return Vec::new();
         }
 
         let steps = config
             .eval_batches
             .saturating_mul(config.batch_size)
-            .min(total_training_windows);
+            .min(self.files.len());
         let mut batches = Vec::new();
         let mut current_windows = Vec::new();
         let mut current_masks = Vec::new();
         let mut current_valid_tokens = 0.0;
 
-        for global_position in 0..steps {
+        for file_index in 0..steps {
             let (window, mask, valid_tokens) =
-                self.sample_window_at(global_position, &file_offsets, pad_token, config.block_size);
+                self.sample_window_at(file_index, pad_token, config.block_size);
             current_windows.push(window);
             current_masks.push(mask);
             current_valid_tokens += valid_tokens;
@@ -547,19 +492,13 @@ impl SourceDataset {
 
     fn sample_window_at(
         &self,
-        global_position: usize,
-        file_offsets: &[usize],
+        file_index: usize,
         pad_token: u32,
         block_size: usize,
     ) -> (Vec<u32>, Vec<f32>, f32) {
-        let file_index = file_offsets
-            .partition_point(|offset| *offset <= global_position)
-            .saturating_sub(1);
         let file = &self.files[file_index];
-        let start =
-            file.training_window_start(block_size) + (global_position - file_offsets[file_index]);
-        let end = (start + block_size + 1).min(file.tokens.len());
-        let slice = &file.tokens[start..end];
+        let start = file.tokens.len().saturating_sub(block_size + 1);
+        let slice = &file.tokens[start..];
 
         let mut window = vec![pad_token; block_size + 1];
         let mut mask = vec![0.0; block_size];
@@ -573,31 +512,9 @@ impl SourceDataset {
 
         (window, mask, valid)
     }
-
-    fn window_offsets(&self, block_size: usize) -> (Vec<usize>, usize) {
-        let mut running_total = 0;
-        let mut file_offsets = Vec::with_capacity(self.files.len());
-        for file in &self.files {
-            file_offsets.push(running_total);
-            running_total += file.training_window_count(block_size);
-        }
-        (file_offsets, running_total)
-    }
 }
 
 impl SourceFile {
-    fn training_window_start(&self, block_size: usize) -> usize {
-        self.target_start
-            .saturating_sub(block_size.saturating_sub(1))
-    }
-
-    fn training_window_count(&self, block_size: usize) -> usize {
-        self.tokens
-            .len()
-            .saturating_sub(1)
-            .saturating_sub(self.training_window_start(block_size))
-    }
-
     pub fn path(&self) -> &str {
         &self.path
     }
@@ -617,64 +534,62 @@ impl SourceFile {
     }
 }
 
-pub struct Batch {
-    pub windows: Vec<Vec<u32>>,
-    pub masks: Vec<Vec<f32>>,
-    pub valid_tokens: f32,
-}
-
-pub async fn bootstrap_dataset(cache_dir: &Path) -> PathBuf {
-    fs::create_dir_all(cache_dir).unwrap_or_else(|error| {
-        panic!(
-            "failed to create dataset cache dir {}: {error}",
-            cache_dir.display()
-        )
-    });
-    if let Some(root) = find_dataset_root(cache_dir) {
-        return root;
-    }
-
-    let archive_path = cache_dir.join(NESMDB_ARCHIVE_NAME);
-    if !archive_path.exists() {
-        download_dataset_archive(&archive_path).await;
-    }
-
-    extract_archive(&archive_path, cache_dir);
-    find_dataset_root(cache_dir).unwrap_or_else(|| {
-        panic!(
-            "downloaded NES-MDB archive but could not find train/valid/test directories under {}",
-            cache_dir.display()
-        )
-    })
-}
-
-pub fn load_dataset_split(root: &Path, tokenizer: &MidiTokenizer) -> DatasetSplit {
+pub fn synthetic_dataset_split(
+    tokenizer: &StrokeTokenizer,
+    config: &RuntimeConfig,
+) -> DatasetSplit {
     DatasetSplit {
-        train: load_split(root, "train", tokenizer),
-        validation: load_split(root, "valid", tokenizer),
-        test: load_split(root, "test", tokenizer),
+        train: generate_split(
+            tokenizer,
+            config.train_examples,
+            config.seed ^ 0xA11CE,
+            "train",
+        ),
+        validation: generate_split(
+            tokenizer,
+            config.validation_examples,
+            config.seed ^ 0xBEEFu64,
+            "valid",
+        ),
+        test: generate_split(
+            tokenizer,
+            config.test_examples,
+            config.seed ^ 0xC0DEu64,
+            "test",
+        ),
     }
 }
 
-pub fn write_tokens_to_midi_file(tokenizer: &MidiTokenizer, tokens: &[u32], path: &Path) {
-    let smf = tokens_to_smf(tokenizer, tokens);
+pub fn write_tokens_to_svg_file(
+    tokenizer: &StrokeTokenizer,
+    prompt_tokens: &[u32],
+    continuation_tokens: &[u32],
+    path: &Path,
+) {
+    let mut prompt_state = RenderState::default();
+    render_tokens_into_state(tokenizer, prompt_tokens, &mut prompt_state);
+    prompt_state.finish_current_stroke();
+    let prompt_strokes = prompt_state.completed_strokes.clone();
+
+    let mut continuation_state = RenderState {
+        cursor: prompt_state.cursor,
+        current_stroke: prompt_state.current_stroke,
+        completed_strokes: Vec::new(),
+    };
+    render_tokens_into_state(tokenizer, continuation_tokens, &mut continuation_state);
+    continuation_state.finish_current_stroke();
+
+    let svg = svg_document(&prompt_strokes, &continuation_state.completed_strokes);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).unwrap_or_else(|error| {
             panic!(
-                "failed to create MIDI output dir {}: {error}",
+                "failed to create SVG output directory {}: {error}",
                 parent.display()
             )
         });
     }
-    let mut bytes = Vec::new();
-    smf.write_std(&mut bytes).unwrap_or_else(|error| {
-        panic!(
-            "failed to serialize MIDI sample {}: {error}",
-            path.display()
-        )
-    });
-    fs::write(path, bytes)
-        .unwrap_or_else(|error| panic!("failed to write MIDI sample {}: {error}", path.display()));
+    fs::write(path, svg)
+        .unwrap_or_else(|error| panic!("failed to write SVG sample {}: {error}", path.display()));
 }
 
 pub fn windows_to_token_inputs(windows: &[Vec<u32>]) -> Vec<Vec<u32>> {
@@ -709,411 +624,438 @@ pub fn position_indexes(batch_size: usize, block_size: usize) -> Vec<Vec<u32>> {
         .collect()
 }
 
-async fn download_dataset_archive(path: &Path) {
-    println!("downloading NES-MDB MIDI archive to {}...", path.display());
-    let response = reqwest::get(NESMDB_DOWNLOAD_URL)
-        .await
-        .unwrap_or_else(|error| panic!("failed to download NES-MDB archive: {error}"));
-    let status = response.status();
-    if !status.is_success() {
-        panic!("failed to download NES-MDB archive: HTTP {status}");
+impl Default for RenderState {
+    fn default() -> Self {
+        Self {
+            cursor: (0, 0),
+            current_stroke: Vec::new(),
+            completed_strokes: Vec::new(),
+        }
     }
-    let bytes = response
-        .bytes()
-        .await
-        .unwrap_or_else(|error| panic!("failed to read NES-MDB archive response body: {error}"));
-    if bytes.starts_with(b"<!DOCTYPE html") || bytes.starts_with(b"<html") {
-        let parent_display = path.parent().unwrap_or(Path::new(".")).display();
-        panic!(
-            "NES-MDB download returned HTML instead of a tar.gz archive; place {NESMDB_ARCHIVE_NAME} under {} manually or update the built-in URL",
-            parent_display
-        );
-    }
-    fs::write(path, &bytes).unwrap_or_else(|error| {
-        panic!(
-            "failed to write downloaded archive {}: {error}",
-            path.display()
-        )
-    });
 }
 
-fn extract_archive(archive_path: &Path, cache_dir: &Path) {
-    println!("extracting NES-MDB MIDI archive...");
-    let archive = fs::File::open(archive_path).unwrap_or_else(|error| {
-        panic!(
-            "failed to open dataset archive {}: {error}",
-            archive_path.display()
-        )
-    });
-    let decoder = GzDecoder::new(archive);
-    let mut archive = Archive::new(decoder);
-    archive.unpack(cache_dir).unwrap_or_else(|error| {
-        panic!(
-            "failed to extract dataset archive {}: {error}",
-            archive_path.display()
-        )
-    });
+impl RenderState {
+    fn finish_current_stroke(&mut self) {
+        if self.current_stroke.len() > 1 {
+            self.completed_strokes
+                .push(std::mem::take(&mut self.current_stroke));
+        } else {
+            self.current_stroke.clear();
+        }
+    }
 }
 
-fn load_split(root: &Path, split_name: &str, tokenizer: &MidiTokenizer) -> SourceDataset {
-    let split_root = root.join(split_name);
-    let mut paths = Vec::new();
-    collect_midi_files(&split_root, &mut paths);
-    paths.sort();
-    let files = paths
-        .into_iter()
-        .map(|path| {
-            let bytes = fs::read(&path).unwrap_or_else(|error| {
-                panic!("failed to read MIDI file {}: {error}", path.display())
-            });
-            let content_tokens = midi_bytes_to_tokens(tokenizer, &bytes, &path);
-            let mut tokens = Vec::with_capacity(content_tokens.len() + 2);
-            tokens.push(tokenizer.bos_token());
-            tokens.extend_from_slice(&content_tokens);
-            tokens.push(tokenizer.eot_token());
-            let relative_path = path
-                .strip_prefix(root)
-                .unwrap_or(path.as_path())
-                .to_string_lossy()
-                .into_owned();
-
-            SourceFile {
-                path: relative_path,
-                tokens,
-                prompt_tokens: content_tokens.clone(),
-                target_tokens: content_tokens,
-                target_start: 0,
+fn render_tokens_into_state(tokenizer: &StrokeTokenizer, tokens: &[u32], state: &mut RenderState) {
+    for token in tokens {
+        match tokenizer.decode_token_kind(*token) {
+            TokenKind::Bos | TokenKind::Eot => {}
+            TokenKind::Move(direction, step) => {
+                if state.current_stroke.is_empty() {
+                    state.current_stroke.push(state.cursor);
+                }
+                let (dx, dy) = direction.delta(step);
+                state.cursor.0 += dx;
+                state.cursor.1 += dy;
+                state.current_stroke.push(state.cursor);
             }
+        }
+    }
+}
+
+fn svg_document(
+    prompt_strokes: &[Vec<(i32, i32)>],
+    continuation_strokes: &[Vec<(i32, i32)>],
+) -> String {
+    let all_points = prompt_strokes
+        .iter()
+        .chain(continuation_strokes.iter())
+        .flat_map(|stroke| stroke.iter().copied())
+        .collect::<Vec<_>>();
+
+    let (offset_x, offset_y, scale) = if all_points.is_empty() {
+        (CANVAS_SIZE / 2.0, CANVAS_SIZE / 2.0, 1.0)
+    } else {
+        let min_x = all_points.iter().map(|(x, _)| *x).min().unwrap() as f32;
+        let max_x = all_points.iter().map(|(x, _)| *x).max().unwrap() as f32;
+        let min_y = all_points.iter().map(|(_, y)| *y).min().unwrap() as f32;
+        let max_y = all_points.iter().map(|(_, y)| *y).max().unwrap() as f32;
+        let width = (max_x - min_x).max(1.0);
+        let height = (max_y - min_y).max(1.0);
+        let scale = ((CANVAS_SIZE - CANVAS_PADDING * 2.0) / width)
+            .min((CANVAS_SIZE - CANVAS_PADDING * 2.0) / height);
+        let scaled_width = width * scale;
+        let scaled_height = height * scale;
+        let offset_x = CANVAS_PADDING + (CANVAS_SIZE - CANVAS_PADDING * 2.0 - scaled_width) / 2.0;
+        let offset_y = CANVAS_PADDING + (CANVAS_SIZE - CANVAS_PADDING * 2.0 - scaled_height) / 2.0;
+        (offset_x - min_x * scale, offset_y - min_y * scale, scale)
+    };
+
+    let prompt_paths = prompt_strokes
+        .iter()
+        .filter_map(|stroke| polyline_path(stroke, offset_x, offset_y, scale))
+        .map(|path| {
+            format!(
+                "<path d=\"{path}\" fill=\"none\" stroke=\"#264653\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" opacity=\"0.65\"/>"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    let continuation_paths = continuation_strokes
+        .iter()
+        .filter_map(|stroke| polyline_path(stroke, offset_x, offset_y, scale))
+        .map(|path| {
+            format!(
+                "<path d=\"{path}\" fill=\"none\" stroke=\"#e76f51\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
+
+    format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {CANVAS_SIZE} {CANVAS_SIZE}\"><rect width=\"{CANVAS_SIZE}\" height=\"{CANVAS_SIZE}\" rx=\"18\" fill=\"#fdf6e3\"/><rect x=\"6\" y=\"6\" width=\"{inner}\" height=\"{inner}\" rx=\"14\" fill=\"#fffaf0\" stroke=\"#e9dcc3\" stroke-width=\"2\"/>{prompt_paths}{continuation_paths}</svg>",
+        inner = CANVAS_SIZE - 12.0,
+    )
+}
+
+fn polyline_path(
+    stroke: &[(i32, i32)],
+    offset_x: f32,
+    offset_y: f32,
+    scale: f32,
+) -> Option<String> {
+    let mut points = stroke.iter();
+    let &(first_x, first_y) = points.next()?;
+    let mut path = format!(
+        "M {:.2} {:.2}",
+        offset_x + first_x as f32 * scale,
+        offset_y + first_y as f32 * scale
+    );
+    for &(x, y) in points {
+        path.push_str(&format!(
+            " L {:.2} {:.2}",
+            offset_x + x as f32 * scale,
+            offset_y + y as f32 * scale
+        ));
+    }
+    Some(path)
+}
+
+fn generate_split(
+    tokenizer: &StrokeTokenizer,
+    example_count: usize,
+    seed: u64,
+    split_name: &str,
+) -> SourceDataset {
+    let mut rng = StdRng::seed_from_u64(seed);
+    let mut shapes = (0..example_count)
+        .map(|index| ShapeKind::all()[index % ShapeKind::all().len()])
+        .collect::<Vec<_>>();
+    shapes.shuffle(&mut rng);
+    let mut used_sequences = HashSet::with_capacity(example_count);
+
+    let files = shapes
+        .into_iter()
+        .enumerate()
+        .map(|(index, shape)| {
+            generate_source_file(
+                tokenizer,
+                &mut rng,
+                split_name,
+                index,
+                shape,
+                &mut used_sequences,
+            )
         })
         .collect();
     SourceDataset { files }
 }
 
-fn midi_bytes_to_tokens(tokenizer: &MidiTokenizer, bytes: &[u8], path: &Path) -> Vec<u32> {
-    let smf = Smf::parse(bytes)
-        .unwrap_or_else(|error| panic!("failed to parse MIDI file {}: {error}", path.display()));
-    let ticks_per_beat = match smf.header.timing {
-        Timing::Metrical(ticks_per_beat) => ticks_per_beat.as_int() as u16,
-        _ => panic!(
-            "unsupported MIDI timing in {}; NES-MDB examples are expected to use metrical timing",
-            path.display()
-        ),
-    };
-    let tempo_segments = collect_tempo_segments(&smf, ticks_per_beat);
-
-    let mut events = Vec::new();
-    let mut sequence = 0usize;
-    for track in &smf.tracks {
-        let track_voice = detect_track_voice(track);
-        let mut absolute_tick = 0u64;
-        for event in track {
-            absolute_tick += event.delta.as_int() as u64;
-            let TrackEventKind::Midi { channel, message } = event.kind else {
-                continue;
-            };
-            let Some(voice) = track_voice.or_else(|| Voice::from_channel(channel.as_int())) else {
-                continue;
-            };
-            let Some(kind) = midi_message_to_render_event(voice, message) else {
-                continue;
-            };
-            let step = tick_to_step(absolute_tick, ticks_per_beat, &tempo_segments);
-            events.push(MidiEvent {
-                step,
-                sequence,
-                kind,
-            });
-            sequence += 1;
+fn generate_source_file(
+    tokenizer: &StrokeTokenizer,
+    rng: &mut StdRng,
+    split_name: &str,
+    index: usize,
+    shape: ShapeKind,
+    used_sequences: &mut HashSet<Vec<u32>>,
+) -> SourceFile {
+    let mut content_tokens = shape_tokens(shape, tokenizer, rng);
+    for _ in 0..255 {
+        if used_sequences.insert(content_tokens.clone()) {
+            break;
         }
+        content_tokens = shape_tokens(shape, tokenizer, rng);
     }
+    let mut tokens = Vec::with_capacity(content_tokens.len() + 2);
+    tokens.push(tokenizer.bos_token());
+    tokens.extend_from_slice(&content_tokens);
+    tokens.push(tokenizer.eot_token());
 
-    events.sort_by_key(|event| (event.step, event.sequence));
+    SourceFile {
+        path: format!("{split_name}/{}-{index:03}.stroke", shape.name()),
+        tokens,
+        prompt_tokens: content_tokens.clone(),
+        target_tokens: content_tokens,
+    }
+}
+
+fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng) -> Vec<u32> {
     let mut tokens = Vec::new();
-    let mut current_step = 0u32;
-    for event in events {
-        if event.step > current_step {
-            tokenizer.push_wait_tokens(&mut tokens, event.step - current_step);
-            current_step = event.step;
+    match shape {
+        ShapeKind::Circle => {
+            let straight = rng.random_range(1..=2);
+            let corner = rng.random_range(1..=2);
+            let step = rng.random_range(1..=STEP_LEVELS);
+            let rotation = rng.random_range(0..Direction::all().len());
+            let mirror = rng.random_bool(0.5);
+            trace_moves(
+                &mut tokens,
+                tokenizer,
+                &[
+                    (Direction::E, step, straight),
+                    (Direction::SE, step, corner),
+                    (Direction::S, step, straight),
+                    (Direction::SW, step, corner),
+                    (Direction::W, step, straight),
+                    (Direction::NW, step, corner),
+                    (Direction::N, step, straight),
+                    (Direction::NE, step, corner),
+                ],
+                rotation,
+                mirror,
+            );
         }
-        tokens.push(tokenizer.render_event_token(&event.kind));
+        ShapeKind::Square => {
+            let step = rng.random_range(1..=STEP_LEVELS);
+            let side = rng.random_range(1..=5);
+            let rotation = rng.random_range(0..Direction::all().len());
+            trace_moves(
+                &mut tokens,
+                tokenizer,
+                &[
+                    (Direction::E, step, side),
+                    (Direction::S, step, side),
+                    (Direction::W, step, side),
+                    (Direction::N, step, side),
+                ],
+                rotation,
+                false,
+            );
+        }
+        ShapeKind::Rectangle => {
+            let step = rng.random_range(1..=STEP_LEVELS);
+            let width = rng.random_range(2..=5);
+            let mut height = rng.random_range(1..=4);
+            while height == width {
+                height = rng.random_range(1..=4);
+            }
+            let rotation = rng.random_range(0..Direction::all().len());
+            let mirror = rng.random_bool(0.5);
+            trace_moves(
+                &mut tokens,
+                tokenizer,
+                &[
+                    (Direction::E, step, width),
+                    (Direction::S, step, height),
+                    (Direction::W, step, width),
+                    (Direction::N, step, height),
+                ],
+                rotation,
+                mirror,
+            );
+        }
+        ShapeKind::Triangle => {
+            let edge = rng.random_range(1..=4);
+            let step = rng.random_range(1..=STEP_LEVELS);
+            let rotation = rng.random_range(0..Direction::all().len());
+            let mirror = rng.random_bool(0.5);
+            trace_moves(
+                &mut tokens,
+                tokenizer,
+                &[
+                    (Direction::E, step, edge * 2),
+                    (Direction::NW, step, edge),
+                    (Direction::SW, step, edge),
+                ],
+                rotation,
+                mirror,
+            );
+        }
+        ShapeKind::Diamond => {
+            let edge = rng.random_range(1..=5);
+            let step = rng.random_range(1..=STEP_LEVELS);
+            let rotation = rng.random_range(0..Direction::all().len());
+            trace_moves(
+                &mut tokens,
+                tokenizer,
+                &[
+                    (Direction::NE, step, edge),
+                    (Direction::SE, step, edge),
+                    (Direction::SW, step, edge),
+                    (Direction::NW, step, edge),
+                ],
+                rotation,
+                false,
+            );
+        }
+        ShapeKind::Hexagon => {
+            let edge = rng.random_range(1..=3);
+            let step = rng.random_range(1..=STEP_LEVELS);
+            let rotation = rng.random_range(0..Direction::all().len());
+            let mirror = rng.random_bool(0.5);
+            trace_moves(
+                &mut tokens,
+                tokenizer,
+                &[
+                    (Direction::E, step, edge),
+                    (Direction::SE, step, edge),
+                    (Direction::SW, step, edge),
+                    (Direction::W, step, edge),
+                    (Direction::NW, step, edge),
+                    (Direction::NE, step, edge),
+                ],
+                rotation,
+                mirror,
+            );
+        }
+        ShapeKind::Octagon => {
+            let straight = rng.random_range(1..=2);
+            let corner = rng.random_range(1..=2);
+            let step = rng.random_range(1..=STEP_LEVELS);
+            let rotation = rng.random_range(0..Direction::all().len());
+            let mirror = rng.random_bool(0.5);
+            trace_moves(
+                &mut tokens,
+                tokenizer,
+                &[
+                    (Direction::E, step, straight),
+                    (Direction::SE, step, corner),
+                    (Direction::S, step, straight),
+                    (Direction::SW, step, corner),
+                    (Direction::W, step, straight),
+                    (Direction::NW, step, corner),
+                    (Direction::N, step, straight),
+                    (Direction::NE, step, corner),
+                ],
+                rotation,
+                mirror,
+            );
+        }
+        ShapeKind::House => {
+            let step = rng.random_range(1..=STEP_LEVELS);
+            let roof = rng.random_range(1_usize..=2);
+            let base = rng.random_range((roof * 2)..=5);
+            let wall = rng.random_range(2_usize..=4);
+            let rotation = rng.random_range(0..Direction::all().len());
+            let mirror = rng.random_bool(0.5);
+            let mut segments = vec![
+                (Direction::E, step, base),
+                (Direction::N, step, wall),
+                (Direction::NW, step, roof),
+                (Direction::SW, step, roof),
+                (Direction::S, step, wall),
+            ];
+            let floor_return = base.saturating_sub(roof * 2);
+            if floor_return > 0 {
+                segments.push((Direction::W, step, floor_return));
+            }
+            trace_moves(&mut tokens, tokenizer, &segments, rotation, mirror);
+        }
+        ShapeKind::Trapezoid => {
+            let step = rng.random_range(1..=STEP_LEVELS);
+            let top = rng.random_range(2..=4);
+            let slope = rng.random_range(1..=2);
+            let bottom = top + slope * 2;
+            let rotation = rng.random_range(0..Direction::all().len());
+            let mirror = rng.random_bool(0.5);
+            trace_moves(
+                &mut tokens,
+                tokenizer,
+                &[
+                    (Direction::E, step, bottom),
+                    (Direction::NW, step, slope),
+                    (Direction::W, step, top),
+                    (Direction::SW, step, slope),
+                ],
+                rotation,
+                mirror,
+            );
+        }
+        ShapeKind::Parallelogram => {
+            let step = rng.random_range(1..=STEP_LEVELS);
+            let width = rng.random_range(2..=5);
+            let lean = rng.random_range(1..=2);
+            let rotation = rng.random_range(0..Direction::all().len());
+            let mirror = rng.random_bool(0.5);
+            trace_moves(
+                &mut tokens,
+                tokenizer,
+                &[
+                    (Direction::E, step, width),
+                    (Direction::NE, step, lean),
+                    (Direction::W, step, width),
+                    (Direction::SW, step, lean),
+                ],
+                rotation,
+                mirror,
+            );
+        }
     }
     tokens
 }
 
-fn tokens_to_smf(tokenizer: &MidiTokenizer, tokens: &[u32]) -> Smf<'static> {
-    let mut current_step = 0u32;
-    let mut events = [
-        Vec::<(u32, TrackEventKind<'static>)>::new(),
-        Vec::<(u32, TrackEventKind<'static>)>::new(),
-        Vec::<(u32, TrackEventKind<'static>)>::new(),
-        Vec::<(u32, TrackEventKind<'static>)>::new(),
-    ];
-
-    for voice in Voice::all() {
-        let track_events = &mut events[voice.index()];
-        track_events.push((
-            0,
-            TrackEventKind::Meta(MetaMessage::TrackName(voice.track_name())),
-        ));
-    }
-    events[0].push((
-        0,
-        TrackEventKind::Meta(MetaMessage::Tempo(u24::new(MIDI_TEMPO_US_PER_BEAT))),
-    ));
-
-    for token in tokens {
-        match tokenizer.decode_token_kind(*token) {
-            TokenKind::Bos | TokenKind::Eot => {}
-            TokenKind::Wait(steps) => current_step += steps,
-            TokenKind::NoteOn(voice, note) => events[voice.index()].push((
-                current_step,
-                TrackEventKind::Midi {
-                    channel: u4::new(voice.channel()),
-                    message: MidiMessage::NoteOn {
-                        key: u7::new(note),
-                        vel: u7::new(default_velocity(voice)),
-                    },
-                },
-            )),
-            TokenKind::NoteOff(voice, note) => events[voice.index()].push((
-                current_step,
-                TrackEventKind::Midi {
-                    channel: u4::new(voice.channel()),
-                    message: MidiMessage::NoteOff {
-                        key: u7::new(note),
-                        vel: u7::new(0),
-                    },
-                },
-            )),
-            TokenKind::Velocity(voice, value) => events[voice.index()].push((
-                current_step,
-                TrackEventKind::Midi {
-                    channel: u4::new(voice.channel()),
-                    message: MidiMessage::Controller {
-                        controller: u7::new(VELOCITY_CONTROLLER),
-                        value: u7::new(value),
-                    },
-                },
-            )),
-            TokenKind::Timbre(voice, value) => events[voice.index()].push((
-                current_step,
-                TrackEventKind::Midi {
-                    channel: u4::new(voice.channel()),
-                    message: MidiMessage::Controller {
-                        controller: u7::new(TIMBRE_CONTROLLER),
-                        value: u7::new(value),
-                    },
-                },
-            )),
+fn token_displacement(tokenizer: &StrokeTokenizer, tokens: &[u32]) -> (i32, i32) {
+    let mut x = 0;
+    let mut y = 0;
+    for &token in tokens {
+        if let TokenKind::Move(direction, step) = tokenizer.decode_token_kind(token) {
+            let (dx, dy) = direction.delta(step);
+            x += dx;
+            y += dy;
         }
     }
+    (x, y)
+}
 
-    let tracks = events
-        .into_iter()
-        .map(encode_track_events)
-        .collect::<Vec<_>>();
-    Smf {
-        header: Header::new(
-            Format::Parallel,
-            Timing::Metrical(u15::new(MIDI_TICKS_PER_BEAT)),
-        ),
-        tracks,
+fn transformed_direction(
+    direction: Direction,
+    rotation: usize,
+    mirror_horizontal: bool,
+) -> Direction {
+    let direction = if mirror_horizontal {
+        direction.mirror_horizontal()
+    } else {
+        direction
+    };
+    direction.rotate(rotation)
+}
+
+fn repeat_move(
+    tokens: &mut Vec<u32>,
+    tokenizer: &StrokeTokenizer,
+    direction: Direction,
+    step: u8,
+    count: usize,
+) {
+    for _ in 0..count {
+        tokens.push(tokenizer.move_token(direction, step));
     }
 }
 
-fn detect_track_voice(track: &[TrackEvent<'_>]) -> Option<Voice> {
-    for event in track {
-        match &event.kind {
-            TrackEventKind::Meta(MetaMessage::TrackName(name))
-            | TrackEventKind::Meta(MetaMessage::InstrumentName(name)) => {
-                if let Ok(name) = std::str::from_utf8(name) {
-                    if let Some(voice) = Voice::from_track_name(name) {
-                        return Some(voice);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-fn midi_message_to_render_event(voice: Voice, message: MidiMessage) -> Option<RenderEventKind> {
-    match message {
-        MidiMessage::NoteOn { key, vel } if vel.as_int() == 0 => Some(RenderEventKind::NoteOff {
-            voice,
-            note: key.as_int(),
-        }),
-        MidiMessage::NoteOn { key, .. } => Some(RenderEventKind::NoteOn {
-            voice,
-            note: key.as_int(),
-        }),
-        MidiMessage::NoteOff { key, .. } => Some(RenderEventKind::NoteOff {
-            voice,
-            note: key.as_int(),
-        }),
-        MidiMessage::Controller { controller, value }
-            if controller.as_int() == VELOCITY_CONTROLLER && voice.supports_expression() =>
-        {
-            Some(RenderEventKind::Velocity {
-                voice,
-                value: value.as_int(),
-            })
-        }
-        MidiMessage::Controller { controller, value }
-            if controller.as_int() == TIMBRE_CONTROLLER && voice.supports_expression() =>
-        {
-            Some(RenderEventKind::Timbre {
-                voice,
-                value: value.as_int(),
-            })
-        }
-        _ => None,
-    }
-}
-
-fn collect_tempo_segments(smf: &Smf<'_>, ticks_per_beat: u16) -> Vec<TempoSegment> {
-    let mut changes = vec![(0u64, DEFAULT_TEMPO_US_PER_BEAT)];
-    for track in &smf.tracks {
-        let mut absolute_tick = 0u64;
-        for event in track {
-            absolute_tick += event.delta.as_int() as u64;
-            if let TrackEventKind::Meta(MetaMessage::Tempo(tempo)) = event.kind {
-                changes.push((absolute_tick, tempo.as_int()));
-            }
-        }
-    }
-    changes.sort_by_key(|(tick, _)| *tick);
-
-    let mut deduped: Vec<(u64, u32)> = Vec::new();
-    for (tick, tempo) in changes {
-        if let Some(last) = deduped.last_mut() {
-            if last.0 == tick {
-                last.1 = tempo;
-                continue;
-            }
-        }
-        deduped.push((tick, tempo));
-    }
-
-    let mut segments = Vec::with_capacity(deduped.len());
-    let mut start_us = 0u64;
-    let mut previous_tick = deduped[0].0;
-    let mut previous_tempo = deduped[0].1;
-    segments.push(TempoSegment {
-        start_tick: previous_tick,
-        start_us,
-        tempo_us_per_beat: previous_tempo,
-    });
-    for (tick, tempo) in deduped.into_iter().skip(1) {
-        start_us += ticks_to_us(tick - previous_tick, ticks_per_beat, previous_tempo);
-        segments.push(TempoSegment {
-            start_tick: tick,
-            start_us,
-            tempo_us_per_beat: tempo,
-        });
-        previous_tick = tick;
-        previous_tempo = tempo;
-    }
-    segments
-}
-
-fn tick_to_step(tick: u64, ticks_per_beat: u16, tempo_segments: &[TempoSegment]) -> u32 {
-    let mut active_segment = tempo_segments
-        .first()
-        .copied()
-        .expect("tempo map must contain at least one segment");
-    for segment in tempo_segments.iter().copied().skip(1) {
-        if segment.start_tick > tick {
-            break;
-        }
-        active_segment = segment;
-    }
-
-    let micros = active_segment.start_us
-        + ticks_to_us(
-            tick.saturating_sub(active_segment.start_tick),
-            ticks_per_beat,
-            active_segment.tempo_us_per_beat,
+fn trace_moves(
+    tokens: &mut Vec<u32>,
+    tokenizer: &StrokeTokenizer,
+    segments: &[(Direction, u8, usize)],
+    rotation: usize,
+    mirror_horizontal: bool,
+) {
+    for &(direction, step, count) in segments {
+        repeat_move(
+            tokens,
+            tokenizer,
+            transformed_direction(direction, rotation, mirror_horizontal),
+            step,
+            count,
         );
-    ((micros + (QUANTIZATION_US_PER_STEP / 2)) / QUANTIZATION_US_PER_STEP) as u32
-}
-
-fn ticks_to_us(delta_ticks: u64, ticks_per_beat: u16, tempo_us_per_beat: u32) -> u64 {
-    delta_ticks * tempo_us_per_beat as u64 / ticks_per_beat.max(1) as u64
-}
-
-fn encode_track_events(
-    mut events: Vec<(u32, TrackEventKind<'static>)>,
-) -> Vec<TrackEvent<'static>> {
-    events.sort_by_key(|(step, _)| *step);
-    let mut current_step = 0u32;
-    let mut track = Vec::with_capacity(events.len() + 1);
-    for (step, kind) in events {
-        let delta = step.saturating_sub(current_step);
-        track.push(TrackEvent {
-            delta: u28::new(delta),
-            kind,
-        });
-        current_step = step;
-    }
-    track.push(TrackEvent {
-        delta: u28::new(0),
-        kind: TrackEventKind::Meta(MetaMessage::EndOfTrack),
-    });
-    track
-}
-
-fn default_velocity(voice: Voice) -> u8 {
-    match voice {
-        Voice::Tr => 96,
-        _ => 100,
-    }
-}
-
-fn find_dataset_root(base: &Path) -> Option<PathBuf> {
-    let mut queue = VecDeque::from([base.to_path_buf()]);
-    while let Some(path) = queue.pop_front() {
-        if path.join("train").is_dir() && path.join("valid").is_dir() && path.join("test").is_dir()
-        {
-            return Some(path);
-        }
-
-        let Ok(entries) = fs::read_dir(&path) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let child = entry.path();
-            if child.is_dir() {
-                queue.push_back(child);
-            }
-        }
-    }
-    None
-}
-
-fn collect_midi_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let entries = fs::read_dir(dir).unwrap_or_else(|error| {
-        panic!(
-            "failed to read dataset split directory {}: {error}",
-            dir.display()
-        )
-    });
-    for entry in entries {
-        let entry = entry.unwrap();
-        let path = entry.path();
-        if entry.file_type().unwrap().is_dir() {
-            collect_midi_files(&path, out);
-            continue;
-        }
-
-        let extension = path.extension().and_then(|extension| extension.to_str());
-        if matches!(
-            extension,
-            Some("mid") | Some("midi") | Some("MID") | Some("MIDI")
-        ) {
-            out.push(path);
-        }
     }
 }
 
@@ -1121,79 +1063,11 @@ fn collect_midi_files(dir: &Path, out: &mut Vec<PathBuf>) {
 mod tests {
     use super::*;
     use fusor_gguf::{GgufMetadata, GgufVersion};
-    use std::{
-        io::Cursor,
-        time::{SystemTime, UNIX_EPOCH},
-    };
-
-    fn synthetic_tokens(tokenizer: &MidiTokenizer) -> Vec<u32> {
-        vec![
-            tokenizer.velocity_token(Voice::P1, 90),
-            tokenizer.note_on_token(Voice::P1, 60),
-            tokenizer.wait_token(3),
-            tokenizer.note_off_token(Voice::P1, 60),
-            tokenizer.timbre_token(Voice::No, 12),
-            tokenizer.note_on_token(Voice::No, 36),
-            tokenizer.wait_token(2),
-            tokenizer.note_off_token(Voice::No, 36),
-        ]
-    }
-
-    #[test]
-    fn midi_tokens_round_trip_through_smf() {
-        let tokenizer = MidiTokenizer::new();
-        let tokens = synthetic_tokens(&tokenizer);
-        let smf = tokens_to_smf(&tokenizer, &tokens);
-        let mut bytes = Vec::new();
-        smf.write_std(&mut bytes).unwrap();
-        let reparsed = midi_bytes_to_tokens(&tokenizer, &bytes, Path::new("synthetic.mid"));
-        assert_eq!(reparsed, tokens);
-        Smf::parse(&bytes).unwrap();
-    }
-
-    #[test]
-    fn wait_tokens_round_trip_timing() {
-        let tokenizer = MidiTokenizer::new();
-        let tokens = vec![
-            tokenizer.wait_token(100),
-            tokenizer.wait_token(17),
-            tokenizer.note_on_token(Voice::P2, 64),
-            tokenizer.wait_token(5),
-            tokenizer.note_off_token(Voice::P2, 64),
-        ];
-        let smf = tokens_to_smf(&tokenizer, &tokens);
-        let mut bytes = Vec::new();
-        smf.write_std(&mut bytes).unwrap();
-        let reparsed = midi_bytes_to_tokens(&tokenizer, &bytes, Path::new("timing.mid"));
-        assert_eq!(reparsed, tokens);
-    }
-
-    #[test]
-    fn dataset_split_loader_discovers_train_valid_test() {
-        let tokenizer = MidiTokenizer::new();
-        let root = temp_test_dir("dataset");
-        fs::create_dir_all(root.join("train")).unwrap();
-        fs::create_dir_all(root.join("valid/nested")).unwrap();
-        fs::create_dir_all(root.join("test")).unwrap();
-
-        let smf = tokens_to_smf(&tokenizer, &synthetic_tokens(&tokenizer));
-        let mut bytes = Vec::new();
-        smf.write_std(&mut bytes).unwrap();
-        fs::write(root.join("train/song_a.mid"), &bytes).unwrap();
-        fs::write(root.join("valid/nested/song_b.mid"), &bytes).unwrap();
-        fs::write(root.join("test/song_c.mid"), &bytes).unwrap();
-
-        let split = load_dataset_split(&root, &tokenizer);
-        assert_eq!(split.train.num_docs(), 1);
-        assert_eq!(split.validation.num_docs(), 1);
-        assert_eq!(split.test.num_docs(), 1);
-
-        fs::remove_dir_all(root).unwrap();
-    }
+    use std::{collections::HashSet, io::Cursor};
 
     #[test]
     fn tokenizer_survives_gguf_metadata_round_trip() {
-        let tokenizer = MidiTokenizer::new();
+        let tokenizer = StrokeTokenizer::new();
         let gguf = GgufMetadata {
             version: GgufVersion::V3,
             metadata: tokenizer
@@ -1204,34 +1078,161 @@ mod tests {
             tensor_infos: Default::default(),
             tensor_data_offset: 0,
         };
-        let mut bytes = Vec::new();
+        let mut bytes = Cursor::new(Vec::new());
         gguf.write(&mut bytes, std::iter::empty::<(&str, &[u8])>())
             .unwrap();
-        let mut reader = Cursor::new(bytes);
+        let mut reader = Cursor::new(bytes.into_inner());
         let vb = VarBuilder::from_gguf(&mut reader).unwrap();
-        let restored = MidiTokenizer::from_var_builder(&vb).unwrap();
+        let restored = StrokeTokenizer::from_var_builder(&vb).unwrap();
         assert_eq!(restored.vocab_size(), tokenizer.vocab_size());
         assert_eq!(restored.bos_token(), tokenizer.bos_token());
         assert_eq!(restored.eot_token(), tokenizer.eot_token());
     }
 
     #[test]
-    fn sample_export_produces_valid_midi_bytes() {
-        let tokenizer = MidiTokenizer::new();
-        let tokens = synthetic_tokens(&tokenizer);
-        let root = temp_test_dir("sample");
-        let output = root.join("sample.mid");
-        write_tokens_to_midi_file(&tokenizer, &tokens, &output);
-        let bytes = fs::read(&output).unwrap();
-        Smf::parse(&bytes).unwrap();
-        fs::remove_dir_all(root).unwrap();
+    fn synthetic_dataset_split_uses_requested_sizes() {
+        let tokenizer = StrokeTokenizer::new();
+        let config = RuntimeConfig {
+            epochs: 1,
+            warmup_steps: 1,
+            learning_rate: 1e-3,
+            min_learning_rate: 1e-4,
+            beta1: 0.9,
+            beta2: 0.95,
+            adam_eps: 1e-8,
+            weight_decay: 0.1,
+            log_every: 10,
+            eval_batches: 1,
+            sample_tokens: 8,
+            sample_prefix_tokens: 4,
+            sample_temperature: 0.7,
+            sample_top_k: 4,
+            block_size: 24,
+            batch_size: 4,
+            n_embd: 32,
+            n_head: 2,
+            n_ff: 64,
+            n_layer: 2,
+            conv_kernel_size: 3,
+            attention_period: 1,
+            eps: 1e-5,
+            init_scale: 0.08,
+            seed: 42,
+            save_every_steps: 0,
+            save_final_model: false,
+            save_quantization: crate::config::SaveQuantization::F32,
+            train_examples: 7,
+            validation_examples: 3,
+            test_examples: 2,
+            gguf_path: "test.gguf".into(),
+            sample_output_path: "sample.svg".into(),
+        };
+
+        let split = synthetic_dataset_split(&tokenizer, &config);
+        assert_eq!(split.train.num_docs(), 7);
+        assert_eq!(split.validation.num_docs(), 3);
+        assert_eq!(split.test.num_docs(), 2);
     }
 
-    fn temp_test_dir(label: &str) -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!("nanochat-{label}-{nanos}"))
+    #[test]
+    fn synthetic_dataset_stays_balanced_and_within_context_window() {
+        let tokenizer = StrokeTokenizer::new();
+        let config = RuntimeConfig {
+            epochs: 1,
+            warmup_steps: 1,
+            learning_rate: 1e-3,
+            min_learning_rate: 1e-4,
+            beta1: 0.9,
+            beta2: 0.95,
+            adam_eps: 1e-8,
+            weight_decay: 0.1,
+            log_every: 10,
+            eval_batches: 1,
+            sample_tokens: 8,
+            sample_prefix_tokens: 4,
+            sample_temperature: 0.7,
+            sample_top_k: 4,
+            block_size: 24,
+            batch_size: 8,
+            n_embd: 24,
+            n_head: 2,
+            n_ff: 48,
+            n_layer: 1,
+            conv_kernel_size: 3,
+            attention_period: 1,
+            eps: 1e-5,
+            init_scale: 0.1,
+            seed: 42,
+            save_every_steps: 0,
+            save_final_model: false,
+            save_quantization: crate::config::SaveQuantization::F32,
+            train_examples: ShapeKind::all().len() * 2,
+            validation_examples: ShapeKind::all().len(),
+            test_examples: ShapeKind::all().len(),
+            gguf_path: "test.gguf".into(),
+            sample_output_path: "sample.svg".into(),
+        };
+
+        let split = synthetic_dataset_split(&tokenizer, &config);
+        let seen_shapes = split
+            .train
+            .files()
+            .iter()
+            .map(|file| {
+                let filename = file.path().split('/').next_back().unwrap();
+                filename
+                    .rsplit_once('-')
+                    .map(|(shape, _)| shape.to_string())
+                    .unwrap()
+            })
+            .collect::<HashSet<_>>();
+
+        assert_eq!(seen_shapes.len(), ShapeKind::all().len());
+        let unique_token_sequences = split
+            .train
+            .files()
+            .iter()
+            .map(|file| file.target_tokens().to_vec())
+            .collect::<HashSet<_>>();
+        assert_eq!(unique_token_sequences.len(), split.train.files().len());
+        assert!(
+            split
+                .train
+                .files()
+                .iter()
+                .all(|file| file.tokens.len() <= config.block_size + 1)
+        );
+    }
+
+    #[test]
+    fn synthetic_shapes_are_closed_loops() {
+        let tokenizer = StrokeTokenizer::new();
+        for shape in ShapeKind::all() {
+            for seed in 0..32 {
+                let mut rng = StdRng::seed_from_u64(seed);
+                let tokens = shape_tokens(shape, &tokenizer, &mut rng);
+                assert_eq!(
+                    token_displacement(&tokenizer, &tokens),
+                    (0, 0),
+                    "{} should close back to the origin",
+                    shape.name()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn sample_export_produces_valid_svg_bytes() {
+        let tokenizer = StrokeTokenizer::new();
+        let tokens = vec![
+            tokenizer.move_token(Direction::E, 2),
+            tokenizer.move_token(Direction::SE, 1),
+            tokenizer.move_token(Direction::S, 2),
+        ];
+        let root = std::env::temp_dir().join("nanochat-stroke-sample.svg");
+        write_tokens_to_svg_file(&tokenizer, &tokens[..2], &tokens[2..], &root);
+        let svg = fs::read_to_string(&root).unwrap();
+        assert!(svg.starts_with("<svg"));
+        let _ = fs::remove_file(root);
     }
 }

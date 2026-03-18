@@ -1,5 +1,6 @@
 use fusor::{
-    Device, Tensor, VarBuilder, cache::AttentionMask,
+    Device, Tensor, VarBuilder,
+    cache::AttentionMask,
     layers::{Embedding, RecurrentWeights, recurrent_forward},
 };
 
@@ -177,7 +178,11 @@ impl InteractiveNanoChatModel {
         let x = x
             .layer_norm(&ln_f_weight, Some(&ln_f_bias), self.shape.eps, true)
             .to_concrete();
-        x.mat_mul(&self.lm_head.broadcast_as([batch_size, self.shape.n_embd, self.vocab_size]))
+        x.mat_mul(
+            &self
+                .lm_head
+                .broadcast_as([batch_size, self.shape.n_embd, self.vocab_size]),
+        )
     }
 }
 
@@ -222,7 +227,9 @@ impl TransformerBlock {
         let attn_input = x
             .layer_norm(&ln_1_weight, Some(&ln_1_bias), shape.eps, true)
             .to_concrete();
-        let attn_output = self.mixer.forward(&attn_input, causal_mask, batch_size, shape);
+        let attn_output = self
+            .mixer
+            .forward(&attn_input, causal_mask, batch_size, shape);
         let x: Tensor<3, f32> = (x + attn_output).to_concrete();
 
         let ln_2_weight = self.ln_2_weight.broadcast_as(x.shape());
@@ -252,9 +259,21 @@ impl CausalSelfAttention {
         shape: ModelShape,
     ) -> Tensor<3, f32> {
         let head_dim = shape.head_dim();
-        let q = x.mat_mul(&self.c_attn_q.broadcast_as([batch_size, shape.n_embd, shape.n_embd]));
-        let k = x.mat_mul(&self.c_attn_k.broadcast_as([batch_size, shape.n_embd, shape.n_embd]));
-        let v = x.mat_mul(&self.c_attn_v.broadcast_as([batch_size, shape.n_embd, shape.n_embd]));
+        let q = x.mat_mul(
+            &self
+                .c_attn_q
+                .broadcast_as([batch_size, shape.n_embd, shape.n_embd]),
+        );
+        let k = x.mat_mul(
+            &self
+                .c_attn_k
+                .broadcast_as([batch_size, shape.n_embd, shape.n_embd]),
+        );
+        let v = x.mat_mul(
+            &self
+                .c_attn_v
+                .broadcast_as([batch_size, shape.n_embd, shape.n_embd]),
+        );
         let heads = (0..shape.n_head)
             .map(|head| {
                 let start = head * head_dim;
@@ -274,7 +293,11 @@ impl CausalSelfAttention {
             .collect::<Vec<_>>();
 
         Tensor::cat(heads, 2)
-            .mat_mul(&self.c_proj.broadcast_as([batch_size, shape.n_embd, shape.n_embd]))
+            .mat_mul(
+                &self
+                    .c_proj
+                    .broadcast_as([batch_size, shape.n_embd, shape.n_embd]),
+            )
             .to_concrete()
     }
 }
@@ -345,7 +368,8 @@ impl ConvMixer {
 
     fn forward(&self, x: &Tensor<3, f32>, batch_size: usize, shape: ModelShape) -> Tensor<3, f32> {
         let seq_len = x.shape()[1];
-        let mut mixed: Tensor<3, f32> = Tensor::zeros(&x.device(), [batch_size, seq_len, shape.n_embd]);
+        let mut mixed: Tensor<3, f32> =
+            Tensor::zeros(&x.device(), [batch_size, seq_len, shape.n_embd]);
 
         for (offset, kernel) in self.kernels.iter().enumerate() {
             let shifted = causal_shift(x, offset);
@@ -357,7 +381,11 @@ impl ConvMixer {
         mixed
             .add_(&self.bias.broadcast_as([batch_size, seq_len, shape.n_embd]))
             .relu()
-            .mat_mul(&self.out_proj.broadcast_as([batch_size, shape.n_embd, shape.n_embd]))
+            .mat_mul(
+                &self
+                    .out_proj
+                    .broadcast_as([batch_size, shape.n_embd, shape.n_embd]),
+            )
             .to_concrete()
     }
 }
@@ -374,13 +402,21 @@ impl Mlp {
 
     fn forward(&self, x: &Tensor<3, f32>, batch_size: usize, shape: ModelShape) -> Tensor<3, f32> {
         let hidden = x
-            .mat_mul(&self.c_fc.broadcast_as([batch_size, shape.n_embd, shape.n_ff]))
+            .mat_mul(
+                &self
+                    .c_fc
+                    .broadcast_as([batch_size, shape.n_embd, shape.n_ff]),
+            )
             .add_(&self.c_fc_bias)
             .relu()
             .to_concrete();
 
         hidden
-            .mat_mul(&self.c_proj.broadcast_as([batch_size, shape.n_ff, shape.n_embd]))
+            .mat_mul(
+                &self
+                    .c_proj
+                    .broadcast_as([batch_size, shape.n_ff, shape.n_embd]),
+            )
             .add_(&self.c_proj_bias)
             .to_concrete()
     }
@@ -400,7 +436,11 @@ fn metadata_f32(vb: &VarBuilder, key: &str) -> fusor::Result<f32> {
         .map_err(|error| fusor::Error::msg(error.to_string()))
 }
 
-fn get_tensor1(vb: &mut VarBuilder, device: &Device, keys: &[&str]) -> fusor::Result<Tensor<1, f32>> {
+fn get_tensor1(
+    vb: &mut VarBuilder,
+    device: &Device,
+    keys: &[&str],
+) -> fusor::Result<Tensor<1, f32>> {
     for key in keys {
         if vb.contains_key(key) {
             return Ok(vb.get(key, device)?.dequantize());
@@ -412,7 +452,11 @@ fn get_tensor1(vb: &mut VarBuilder, device: &Device, keys: &[&str]) -> fusor::Re
     )))
 }
 
-fn get_tensor2(vb: &mut VarBuilder, device: &Device, keys: &[&str]) -> fusor::Result<Tensor<2, f32>> {
+fn get_tensor2(
+    vb: &mut VarBuilder,
+    device: &Device,
+    keys: &[&str],
+) -> fusor::Result<Tensor<2, f32>> {
     for key in keys {
         if vb.contains_key(key) {
             return Ok(vb.get(key, device)?.dequantize());

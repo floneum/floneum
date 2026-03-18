@@ -1,22 +1,26 @@
 mod config;
 mod data;
+mod interactive_model;
 mod model;
 
 use data::{
-    DatasetSplit, MidiTokenizer, SourceDataset, SourceFile, autoregressive_context,
-    bootstrap_dataset, load_dataset_split, position_indexes, windows_to_token_inputs,
-    windows_to_token_targets, write_tokens_to_midi_file,
+    DatasetSplit, SourceDataset, SourceFile, StrokeTokenizer, autoregressive_context,
+    position_indexes, synthetic_dataset_split, windows_to_token_inputs, windows_to_token_targets,
+    write_tokens_to_svg_file,
 };
-use fusor::{Device, Tensor, ToVec2, ToVec3};
+use fusor::{Device, Tensor, ToVec2, ToVec3, VarBuilder};
 use fusor_gguf::{
     BlockQ4_0, BlockQ8_0, GgmlType, GgufMetadata, GgufTensorMetadata, GgufValue, GgufVersion,
 };
+use fusor_train::{AdamW, AdamWSettings};
 use half::f16;
-use model::{AdamW, NamedTensor, NanoChatModel};
+use interactive_model::InteractiveNanoChatModel;
+use model::{NamedTensor, NanoChatModel};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use std::{
+    collections::{BTreeMap, BTreeSet},
     env,
-    fs::File,
+    fs::{self, File},
     io::{BufWriter, Write},
     path::{Path, PathBuf},
     time::Instant,
@@ -24,11 +28,15 @@ use std::{
 
 use crate::config::{RuntimeConfig, SaveQuantization};
 
-fn main() {
-    pollster::block_on(async {
+const COMPARISON_SEEDS: [u64; 12] = [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112];
+const DATASET_GALLERY_LIMIT: usize = 24;
+
+#[tokio::main]
+async fn main() {
+    {
         let args = Args::parse();
         let runtime = RuntimeConfig::load();
-        let tokenizer = MidiTokenizer::new();
+        let tokenizer = StrokeTokenizer::new();
 
         let device = if args.force_cpu {
             Device::cpu()
@@ -36,8 +44,16 @@ fn main() {
             Device::gpu().await.unwrap()
         };
 
-        let dataset_root = bootstrap_dataset(&runtime.dataset_cache_dir).await;
-        let datasets = load_dataset_split(&dataset_root, &tokenizer);
+        if args.infer {
+            run_inference(&device, &tokenizer, &runtime).await;
+            return;
+        }
+        if args.compare {
+            run_comparison_report(&device, &tokenizer, &runtime).await;
+            return;
+        }
+
+        let datasets = synthetic_dataset_split(&tokenizer, &runtime);
         let DatasetSplit {
             train: train_dataset,
             validation: validation_dataset,
@@ -45,8 +61,7 @@ fn main() {
         } = datasets;
         assert!(
             train_dataset.num_docs() > 0,
-            "NES-MDB training split is empty under {}",
-            dataset_root.display()
+            "synthetic stroke training split is empty"
         );
 
         let evaluation_dataset =
@@ -64,11 +79,20 @@ fn main() {
             runtime.block_size,
         );
         let sample_causal_mask = causal_mask_tensor(model.graph(), &device, 1, runtime.block_size);
-        let mut optimizer = AdamW::new(&device, &model, &runtime);
+        let mut optimizer = AdamW::new(
+            &device,
+            &model,
+            AdamWSettings::new(
+                runtime.learning_rate,
+                runtime.beta1,
+                runtime.beta2,
+                runtime.adam_eps,
+                runtime.weight_decay,
+            ),
+        );
 
         println!(
-            "dataset_root={} train_files={} valid_files={} test_files={} train_tokens={} valid_tokens={} test_tokens={} train_windows={} valid_windows={} vocab={} params={} max_file_tokens={}",
-            dataset_root.display(),
+            "task=synthetic-stroke-autocomplete train_examples={} valid_examples={} test_examples={} train_tokens={} valid_tokens={} test_tokens={} train_windows={} valid_windows={} vocab={} params={} max_file_tokens={}",
             train_dataset.num_docs(),
             validation_dataset.num_docs(),
             test_dataset.num_docs(),
@@ -85,61 +109,68 @@ fn main() {
                 .max(test_dataset.max_tokens_per_example()),
         );
 
-        for step in 0..runtime.train_steps {
-            let learning_rate = scheduled_learning_rate(step + 1, &runtime);
-            optimizer.set_learning_rate(learning_rate);
-            let batch = train_dataset.sample_batch(&mut rng, tokenizer.eot_token(), &runtime);
-            let input_values = windows_to_token_inputs(&batch.windows);
-            let target_values = windows_to_token_targets(&batch.windows);
-            let token_inputs: Tensor<2, u32> = Tensor::new(&device, &input_values);
-            let targets: Tensor<2, u32> = Tensor::new(&device, &target_values);
-            let logits = model.forward(&token_inputs, &train_position_inputs, &causal_mask);
-            let loss = masked_cross_entropy_autograd(
-                model.graph(),
-                &device,
-                &logits,
-                &targets,
-                &batch.masks,
-                batch.valid_tokens,
-                tokenizer.vocab_size(),
-            );
+        let steps_per_epoch = train_dataset.steps_per_epoch(runtime.block_size, runtime.batch_size);
+        let total_steps = runtime.epochs * steps_per_epoch;
+        println!(
+            "epochs={} steps_per_epoch={} total_steps={}",
+            runtime.epochs, steps_per_epoch, total_steps
+        );
 
-            let should_log = step % runtime.log_every == 0 || step + 1 == runtime.train_steps;
-            let can_materialize_metrics = !device.is_gpu();
-            let loss_value = if should_log && can_materialize_metrics {
-                Some(loss.raw().to_scalar().await.unwrap())
-            } else {
-                None
-            };
-            let gradients = loss.backward().unwrap();
-            model = optimizer.step(model, &gradients);
+        let mut global_step: usize = 0;
+        for epoch in 0..runtime.epochs {
+            let batches = train_dataset.epoch_batches(&mut rng, tokenizer.eot_token(), &runtime);
+            for batch in batches {
+                global_step += 1;
+                let learning_rate = scheduled_learning_rate(global_step, total_steps, &runtime);
+                optimizer.set_learning_rate(learning_rate);
 
-            if let Some(loss_value) = loss_value {
-                let train_bits_per_token = nats_to_bits(loss_value);
-                let validation_bits_per_token = evaluate_bits_per_token(
-                    &model,
+                let input_values = windows_to_token_inputs(&batch.windows);
+                let target_values = windows_to_token_targets(&batch.windows);
+                let token_inputs: Tensor<2, u32> = Tensor::new(&device, &input_values);
+                let targets: Tensor<2, u32> = Tensor::new(&device, &target_values);
+                let logits = model.forward(&token_inputs, &train_position_inputs, &causal_mask);
+                let loss = masked_cross_entropy_autograd(
+                    model.graph(),
                     &device,
-                    tokenizer.eot_token(),
-                    evaluation_dataset,
-                    &runtime,
-                )
-                .await;
-                println!(
-                    "step {:>4} | lr={learning_rate:.6} | loss={loss_value:.6} | train_bpt={train_bits_per_token:.4} | eval_bpt={validation_bits_per_token:.4}",
-                    step + 1
+                    &logits,
+                    &targets,
+                    &batch.masks,
+                    batch.valid_tokens,
+                    tokenizer.vocab_size(),
                 );
-            } else if should_log {
-                println!(
-                    "step {:>4} | lr={learning_rate:.6} | metrics skipped on gpu",
-                    step + 1
-                );
-            }
 
-            if runtime.save_every_steps > 0 && (step + 1) % runtime.save_every_steps == 0 {
-                let checkpoint_path = checkpoint_path(&runtime.gguf_path, step + 1);
-                let checkpoint_path = resolve_output_path(&checkpoint_path);
-                save_gguf(&model, &tokenizer, &runtime, &checkpoint_path).await;
-                println!("saved checkpoint: {}", checkpoint_path.display());
+                let is_last = global_step == total_steps;
+                let should_log = global_step % runtime.log_every == 0 || is_last;
+                let loss_value = if should_log {
+                    Some(loss.raw().to_scalar().await.unwrap())
+                } else {
+                    None
+                };
+                let gradients = loss.backward().unwrap();
+                model = optimizer.step(model, &gradients);
+
+                if let Some(loss_value) = loss_value {
+                    let train_bits_per_token = nats_to_bits(loss_value);
+                    let validation_bits_per_token = evaluate_bits_per_token(
+                        &model,
+                        &device,
+                        tokenizer.eot_token(),
+                        evaluation_dataset,
+                        &runtime,
+                    )
+                    .await;
+                    println!(
+                        "epoch {epoch} step {:>6}/{total_steps} | lr={learning_rate:.6} | loss={loss_value:.6} | train_bpt={train_bits_per_token:.4} | eval_bpt={validation_bits_per_token:.4}",
+                        global_step
+                    );
+                }
+
+                if runtime.save_every_steps > 0 && global_step % runtime.save_every_steps == 0 {
+                    let checkpoint_path = checkpoint_path(&runtime.gguf_path, global_step);
+                    let checkpoint_path = resolve_output_path(&checkpoint_path);
+                    save_gguf(&model, &tokenizer, &runtime, &checkpoint_path).await;
+                    println!("saved checkpoint: {}", checkpoint_path.display());
+                }
             }
         }
 
@@ -194,10 +225,13 @@ fn main() {
                 prompt_tokens.len().saturating_sub(1),
                 runtime.sample_tokens,
             );
-            let mut sample_tokens = prompt_tokens[1..].to_vec();
-            sample_tokens.extend_from_slice(&generated);
             let sample_output_path = resolve_output_path(&runtime.sample_output_path);
-            write_tokens_to_midi_file(&tokenizer, &sample_tokens, &sample_output_path);
+            write_tokens_to_svg_file(
+                &tokenizer,
+                &prompt_tokens[1..],
+                &generated,
+                &sample_output_path,
+            );
             println!("\n--- sample export ---");
             println!("source: {}", file.path());
             println!(
@@ -206,34 +240,44 @@ fn main() {
             );
             println!("expected: {}", tokenizer.describe_tokens(expected, 48));
             println!("generated: {}", tokenizer.describe_tokens(&generated, 48));
-            println!("wrote sample MIDI: {}", sample_output_path.display());
+            println!("wrote sample SVG: {}", sample_output_path.display());
         }
-    });
+    }
 }
 
 struct Args {
     force_cpu: bool,
+    infer: bool,
+    compare: bool,
 }
 
 impl Args {
     fn parse() -> Self {
         let mut force_cpu = false;
+        let mut infer = false;
+        let mut compare = false;
         let mut args = env::args().skip(1);
 
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--cpu" => force_cpu = true,
+                "--infer" => infer = true,
+                "--compare" => compare = true,
                 other => panic!("unknown argument: {other}"),
             }
         }
 
-        Self { force_cpu }
+        Self {
+            force_cpu,
+            infer,
+            compare,
+        }
     }
 }
 
 async fn save_gguf(
     model: &NanoChatModel,
-    tokenizer: &MidiTokenizer,
+    tokenizer: &StrokeTokenizer,
     runtime: &RuntimeConfig,
     path: &Path,
 ) {
@@ -312,7 +356,7 @@ async fn save_gguf(
         ),
         (
             String::from("general.name").into_boxed_str(),
-            GgufValue::String("fusor-nanochat-midi".into()),
+            GgufValue::String("fusor-nanochat-strokes".into()),
         ),
         (
             String::from("general.alignment").into_boxed_str(),
@@ -351,8 +395,8 @@ async fn save_gguf(
             GgufValue::U32(model.vocab_size() as u32),
         ),
         (
-            String::from("nanochat.train_steps").into_boxed_str(),
-            GgufValue::U32(runtime.train_steps.min(u32::MAX as usize) as u32),
+            String::from("nanochat.epochs").into_boxed_str(),
+            GgufValue::U32(runtime.epochs.min(u32::MAX as usize) as u32),
         ),
         (
             String::from("nanochat.learning_rate").into_boxed_str(),
@@ -364,7 +408,7 @@ async fn save_gguf(
         ),
         (
             String::from("nanochat.training_objective").into_boxed_str(),
-            GgufValue::String("autoregressive-midi".into()),
+            GgufValue::String("autoregressive-stroke-autocomplete".into()),
         ),
         (
             String::from("nanochat.eps").into_boxed_str(),
@@ -630,6 +674,7 @@ fn masked_cross_entropy_autograd(
     let target_values = pollster::block_on(targets.clone().as_slice())
         .unwrap()
         .to_vec2();
+
     let mut flat_targets = Vec::with_capacity(batch_size * block_size);
     for batch in 0..batch_size {
         for position in 0..block_size {
@@ -692,17 +737,17 @@ async fn evaluate_bits_per_token(
     nats_to_bits(total_nats / total_valid_tokens.max(1.0))
 }
 
-fn scheduled_learning_rate(step: usize, runtime: &RuntimeConfig) -> f32 {
-    if runtime.train_steps <= 1 {
+fn scheduled_learning_rate(step: usize, total_steps: usize, runtime: &RuntimeConfig) -> f32 {
+    if total_steps <= 1 {
         return runtime.learning_rate;
     }
 
-    let warmup_steps = runtime.warmup_steps.max(1).min(runtime.train_steps);
+    let warmup_steps = runtime.warmup_steps.max(1).min(total_steps);
     if step <= warmup_steps {
         return runtime.learning_rate * (step as f32 / warmup_steps as f32);
     }
 
-    let decay_steps = runtime.train_steps.saturating_sub(warmup_steps).max(1);
+    let decay_steps = total_steps.saturating_sub(warmup_steps).max(1);
     let progress = (step.saturating_sub(warmup_steps) as f32 / decay_steps as f32).clamp(0.0, 1.0);
     let cosine = 0.5 * (1.0 + (std::f32::consts::PI * progress).cos());
     runtime.min_learning_rate + cosine * (runtime.learning_rate - runtime.min_learning_rate)
@@ -734,7 +779,7 @@ async fn evaluate_continuation(
     device: &Device,
     position_inputs: &Tensor<2, u32>,
     causal_mask: &fusor::autograd::Tensor<3>,
-    tokenizer: &MidiTokenizer,
+    tokenizer: &StrokeTokenizer,
     dataset: &SourceDataset,
     runtime: &RuntimeConfig,
 ) -> PrefixMetrics {
@@ -810,7 +855,7 @@ async fn evaluate_continuation(
 }
 
 fn continuation_prompt_tokens(
-    tokenizer: &MidiTokenizer,
+    tokenizer: &StrokeTokenizer,
     file: &SourceFile,
     runtime: &RuntimeConfig,
 ) -> Vec<u32> {
@@ -851,4 +896,364 @@ fn preferred_eval_dataset<'a>(
 enum SamplingMode {
     Greedy,
     Sample,
+}
+
+async fn run_inference(device: &Device, tokenizer: &StrokeTokenizer, runtime: &RuntimeConfig) {
+    let model = load_interactive_model(device, tokenizer, runtime);
+    println!("generating {} tokens...", runtime.sample_tokens);
+    let generated = generate_interactive_sample(
+        &model,
+        device,
+        tokenizer,
+        runtime,
+        runtime.seed,
+        &[tokenizer.bos_token()],
+    )
+    .await;
+    let sample_output_path = resolve_output_path(&runtime.sample_output_path);
+    write_tokens_to_svg_file(tokenizer, &[], &generated, &sample_output_path);
+    println!(
+        "generated {} tokens: {}",
+        generated.len(),
+        tokenizer.describe_tokens(&generated, 80)
+    );
+    println!("wrote sample SVG: {}", sample_output_path.display());
+}
+
+async fn run_comparison_report(
+    device: &Device,
+    tokenizer: &StrokeTokenizer,
+    runtime: &RuntimeConfig,
+) {
+    let datasets = synthetic_dataset_split(tokenizer, runtime);
+    let train_dataset = datasets.train;
+    assert!(
+        train_dataset.num_docs() > 0,
+        "synthetic stroke training split is empty"
+    );
+
+    let model = load_interactive_model(device, tokenizer, runtime);
+    let report_dir = resolve_output_path(Path::new("examples/compare"));
+    fs::create_dir_all(&report_dir).unwrap_or_else(|error| {
+        panic!(
+            "failed to create comparison output directory {}: {error}",
+            report_dir.display()
+        )
+    });
+
+    let mut samples = Vec::new();
+    for seed in COMPARISON_SEEDS {
+        let generated = generate_interactive_sample(
+            &model,
+            device,
+            tokenizer,
+            runtime,
+            seed,
+            &[tokenizer.bos_token()],
+        )
+        .await;
+        let generated_name = format!("generated-{seed}.svg");
+        write_tokens_to_svg_file(
+            tokenizer,
+            &[],
+            &generated,
+            &report_dir.join(&generated_name),
+        );
+
+        let nearest = nearest_training_match(train_dataset.files(), &generated);
+        let match_name = format!("match-{seed}.svg");
+        write_tokens_to_svg_file(
+            tokenizer,
+            &[],
+            nearest.file.target_tokens(),
+            &report_dir.join(&match_name),
+        );
+
+        samples.push(ComparisonSample {
+            seed,
+            generated_name,
+            generated_tokens: tokenizer.describe_tokens(&generated, 80),
+            nearest_name: match_name,
+            nearest_path: nearest.file.path().to_string(),
+            nearest_shape: shape_name_from_path(nearest.file.path()).to_string(),
+            nearest_tokens: tokenizer.describe_tokens(nearest.file.target_tokens(), 80),
+            edit_distance: nearest.edit_distance,
+            similarity: similarity_score(
+                &generated,
+                nearest.file.target_tokens(),
+                nearest.edit_distance,
+            ),
+        });
+    }
+
+    let mut dataset_gallery = Vec::new();
+    for (index, file) in train_dataset
+        .files()
+        .iter()
+        .take(DATASET_GALLERY_LIMIT)
+        .enumerate()
+    {
+        let image_name = format!("train-{index:03}.svg");
+        write_tokens_to_svg_file(
+            tokenizer,
+            &[],
+            file.target_tokens(),
+            &report_dir.join(&image_name),
+        );
+        dataset_gallery.push(DatasetGalleryItem {
+            image_name,
+            path: file.path().to_string(),
+            shape: shape_name_from_path(file.path()).to_string(),
+            tokens: tokenizer.describe_tokens(file.target_tokens(), 80),
+        });
+    }
+
+    let report = comparison_report_html(train_dataset.num_docs(), &samples, &dataset_gallery);
+    let report_path = report_dir.join("index.html");
+    fs::write(&report_path, report).unwrap_or_else(|error| {
+        panic!(
+            "failed to write comparison report {}: {error}",
+            report_path.display()
+        )
+    });
+
+    let average_similarity =
+        samples.iter().map(|sample| sample.similarity).sum::<f32>() / samples.len().max(1) as f32;
+    let unique_sequences = samples
+        .iter()
+        .map(|sample| sample.generated_tokens.clone())
+        .collect::<BTreeSet<_>>()
+        .len();
+    println!(
+        "comparison summary: generated_samples={} unique_sequences={} avg_nearest_similarity={:.1}%",
+        samples.len(),
+        unique_sequences,
+        average_similarity * 100.0
+    );
+    for (shape, count) in nearest_shape_counts(&samples) {
+        println!("nearest_train_shape {shape}: {count}");
+    }
+    println!("wrote comparison report: {}", report_path.display());
+}
+
+fn load_interactive_model(
+    device: &Device,
+    tokenizer: &StrokeTokenizer,
+    runtime: &RuntimeConfig,
+) -> InteractiveNanoChatModel {
+    let gguf_path = resolve_output_path(&runtime.gguf_path);
+    println!("loading model from {}...", gguf_path.display());
+    let mut reader = std::io::BufReader::new(
+        File::open(&gguf_path)
+            .unwrap_or_else(|e| panic!("could not open {}: {e}", gguf_path.display())),
+    );
+    let mut vb = VarBuilder::from_gguf(&mut reader)
+        .unwrap_or_else(|e| panic!("could not parse GGUF {}: {e}", gguf_path.display()));
+    let loaded_tokenizer = StrokeTokenizer::from_var_builder(&vb)
+        .unwrap_or_else(|e| panic!("could not load tokenizer metadata: {e}"));
+    assert_eq!(
+        loaded_tokenizer.vocab_size(),
+        tokenizer.vocab_size(),
+        "checkpoint tokenizer vocab does not match runtime tokenizer"
+    );
+    InteractiveNanoChatModel::load(device, &mut vb)
+        .unwrap_or_else(|e| panic!("could not load model: {e}"))
+}
+
+async fn generate_interactive_sample(
+    model: &InteractiveNanoChatModel,
+    device: &Device,
+    tokenizer: &StrokeTokenizer,
+    runtime: &RuntimeConfig,
+    seed: u64,
+    prompt_tokens: &[u32],
+) -> Vec<u32> {
+    let block_size = model.block_size().min(runtime.block_size);
+    let position_values = position_indexes(1, block_size);
+    let position_inputs: Tensor<2, u32> = Tensor::new(device, &position_values);
+    let causal_mask = fusor::cache::AttentionMask::<f32>::causal(device, block_size);
+    let mut rng = StdRng::seed_from_u64(seed);
+    let mut tokens = prompt_tokens.to_vec();
+
+    for _ in 0..runtime.sample_tokens {
+        let (context, last_index) =
+            autoregressive_context(&tokens, tokenizer.eot_token(), block_size);
+        let token_inputs: Tensor<2, u32> = Tensor::new(device, &[context]);
+        let logits = model.forward(&token_inputs, &position_inputs, &causal_mask);
+        let logits_data = logits.as_slice().await.unwrap().to_vec3();
+        let next = sample_from_logits(
+            &mut rng,
+            &logits_data[0][last_index],
+            runtime.sample_temperature,
+            runtime.sample_top_k,
+        );
+        tokens.push(next);
+        if next == tokenizer.eot_token() {
+            break;
+        }
+    }
+
+    tokens[prompt_tokens.len()..]
+        .iter()
+        .copied()
+        .take_while(|&token| token != tokenizer.eot_token())
+        .collect()
+}
+
+struct ComparisonSample {
+    seed: u64,
+    generated_name: String,
+    generated_tokens: String,
+    nearest_name: String,
+    nearest_path: String,
+    nearest_shape: String,
+    nearest_tokens: String,
+    edit_distance: usize,
+    similarity: f32,
+}
+
+struct DatasetGalleryItem {
+    image_name: String,
+    path: String,
+    shape: String,
+    tokens: String,
+}
+
+struct TrainingMatch<'a> {
+    file: &'a SourceFile,
+    edit_distance: usize,
+}
+
+fn nearest_training_match<'a>(files: &'a [SourceFile], generated: &[u32]) -> TrainingMatch<'a> {
+    files
+        .iter()
+        .map(|file| TrainingMatch {
+            file,
+            edit_distance: token_edit_distance(generated, file.target_tokens()),
+        })
+        .min_by(|left, right| {
+            left.edit_distance
+                .cmp(&right.edit_distance)
+                .then_with(|| {
+                    left.file
+                        .target_tokens()
+                        .len()
+                        .cmp(&right.file.target_tokens().len())
+                })
+                .then_with(|| left.file.path().cmp(right.file.path()))
+        })
+        .unwrap()
+}
+
+fn token_edit_distance(left: &[u32], right: &[u32]) -> usize {
+    let mut previous: Vec<usize> = (0..=right.len()).collect();
+    let mut current = vec![0; right.len() + 1];
+
+    for (i, &left_token) in left.iter().enumerate() {
+        current[0] = i + 1;
+        for (j, &right_token) in right.iter().enumerate() {
+            let substitution_cost = usize::from(left_token != right_token);
+            current[j + 1] = (previous[j + 1] + 1)
+                .min(current[j] + 1)
+                .min(previous[j] + substitution_cost);
+        }
+        std::mem::swap(&mut previous, &mut current);
+    }
+
+    previous[right.len()]
+}
+
+fn similarity_score(generated: &[u32], target: &[u32], edit_distance: usize) -> f32 {
+    let scale = generated.len().max(target.len()).max(1) as f32;
+    1.0 - (edit_distance as f32 / scale)
+}
+
+fn shape_name_from_path(path: &str) -> &str {
+    let filename = path.rsplit('/').next().unwrap_or(path);
+    let stem = filename.strip_suffix(".stroke").unwrap_or(filename);
+    stem.rsplit_once('-')
+        .map(|(shape, _)| shape)
+        .unwrap_or(stem)
+}
+
+fn nearest_shape_counts(samples: &[ComparisonSample]) -> BTreeMap<&str, usize> {
+    let mut counts = BTreeMap::new();
+    for sample in samples {
+        *counts.entry(sample.nearest_shape.as_str()).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn comparison_report_html(
+    train_examples: usize,
+    samples: &[ComparisonSample],
+    dataset_gallery: &[DatasetGalleryItem],
+) -> String {
+    let unique_sequences = samples
+        .iter()
+        .map(|sample| sample.generated_tokens.as_str())
+        .collect::<BTreeSet<_>>()
+        .len();
+    let average_similarity =
+        samples.iter().map(|sample| sample.similarity).sum::<f32>() / samples.len().max(1) as f32;
+    let nearest_shapes = nearest_shape_counts(samples)
+        .into_iter()
+        .map(|(shape, count)| {
+            format!(
+                "<li><strong>{}</strong>: {} nearest matches</li>",
+                html_escape(shape),
+                count
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    let sample_cards = samples
+        .iter()
+        .map(|sample| {
+            format!(
+                "<article class=\"compare-card\"><div class=\"compare-head\"><h2>Seed {seed}</h2><p>Nearest training stroke: <strong>{shape}</strong> from <code>{path}</code></p></div><div class=\"pair\"><figure><img src=\"{generated_name}\" alt=\"generated seed {seed}\"><figcaption>Generated</figcaption></figure><figure><img src=\"{nearest_name}\" alt=\"nearest training example for seed {seed}\"><figcaption>Nearest training sample</figcaption></figure></div><dl class=\"metrics\"><div><dt>Edit distance</dt><dd>{distance}</dd></div><div><dt>Similarity</dt><dd>{similarity:.1}%</dd></div></dl><p><strong>Generated tokens</strong><br><code>{generated_tokens}</code></p><p><strong>Training tokens</strong><br><code>{nearest_tokens}</code></p></article>",
+                seed = sample.seed,
+                shape = html_escape(&sample.nearest_shape),
+                path = html_escape(&sample.nearest_path),
+                generated_name = html_escape(&sample.generated_name),
+                nearest_name = html_escape(&sample.nearest_name),
+                distance = sample.edit_distance,
+                similarity = sample.similarity * 100.0,
+                generated_tokens = html_escape(&sample.generated_tokens),
+                nearest_tokens = html_escape(&sample.nearest_tokens),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    let gallery_cards = dataset_gallery
+        .iter()
+        .map(|item| {
+            format!(
+                "<article class=\"gallery-card\"><img src=\"{image_name}\" alt=\"{shape} training sample\"><h3>{shape}</h3><p><code>{path}</code></p><p><code>{tokens}</code></p></article>",
+                image_name = html_escape(&item.image_name),
+                shape = html_escape(&item.shape),
+                path = html_escape(&item.path),
+                tokens = html_escape(&item.tokens),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
+
+    format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Nanochat Comparison Report</title><style>:root{{--bg:#f5efe3;--panel:#fffaf0;--ink:#2f261c;--muted:#6f6558;--line:#deceb2;--accent:#d96c42;--accent-soft:#f1c9b8;}}body{{margin:0;font-family:\"Iowan Old Style\",\"Palatino Linotype\",serif;background:radial-gradient(circle at top,#fdf7ec 0%,var(--bg) 58%,#eadcc4 100%);color:var(--ink);}}main{{max-width:1320px;margin:0 auto;padding:32px 20px 56px;}}h1,h2,h3,p,ul{{margin:0;}}header{{padding:28px;border:1px solid var(--line);border-radius:24px;background:rgba(255,250,240,0.92);box-shadow:0 20px 60px rgba(83,58,26,0.08);}}header p{{margin-top:10px;color:var(--muted);font-size:18px;line-height:1.45;}}.stats{{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:18px;}}.stat{{padding:14px 16px;border-radius:16px;background:#fffdf7;border:1px solid var(--line);}}.stat strong{{display:block;font-size:28px;color:var(--accent);}}section{{margin-top:28px;}}.shape-list{{margin-top:14px;padding-left:20px;color:var(--muted);}}.compare-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:18px;}}.compare-card,.gallery-card{{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:16px;box-shadow:0 14px 36px rgba(83,58,26,0.08);}}.compare-head h2{{font-size:24px;}}.compare-head p{{margin-top:6px;color:var(--muted);line-height:1.4;}}.pair{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:16px;}}figure{{margin:0;}}img{{display:block;width:100%;aspect-ratio:1;border-radius:14px;background:white;border:1px solid #eadcc4;}}figcaption{{margin-top:8px;font-size:14px;color:var(--muted);text-align:center;}}.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:16px 0;}}.metrics div{{padding:10px 12px;border-radius:14px;background:#fffdf7;border:1px solid var(--line);}}dt{{font-size:13px;color:var(--muted);}}dd{{margin:6px 0 0;font-size:22px;font-weight:700;color:var(--accent);}}code{{font-family:\"SFMono-Regular\",Menlo,Consolas,monospace;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word;}}.gallery-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;}}.gallery-card h3{{margin-top:10px;font-size:20px;}}.gallery-card p{{margin-top:8px;color:var(--muted);line-height:1.4;}}@media (max-width: 720px){{.pair{{grid-template-columns:1fr;}}}}</style></head><body><main><header><h1>Nanochat vs Training Data</h1><p>Comparison report for the current single-stroke checkpoint. Each model sample was generated from <code>&lt;bos&gt;</code> only, then matched against the nearest training example from the current seeded train split using token edit distance.</p><div class=\"stats\"><div class=\"stat\"><strong>{train_examples}</strong>train examples</div><div class=\"stat\"><strong>{sample_count}</strong>generated samples</div><div class=\"stat\"><strong>{unique_sequences}</strong>unique generated sequences</div><div class=\"stat\"><strong>{average_similarity:.1}%</strong>avg nearest similarity</div></div><ul class=\"shape-list\">{nearest_shapes}</ul></header><section><div class=\"compare-grid\">{sample_cards}</div></section><section><header><h2>Training Gallery</h2><p>Representative examples from the current training split, rendered with the same SVG exporter as the generated samples.</p></header><div class=\"gallery-grid\">{gallery_cards}</div></section></main></body></html>",
+        train_examples = train_examples,
+        sample_count = samples.len(),
+        unique_sequences = unique_sequences,
+        average_similarity = average_similarity * 100.0,
+        nearest_shapes = nearest_shapes,
+        sample_cards = sample_cards,
+        gallery_cards = gallery_cards,
+    )
+}
+
+fn html_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('\"', "&quot;")
 }

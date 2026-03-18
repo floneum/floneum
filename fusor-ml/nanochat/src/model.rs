@@ -2,6 +2,7 @@ use fusor::{
     Device, Tensor as RawTensor, ToVec1, ToVec2,
     autograd::{Gradients, Graph, Tensor},
 };
+use fusor_train::{AdamMoments, AdamWModel, AdamWSettings, adamw_update};
 use rand::{Rng, rngs::StdRng};
 use std::{io::Write, time::Instant};
 
@@ -37,9 +38,7 @@ pub struct NanoChatModel {
     lm_head: Tensor<2>,
 }
 
-pub struct AdamW {
-    step: usize,
-    settings: AdamWSettings,
+pub struct NanoChatAdamState {
     wte: AdamMoments<2>,
     wpe: AdamMoments<2>,
     blocks: Vec<AdamBlockState>,
@@ -119,20 +118,6 @@ struct AdamMlpState {
     c_fc_bias: AdamMoments<1>,
     c_proj: AdamMoments<2>,
     c_proj_bias: AdamMoments<1>,
-}
-
-struct AdamMoments<const R: usize> {
-    m: RawTensor<R, f32>,
-    v: RawTensor<R, f32>,
-}
-
-#[derive(Clone, Copy)]
-struct AdamWSettings {
-    learning_rate: f32,
-    beta1: f32,
-    beta2: f32,
-    adam_eps: f32,
-    weight_decay: f32,
 }
 
 impl NanoChatModel {
@@ -304,17 +289,11 @@ impl NanoChatModel {
     }
 }
 
-impl AdamW {
-    pub fn new(device: &Device, model: &NanoChatModel, config: &RuntimeConfig) -> Self {
-        Self {
-            step: 0,
-            settings: AdamWSettings {
-                learning_rate: config.learning_rate,
-                beta1: config.beta1,
-                beta2: config.beta2,
-                adam_eps: config.adam_eps,
-                weight_decay: config.weight_decay,
-            },
+impl AdamWModel for NanoChatModel {
+    type State = NanoChatAdamState;
+
+    fn adamw_state(device: &Device, model: &Self) -> Self::State {
+        NanoChatAdamState {
             wte: AdamMoments::zeros_like(device, &model.wte),
             wpe: AdamMoments::zeros_like(device, &model.wpe),
             blocks: model
@@ -328,11 +307,13 @@ impl AdamW {
         }
     }
 
-    pub fn step(&mut self, model: NanoChatModel, gradients: &Gradients) -> NanoChatModel {
-        self.step += 1;
-        let step = self.step;
-        let settings = self.settings;
-
+    fn adamw_step(
+        self,
+        state: &mut Self::State,
+        gradients: &Gradients,
+        step: usize,
+        settings: AdamWSettings,
+    ) -> Self {
         let NanoChatModel {
             graph,
             shape,
@@ -344,12 +325,12 @@ impl AdamW {
             ln_f_weight,
             ln_f_bias,
             lm_head,
-        } = model;
+        } = self;
 
         let blocks = blocks
             .into_iter()
-            .zip(self.blocks.iter_mut())
-            .map(|(block, state)| state.step(block, gradients, step, settings))
+            .zip(state.blocks.iter_mut())
+            .map(|(block, block_state)| block_state.step(block, gradients, step, settings))
             .collect();
 
         NanoChatModel {
@@ -357,23 +338,19 @@ impl AdamW {
             shape,
             attention_period,
             vocab_size,
-            wte: adamw_update(&wte, &mut self.wte, gradients, step, settings),
-            wpe: adamw_update(&wpe, &mut self.wpe, gradients, step, settings),
+            wte: adamw_update(&wte, &mut state.wte, gradients, step, settings),
+            wpe: adamw_update(&wpe, &mut state.wpe, gradients, step, settings),
             blocks,
             ln_f_weight: adamw_update(
                 &ln_f_weight,
-                &mut self.ln_f_weight,
+                &mut state.ln_f_weight,
                 gradients,
                 step,
                 settings,
             ),
-            ln_f_bias: adamw_update(&ln_f_bias, &mut self.ln_f_bias, gradients, step, settings),
-            lm_head: adamw_update(&lm_head, &mut self.lm_head, gradients, step, settings),
+            ln_f_bias: adamw_update(&ln_f_bias, &mut state.ln_f_bias, gradients, step, settings),
+            lm_head: adamw_update(&lm_head, &mut state.lm_head, gradients, step, settings),
         }
-    }
-
-    pub fn set_learning_rate(&mut self, learning_rate: f32) {
-        self.settings.learning_rate = learning_rate;
     }
 }
 
@@ -900,16 +877,6 @@ impl AdamMlpState {
     }
 }
 
-impl<const R: usize> AdamMoments<R> {
-    fn zeros_like(device: &Device, parameter: &Tensor<R>) -> Self {
-        let shape = parameter.shape();
-        Self {
-            m: RawTensor::zeros(device, shape),
-            v: RawTensor::zeros(device, shape),
-        }
-    }
-}
-
 fn random_matrix(
     graph: &Graph,
     device: &Device,
@@ -930,37 +897,6 @@ fn ones(graph: &Graph, device: &Device, len: usize) -> Tensor<1> {
 
 fn zeros(graph: &Graph, device: &Device, len: usize) -> Tensor<1> {
     Tensor::new(graph, device, &vec![0.0; len])
-}
-
-fn adamw_update<const R: usize>(
-    parameter: &Tensor<R>,
-    moments: &mut AdamMoments<R>,
-    gradients: &Gradients,
-    step: usize,
-    settings: AdamWSettings,
-) -> Tensor<R> {
-    let gradient = gradients.get(parameter).unwrap();
-    let next_m = ((moments.m.clone() * settings.beta1)
-        + (gradient.clone() * (1.0 - settings.beta1)))
-        .to_concrete();
-    let next_v = ((moments.v.clone() * settings.beta2)
-        + (gradient.sqr().to_concrete() * (1.0 - settings.beta2)))
-        .to_concrete();
-
-    let bias_correction1 = 1.0 - settings.beta1.powi(step as i32);
-    let bias_correction2 = 1.0 - settings.beta2.powi(step as i32);
-    let m_hat = next_m.clone().div_scalar(bias_correction1).to_concrete();
-    let v_hat = next_v.clone().div_scalar(bias_correction2).to_concrete();
-    let adam_update =
-        (m_hat / (v_hat.add_scalar(settings.adam_eps).sqrt().to_concrete())).to_concrete();
-    let weight_decay = (parameter.raw().clone() * settings.weight_decay).to_concrete();
-    let next_parameter = (parameter.raw().clone()
-        - ((adam_update + weight_decay).to_concrete() * settings.learning_rate))
-        .to_concrete();
-
-    moments.m = next_m;
-    moments.v = next_v;
-    Tensor::from_raw(&parameter.graph(), next_parameter)
 }
 
 fn tensor_len<const R: usize>(tensor: &Tensor<R>) -> usize {

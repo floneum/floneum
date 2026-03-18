@@ -866,6 +866,14 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         ))
     }
 
+    /// Synchronously dispatch and wait for GPU completion using device.poll().
+    /// More efficient than the async version for benchmarking since it avoids
+    /// the on_submitted_work_done callback overhead.
+    pub fn materialize_sync(&self) {
+        self.data.materialize();
+        self.device().poll_wait();
+    }
+
     #[track_caller]
     pub fn materialize(&self) -> impl Future<Output = ()> + 'static {
         #[allow(unused)]
@@ -979,6 +987,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
             self.shape(),
             other.shape(),
             parameters,
+            &self.data.device,
         );
 
         Self::from_parts(self.data.mat_mul(operation))

@@ -7,12 +7,10 @@ publish = false
 [dependencies]
 bytemuck = "1.23.2"
 dotenvy = "0.15.7"
-flate2 = "1.1.2"
 fusor.workspace = true
 fusor-gguf.workspace = true
+fusor-train.workspace = true
 half = "2.7.1"
-midly = "0.5.3"
 pollster = "0.4.0"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 rand.workspace = true
-reqwest = "0.12.15"
-tar = "0.4.44"

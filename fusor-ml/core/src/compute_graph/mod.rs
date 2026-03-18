@@ -15,19 +15,11 @@ mod visualize;
 
 use crate::{
     DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, QMatrix,
-    ReduceOperation,
-    composite::where_cond::WhereCondOperation,
-    compute_graph::resolve::ResolverResult,
-    dequantize::DequantizeOperation,
-    index_select::IndexSelectOperation,
-    map_layout::MapLayoutOperation,
-    mir::operation::Operation,
-    nary_wise::NaryOperation,
-    quantized::matmul::QMatMulOperation,
-    resize::ResizeOperation,
-    slice_assign::SliceAssignOperation,
-    tensor::TensorData,
-    visit_tiled::MaybeQData,
+    ReduceOperation, composite::where_cond::WhereCondOperation,
+    compute_graph::resolve::ResolverResult, dequantize::DequantizeOperation,
+    index_select::IndexSelectOperation, map_layout::MapLayoutOperation, mir::operation::Operation,
+    nary_wise::NaryOperation, quantized::matmul::QMatMulOperation, resize::ResizeOperation,
+    slice_assign::SliceAssignOperation, tensor::TensorData, visit_tiled::MaybeQData,
 };
 
 #[derive(Clone)]
@@ -130,18 +122,6 @@ impl ComputeGraph {
         device.wgpu_queue().submit(Some(encoder.finish()));
         // Reset the written flag on all buffers
         device.reset_initialized_buffers();
-
-        // Flush the cache to a file
-        if let (Some(pipeline_cache), Some(cache_file)) =
-            (device.wgpu_cache(), device.wgpu_cache_file())
-        {
-            let data = pipeline_cache.get_data();
-            if let Some(data) = data {
-                let temp_file = cache_file.with_extension("temp");
-                std::fs::write(&temp_file, &data).unwrap();
-                std::fs::rename(&temp_file, cache_file).unwrap();
-            }
-        }
 
         data
     }
