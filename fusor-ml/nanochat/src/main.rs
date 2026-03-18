@@ -4,11 +4,11 @@ mod interactive_model;
 mod model;
 
 use data::{
-    DatasetSplit, SourceDataset, SourceFile, StrokeTokenizer, autoregressive_context,
-    position_indexes, synthetic_dataset_split, windows_to_token_inputs, windows_to_token_targets,
-    write_tokens_to_svg_file,
+    CanvasStateIndexes, CanvasStateSpec, DatasetSplit, SourceDataset, SourceFile, StrokeTokenizer,
+    autoregressive_context, canvas_state_indexes, load_dataset_source, position_indexes,
+    windows_to_token_inputs, windows_to_token_targets, write_tokens_to_svg_file,
 };
-use fusor::{Device, Tensor, ToVec2, ToVec3, VarBuilder};
+use fusor::{Device, Tensor, ToVec3, VarBuilder};
 use fusor_gguf::{
     BlockQ4_0, BlockQ8_0, GgmlType, GgufMetadata, GgufTensorMetadata, GgufValue, GgufVersion,
 };
@@ -36,7 +36,9 @@ async fn main() {
     {
         let args = Args::parse();
         let runtime = RuntimeConfig::load();
-        let tokenizer = StrokeTokenizer::new();
+        let dataset_source = load_dataset_source(&runtime);
+        let dataset_label = dataset_source.label.clone();
+        let tokenizer = dataset_source.tokenizer.clone();
 
         let device = if args.force_cpu {
             Device::cpu()
@@ -49,25 +51,32 @@ async fn main() {
             return;
         }
         if args.compare {
-            run_comparison_report(&device, &tokenizer, &runtime).await;
+            run_comparison_report(&device, &tokenizer, &runtime, dataset_source.split).await;
             return;
         }
 
-        let datasets = synthetic_dataset_split(&tokenizer, &runtime);
         let DatasetSplit {
             train: train_dataset,
             validation: validation_dataset,
             test: test_dataset,
-        } = datasets;
+        } = dataset_source.split;
+        assert!(train_dataset.num_docs() > 0, "training split is empty");
+
+        let max_tokens_per_example = train_dataset
+            .max_tokens_per_example()
+            .max(validation_dataset.max_tokens_per_example())
+            .max(test_dataset.max_tokens_per_example());
         assert!(
-            train_dataset.num_docs() > 0,
-            "synthetic stroke training split is empty"
+            max_tokens_per_example <= runtime.block_size + 1,
+            "block size {} is too small for the current dataset; need at least {}",
+            runtime.block_size,
+            max_tokens_per_example.saturating_sub(1)
         );
 
         let evaluation_dataset =
             preferred_eval_dataset(&validation_dataset, &test_dataset, &train_dataset);
         let mut rng = StdRng::seed_from_u64(runtime.seed);
-        let mut model = NanoChatModel::new(&device, &mut rng, tokenizer.vocab_size(), &runtime);
+        let mut model = NanoChatModel::new(&device, &mut rng, &tokenizer, &runtime);
         let mut optimizer = AdamW::new(
             &device,
             &model,
@@ -81,7 +90,8 @@ async fn main() {
         );
 
         println!(
-            "task=synthetic-stroke-autocomplete train_examples={} valid_examples={} test_examples={} train_tokens={} valid_tokens={} test_tokens={} train_windows={} valid_windows={} vocab={} params={} max_file_tokens={}",
+            "task={} train_examples={} valid_examples={} test_examples={} train_tokens={} valid_tokens={} test_tokens={} train_windows={} valid_windows={} vocab={} params={} max_file_tokens={}",
+            dataset_label,
             train_dataset.num_docs(),
             validation_dataset.num_docs(),
             test_dataset.num_docs(),
@@ -92,10 +102,7 @@ async fn main() {
             validation_dataset.num_training_windows(runtime.block_size),
             tokenizer.vocab_size(),
             model.num_parameters(),
-            train_dataset
-                .max_tokens_per_example()
-                .max(validation_dataset.max_tokens_per_example())
-                .max(test_dataset.max_tokens_per_example()),
+            max_tokens_per_example,
         );
 
         let steps_per_epoch = train_dataset.steps_per_epoch(runtime.block_size, runtime.batch_size);
@@ -117,8 +124,14 @@ async fn main() {
                 let input_values = windows_to_token_inputs(&batch.windows);
                 let target_values = windows_to_token_targets(&batch.windows);
                 let token_inputs: Tensor<2, u32> = Tensor::new(&device, &input_values);
-                let targets: Tensor<2, u32> = Tensor::new(&device, &target_values);
-                let position_values = position_indexes(batch.windows.len().max(1), runtime.block_size);
+                let (cursor_x_inputs, cursor_y_inputs, pen_state_inputs) = canvas_state_tensors(
+                    &device,
+                    &tokenizer,
+                    &input_values,
+                    model.canvas_state_spec(),
+                );
+                let position_values =
+                    position_indexes(batch.windows.len().max(1), runtime.block_size);
                 let position_inputs: Tensor<2, u32> = Tensor::new(&device, &position_values);
                 let causal_mask = causal_mask_tensor(
                     model.graph(),
@@ -126,15 +139,22 @@ async fn main() {
                     batch.windows.len().max(1),
                     runtime.block_size,
                 );
-                let logits = model.forward(&token_inputs, &position_inputs, &causal_mask);
-                let loss = masked_cross_entropy_autograd(
+                let logits = model.forward(
+                    &token_inputs,
+                    &position_inputs,
+                    &cursor_x_inputs,
+                    &cursor_y_inputs,
+                    &pen_state_inputs,
+                    &causal_mask,
+                );
+                let loss = structured_action_loss_autograd(
                     model.graph(),
                     &device,
+                    &tokenizer,
                     &logits,
-                    &targets,
+                    &target_values,
                     &batch.masks,
                     batch.valid_tokens,
-                    tokenizer.vocab_size(),
                 );
 
                 let is_last = global_step == total_steps;
@@ -149,17 +169,17 @@ async fn main() {
                 model = optimizer.step(model, &gradients);
 
                 if let Some(loss_value) = loss_value {
-                    let train_bits_per_token = nats_to_bits(loss_value);
-                    let validation_bits_per_token = evaluate_bits_per_token(
+                    let validation_loss = evaluate_autoregressive_loss(
                         &model,
                         &device,
+                        &tokenizer,
                         tokenizer.eot_token(),
                         evaluation_dataset,
                         &runtime,
                     )
                     .await;
                     println!(
-                        "epoch {}/{} batch {:>3}/{} | global {:>6}/{} | lr={learning_rate:.6} | loss={loss_value:.6} | train_bpt={train_bits_per_token:.4} | eval_bpt={validation_bits_per_token:.4}",
+                        "epoch {}/{} batch {:>3}/{} | global {:>6}/{} | lr={learning_rate:.6} | train_loss={loss_value:.6} | eval_loss={validation_loss:.6}",
                         epoch + 1,
                         runtime.epochs,
                         batch_index + 1,
@@ -250,6 +270,7 @@ async fn main() {
                     generate_completion(
                         &model,
                         &device,
+                        &tokenizer,
                         &sample_position_inputs,
                         &sample_causal_mask,
                         &runtime,
@@ -445,6 +466,10 @@ async fn save_gguf(
             GgufValue::U32(model.n_head() as u32),
         ),
         (
+            String::from("nanochat.kv_head_count").into_boxed_str(),
+            GgufValue::U32(model.n_kv_head() as u32),
+        ),
+        (
             String::from("nanochat.block_count").into_boxed_str(),
             GgufValue::U32(model.n_layer() as u32),
         ),
@@ -455,6 +480,22 @@ async fn save_gguf(
         (
             String::from("nanochat.vocab_size").into_boxed_str(),
             GgufValue::U32(model.vocab_size() as u32),
+        ),
+        (
+            String::from("nanochat.use_rope").into_boxed_str(),
+            GgufValue::Bool(model.use_rope()),
+        ),
+        (
+            String::from("nanochat.rope_theta").into_boxed_str(),
+            GgufValue::F32(model.rope_theta()),
+        ),
+        (
+            String::from("nanochat.use_extra_norms").into_boxed_str(),
+            GgufValue::Bool(model.use_extra_norms()),
+        ),
+        (
+            String::from("nanochat.use_canvas_state_embeddings").into_boxed_str(),
+            GgufValue::Bool(model.canvas_state_spec().is_some()),
         ),
         (
             String::from("nanochat.epochs").into_boxed_str(),
@@ -481,6 +522,16 @@ async fn save_gguf(
             GgufValue::String(runtime.save_quantization.as_str().into()),
         ),
     ];
+    if let Some(spec) = model.canvas_state_spec() {
+        metadata.push((
+            String::from("nanochat.canvas_coordinate_vocab").into_boxed_str(),
+            GgufValue::U32(spec.coordinate_vocab_size as u32),
+        ));
+        metadata.push((
+            String::from("nanochat.canvas_coordinate_offset").into_boxed_str(),
+            GgufValue::U32(spec.coordinate_offset.max(0) as u32),
+        ));
+    }
     metadata.extend(
         tokenizer
             .gguf_metadata()
@@ -624,9 +675,27 @@ fn resolve_output_path(path: &Path) -> PathBuf {
     }
 }
 
+fn canvas_state_tensors(
+    device: &Device,
+    tokenizer: &StrokeTokenizer,
+    token_windows: &[Vec<u32>],
+    spec: Option<CanvasStateSpec>,
+) -> (Tensor<2, u32>, Tensor<2, u32>, Tensor<2, u32>) {
+    let seq_len = token_windows.first().map_or(0, Vec::len);
+    let indexes = spec
+        .map(|spec| canvas_state_indexes(tokenizer, token_windows, spec))
+        .unwrap_or_else(|| CanvasStateIndexes::zeros(token_windows.len(), seq_len));
+    (
+        Tensor::new(device, &indexes.cursor_x),
+        Tensor::new(device, &indexes.cursor_y),
+        Tensor::new(device, &indexes.pen_state),
+    )
+}
+
 async fn generate_completion(
     model: &NanoChatModel,
     device: &Device,
+    tokenizer: &StrokeTokenizer,
     position_inputs: &Tensor<2, u32>,
     causal_mask: &fusor::autograd::Tensor<3>,
     runtime: &RuntimeConfig,
@@ -639,18 +708,65 @@ async fn generate_completion(
 
     for _ in 0..runtime.sample_tokens {
         let (context, last_index) = autoregressive_context(&tokens, stop_token, runtime.block_size);
-        let token_inputs: Tensor<2, u32> = Tensor::new(device, &[context]);
-        let logits = model.forward(&token_inputs, position_inputs, causal_mask);
-        let logits = logits.raw().clone().as_slice().await.unwrap().to_vec3();
-        let next = match mode {
-            SamplingMode::Greedy => argmax_from_logits(&logits[0][last_index]),
-            SamplingMode::Sample => sample_from_logits(
-                rng,
-                &logits[0][last_index],
-                runtime.sample_temperature,
-                runtime.sample_top_k,
-            ),
-        };
+        let token_inputs: Tensor<2, u32> = Tensor::new(device, std::slice::from_ref(&context));
+        let (cursor_x_inputs, cursor_y_inputs, pen_state_inputs) = canvas_state_tensors(
+            device,
+            tokenizer,
+            std::slice::from_ref(&context),
+            model.canvas_state_spec(),
+        );
+        let logits = model.forward(
+            &token_inputs,
+            position_inputs,
+            &cursor_x_inputs,
+            &cursor_y_inputs,
+            &pen_state_inputs,
+            causal_mask,
+        );
+        let mode_logits: Vec<Vec<Vec<f32>>> = logits
+            .mode
+            .raw()
+            .clone()
+            .as_slice()
+            .await
+            .unwrap()
+            .to_vec3();
+        let direction_logits: Vec<Vec<Vec<f32>>> = logits
+            .direction
+            .raw()
+            .clone()
+            .as_slice()
+            .await
+            .unwrap()
+            .to_vec3();
+        let ordinal_logits: Vec<Vec<Vec<f32>>> = logits
+            .length_ordinal
+            .raw()
+            .clone()
+            .as_slice()
+            .await
+            .unwrap()
+            .to_vec3();
+        let scalar_logits: Vec<Vec<Vec<f32>>> = logits
+            .length_scalar
+            .raw()
+            .clone()
+            .as_slice()
+            .await
+            .unwrap()
+            .to_vec3();
+        let next = decode_next_action_token(
+            tokenizer,
+            &context[..=last_index],
+            &mode_logits[0][last_index],
+            &direction_logits[0][last_index],
+            &ordinal_logits[0][last_index],
+            scalar_logits[0][last_index][0],
+            runtime.sample_temperature,
+            runtime.sample_top_k,
+            rng,
+            mode,
+        );
         tokens.push(next);
         if next == stop_token {
             break;
@@ -702,6 +818,79 @@ fn sample_from_logits(rng: &mut StdRng, logits: &[f32], temperature: f32, top_k:
     argmax_from_logits(logits)
 }
 
+fn decode_next_action_token(
+    tokenizer: &StrokeTokenizer,
+    context: &[u32],
+    mode_logits: &[f32],
+    direction_logits: &[f32],
+    ordinal_logits: &[f32],
+    scalar_logit: f32,
+    temperature: f32,
+    top_k: usize,
+    rng: &mut StdRng,
+    sampling: SamplingMode,
+) -> u32 {
+    let mode_index = match sampling {
+        SamplingMode::Greedy => argmax_from_logits(mode_logits),
+        SamplingMode::Sample => sample_from_logits(rng, mode_logits, temperature, top_k),
+    };
+    if mode_index >= 2 {
+        return tokenizer.eot_token();
+    }
+
+    let cursor = tokenizer.cursor_after_tokens(context);
+    let mut filtered_direction_logits = direction_logits.to_vec();
+    for (direction_index, logit) in filtered_direction_logits.iter_mut().enumerate() {
+        if tokenizer.legal_count_limit(cursor, direction_index as u32) == 0 {
+            *logit = f32::NEG_INFINITY;
+        }
+    }
+    if !filtered_direction_logits.iter().any(|logit| logit.is_finite()) {
+        return tokenizer.eot_token();
+    }
+
+    let direction_index = match sampling {
+        SamplingMode::Greedy => argmax_from_logits(&filtered_direction_logits),
+        SamplingMode::Sample => {
+            sample_from_logits(rng, &filtered_direction_logits, temperature, top_k)
+        }
+    };
+    let legal_limit = tokenizer.legal_count_limit(cursor, direction_index);
+    if legal_limit == 0 {
+        return tokenizer.eot_token();
+    }
+
+    let ordinal_expected = if ordinal_logits.is_empty() {
+        1.0
+    } else {
+        let ordinal_probs = ordinal_logits
+            .iter()
+            .map(|logit| sigmoid_f32(*logit))
+            .collect::<Vec<_>>();
+        tokenizer.expected_count_from_ordinal(&ordinal_probs)
+    };
+    let ordinal_normalized = if tokenizer.max_count() <= 1 {
+        0.0
+    } else {
+        ((ordinal_expected - 1.0) / (tokenizer.max_count() - 1) as f32).clamp(0.0, 1.0)
+    };
+    let scalar_normalized = sigmoid_f32(scalar_logit);
+    let combined_normalized = if ordinal_logits.is_empty() {
+        scalar_normalized
+    } else {
+        (ordinal_normalized + scalar_normalized) * 0.5
+    };
+    let count = tokenizer
+        .count_from_normalized(combined_normalized)
+        .clamp(1, legal_limit.max(1));
+
+    tokenizer.token_from_components(mode_index, direction_index, count)
+}
+
+fn sigmoid_f32(value: f32) -> f32 {
+    1.0 / (1.0 + (-value).exp())
+}
+
 fn causal_mask_tensor(
     graph: &fusor::autograd::Graph,
     device: &Device,
@@ -726,21 +915,18 @@ fn masked_cross_entropy_autograd(
     graph: &fusor::autograd::Graph,
     device: &fusor::Device,
     logits: &fusor::autograd::Tensor<3>,
-    targets: &fusor::Tensor<2, u32>,
+    targets: &[Vec<u32>],
     mask: &[Vec<f32>],
     valid_tokens: f32,
     vocab_size: usize,
 ) -> fusor::autograd::Tensor<0> {
     let batch_size = logits.shape()[0];
     let block_size = logits.shape()[1];
-    let target_values = pollster::block_on(targets.clone().as_slice())
-        .unwrap()
-        .to_vec2();
 
     let mut flat_targets = Vec::with_capacity(batch_size * block_size);
     for batch in 0..batch_size {
         for position in 0..block_size {
-            flat_targets.push(target_values[batch][position]);
+            flat_targets.push(targets[batch][position]);
         }
     }
 
@@ -758,9 +944,118 @@ fn masked_cross_entropy_autograd(
     token_nll.sum(1).sum().div_scalar(valid_tokens.max(1.0))
 }
 
-async fn evaluate_bits_per_token(
+fn structured_action_loss_autograd(
+    graph: &fusor::autograd::Graph,
+    device: &fusor::Device,
+    tokenizer: &StrokeTokenizer,
+    logits: &model::ActionLogits,
+    targets: &[Vec<u32>],
+    mask: &[Vec<f32>],
+    valid_tokens: f32,
+) -> fusor::autograd::Tensor<0> {
+    let batch_size = targets.len();
+    let block_size = targets.first().map_or(0, Vec::len);
+    let ordinal_dim = logits.length_ordinal.shape()[2];
+    let mut mode_targets = vec![vec![0u32; block_size]; batch_size];
+    let mut direction_targets = vec![vec![0u32; block_size]; batch_size];
+    let mut direction_mask = vec![vec![0.0f32; block_size]; batch_size];
+    let mut ordinal_targets = vec![vec![vec![0.0f32; ordinal_dim]; block_size]; batch_size];
+    let mut ordinal_mask = vec![vec![vec![0.0f32; ordinal_dim]; block_size]; batch_size];
+    let mut scalar_targets = vec![vec![vec![0.0f32; 1]; block_size]; batch_size];
+    let mut scalar_mask = vec![vec![vec![0.0f32; 1]; block_size]; batch_size];
+    let mut action_tokens = 0.0f32;
+
+    for batch in 0..batch_size {
+        for position in 0..block_size {
+            let decoded = tokenizer.decode_training_target(targets[batch][position]);
+            let valid = mask[batch][position];
+            mode_targets[batch][position] = decoded.mode_index;
+            if let (Some(direction_index), Some(count), Some(normalized_count)) = (
+                decoded.direction_index,
+                decoded.count,
+                decoded.normalized_count,
+            ) {
+                direction_targets[batch][position] = direction_index;
+                direction_mask[batch][position] = valid;
+                action_tokens += valid;
+                for threshold in 0..ordinal_dim {
+                    ordinal_targets[batch][position][threshold] =
+                        if (threshold + 1) < count { 1.0 } else { 0.0 };
+                    ordinal_mask[batch][position][threshold] = valid;
+                }
+                scalar_targets[batch][position][0] = normalized_count;
+                scalar_mask[batch][position][0] = valid;
+            }
+        }
+    }
+
+    let mode_loss = masked_cross_entropy_autograd(
+        graph,
+        device,
+        &logits.mode,
+        &mode_targets,
+        mask,
+        valid_tokens,
+        3,
+    );
+    let direction_loss = masked_cross_entropy_autograd(
+        graph,
+        device,
+        &logits.direction,
+        &direction_targets,
+        &direction_mask,
+        action_tokens,
+        tokenizer.direction_count(),
+    );
+    let ordinal_target_tensor = fusor::autograd::Tensor::constant_from_raw(
+        graph,
+        fusor::Tensor::new(device, &ordinal_targets),
+    );
+    let ordinal_mask_tensor =
+        fusor::autograd::Tensor::constant_from_raw(graph, fusor::Tensor::new(device, &ordinal_mask));
+    let scalar_target_tensor = fusor::autograd::Tensor::constant_from_raw(
+        graph,
+        fusor::Tensor::new(device, &scalar_targets),
+    );
+    let scalar_mask_tensor =
+        fusor::autograd::Tensor::constant_from_raw(graph, fusor::Tensor::new(device, &scalar_mask));
+    let ordinal_probs = sigmoid_autograd(&logits.length_ordinal);
+    let scalar_probs = sigmoid_autograd(&logits.length_scalar);
+    let ordinal_loss = ordinal_probs
+        .sub(&ordinal_target_tensor)
+        .sqr()
+        .mul(&ordinal_mask_tensor)
+        .sum(2)
+        .sum(1)
+        .sum()
+        .div_scalar((action_tokens * ordinal_dim.max(1) as f32).max(1.0));
+    let scalar_loss = scalar_probs
+        .sub(&scalar_target_tensor)
+        .sqr()
+        .mul(&scalar_mask_tensor)
+        .sum(2)
+        .sum(1)
+        .sum()
+        .div_scalar(action_tokens.max(1.0));
+
+    mode_loss
+        .add(&direction_loss)
+        .add(&ordinal_loss.mul_scalar(0.25))
+        .add(&scalar_loss.mul_scalar(0.25))
+}
+
+fn sigmoid_autograd<const R: usize>(
+    tensor: &fusor::autograd::Tensor<R>,
+) -> fusor::autograd::Tensor<R> {
+    let ones = fusor::autograd::Tensor::splat(&tensor.graph(), &tensor.device(), 1.0, tensor.shape());
+    let denom = tensor.neg().exp().add(&ones);
+    ones.div(&denom)
+}
+
+async fn evaluate_autoregressive_loss(
     model: &NanoChatModel,
     device: &Device,
+    tokenizer: &StrokeTokenizer,
     pad_token: u32,
     dataset: &SourceDataset,
     runtime: &RuntimeConfig,
@@ -781,22 +1076,30 @@ async fn evaluate_bits_per_token(
         let input_values = windows_to_token_inputs(&batch.windows);
         let target_values = windows_to_token_targets(&batch.windows);
         let token_inputs: Tensor<2, u32> = Tensor::new(device, &input_values);
-        let targets: Tensor<2, u32> = Tensor::new(device, &target_values);
-        let logits = model.forward(&token_inputs, &position_inputs, &batch_causal_mask);
-        let loss = masked_cross_entropy_autograd(
+        let (cursor_x_inputs, cursor_y_inputs, pen_state_inputs) =
+            canvas_state_tensors(device, tokenizer, &input_values, model.canvas_state_spec());
+        let logits = model.forward(
+            &token_inputs,
+            &position_inputs,
+            &cursor_x_inputs,
+            &cursor_y_inputs,
+            &pen_state_inputs,
+            &batch_causal_mask,
+        );
+        let loss = structured_action_loss_autograd(
             model.graph(),
             device,
+            tokenizer,
             &logits,
-            &targets,
+            &target_values,
             &batch.masks,
             batch.valid_tokens,
-            model.vocab_size(),
         );
         total_nats += loss.raw().to_scalar().await.unwrap() * batch.valid_tokens.max(1.0);
         total_valid_tokens += batch.valid_tokens;
     }
 
-    nats_to_bits(total_nats / total_valid_tokens.max(1.0))
+    total_nats / total_valid_tokens.max(1.0)
 }
 
 fn should_materialize_live_training_metrics(device: &Device) -> bool {
@@ -817,10 +1120,6 @@ fn scheduled_learning_rate(step: usize, total_steps: usize, runtime: &RuntimeCon
     let progress = (step.saturating_sub(warmup_steps) as f32 / decay_steps as f32).clamp(0.0, 1.0);
     let cosine = 0.5 * (1.0 + (std::f32::consts::PI * progress).cos());
     runtime.min_learning_rate + cosine * (runtime.learning_rate - runtime.min_learning_rate)
-}
-
-fn nats_to_bits(nats: f32) -> f32 {
-    nats / std::f32::consts::LN_2
 }
 
 struct PrefixMetrics {
@@ -872,6 +1171,7 @@ async fn evaluate_continuation(
             let generated = generate_completion(
                 model,
                 device,
+                tokenizer,
                 position_inputs,
                 causal_mask,
                 runtime,
@@ -1068,15 +1368,12 @@ async fn run_comparison_report(
     device: &Device,
     tokenizer: &StrokeTokenizer,
     runtime: &RuntimeConfig,
+    datasets: DatasetSplit,
 ) {
-    let datasets = synthetic_dataset_split(tokenizer, runtime);
     let train_dataset = datasets.train;
     let validation_dataset = datasets.validation;
     let test_dataset = datasets.test;
-    assert!(
-        train_dataset.num_docs() > 0,
-        "synthetic stroke training split is empty"
-    );
+    assert!(train_dataset.num_docs() > 0, "training split is empty");
     let compare_dataset = if test_dataset.num_docs() > 0 {
         &test_dataset
     } else {
@@ -1227,10 +1524,9 @@ fn load_interactive_model(
         .unwrap_or_else(|e| panic!("could not parse GGUF {}: {e}", gguf_path.display()));
     let loaded_tokenizer = StrokeTokenizer::from_var_builder(&vb)
         .unwrap_or_else(|e| panic!("could not load tokenizer metadata: {e}"));
-    assert_eq!(
-        loaded_tokenizer.vocab_size(),
-        tokenizer.vocab_size(),
-        "checkpoint tokenizer vocab does not match runtime tokenizer"
+    assert!(
+        loaded_tokenizer.same_vocabulary(tokenizer),
+        "checkpoint tokenizer vocabulary does not match runtime tokenizer"
     );
     InteractiveNanoChatModel::load(device, &mut vb)
         .unwrap_or_else(|e| panic!("could not load model: {e}"))
@@ -1256,18 +1552,40 @@ async fn generate_interactive_completion(
     for _ in 0..max_tokens {
         let (context, last_index) =
             autoregressive_context(&tokens, tokenizer.eot_token(), block_size);
-        let token_inputs: Tensor<2, u32> = Tensor::new(device, &[context]);
-        let logits = model.forward(&token_inputs, &position_inputs, &causal_mask);
-        let logits_data = logits.as_slice().await.unwrap().to_vec3();
-        let next = match mode {
-            SamplingMode::Greedy => argmax_from_logits(&logits_data[0][last_index]),
-            SamplingMode::Sample => sample_from_logits(
-                &mut rng,
-                &logits_data[0][last_index],
-                runtime.sample_temperature,
-                runtime.sample_top_k,
-            ),
-        };
+        let token_inputs: Tensor<2, u32> = Tensor::new(device, std::slice::from_ref(&context));
+        let (cursor_x_inputs, cursor_y_inputs, pen_state_inputs) = canvas_state_tensors(
+            device,
+            tokenizer,
+            std::slice::from_ref(&context),
+            model.canvas_state_spec(),
+        );
+        let logits = model.forward(
+            &token_inputs,
+            &position_inputs,
+            &cursor_x_inputs,
+            &cursor_y_inputs,
+            &pen_state_inputs,
+            &causal_mask,
+        );
+        let mode_logits: Vec<Vec<Vec<f32>>> = logits.mode.as_slice().await.unwrap().to_vec3();
+        let direction_logits: Vec<Vec<Vec<f32>>> =
+            logits.direction.as_slice().await.unwrap().to_vec3();
+        let ordinal_logits: Vec<Vec<Vec<f32>>> =
+            logits.length_ordinal.as_slice().await.unwrap().to_vec3();
+        let scalar_logits: Vec<Vec<Vec<f32>>> =
+            logits.length_scalar.as_slice().await.unwrap().to_vec3();
+        let next = decode_next_action_token(
+            tokenizer,
+            &context[..=last_index],
+            &mode_logits[0][last_index],
+            &direction_logits[0][last_index],
+            &ordinal_logits[0][last_index],
+            scalar_logits[0][last_index][0],
+            runtime.sample_temperature,
+            runtime.sample_top_k,
+            &mut rng,
+            mode,
+        );
         tokens.push(next);
         if next == tokenizer.eot_token() {
             break;
@@ -1327,9 +1645,12 @@ fn similarity_score(generated: &[u32], target: &[u32], edit_distance: usize) -> 
 fn shape_name_from_path(path: &str) -> &str {
     let filename = path.rsplit('/').next().unwrap_or(path);
     let stem = filename.strip_suffix(".stroke").unwrap_or(filename);
-    stem.rsplit_once('-')
-        .map(|(shape, _)| shape)
-        .unwrap_or(stem)
+    match stem.rsplit_once('-') {
+        Some((shape, suffix)) if suffix.chars().all(|character| character.is_ascii_digit()) => {
+            shape
+        }
+        _ => stem,
+    }
 }
 
 fn comparison_shape_counts(samples: &[ComparisonSample]) -> BTreeMap<&str, usize> {

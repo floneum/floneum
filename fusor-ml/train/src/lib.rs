@@ -95,7 +95,9 @@ pub fn adamw_update<const R: usize>(
     step: usize,
     settings: AdamWSettings,
 ) -> Tensor<R> {
-    let gradient = gradients.get(parameter).unwrap();
+    let Some(gradient) = gradients.get(parameter) else {
+        return parameter.clone();
+    };
     let next_m = ((moments.m.clone() * settings.beta1)
         + (gradient.clone() * (1.0 - settings.beta1)))
         .to_concrete();

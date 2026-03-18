@@ -20,10 +20,15 @@ pub struct RuntimeConfig {
     pub batch_size: usize,
     pub n_embd: usize,
     pub n_head: usize,
+    pub n_kv_head: usize,
     pub n_ff: usize,
     pub n_layer: usize,
     pub conv_kernel_size: usize,
     pub attention_period: usize,
+    pub use_rope: bool,
+    pub rope_theta: f32,
+    pub use_canvas_state_embeddings: bool,
+    pub use_extra_norms: bool,
     pub eps: f32,
     pub init_scale: f32,
     pub seed: u64,
@@ -33,6 +38,8 @@ pub struct RuntimeConfig {
     pub train_examples: usize,
     pub validation_examples: usize,
     pub test_examples: usize,
+    pub dataset_path: Option<PathBuf>,
+    pub include_synthetic_data: bool,
     pub gguf_path: PathBuf,
     pub sample_output_path: PathBuf,
 }
@@ -83,6 +90,8 @@ impl RuntimeConfig {
         });
 
         let batch_size = read_env("NANOCHAT_BATCH_SIZE", 12);
+        let n_head = read_env("NANOCHAT_N_HEAD", 4);
+        let n_kv_head = read_env_optional("NANOCHAT_N_KV_HEAD").unwrap_or(n_head);
 
         Self {
             epochs: read_env("NANOCHAT_EPOCHS", 1),
@@ -102,11 +111,16 @@ impl RuntimeConfig {
             block_size: read_env("NANOCHAT_BLOCK_SIZE", 32),
             batch_size,
             n_embd: read_env("NANOCHAT_N_EMBD", 64),
-            n_head: read_env("NANOCHAT_N_HEAD", 4),
+            n_head,
+            n_kv_head,
             n_ff: read_env("NANOCHAT_N_FF", 256),
             n_layer: read_env("NANOCHAT_N_LAYER", 4),
             conv_kernel_size: read_env("NANOCHAT_CONV_KERNEL_SIZE", 3),
             attention_period: read_env("NANOCHAT_ATTENTION_PERIOD", 1),
+            use_rope: read_env("NANOCHAT_USE_ROPE", false),
+            rope_theta: read_env("NANOCHAT_ROPE_THETA", 10_000.0),
+            use_canvas_state_embeddings: read_env("NANOCHAT_USE_CANVAS_STATE_EMBEDDINGS", true),
+            use_extra_norms: read_env("NANOCHAT_USE_EXTRA_NORMS", false),
             eps: read_env("NANOCHAT_EPS", 1e-5),
             init_scale: read_env("NANOCHAT_INIT_SCALE", 0.08),
             seed: read_env("NANOCHAT_SEED", 1337),
@@ -116,6 +130,8 @@ impl RuntimeConfig {
             train_examples: read_env("NANOCHAT_TRAIN_EXAMPLES", 64),
             validation_examples: read_env("NANOCHAT_VALID_EXAMPLES", 16),
             test_examples: read_env("NANOCHAT_TEST_EXAMPLES", 16),
+            dataset_path: read_env_path_optional("NANOCHAT_DATASET_PATH"),
+            include_synthetic_data: read_env("NANOCHAT_INCLUDE_SYNTHETIC_DATA", false),
             gguf_path: read_env_path("NANOCHAT_GGUF_PATH", "nanochat.gguf"),
             sample_output_path: read_env_path("NANOCHAT_SAMPLE_OUTPUT_PATH", "nanochat-sample.svg"),
         }
@@ -140,10 +156,36 @@ where
     }
 }
 
+fn read_env_optional<T>(key: &str) -> Option<T>
+where
+    T: FromStr,
+    T::Err: Display,
+{
+    match env::var(key) {
+        Ok(value) if value.trim().is_empty() => None,
+        Ok(value) => Some(
+            value
+                .parse()
+                .unwrap_or_else(|error| panic!("invalid value for {key}: {value:?} ({error})")),
+        ),
+        Err(env::VarError::NotPresent) => None,
+        Err(error) => panic!("failed to read {key}: {error}"),
+    }
+}
+
 fn read_env_path(key: &str, default: &str) -> PathBuf {
     match env::var(key) {
         Ok(value) => PathBuf::from(value),
         Err(env::VarError::NotPresent) => PathBuf::from(default),
+        Err(error) => panic!("failed to read {key}: {error}"),
+    }
+}
+
+fn read_env_path_optional(key: &str) -> Option<PathBuf> {
+    match env::var(key) {
+        Ok(value) if value.trim().is_empty() => None,
+        Ok(value) => Some(PathBuf::from(value)),
+        Err(env::VarError::NotPresent) => None,
         Err(error) => panic!("failed to read {key}: {error}"),
     }
 }

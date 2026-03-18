@@ -1,0 +1,81 @@
+{
+  "input_root": "/tmp/feather-icons-repo/icons",
+  "output_root": "/Users/evanalmloff/Desktop/Github/floneum/fusor-ml/feather-pipeline/output-grid9-relaxed-curved-release",
+  "grid_size": 9,
+  "fit_mode": "tight_bbox_centered_contain",
+  "thresholds": {
+    "mean_error_max": 0.2,
+    "max_error_max": 0.4,
+    "turn_inflation_max": 1.35,
+    "path_length_inflation_max": 1.5,
+    "render_f1_min": 0.83,
+    "render_iou_min": 0.7,
+    "rescue_render_f1_min": 0.89,
+    "rescue_render_iou_min": 0.76,
+    "circle_ellipse_rejected_by_default": false
+  },
+  "totals": {
+    "icons": 287,
+    "accepted": 130,
+    "rejected": 157,
+    "acceptance_rate": 0.453
+  },
+  "metrics": {
+    "mean_error": {
+      "min": 0.0,
+      "max": 0.3265,
+      "avg": 0.1413
+    },
+    "max_error": {
+      "min": 0.0,
+      "max": 0.9951,
+      "avg": 0.504
+    },
+    "render_f1": {
+      "min": 0.6958,
+      "max": 1.0,
+      "avg": 0.8548
+    },
+    "render_iou": {
+      "min": 0.5335,
+      "max": 1.0,
+      "avg": 0.7523
+    },
+    "symmetry_score": {
+      "min": 0.1916,
+      "max": 1.0,
+      "avg": 0.83
+    },
+    "turn_inflation": {
+      "min": 0.375,
+      "max": 6.6667,
+      "avg": 1.4091
+    },
+    "path_length_inflation": {
+      "min": 0.8333,
+      "max": 1.4897,
+      "avg": 1.0765
+    }
+  },
+  "rejection_reasons": {
+    "closed_ambiguous_branches": 17,
+    "max_error": 153,
+    "mean_error": 42,
+    "render_f1": 78,
+    "render_iou": 65,
+    "repeated_edges": 21,
+    "revisited_points": 17,
+    "turn_inflation": 81
+  },
+  "curved_source": {
+    "icons": 218,
+    "accepted": 90,
+    "rejected": 128
+  },
+  "source_geometry": {
+    "circles": 69,
+    "ellipses": 1,
+    "rounded_rects": 29
+  },
+  "mixed_metric_rescues": 129
+}

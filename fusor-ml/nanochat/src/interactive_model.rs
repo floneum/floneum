@@ -1,14 +1,17 @@
 use fusor::{
-    Device, Tensor, VarBuilder,
+    Device, MaskKind, RopeCache, Tensor, VarBuilder,
     cache::AttentionMask,
     layers::{Embedding, RecurrentWeights, recurrent_forward},
 };
+
+use crate::data::CanvasStateSpec;
 
 #[derive(Clone, Copy)]
 struct ModelShape {
     block_size: usize,
     n_embd: usize,
     n_head: usize,
+    n_kv_head: usize,
     n_ff: usize,
     conv_kernel_size: usize,
     eps: f32,
@@ -19,12 +22,33 @@ pub struct InteractiveNanoChatModel {
     shape: ModelShape,
     attention_period: usize,
     vocab_size: usize,
+    use_extra_norms: bool,
     wte: Tensor<2, f32>,
-    wpe: Tensor<2, f32>,
+    wpe: Option<Tensor<2, f32>>,
+    canvas_state: Option<CanvasStateEmbeddings>,
+    rotary: Option<RopeCache>,
+    ln_in_weight: Tensor<1, f32>,
+    ln_in_bias: Tensor<1, f32>,
     blocks: Vec<TransformerBlock>,
     ln_f_weight: Tensor<1, f32>,
     ln_f_bias: Tensor<1, f32>,
-    lm_head: Tensor<2, f32>,
+    mode_head: OutputHead,
+    direction_head: OutputHead,
+    length_ordinal_head: OutputHead,
+    length_scalar_head: OutputHead,
+}
+
+#[derive(Clone)]
+struct OutputHead {
+    weight: Tensor<2, f32>,
+    bias: Tensor<1, f32>,
+}
+
+pub struct InteractiveActionLogits {
+    pub mode: Tensor<3, f32>,
+    pub direction: Tensor<3, f32>,
+    pub length_ordinal: Tensor<3, f32>,
+    pub length_scalar: Tensor<3, f32>,
 }
 
 #[derive(Clone)]
@@ -32,9 +56,13 @@ struct TransformerBlock {
     ln_1_weight: Tensor<1, f32>,
     ln_1_bias: Tensor<1, f32>,
     mixer: SequenceMixer,
+    ln_attn_out_weight: Tensor<1, f32>,
+    ln_attn_out_bias: Tensor<1, f32>,
     ln_2_weight: Tensor<1, f32>,
     ln_2_bias: Tensor<1, f32>,
     mlp: Mlp,
+    ln_mlp_out_weight: Tensor<1, f32>,
+    ln_mlp_out_bias: Tensor<1, f32>,
 }
 
 #[derive(Clone)]
@@ -76,6 +104,14 @@ struct Mlp {
     c_proj_bias: Tensor<1, f32>,
 }
 
+#[derive(Clone)]
+struct CanvasStateEmbeddings {
+    spec: CanvasStateSpec,
+    cursor_x: Tensor<2, f32>,
+    cursor_y: Tensor<2, f32>,
+    pen_state: Tensor<2, f32>,
+}
+
 impl InteractiveNanoChatModel {
     pub fn load(device: &Device, vb: &mut VarBuilder) -> fusor::Result<Self> {
         let block_size = metadata_u32(vb, "nanochat.block_size")? as usize;
@@ -85,6 +121,12 @@ impl InteractiveNanoChatModel {
             .and_then(|value| value.to_u32().ok())
             .map(|value| value as usize)
             .unwrap_or(1)
+            .max(1);
+        let n_kv_head = vb
+            .get_metadata("nanochat.kv_head_count")
+            .and_then(|value| value.to_u32().ok())
+            .map(|value| value as usize)
+            .unwrap_or(n_head)
             .max(1);
         let n_ff = metadata_u32(vb, "nanochat.feed_forward_length")? as usize;
         let conv_kernel_size = vb
@@ -102,10 +144,31 @@ impl InteractiveNanoChatModel {
             .max(1);
         let vocab_size = metadata_u32(vb, "nanochat.vocab_size")? as usize;
         let eps = metadata_f32(vb, "nanochat.eps")?;
+        let use_rope = vb
+            .get_metadata("nanochat.use_rope")
+            .and_then(|value| value.to_bool().ok())
+            .unwrap_or(false);
+        let rope_theta = vb
+            .get_metadata("nanochat.rope_theta")
+            .and_then(|value| value.to_f32().ok())
+            .unwrap_or(10_000.0);
+        let use_extra_norms = vb
+            .get_metadata("nanochat.use_extra_norms")
+            .and_then(|value| value.to_bool().ok())
+            .unwrap_or_else(|| {
+                vb.contains_key("input_norm.weight")
+                    || vb.contains_key("blk.0.attn_out_norm.weight")
+                    || vb.contains_key("blk.0.mlp_out_norm.weight")
+            });
+        let use_canvas_state_embeddings = vb
+            .get_metadata("nanochat.use_canvas_state_embeddings")
+            .and_then(|value| value.to_bool().ok())
+            .unwrap_or_else(|| vb.contains_key("cursor_x_embd.weight"));
         let shape = ModelShape {
             block_size,
             n_embd,
             n_head,
+            n_kv_head,
             n_ff,
             conv_kernel_size,
             eps,
@@ -117,9 +180,80 @@ impl InteractiveNanoChatModel {
             shape.n_embd,
             shape.n_head
         );
+        assert_eq!(
+            shape.n_head % shape.n_kv_head,
+            0,
+            "checkpoint head count {} must be divisible by kv head count {}",
+            shape.n_head,
+            shape.n_kv_head
+        );
+        if use_rope {
+            assert_eq!(
+                shape.head_dim() % 2,
+                0,
+                "RoPE requires an even head dimension, got {}",
+                shape.head_dim()
+            );
+        }
 
         let wte: Tensor<2, f32> = vb.get("token_embd.weight", device)?.dequantize();
-        let wpe: Tensor<2, f32> = vb.get("position_embd.weight", device)?.dequantize();
+        let wpe = if vb.contains_key("position_embd.weight") {
+            Some(vb.get("position_embd.weight", device)?.dequantize())
+        } else if use_rope {
+            None
+        } else {
+            return Err(fusor::Error::VarBuilder(
+                "missing position_embd.weight for non-RoPE checkpoint".into(),
+            ));
+        };
+        let canvas_state = if use_canvas_state_embeddings {
+            let cursor_x: Tensor<2, f32> = vb.get("cursor_x_embd.weight", device)?.dequantize();
+            let cursor_y: Tensor<2, f32> = vb.get("cursor_y_embd.weight", device)?.dequantize();
+            let pen_state: Tensor<2, f32> = vb.get("pen_state_embd.weight", device)?.dequantize();
+            let coordinate_vocab_size = vb
+                .get_metadata("nanochat.canvas_coordinate_vocab")
+                .and_then(|value| value.to_u32().ok())
+                .map(|value| value as usize)
+                .unwrap_or(cursor_x.shape()[0]);
+            let coordinate_offset = vb
+                .get_metadata("nanochat.canvas_coordinate_offset")
+                .and_then(|value| value.to_u32().ok())
+                .map(|value| value as i32)
+                .unwrap_or_else(|| coordinate_vocab_size.saturating_sub(1) as i32 / 2);
+            Some(CanvasStateEmbeddings {
+                spec: CanvasStateSpec {
+                    coordinate_vocab_size,
+                    coordinate_offset,
+                },
+                cursor_x,
+                cursor_y,
+                pen_state,
+            })
+        } else {
+            None
+        };
+        let rotary = if use_rope {
+            Some(RopeCache::new(
+                shape.head_dim(),
+                shape.block_size,
+                rope_theta,
+                device,
+            )?)
+        } else {
+            None
+        };
+        let ln_in_weight = get_tensor1_or_default(
+            vb,
+            device,
+            &["input_norm.weight"],
+            ones_1d(device, shape.n_embd),
+        )?;
+        let ln_in_bias = get_tensor1_or_default(
+            vb,
+            device,
+            &["input_norm.bias"],
+            zeros_1d(device, shape.n_embd),
+        )?;
         let blocks = (0..n_layer)
             .map(|index| {
                 TransformerBlock::load(
@@ -132,18 +266,29 @@ impl InteractiveNanoChatModel {
             .collect::<fusor::Result<Vec<_>>>()?;
         let ln_f_weight: Tensor<1, f32> = vb.get("output_norm.weight", device)?.dequantize();
         let ln_f_bias: Tensor<1, f32> = vb.get("output_norm.bias", device)?.dequantize();
-        let lm_head: Tensor<2, f32> = vb.get("output.weight", device)?.dequantize();
+        let mode_head = OutputHead::load(device, vb, "output_mode")?;
+        let direction_head = OutputHead::load(device, vb, "output_direction")?;
+        let length_ordinal_head = OutputHead::load(device, vb, "output_length_ordinal")?;
+        let length_scalar_head = OutputHead::load(device, vb, "output_length_scalar")?;
 
         Ok(Self {
             shape,
             attention_period,
             vocab_size,
+            use_extra_norms,
             wte,
             wpe,
+            canvas_state,
+            rotary,
+            ln_in_weight,
+            ln_in_bias,
             blocks,
             ln_f_weight,
             ln_f_bias,
-            lm_head,
+            mode_head,
+            direction_head,
+            length_ordinal_head,
+            length_scalar_head,
         })
     }
 
@@ -155,22 +300,57 @@ impl InteractiveNanoChatModel {
         self.attention_period
     }
 
+    pub fn canvas_state_spec(&self) -> Option<CanvasStateSpec> {
+        self.canvas_state.as_ref().map(|state| state.spec)
+    }
+
     #[allow(dead_code)]
     pub fn forward(
         &self,
         token_inputs: &Tensor<2, u32>,
         position_inputs: &Tensor<2, u32>,
+        cursor_x_inputs: &Tensor<2, u32>,
+        cursor_y_inputs: &Tensor<2, u32>,
+        pen_state_inputs: &Tensor<2, u32>,
         causal_mask: &AttentionMask<f32>,
-    ) -> Tensor<3, f32> {
+    ) -> InteractiveActionLogits {
         let batch_size = token_inputs.shape()[0];
         let token_embeddings: Tensor<3, f32> =
             Embedding::new_from_tensor(self.wte.clone()).forward(token_inputs);
-        let position_embeddings: Tensor<3, f32> =
-            Embedding::new_from_tensor(self.wpe.clone()).forward(position_inputs);
-        let mut x: Tensor<3, f32> = (token_embeddings + position_embeddings).to_concrete();
+        let mut x: Tensor<3, f32> = token_embeddings;
+        if let Some(wpe) = &self.wpe {
+            let position_embeddings: Tensor<3, f32> =
+                Embedding::new_from_tensor(wpe.clone()).forward(position_inputs);
+            x = (x + position_embeddings).to_concrete();
+        }
+        if let Some(canvas_state) = &self.canvas_state {
+            let cursor_x_embeddings: Tensor<3, f32> =
+                Embedding::new_from_tensor(canvas_state.cursor_x.clone()).forward(cursor_x_inputs);
+            let cursor_y_embeddings: Tensor<3, f32> =
+                Embedding::new_from_tensor(canvas_state.cursor_y.clone()).forward(cursor_y_inputs);
+            let pen_state_embeddings: Tensor<3, f32> =
+                Embedding::new_from_tensor(canvas_state.pen_state.clone())
+                    .forward(pen_state_inputs);
+            x = (x + cursor_x_embeddings + cursor_y_embeddings + pen_state_embeddings)
+                .to_concrete();
+        }
+        if self.use_extra_norms {
+            let ln_in_weight = self.ln_in_weight.broadcast_as(x.shape());
+            let ln_in_bias = self.ln_in_bias.broadcast_as(x.shape());
+            x = x
+                .layer_norm(&ln_in_weight, Some(&ln_in_bias), self.shape.eps, true)
+                .to_concrete();
+        }
 
         for block in &self.blocks {
-            x = block.forward(x, causal_mask, batch_size, self.shape);
+            x = block.forward(
+                x,
+                causal_mask,
+                batch_size,
+                self.shape,
+                self.rotary.as_ref(),
+                self.use_extra_norms,
+            );
         }
 
         let ln_f_weight = self.ln_f_weight.broadcast_as(x.shape());
@@ -178,11 +358,18 @@ impl InteractiveNanoChatModel {
         let x = x
             .layer_norm(&ln_f_weight, Some(&ln_f_bias), self.shape.eps, true)
             .to_concrete();
-        x.mat_mul(
-            &self
-                .lm_head
-                .broadcast_as([batch_size, self.shape.n_embd, self.vocab_size]),
-        )
+        InteractiveActionLogits {
+            mode: self.mode_head.project(&x, batch_size, self.shape.n_embd),
+            direction: self
+                .direction_head
+                .project(&x, batch_size, self.shape.n_embd),
+            length_ordinal: self
+                .length_ordinal_head
+                .project(&x, batch_size, self.shape.n_embd),
+            length_scalar: self
+                .length_scalar_head
+                .project(&x, batch_size, self.shape.n_embd),
+        }
     }
 }
 
@@ -202,16 +389,44 @@ impl TransformerBlock {
         } else {
             SequenceMixer::Recurrent(RecurrentMixer::load(device, vb)?)
         };
+        let ln_attn_out_weight = get_tensor1_or_default(
+            vb,
+            device,
+            &["attn_out_norm.weight"],
+            ones_1d(device, shape.n_embd),
+        )?;
+        let ln_attn_out_bias = get_tensor1_or_default(
+            vb,
+            device,
+            &["attn_out_norm.bias"],
+            zeros_1d(device, shape.n_embd),
+        )?;
         let ln_2_weight: Tensor<1, f32> = vb.get("ln_2.weight", device)?.dequantize();
         let ln_2_bias: Tensor<1, f32> = vb.get("ln_2.bias", device)?.dequantize();
         let mlp = Mlp::load(device, vb)?;
+        let ln_mlp_out_weight = get_tensor1_or_default(
+            vb,
+            device,
+            &["mlp_out_norm.weight"],
+            ones_1d(device, shape.n_embd),
+        )?;
+        let ln_mlp_out_bias = get_tensor1_or_default(
+            vb,
+            device,
+            &["mlp_out_norm.bias"],
+            zeros_1d(device, shape.n_embd),
+        )?;
         Ok(Self {
             ln_1_weight,
             ln_1_bias,
             mixer,
+            ln_attn_out_weight,
+            ln_attn_out_bias,
             ln_2_weight,
             ln_2_bias,
             mlp,
+            ln_mlp_out_weight,
+            ln_mlp_out_bias,
         })
     }
 
@@ -221,6 +436,8 @@ impl TransformerBlock {
         causal_mask: &AttentionMask<f32>,
         batch_size: usize,
         shape: ModelShape,
+        rotary: Option<&RopeCache>,
+        use_extra_norms: bool,
     ) -> Tensor<3, f32> {
         let ln_1_weight = self.ln_1_weight.broadcast_as(x.shape());
         let ln_1_bias = self.ln_1_bias.broadcast_as(x.shape());
@@ -229,7 +446,21 @@ impl TransformerBlock {
             .to_concrete();
         let attn_output = self
             .mixer
-            .forward(&attn_input, causal_mask, batch_size, shape);
+            .forward(&attn_input, causal_mask, batch_size, shape, rotary);
+        let attn_output = if use_extra_norms {
+            let ln_attn_out_weight = self.ln_attn_out_weight.broadcast_as(attn_output.shape());
+            let ln_attn_out_bias = self.ln_attn_out_bias.broadcast_as(attn_output.shape());
+            attn_output
+                .layer_norm(
+                    &ln_attn_out_weight,
+                    Some(&ln_attn_out_bias),
+                    shape.eps,
+                    true,
+                )
+                .to_concrete()
+        } else {
+            attn_output
+        };
         let x: Tensor<3, f32> = (x + attn_output).to_concrete();
 
         let ln_2_weight = self.ln_2_weight.broadcast_as(x.shape());
@@ -237,7 +468,17 @@ impl TransformerBlock {
         let mlp_input = x
             .layer_norm(&ln_2_weight, Some(&ln_2_bias), shape.eps, true)
             .to_concrete();
-        (x + self.mlp.forward(&mlp_input, batch_size, shape)).to_concrete()
+        let mlp_output = self.mlp.forward(&mlp_input, batch_size, shape);
+        let mlp_output = if use_extra_norms {
+            let ln_mlp_out_weight = self.ln_mlp_out_weight.broadcast_as(mlp_output.shape());
+            let ln_mlp_out_bias = self.ln_mlp_out_bias.broadcast_as(mlp_output.shape());
+            mlp_output
+                .layer_norm(&ln_mlp_out_weight, Some(&ln_mlp_out_bias), shape.eps, true)
+                .to_concrete()
+        } else {
+            mlp_output
+        };
+        (x + mlp_output).to_concrete()
     }
 }
 
@@ -257,42 +498,62 @@ impl CausalSelfAttention {
         causal_mask: &AttentionMask<f32>,
         batch_size: usize,
         shape: ModelShape,
+        rotary: Option<&RopeCache>,
     ) -> Tensor<3, f32> {
         let head_dim = shape.head_dim();
-        let q = x.mat_mul(
-            &self
-                .c_attn_q
-                .broadcast_as([batch_size, shape.n_embd, shape.n_embd]),
-        );
-        let k = x.mat_mul(
-            &self
-                .c_attn_k
-                .broadcast_as([batch_size, shape.n_embd, shape.n_embd]),
-        );
-        let v = x.mat_mul(
-            &self
-                .c_attn_v
-                .broadcast_as([batch_size, shape.n_embd, shape.n_embd]),
-        );
-        let heads = (0..shape.n_head)
-            .map(|head| {
-                let start = head * head_dim;
-                let end = start + head_dim;
-                let q_head = q.slice([0..batch_size, 0..q.shape()[1], start..end]);
-                let k_head = k.slice([0..batch_size, 0..k.shape()[1], start..end]);
-                let v_head = v.slice([0..batch_size, 0..v.shape()[1], start..end]);
+        let seq_len = x.shape()[1];
+        let q = x
+            .mat_mul(
+                &self
+                    .c_attn_q
+                    .broadcast_as([batch_size, shape.n_embd, shape.n_embd]),
+            )
+            .to_concrete();
+        let k = x
+            .mat_mul(
+                &self
+                    .c_attn_k
+                    .broadcast_as([batch_size, shape.n_embd, shape.kv_dim()]),
+            )
+            .to_concrete();
+        let v = x
+            .mat_mul(
+                &self
+                    .c_attn_v
+                    .broadcast_as([batch_size, shape.n_embd, shape.kv_dim()]),
+            )
+            .to_concrete();
 
-                let scores = q_head
-                    .mat_mul(&k_head.transpose(1, 2))
-                    .div_scalar((head_dim as f32).sqrt());
-                let masked: Tensor<3, f32> = causal_mask.apply(&scores).to_concrete();
-                let weights_exp = masked.exp();
-                let attention = weights_exp.div_(&weights_exp.sum_keepdim::<2>(2));
-                attention.mat_mul(&v_head).to_concrete()
-            })
-            .collect::<Vec<_>>();
+        let q = q
+            .reshape([batch_size, seq_len, shape.n_head, head_dim])
+            .transpose(1, 2)
+            .to_concrete();
+        let k = k
+            .reshape([batch_size, seq_len, shape.n_kv_head, head_dim])
+            .transpose(1, 2)
+            .to_concrete();
+        let v = v
+            .reshape([batch_size, seq_len, shape.n_kv_head, head_dim])
+            .transpose(1, 2)
+            .to_concrete();
+        let (q, k) = match rotary {
+            Some(cache) => cache.forward(&q, &k, 0),
+            None => (q, k),
+        };
+        let attended = q
+            .flash_attention(
+                &k,
+                &v,
+                1.0 / (head_dim as f32).sqrt(),
+                Some((causal_mask.mask(), MaskKind::QKMask)),
+            )
+            .to_concrete();
+        let merged = attended
+            .transpose(1, 2)
+            .reshape([batch_size, seq_len, shape.n_embd])
+            .to_concrete();
 
-        Tensor::cat(heads, 2)
+        merged
             .mat_mul(
                 &self
                     .c_proj
@@ -309,9 +570,12 @@ impl SequenceMixer {
         causal_mask: &AttentionMask<f32>,
         batch_size: usize,
         shape: ModelShape,
+        rotary: Option<&RopeCache>,
     ) -> Tensor<3, f32> {
         match self {
-            SequenceMixer::Attention(attn) => attn.forward(x, causal_mask, batch_size, shape),
+            SequenceMixer::Attention(attn) => {
+                attn.forward(x, causal_mask, batch_size, shape, rotary)
+            }
             SequenceMixer::Conv(conv) => conv.forward(x, batch_size, shape),
             SequenceMixer::Recurrent(recurrent) => recurrent.forward(x, batch_size, shape),
         }
@@ -422,6 +686,22 @@ impl Mlp {
     }
 }
 
+impl OutputHead {
+    fn load(device: &Device, vb: &mut VarBuilder, prefix: &str) -> fusor::Result<Self> {
+        Ok(Self {
+            weight: vb.get(&format!("{prefix}.weight"), device)?.dequantize(),
+            bias: vb.get(&format!("{prefix}.bias"), device)?.dequantize(),
+        })
+    }
+
+    fn project(&self, x: &Tensor<3, f32>, batch_size: usize, n_embd: usize) -> Tensor<3, f32> {
+        let out_dim = self.weight.shape()[1];
+        x.mat_mul(&self.weight.broadcast_as([batch_size, n_embd, out_dim]))
+            .add_(&self.bias.broadcast_as([batch_size, x.shape()[1], out_dim]))
+            .to_concrete()
+    }
+}
+
 fn metadata_u32(vb: &VarBuilder, key: &str) -> fusor::Result<u32> {
     vb.get_metadata(key)
         .ok_or_else(|| fusor::Error::msg(format!("Key '{key}' not found in GGUF metadata")))?
@@ -452,6 +732,20 @@ fn get_tensor1(
     )))
 }
 
+fn get_tensor1_or_default(
+    vb: &mut VarBuilder,
+    device: &Device,
+    keys: &[&str],
+    default: Tensor<1, f32>,
+) -> fusor::Result<Tensor<1, f32>> {
+    for key in keys {
+        if vb.contains_key(key) {
+            return Ok(vb.get(key, device)?.dequantize());
+        }
+    }
+    Ok(default)
+}
+
 fn get_tensor2(
     vb: &mut VarBuilder,
     device: &Device,
@@ -466,6 +760,14 @@ fn get_tensor2(
         "none of the candidate keys were found in GGUF metadata: {}",
         keys.join(", ")
     )))
+}
+
+fn ones_1d(device: &Device, len: usize) -> Tensor<1, f32> {
+    Tensor::new(device, &vec![1.0; len])
+}
+
+fn zeros_1d(device: &Device, len: usize) -> Tensor<1, f32> {
+    Tensor::new(device, &vec![0.0; len])
 }
 
 fn is_attention_layer(index: usize, attention_period: usize) -> bool {
@@ -492,5 +794,9 @@ fn causal_shift(x: &Tensor<3, f32>, offset: usize) -> Tensor<3, f32> {
 impl ModelShape {
     fn head_dim(self) -> usize {
         self.n_embd / self.n_head.max(1)
+    }
+
+    fn kv_dim(self) -> usize {
+        self.n_kv_head * self.head_dim()
     }
 }

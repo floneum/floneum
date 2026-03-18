@@ -1,22 +1,54 @@
-use std::{collections::HashSet, fs, path::Path};
+use std::{
+    collections::HashSet,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use fusor::VarBuilder;
 use fusor_gguf::GgufValue;
 use rand::{Rng, SeedableRng, rngs::StdRng, seq::SliceRandom};
+use serde::Deserialize;
 
 use crate::config::RuntimeConfig;
 
 const BOS_TOKEN: &str = "<bos>";
 const EOT_TOKEN: &str = "<eot>";
+const DEFAULT_MAX_COUNT: usize = 8;
 const CANVAS_SIZE: f32 = 128.0;
 const CANVAS_PADDING: f32 = 14.0;
+pub const ACTION_MODE_COUNT: usize = 3;
+pub const ACTION_DIRECTION_COUNT: usize = 8;
 
 #[derive(Clone)]
 pub struct StrokeTokenizer {
     tokens: Vec<String>,
     bos_token: u32,
     eot_token: u32,
-    move_start: u32,
+    grid_size: usize,
+    max_count: usize,
+    travel_start: u32,
+    draw_start: u32,
+}
+
+fn axis_limit(position: i32, delta: i32, max: i32) -> usize {
+    match delta.cmp(&0) {
+        std::cmp::Ordering::Greater => (max - position).max(0) as usize,
+        std::cmp::Ordering::Less => position.max(0) as usize,
+        std::cmp::Ordering::Equal => usize::MAX,
+    }
+}
+
+fn parse_segment_count_token(token: &str) -> Option<usize> {
+    token.rsplit('_').next()?.parse::<usize>().ok()
+}
+
+fn inferred_max_count(tokens: &[String]) -> usize {
+    tokens
+        .iter()
+        .filter(|token| token.starts_with("TRAVEL_") || token.starts_with("DRAW_"))
+        .filter_map(|token| parse_segment_count_token(token))
+        .max()
+        .unwrap_or(DEFAULT_MAX_COUNT)
 }
 
 pub struct SourceDataset {
@@ -37,6 +69,24 @@ pub struct DatasetSplit {
     pub test: SourceDataset,
 }
 
+pub struct DatasetSource {
+    pub label: String,
+    pub tokenizer: StrokeTokenizer,
+    pub split: DatasetSplit,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CanvasStateSpec {
+    pub coordinate_vocab_size: usize,
+    pub coordinate_offset: i32,
+}
+
+pub struct CanvasStateIndexes {
+    pub cursor_x: Vec<Vec<u32>>,
+    pub cursor_y: Vec<Vec<u32>>,
+    pub pen_state: Vec<Vec<u32>>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Direction {
     N,
@@ -53,14 +103,87 @@ enum Direction {
 enum TokenKind {
     Bos,
     Eot,
-    Move(Direction),
+    Segment(ActionMode, Direction, usize),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ActionMode {
+    Travel,
+    Draw,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DecodedActionToken {
+    pub mode_index: u32,
+    pub direction_index: Option<u32>,
+    pub count: Option<usize>,
+    pub normalized_count: Option<f32>,
+}
+
+#[derive(Deserialize)]
+struct FeatherIconRecord {
+    name: String,
+    #[serde(rename = "original_svg_path")]
+    _original_svg_path: String,
+    quantized_points: Vec<Vec<[i32; 2]>>,
+    #[serde(rename = "dirs")]
+    _dirs: Vec<Vec<String>>,
+    grid_size: usize,
+    #[serde(default = "default_true")]
+    accepted: bool,
+}
+
+#[derive(Clone, Copy)]
+enum FeatherSplit {
+    Train,
+    Validation,
+    Test,
+}
+
+#[derive(Clone, Copy)]
+enum FeatherAugmentation {
+    Identity,
+    Rotate90,
+    Rotate180,
+    Rotate270,
+    MirrorX,
+    MirrorY,
+    MirrorMainDiagonal,
+    MirrorAntiDiagonal,
+}
+
+impl FeatherAugmentation {
+    fn suffix(self) -> &'static str {
+        match self {
+            Self::Identity => "",
+            Self::Rotate90 => "rot90",
+            Self::Rotate180 => "rot180",
+            Self::Rotate270 => "rot270",
+            Self::MirrorX => "mirrorx",
+            Self::MirrorY => "mirrory",
+            Self::MirrorMainDiagonal => "diag",
+            Self::MirrorAntiDiagonal => "antidiag",
+        }
+    }
 }
 
 #[derive(Clone)]
 struct RenderState {
     cursor: (i32, i32),
+    pen_down: bool,
     current_stroke: Vec<(i32, i32)>,
     completed_strokes: Vec<Vec<(i32, i32)>>,
+}
+
+#[derive(Clone)]
+struct FeatherStroke {
+    points: Vec<(i32, i32)>,
+}
+
+#[derive(Clone, Copy)]
+struct CanvasCursorState {
+    cursor: (i32, i32),
+    pen_down: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -162,6 +285,22 @@ impl Direction {
     }
 }
 
+impl ActionMode {
+    fn index(self) -> u32 {
+        match self {
+            Self::Travel => 0,
+            Self::Draw => 1,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Travel => "TRAVEL",
+            Self::Draw => "DRAW",
+        }
+    }
+}
+
 impl ShapeKind {
     fn all() -> [Self; 14] {
         [
@@ -208,20 +347,53 @@ impl ShapeKind {
 
 impl StrokeTokenizer {
     pub fn new() -> Self {
+        Self::synthetic()
+    }
+
+    pub fn synthetic() -> Self {
+        Self::with_max_count(0, DEFAULT_MAX_COUNT)
+    }
+
+    pub fn with_grid(grid_size: usize) -> Self {
+        let max_count = grid_size.saturating_sub(1).max(1);
+        Self::with_max_count(grid_size, max_count)
+    }
+
+    fn with_max_count(grid_size: usize, max_count: usize) -> Self {
         let mut tokens = vec![BOS_TOKEN.to_string(), EOT_TOKEN.to_string()];
         let bos_token = 0;
         let eot_token = 1;
-        let move_start = tokens.len() as u32;
-
+        let travel_start = tokens.len() as u32;
         for direction in Direction::all() {
-            tokens.push(format!("MOVE_{}", direction.as_str()));
+            for count in 1..=max_count {
+                tokens.push(format!(
+                    "{}_{}_{}",
+                    ActionMode::Travel.as_str(),
+                    direction.as_str(),
+                    count
+                ));
+            }
+        }
+        let draw_start = tokens.len() as u32;
+        for direction in Direction::all() {
+            for count in 1..=max_count {
+                tokens.push(format!(
+                    "{}_{}_{}",
+                    ActionMode::Draw.as_str(),
+                    direction.as_str(),
+                    count
+                ));
+            }
         }
 
         Self {
             tokens,
             bos_token,
             eot_token,
-            move_start,
+            grid_size,
+            max_count,
+            travel_start,
+            draw_start,
         }
     }
 
@@ -235,6 +407,18 @@ impl StrokeTokenizer {
 
     pub fn eot_token(&self) -> u32 {
         self.eot_token
+    }
+
+    pub fn max_count(&self) -> usize {
+        self.max_count
+    }
+
+    pub fn grid_size(&self) -> usize {
+        self.grid_size
+    }
+
+    pub fn direction_count(&self) -> usize {
+        ACTION_DIRECTION_COUNT
     }
 
     pub fn token_name(&self, token: u32) -> &str {
@@ -307,11 +491,18 @@ impl StrokeTokenizer {
                 "tokenizer.ggml.eos_token_id".to_string(),
                 GgufValue::U32(self.eot_token),
             ),
+            (
+                "tokenizer.nanochat.grid_size".to_string(),
+                GgufValue::U32(self.grid_size as u32),
+            ),
+            (
+                "tokenizer.nanochat.max_count".to_string(),
+                GgufValue::U32(self.max_count as u32),
+            ),
         ]
     }
 
     pub fn from_var_builder(vb: &VarBuilder) -> fusor::Result<Self> {
-        let tokenizer = Self::new();
         let tokens = vb
             .get_metadata("tokenizer.ggml.tokens")
             .ok_or_else(|| fusor::Error::msg("tokenizer.ggml.tokens metadata missing"))?
@@ -327,6 +518,17 @@ impl StrokeTokenizer {
             })
             .collect::<Result<Vec<_>, _>>()
             .map_err(fusor::Error::msg)?;
+        let grid_size = vb
+            .get_metadata("tokenizer.nanochat.grid_size")
+            .and_then(|value| value.to_u32().ok())
+            .map(|value| value as usize)
+            .unwrap_or(0);
+        let max_count = vb
+            .get_metadata("tokenizer.nanochat.max_count")
+            .and_then(|value| value.to_u32().ok())
+            .map(|value| value as usize)
+            .unwrap_or_else(|| inferred_max_count(&loaded_tokens));
+        let tokenizer = Self::with_max_count(grid_size, max_count.max(1));
         if loaded_tokens != tokenizer.tokens {
             return Err(fusor::Error::msg(
                 "GGUF tokenizer vocabulary does not match the expected stroke vocabulary",
@@ -352,8 +554,10 @@ impl StrokeTokenizer {
         Ok(tokenizer)
     }
 
-    fn move_token(&self, direction: Direction) -> u32 {
-        self.move_start + direction.index() as u32
+    pub fn same_vocabulary(&self, other: &Self) -> bool {
+        self.tokens == other.tokens
+            && self.bos_token == other.bos_token
+            && self.eot_token == other.eot_token
     }
 
     fn decode_token_kind(&self, token: u32) -> TokenKind {
@@ -364,16 +568,146 @@ impl StrokeTokenizer {
             return TokenKind::Eot;
         }
 
-        let move_token_count = Direction::all().len() as u32;
-        let move_end = self.move_start + move_token_count;
-        if (self.move_start..move_end).contains(&token) {
-            let offset = token - self.move_start;
-            let direction = Direction::all()[offset as usize];
-            return TokenKind::Move(direction);
+        if let Some(segment) = self.decode_segment_token(token) {
+            return TokenKind::Segment(
+                if segment.mode_index == ActionMode::Travel.index() {
+                    ActionMode::Travel
+                } else {
+                    ActionMode::Draw
+                },
+                Direction::all()[segment.direction_index.unwrap() as usize],
+                segment.count.unwrap(),
+            );
         }
 
         panic!("unknown stroke token id {token}");
     }
+
+    pub fn decode_segment_token(&self, token: u32) -> Option<DecodedActionToken> {
+        if token == self.bos_token || token == self.eot_token {
+            return None;
+        }
+
+        let segments_per_mode = (ACTION_DIRECTION_COUNT * self.max_count) as u32;
+        let (mode, offset) =
+            if token >= self.travel_start && token < self.travel_start + segments_per_mode {
+                (ActionMode::Travel, token - self.travel_start)
+            } else if token >= self.draw_start && token < self.draw_start + segments_per_mode {
+                (ActionMode::Draw, token - self.draw_start)
+            } else {
+                return None;
+            };
+
+        let direction_index = offset / self.max_count as u32;
+        let count = (offset % self.max_count as u32 + 1) as usize;
+        Some(DecodedActionToken {
+            mode_index: mode.index(),
+            direction_index: Some(direction_index),
+            count: Some(count),
+            normalized_count: Some(self.normalize_count(count)),
+        })
+    }
+
+    pub fn decode_training_target(&self, token: u32) -> DecodedActionToken {
+        if token == self.eot_token {
+            return DecodedActionToken {
+                mode_index: 2,
+                direction_index: None,
+                count: None,
+                normalized_count: None,
+            };
+        }
+        self.decode_segment_token(token).unwrap_or_else(|| {
+            panic!(
+                "unsupported training target token {}",
+                self.token_name(token)
+            )
+        })
+    }
+
+    fn travel_token(&self, direction: Direction, count: usize) -> u32 {
+        self.segment_token(ActionMode::Travel, direction, count)
+    }
+
+    fn draw_token(&self, direction: Direction, count: usize) -> u32 {
+        self.segment_token(ActionMode::Draw, direction, count)
+    }
+
+    pub fn token_from_components(
+        &self,
+        mode_index: u32,
+        direction_index: u32,
+        count: usize,
+    ) -> u32 {
+        let mode = match mode_index {
+            0 => ActionMode::Travel,
+            1 => ActionMode::Draw,
+            2 => return self.eot_token,
+            other => panic!("invalid action mode index {other}"),
+        };
+        let direction = Direction::all()
+            .get(direction_index as usize)
+            .copied()
+            .unwrap_or_else(|| panic!("invalid direction index {direction_index}"));
+        self.segment_token(mode, direction, count)
+    }
+
+    pub fn normalize_count(&self, count: usize) -> f32 {
+        if self.max_count <= 1 {
+            0.0
+        } else {
+            (count.saturating_sub(1)) as f32 / (self.max_count - 1) as f32
+        }
+    }
+
+    pub fn expected_count_from_ordinal(&self, ordinal_probs: &[f32]) -> f32 {
+        ordinal_probs.iter().copied().sum::<f32>() + 1.0
+    }
+
+    pub fn count_from_normalized(&self, normalized: f32) -> usize {
+        if self.max_count <= 1 {
+            return 1;
+        }
+        let scaled = normalized.clamp(0.0, 1.0) * (self.max_count - 1) as f32;
+        1 + scaled.round() as usize
+    }
+
+    pub fn legal_count_limit(&self, cursor: (i32, i32), direction_index: u32) -> usize {
+        if self.grid_size == 0 {
+            return self.max_count;
+        }
+        let direction = Direction::all()[direction_index as usize];
+        let (dx, dy) = direction.delta();
+        let max = self.grid_size.saturating_sub(1) as i32;
+        let x_limit = axis_limit(cursor.0, dx, max);
+        let y_limit = axis_limit(cursor.1, dy, max);
+        x_limit.min(y_limit).min(self.max_count)
+    }
+
+    pub fn cursor_after_tokens(&self, tokens: &[u32]) -> (i32, i32) {
+        let mut state = CanvasCursorState::default();
+        for &token in tokens {
+            apply_token_to_canvas_state(self, token, &mut state);
+        }
+        state.cursor
+    }
+
+    fn segment_token(&self, mode: ActionMode, direction: Direction, count: usize) -> u32 {
+        assert!(
+            (1..=self.max_count).contains(&count),
+            "invalid segment count {count}; max count is {}",
+            self.max_count
+        );
+        let base = match mode {
+            ActionMode::Travel => self.travel_start,
+            ActionMode::Draw => self.draw_start,
+        };
+        base + direction.index() as u32 * self.max_count as u32 + (count - 1) as u32
+    }
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 impl SourceDataset {
@@ -548,30 +882,479 @@ impl SourceFile {
     }
 }
 
+pub fn load_dataset_source(runtime: &RuntimeConfig) -> DatasetSource {
+    match (&runtime.dataset_path, runtime.include_synthetic_data) {
+        (Some(dataset_path), true) => load_hybrid_dataset(dataset_path, runtime),
+        (Some(dataset_path), false) => load_feather_dataset(dataset_path, runtime),
+        (None, _) => synthetic_dataset_source(StrokeTokenizer::new(), runtime),
+    }
+}
+
+fn synthetic_dataset_source(tokenizer: StrokeTokenizer, runtime: &RuntimeConfig) -> DatasetSource {
+    let split = synthetic_dataset_split(&tokenizer, runtime);
+    DatasetSource {
+        label: "synthetic-stroke-autocomplete".to_string(),
+        tokenizer,
+        split,
+    }
+}
+
+fn load_hybrid_dataset(dataset_path: &Path, runtime: &RuntimeConfig) -> DatasetSource {
+    let real_source = load_feather_dataset(dataset_path, runtime);
+    let real_label = real_source.label.clone();
+    let real_train_examples = real_source.split.train.num_docs();
+    let real_validation_examples = real_source.split.validation.num_docs();
+    let real_test_examples = real_source.split.test.num_docs();
+    let tokenizer = StrokeTokenizer::with_max_count(0, real_source.tokenizer.max_count());
+    assert!(
+        tokenizer.same_vocabulary(&real_source.tokenizer),
+        "hybrid dataset requires synthetic and real vocabularies to match"
+    );
+
+    let synthetic_split = synthetic_dataset_split_with_sizes(
+        &tokenizer,
+        runtime.seed,
+        real_train_examples,
+        real_validation_examples,
+        real_test_examples,
+    );
+    let total_train_examples = real_train_examples + synthetic_split.train.num_docs();
+    let total_validation_examples =
+        real_validation_examples + synthetic_split.validation.num_docs();
+    let total_test_examples = real_test_examples + synthetic_split.test.num_docs();
+    let DatasetSplit {
+        train,
+        validation,
+        test,
+    } = real_source.split;
+
+    DatasetSource {
+        label: format!(
+            "hybrid-stroke-autocomplete real=[{real_label}] synthetic={}/{}/{} total={}/{}/{}",
+            synthetic_split.train.num_docs(),
+            synthetic_split.validation.num_docs(),
+            synthetic_split.test.num_docs(),
+            total_train_examples,
+            total_validation_examples,
+            total_test_examples
+        ),
+        tokenizer,
+        split: DatasetSplit {
+            train: merge_source_datasets(train, synthetic_split.train),
+            validation: merge_source_datasets(validation, synthetic_split.validation),
+            test: merge_source_datasets(test, synthetic_split.test),
+        },
+    }
+}
+
+fn load_feather_dataset(dataset_path: &Path, runtime: &RuntimeConfig) -> DatasetSource {
+    let dataset_path = resolve_dataset_path(dataset_path);
+    let bytes = fs::read(&dataset_path).unwrap_or_else(|error| {
+        panic!(
+            "failed to read Feather dataset {}: {error}",
+            dataset_path.display()
+        )
+    });
+    let mut icons: Vec<FeatherIconRecord> =
+        serde_json::from_slice(&bytes).unwrap_or_else(|error| {
+            panic!(
+                "failed to parse Feather dataset {}: {error}",
+                dataset_path.display()
+            )
+        });
+    icons.retain(|icon| icon.accepted);
+    assert!(
+        !icons.is_empty(),
+        "Feather dataset {} did not contain any accepted icons",
+        dataset_path.display()
+    );
+
+    icons.sort_by(|left, right| left.name.cmp(&right.name));
+    let grid_size = icons[0].grid_size;
+    assert!(
+        icons.iter().all(|icon| icon.grid_size == grid_size),
+        "Feather dataset {} mixes grid sizes",
+        dataset_path.display()
+    );
+
+    let tokenizer = StrokeTokenizer::with_grid(grid_size);
+    let mut train = Vec::new();
+    let mut validation = Vec::new();
+    let mut test = Vec::new();
+
+    for icon in icons {
+        let split = feather_split_for_name(&icon.name);
+        let files = feather_source_files(&tokenizer, &icon, split);
+        match split {
+            FeatherSplit::Train => train.extend(files),
+            FeatherSplit::Validation => validation.extend(files),
+            FeatherSplit::Test => test.extend(files),
+        }
+    }
+
+    train.sort_by(|left, right| left.path.cmp(&right.path));
+    validation.sort_by(|left, right| left.path.cmp(&right.path));
+    test.sort_by(|left, right| left.path.cmp(&right.path));
+
+    truncate_if_limited(&mut train, runtime.train_examples);
+    truncate_if_limited(&mut validation, runtime.validation_examples);
+    truncate_if_limited(&mut test, runtime.test_examples);
+
+    DatasetSource {
+        label: format!(
+            "feather-icon-autocomplete grid={} source={} subset={}/{}/{}",
+            grid_size,
+            dataset_path.display(),
+            train.len(),
+            validation.len(),
+            test.len()
+        ),
+        tokenizer,
+        split: DatasetSplit {
+            train: SourceDataset { files: train },
+            validation: SourceDataset { files: validation },
+            test: SourceDataset { files: test },
+        },
+    }
+}
+
+fn truncate_if_limited<T>(items: &mut Vec<T>, limit: usize) {
+    if limit > 0 {
+        items.truncate(limit.min(items.len()));
+    }
+}
+
+fn feather_source_files(
+    tokenizer: &StrokeTokenizer,
+    icon: &FeatherIconRecord,
+    split: FeatherSplit,
+) -> Vec<SourceFile> {
+    let base_strokes = feather_strokes(icon);
+    let augmentations = split.augmentations();
+    let mut seen = HashSet::new();
+    let mut files = Vec::new();
+
+    for &augmentation in augmentations {
+        let strokes = augment_feather_strokes(&base_strokes, icon.grid_size, augmentation);
+        let content_tokens = feather_content_tokens(tokenizer, &strokes, &icon.name);
+        if !seen.insert(content_tokens.clone()) {
+            continue;
+        }
+
+        let mut tokens = Vec::with_capacity(content_tokens.len() + 2);
+        tokens.push(tokenizer.bos_token());
+        tokens.extend_from_slice(&content_tokens);
+        tokens.push(tokenizer.eot_token());
+
+        let suffix = augmentation.suffix();
+        let path = if suffix.is_empty() {
+            format!("{}/{}.stroke", split.as_str(), icon.name)
+        } else {
+            format!("{}/{}__{}.stroke", split.as_str(), icon.name, suffix)
+        };
+
+        files.push(SourceFile {
+            path,
+            tokens,
+            prompt_tokens: content_tokens.clone(),
+            target_tokens: content_tokens,
+        });
+    }
+
+    files
+}
+
+fn feather_content_tokens(
+    tokenizer: &StrokeTokenizer,
+    strokes: &[FeatherStroke],
+    icon_name: &str,
+) -> Vec<u32> {
+    let mut content_tokens = Vec::new();
+    let mut cursor = (0i32, 0i32);
+
+    for stroke in strokes {
+        let points = &stroke.points;
+        if points.is_empty() {
+            continue;
+        }
+        let start = points[0];
+
+        if cursor != start {
+            append_segments(
+                &mut content_tokens,
+                tokenizer,
+                cursor,
+                start,
+                icon_name,
+                ActionMode::Travel,
+            );
+            cursor = start;
+        }
+
+        let dirs = feather_stroke_dirs(points, icon_name);
+        for (direction, count) in compress_direction_runs(&dirs) {
+            append_segment(
+                &mut content_tokens,
+                tokenizer,
+                ActionMode::Draw,
+                direction,
+                count,
+                icon_name,
+            );
+            cursor = apply_run(cursor, direction, count);
+        }
+    }
+
+    content_tokens
+}
+
+fn feather_strokes(icon: &FeatherIconRecord) -> Vec<FeatherStroke> {
+    icon.quantized_points
+        .iter()
+        .filter_map(|points| {
+            let points = points.iter().map(|[x, y]| (*x, *y)).collect::<Vec<_>>();
+            (points.len() >= 2).then_some(FeatherStroke { points })
+        })
+        .collect()
+}
+
+fn feather_stroke_dirs(points: &[(i32, i32)], icon_name: &str) -> Vec<Direction> {
+    let mut dirs = Vec::new();
+    for segment in points.windows(2) {
+        let start = segment[0];
+        let end = segment[1];
+        let dx = end.0 - start.0;
+        let dy = end.1 - start.1;
+        if dx == 0 && dy == 0 {
+            continue;
+        }
+        if dx.abs() > 1 || dy.abs() > 1 {
+            panic!("icon {} contains non-unit quantized edges", icon_name);
+        }
+        dirs.push(direction_from_signs(dx, dy));
+    }
+    dirs
+}
+
+fn augment_feather_strokes(
+    strokes: &[FeatherStroke],
+    grid_size: usize,
+    augmentation: FeatherAugmentation,
+) -> Vec<FeatherStroke> {
+    strokes
+        .iter()
+        .cloned()
+        .map(|stroke| FeatherStroke {
+            points: stroke
+                .points
+                .into_iter()
+                .map(|point| transform_point(point, grid_size, augmentation))
+                .collect(),
+        })
+        .collect()
+}
+
+fn transform_point(
+    point: (i32, i32),
+    grid_size: usize,
+    augmentation: FeatherAugmentation,
+) -> (i32, i32) {
+    let max = grid_size.saturating_sub(1) as i32;
+    let (x, y) = point;
+    match augmentation {
+        FeatherAugmentation::Identity => (x, y),
+        FeatherAugmentation::Rotate90 => (max - y, x),
+        FeatherAugmentation::Rotate180 => (max - x, max - y),
+        FeatherAugmentation::Rotate270 => (y, max - x),
+        FeatherAugmentation::MirrorX => (max - x, y),
+        FeatherAugmentation::MirrorY => (x, max - y),
+        FeatherAugmentation::MirrorMainDiagonal => (y, x),
+        FeatherAugmentation::MirrorAntiDiagonal => (max - y, max - x),
+    }
+}
+
+fn append_segments(
+    tokens: &mut Vec<u32>,
+    tokenizer: &StrokeTokenizer,
+    from: (i32, i32),
+    to: (i32, i32),
+    icon_name: &str,
+    mode: ActionMode,
+) {
+    let mut cursor = from;
+    while cursor != to {
+        let dx = to.0 - cursor.0;
+        let dy = to.1 - cursor.1;
+        let (direction, count) = if dx != 0 && dy != 0 {
+            (
+                direction_from_signs(dx.signum(), dy.signum()),
+                dx.unsigned_abs().min(dy.unsigned_abs()) as usize,
+            )
+        } else if dx != 0 {
+            (
+                direction_from_signs(dx.signum(), 0),
+                dx.unsigned_abs() as usize,
+            )
+        } else {
+            (
+                direction_from_signs(0, dy.signum()),
+                dy.unsigned_abs() as usize,
+            )
+        };
+        append_segment(tokens, tokenizer, mode, direction, count, icon_name);
+        cursor = apply_run(cursor, direction, count);
+    }
+}
+
+fn append_segment(
+    tokens: &mut Vec<u32>,
+    tokenizer: &StrokeTokenizer,
+    mode: ActionMode,
+    direction: Direction,
+    count: usize,
+    icon_name: &str,
+) {
+    assert!(
+        (1..=tokenizer.max_count()).contains(&count),
+        "icon {} requires count {} but tokenizer max count is {}",
+        icon_name,
+        count,
+        tokenizer.max_count()
+    );
+    let token = match mode {
+        ActionMode::Travel => tokenizer.travel_token(direction, count),
+        ActionMode::Draw => tokenizer.draw_token(direction, count),
+    };
+    if tokenizer.decode_segment_token(token).is_none() {
+        panic!(
+            "icon {} produced an invalid segment token for {:?} {}",
+            icon_name, direction, count
+        );
+    }
+    tokens.push(token);
+}
+
+fn direction_from_signs(dx: i32, dy: i32) -> Direction {
+    match (dx, dy) {
+        (0, -1) => Direction::N,
+        (1, -1) => Direction::NE,
+        (1, 0) => Direction::E,
+        (1, 1) => Direction::SE,
+        (0, 1) => Direction::S,
+        (-1, 1) => Direction::SW,
+        (-1, 0) => Direction::W,
+        (-1, -1) => Direction::NW,
+        _ => panic!("invalid direction delta ({dx}, {dy})"),
+    }
+}
+
+fn compress_direction_runs(dirs: &[Direction]) -> Vec<(Direction, usize)> {
+    let mut runs = Vec::new();
+    for &direction in dirs {
+        if let Some((last_direction, count)) = runs.last_mut() {
+            if *last_direction == direction {
+                *count += 1;
+                continue;
+            }
+        }
+        runs.push((direction, 1));
+    }
+    runs
+}
+
+fn apply_run(cursor: (i32, i32), direction: Direction, count: usize) -> (i32, i32) {
+    let (dx, dy) = direction.delta();
+    (cursor.0 + dx * count as i32, cursor.1 + dy * count as i32)
+}
+
+fn resolve_dataset_path(path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(path)
+    }
+}
+
+fn feather_split_for_name(name: &str) -> FeatherSplit {
+    let bucket = (stable_name_hash(name) % 10) as usize;
+    match bucket {
+        0 => FeatherSplit::Validation,
+        1 => FeatherSplit::Test,
+        _ => FeatherSplit::Train,
+    }
+}
+
+fn stable_name_hash(name: &str) -> u64 {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in name.as_bytes() {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
+impl FeatherSplit {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Train => "train",
+            Self::Validation => "valid",
+            Self::Test => "test",
+        }
+    }
+
+    fn augmentations(self) -> &'static [FeatherAugmentation] {
+        match self {
+            Self::Train => &[
+                FeatherAugmentation::Identity,
+                FeatherAugmentation::Rotate90,
+                FeatherAugmentation::Rotate180,
+                FeatherAugmentation::Rotate270,
+                FeatherAugmentation::MirrorX,
+                FeatherAugmentation::MirrorY,
+                FeatherAugmentation::MirrorMainDiagonal,
+                FeatherAugmentation::MirrorAntiDiagonal,
+            ],
+            Self::Validation | Self::Test => &[FeatherAugmentation::Identity],
+        }
+    }
+}
+
 pub fn synthetic_dataset_split(
     tokenizer: &StrokeTokenizer,
     config: &RuntimeConfig,
 ) -> DatasetSplit {
+    synthetic_dataset_split_with_sizes(
+        tokenizer,
+        config.seed,
+        config.train_examples,
+        config.validation_examples,
+        config.test_examples,
+    )
+}
+
+fn synthetic_dataset_split_with_sizes(
+    tokenizer: &StrokeTokenizer,
+    seed: u64,
+    train_examples: usize,
+    validation_examples: usize,
+    test_examples: usize,
+) -> DatasetSplit {
     DatasetSplit {
-        train: generate_split(
-            tokenizer,
-            config.train_examples,
-            config.seed ^ 0xA11CE,
-            "train",
-        ),
-        validation: generate_split(
-            tokenizer,
-            config.validation_examples,
-            config.seed ^ 0xBEEFu64,
-            "valid",
-        ),
-        test: generate_split(
-            tokenizer,
-            config.test_examples,
-            config.seed ^ 0xC0DEu64,
-            "test",
-        ),
+        train: generate_split(tokenizer, train_examples, seed ^ 0xA11CE, "train"),
+        validation: generate_split(tokenizer, validation_examples, seed ^ 0xBEEFu64, "valid"),
+        test: generate_split(tokenizer, test_examples, seed ^ 0xC0DEu64, "test"),
     }
+}
+
+fn merge_source_datasets(mut primary: SourceDataset, secondary: SourceDataset) -> SourceDataset {
+    let SourceDataset {
+        files: secondary_files,
+    } = secondary;
+    primary.files.extend(secondary_files);
+    primary
+        .files
+        .sort_by(|left, right| left.path.cmp(&right.path));
+    primary
 }
 
 pub fn write_tokens_to_svg_file(
@@ -587,6 +1370,7 @@ pub fn write_tokens_to_svg_file(
 
     let mut continuation_state = RenderState {
         cursor: prompt_state.cursor,
+        pen_down: prompt_state.pen_down,
         current_stroke: prompt_state.current_stroke,
         completed_strokes: Vec::new(),
     };
@@ -638,12 +1422,81 @@ pub fn position_indexes(batch_size: usize, block_size: usize) -> Vec<Vec<u32>> {
         .collect()
 }
 
+pub fn canvas_state_spec(tokenizer: &StrokeTokenizer, block_size: usize) -> CanvasStateSpec {
+    if tokenizer.grid_size() > 0 {
+        return CanvasStateSpec {
+            coordinate_vocab_size: tokenizer.grid_size(),
+            coordinate_offset: 0,
+        };
+    }
+
+    let max_abs_coordinate = tokenizer.max_count().saturating_mul(block_size) as i32;
+    CanvasStateSpec {
+        coordinate_vocab_size: max_abs_coordinate as usize * 2 + 1,
+        coordinate_offset: max_abs_coordinate,
+    }
+}
+
+pub fn canvas_state_indexes(
+    tokenizer: &StrokeTokenizer,
+    token_windows: &[Vec<u32>],
+    spec: CanvasStateSpec,
+) -> CanvasStateIndexes {
+    let mut cursor_x = Vec::with_capacity(token_windows.len());
+    let mut cursor_y = Vec::with_capacity(token_windows.len());
+    let mut pen_state = Vec::with_capacity(token_windows.len());
+
+    for tokens in token_windows {
+        let mut state = CanvasCursorState::default();
+        let mut x_row = Vec::with_capacity(tokens.len());
+        let mut y_row = Vec::with_capacity(tokens.len());
+        let mut pen_row = Vec::with_capacity(tokens.len());
+
+        for &token in tokens {
+            apply_token_to_canvas_state(tokenizer, token, &mut state);
+            x_row.push(encode_canvas_coordinate(state.cursor.0, spec));
+            y_row.push(encode_canvas_coordinate(state.cursor.1, spec));
+            pen_row.push(u32::from(state.pen_down));
+        }
+
+        cursor_x.push(x_row);
+        cursor_y.push(y_row);
+        pen_state.push(pen_row);
+    }
+
+    CanvasStateIndexes {
+        cursor_x,
+        cursor_y,
+        pen_state,
+    }
+}
+
 impl Default for RenderState {
     fn default() -> Self {
         Self {
             cursor: (0, 0),
+            pen_down: false,
             current_stroke: Vec::new(),
             completed_strokes: Vec::new(),
+        }
+    }
+}
+
+impl CanvasStateIndexes {
+    pub fn zeros(batch_size: usize, seq_len: usize) -> Self {
+        Self {
+            cursor_x: vec![vec![0; seq_len]; batch_size],
+            cursor_y: vec![vec![0; seq_len]; batch_size],
+            pen_state: vec![vec![0; seq_len]; batch_size],
+        }
+    }
+}
+
+impl Default for CanvasCursorState {
+    fn default() -> Self {
+        Self {
+            cursor: (0, 0),
+            pen_down: false,
         }
     }
 }
@@ -663,17 +1516,54 @@ fn render_tokens_into_state(tokenizer: &StrokeTokenizer, tokens: &[u32], state: 
     for token in tokens {
         match tokenizer.decode_token_kind(*token) {
             TokenKind::Bos | TokenKind::Eot => {}
-            TokenKind::Move(direction) => {
-                if state.current_stroke.is_empty() {
+            TokenKind::Segment(ActionMode::Travel, direction, count) => {
+                state.finish_current_stroke();
+                state.pen_down = false;
+                state.cursor = apply_run(state.cursor, direction, count);
+            }
+            TokenKind::Segment(ActionMode::Draw, direction, count) => {
+                if state.pen_down && state.current_stroke.is_empty() {
                     state.current_stroke.push(state.cursor);
+                } else if !state.pen_down {
+                    state.current_stroke.push(state.cursor);
+                    state.pen_down = true;
                 }
                 let (dx, dy) = direction.delta();
-                state.cursor.0 += dx;
-                state.cursor.1 += dy;
-                state.current_stroke.push(state.cursor);
+                for _ in 0..count {
+                    state.cursor.0 += dx;
+                    state.cursor.1 += dy;
+                    if state.pen_down {
+                        state.current_stroke.push(state.cursor);
+                    }
+                }
             }
         }
     }
+}
+
+fn apply_token_to_canvas_state(
+    tokenizer: &StrokeTokenizer,
+    token: u32,
+    state: &mut CanvasCursorState,
+) {
+    match tokenizer.decode_token_kind(token) {
+        TokenKind::Bos | TokenKind::Eot => {}
+        TokenKind::Segment(ActionMode::Travel, direction, count) => {
+            state.cursor = apply_run(state.cursor, direction, count);
+            state.pen_down = false;
+        }
+        TokenKind::Segment(ActionMode::Draw, direction, count) => {
+            state.cursor = apply_run(state.cursor, direction, count);
+            state.pen_down = true;
+        }
+    }
+}
+
+fn encode_canvas_coordinate(value: i32, spec: CanvasStateSpec) -> u32 {
+    let max_index = spec.coordinate_vocab_size.saturating_sub(1) as i32;
+    value
+        .saturating_add(spec.coordinate_offset)
+        .clamp(0, max_index) as u32
 }
 
 fn svg_document(
@@ -813,7 +1703,7 @@ fn generate_source_file(
 }
 
 fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng) -> Vec<u32> {
-    let mut tokens = Vec::new();
+    let mut drawing_tokens = Vec::new();
     match shape {
         ShapeKind::Circle => {
             let straight = rng.random_range(1..=2);
@@ -821,7 +1711,7 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
             let rotation = rng.random_range(0..Direction::all().len());
             let mirror = rng.random_bool(0.5);
             trace_moves(
-                &mut tokens,
+                &mut drawing_tokens,
                 tokenizer,
                 &[
                     (Direction::E, straight),
@@ -841,7 +1731,7 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
             let side = rng.random_range(1..=2);
             let rotation = rng.random_range(0..Direction::all().len());
             trace_moves(
-                &mut tokens,
+                &mut drawing_tokens,
                 tokenizer,
                 &[
                     (Direction::E, side),
@@ -857,7 +1747,7 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
             let rotation = rng.random_range(0..Direction::all().len());
             let mirror = rng.random_bool(0.5);
             trace_moves(
-                &mut tokens,
+                &mut drawing_tokens,
                 tokenizer,
                 &[
                     (Direction::E, 2),
@@ -873,13 +1763,9 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
             let rotation = rng.random_range(0..4) * 2;
             let mirror = rng.random_bool(0.5);
             trace_moves(
-                &mut tokens,
+                &mut drawing_tokens,
                 tokenizer,
-                &[
-                    (Direction::E, 2),
-                    (Direction::NW, 1),
-                    (Direction::SW, 1),
-                ],
+                &[(Direction::E, 2), (Direction::NW, 1), (Direction::SW, 1)],
                 rotation,
                 mirror,
             );
@@ -888,7 +1774,7 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
             let edge = rng.random_range(1..=2);
             let rotation = rng.random_range(0..Direction::all().len());
             trace_moves(
-                &mut tokens,
+                &mut drawing_tokens,
                 tokenizer,
                 &[
                     (Direction::NE, edge),
@@ -905,7 +1791,7 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
             let rotation = rng.random_range(0..Direction::all().len());
             let mirror = rng.random_bool(0.5);
             trace_moves(
-                &mut tokens,
+                &mut drawing_tokens,
                 tokenizer,
                 &[
                     (Direction::E, edge),
@@ -925,7 +1811,7 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
             let rotation = rng.random_range(0..Direction::all().len());
             let mirror = rng.random_bool(0.5);
             trace_moves(
-                &mut tokens,
+                &mut drawing_tokens,
                 tokenizer,
                 &[
                     (Direction::E, straight),
@@ -947,7 +1833,7 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
             let rotation = rng.random_range(0..4) * 2;
             let mirror = rng.random_bool(0.5);
             trace_moves(
-                &mut tokens,
+                &mut drawing_tokens,
                 tokenizer,
                 &[
                     (Direction::E, 2),
@@ -965,7 +1851,7 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
             let rotation = rng.random_range(0..4) * 2;
             let mirror = rng.random_bool(0.5);
             trace_moves(
-                &mut tokens,
+                &mut drawing_tokens,
                 tokenizer,
                 &[
                     (Direction::E, 2),
@@ -983,7 +1869,7 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
             let rotation = rng.random_range(0..Direction::all().len());
             let mirror = rng.random_bool(0.5);
             trace_moves(
-                &mut tokens,
+                &mut drawing_tokens,
                 tokenizer,
                 &[
                     (Direction::E, width),
@@ -1002,7 +1888,7 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
             let rotation = rng.random_range(0..Direction::all().len());
             let mirror = rng.random_bool(0.5);
             trace_moves(
-                &mut tokens,
+                &mut drawing_tokens,
                 tokenizer,
                 &[
                     (Direction::N, arm),
@@ -1029,7 +1915,7 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
             let rotation = rng.random_range(0..Direction::all().len());
             let mirror = rng.random_bool(0.5);
             trace_moves(
-                &mut tokens,
+                &mut drawing_tokens,
                 tokenizer,
                 &[
                     (Direction::NE, spike),
@@ -1052,7 +1938,7 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
             let rotation = rng.random_range(0..4) * 2;
             let mirror = rng.random_bool(0.5);
             trace_moves(
-                &mut tokens,
+                &mut drawing_tokens,
                 tokenizer,
                 &[
                     (Direction::E, shaft),
@@ -1070,7 +1956,7 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
             let rotation = rng.random_range(0..4) * 2;
             let mirror = rng.random_bool(0.5);
             trace_moves(
-                &mut tokens,
+                &mut drawing_tokens,
                 tokenizer,
                 &[
                     (Direction::E, 2),
@@ -1085,8 +1971,11 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
         }
     }
     if shape.is_closed() {
-        apply_closed_loop_variant(tokenizer, rng, &mut tokens);
+        apply_closed_loop_variant(tokenizer, rng, &mut drawing_tokens);
     }
+
+    let tokens = drawing_tokens;
+
     debug_assert_eq!(
         token_displacement(tokenizer, &tokens),
         (0, 0),
@@ -1113,26 +2002,23 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
 }
 
 fn token_displacement(tokenizer: &StrokeTokenizer, tokens: &[u32]) -> (i32, i32) {
-    let mut x = 0;
-    let mut y = 0;
-    for &token in tokens {
-        if let TokenKind::Move(direction) = tokenizer.decode_token_kind(token) {
-            let (dx, dy) = direction.delta();
-            x += dx;
-            y += dy;
-        }
-    }
-    (x, y)
+    token_segments(tokenizer, tokens)
+        .into_iter()
+        .fold((0, 0), |cursor, (_, direction, count)| {
+            apply_run(cursor, direction, count)
+        })
 }
 
 /// Convert move tokens into the sequence of grid points visited by the path.
 fn token_points(tokenizer: &StrokeTokenizer, tokens: &[u32]) -> Vec<(i32, i32)> {
     let mut points = vec![(0i32, 0i32)];
-    for &token in tokens {
-        if let TokenKind::Move(direction) = tokenizer.decode_token_kind(token) {
-            let (dx, dy) = direction.delta();
-            let &(x, y) = points.last().unwrap();
-            points.push((x + dx, y + dy));
+    let mut cursor = (0i32, 0i32);
+    for (_, direction, count) in token_segments(tokenizer, tokens) {
+        let (dx, dy) = direction.delta();
+        for _ in 0..count {
+            cursor.0 += dx;
+            cursor.1 += dy;
+            points.push(cursor);
         }
     }
     points
@@ -1143,16 +2029,14 @@ fn max_straight_run(tokenizer: &StrokeTokenizer, tokens: &[u32]) -> usize {
     let mut max_run = 0;
     let mut current_run = 0;
     let mut last_direction: Option<Direction> = None;
-    for &token in tokens {
-        if let TokenKind::Move(direction) = tokenizer.decode_token_kind(token) {
-            if last_direction == Some(direction) {
-                current_run += 1;
-            } else {
-                current_run = 1;
-                last_direction = Some(direction);
-            }
-            max_run = max_run.max(current_run);
+    for (_, direction, count) in token_segments(tokenizer, tokens) {
+        if last_direction == Some(direction) {
+            current_run += count;
+        } else {
+            current_run = count;
+            last_direction = Some(direction);
         }
+        max_run = max_run.max(current_run);
     }
     max_run
 }
@@ -1175,8 +2059,7 @@ fn has_overlapping_points(tokenizer: &StrokeTokenizer, tokens: &[u32]) -> bool {
 fn has_crossing_segments(tokenizer: &StrokeTokenizer, tokens: &[u32]) -> bool {
     /// Sign of the cross-product (p2 − p1) × (p3 − p1).
     fn cross(p1: (i32, i32), p2: (i32, i32), p3: (i32, i32)) -> i64 {
-        (p2.0 - p1.0) as i64 * (p3.1 - p1.1) as i64
-            - (p2.1 - p1.1) as i64 * (p3.0 - p1.0) as i64
+        (p2.0 - p1.0) as i64 * (p3.1 - p1.1) as i64 - (p2.1 - p1.1) as i64 * (p3.0 - p1.0) as i64
     }
 
     /// True when the interiors of segments (a1–a2) and (b1–b2) intersect.
@@ -1190,8 +2073,7 @@ fn has_crossing_segments(tokenizer: &StrokeTokenizer, tokens: &[u32]) -> bool {
         let d2 = cross(a1, a2, b2);
         let d3 = cross(b1, b2, a1);
         let d4 = cross(b1, b2, a2);
-        ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0))
-            && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+        ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
     }
 
     let points = token_points(tokenizer, tokens);
@@ -1226,15 +2108,18 @@ fn transformed_direction(
     direction.rotate(rotation)
 }
 
-fn repeat_move(
+fn repeat_segment(
     tokens: &mut Vec<u32>,
     tokenizer: &StrokeTokenizer,
+    mode: ActionMode,
     direction: Direction,
     count: usize,
 ) {
-    for _ in 0..count {
-        tokens.push(tokenizer.move_token(direction));
-    }
+    let token = match mode {
+        ActionMode::Travel => tokenizer.travel_token(direction, count),
+        ActionMode::Draw => tokenizer.draw_token(direction, count),
+    };
+    tokens.push(token);
 }
 
 fn trace_moves(
@@ -1245,9 +2130,10 @@ fn trace_moves(
     mirror_horizontal: bool,
 ) {
     for &(direction, count) in segments {
-        repeat_move(
+        repeat_segment(
             tokens,
             tokenizer,
+            ActionMode::Draw,
             transformed_direction(direction, rotation, mirror_horizontal),
             count,
         );
@@ -1259,20 +2145,39 @@ fn apply_closed_loop_variant(tokenizer: &StrokeTokenizer, rng: &mut StdRng, toke
         return;
     }
 
-    let start_offset = rng.random_range(0..tokens.len());
-    tokens.rotate_left(start_offset);
+    let mut segments = token_segments(tokenizer, tokens);
+    let start_offset = rng.random_range(0..segments.len());
+    segments.rotate_left(start_offset);
 
     if rng.random_bool(0.5) {
-        let reversed = tokens
+        segments = segments
             .iter()
             .rev()
-            .map(|&token| match tokenizer.decode_token_kind(token) {
-                TokenKind::Move(direction) => tokenizer.move_token(direction.opposite()),
-                _ => token,
-            })
+            .map(|&(_, direction, count)| (ActionMode::Draw, direction.opposite(), count))
             .collect();
-        *tokens = reversed;
     }
+
+    let mut rebuilt = Vec::with_capacity(tokens.len());
+    for (_, direction, count) in segments {
+        repeat_segment(&mut rebuilt, tokenizer, ActionMode::Draw, direction, count);
+    }
+    *tokens = rebuilt;
+}
+
+fn token_segments(
+    tokenizer: &StrokeTokenizer,
+    tokens: &[u32],
+) -> Vec<(ActionMode, Direction, usize)> {
+    let mut segments = Vec::new();
+    for &token in tokens {
+        match tokenizer.decode_token_kind(token) {
+            TokenKind::Segment(mode, direction, count) => {
+                segments.push((mode, direction, count));
+            }
+            TokenKind::Bos | TokenKind::Eot => {}
+        }
+    }
+    segments
 }
 
 #[cfg(test)]
@@ -1306,6 +2211,218 @@ mod tests {
     }
 
     #[test]
+    fn grid_tokenizer_round_trips_and_decodes_segment_tokens() {
+        let tokenizer = StrokeTokenizer::with_grid(9);
+        let gguf = GgufMetadata {
+            version: GgufVersion::V3,
+            metadata: tokenizer
+                .gguf_metadata()
+                .into_iter()
+                .map(|(key, value)| (key.into_boxed_str(), value))
+                .collect(),
+            tensor_infos: Default::default(),
+            tensor_data_offset: 0,
+        };
+        let mut bytes = Cursor::new(Vec::new());
+        gguf.write(&mut bytes, std::iter::empty::<(&str, &[u8])>())
+            .unwrap();
+        let mut reader = Cursor::new(bytes.into_inner());
+        let vb = VarBuilder::from_gguf(&mut reader).unwrap();
+        let restored = StrokeTokenizer::from_var_builder(&vb).unwrap();
+        assert!(restored.same_vocabulary(&tokenizer));
+        let draw = restored.draw_token(Direction::SE, 4);
+        assert_eq!(restored.token_name(draw), "DRAW_SE_4");
+        assert!(matches!(
+            restored.decode_token_kind(draw),
+            TokenKind::Segment(ActionMode::Draw, Direction::SE, 4)
+        ));
+        assert!(matches!(
+            restored.decode_token_kind(restored.travel_token(Direction::N, 2)),
+            TokenKind::Segment(ActionMode::Travel, Direction::N, 2)
+        ));
+    }
+
+    #[test]
+    fn feather_dataset_loader_keeps_multistroke_icons() {
+        let icon = FeatherIconRecord {
+            name: "archive".to_string(),
+            _original_svg_path: "/tmp/archive.svg".to_string(),
+            quantized_points: vec![vec![[0, 0], [1, 0]], vec![[2, 2], [2, 3], [2, 4]]],
+            _dirs: vec![
+                vec!["E".to_string()],
+                vec!["S".to_string(), "S".to_string()],
+            ],
+            grid_size: 9,
+            accepted: true,
+        };
+        let tokenizer = StrokeTokenizer::with_grid(9);
+
+        let train_files = feather_source_files(&tokenizer, &icon, FeatherSplit::Train);
+        assert!(train_files.len() > 1);
+        let base = train_files
+            .iter()
+            .find(|file| file.path() == "train/archive.stroke")
+            .unwrap();
+        let token_names = base
+            .target_tokens()
+            .iter()
+            .map(|&token| tokenizer.token_name(token).to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            token_names,
+            vec![
+                "DRAW_E_1".to_string(),
+                "TRAVEL_SE_1".to_string(),
+                "TRAVEL_S_1".to_string(),
+                "DRAW_S_2".to_string()
+            ]
+        );
+        assert!(
+            train_files
+                .iter()
+                .any(|file| file.path().contains("__rot90.stroke"))
+        );
+
+        let validation_files = feather_source_files(&tokenizer, &icon, FeatherSplit::Validation);
+        assert_eq!(validation_files.len(), 1);
+        assert_eq!(validation_files[0].path(), "valid/archive.stroke");
+    }
+
+    #[test]
+    fn hybrid_dataset_source_includes_real_and_matching_synthetic_examples() {
+        let train_name = (0..256)
+            .map(|index| format!("hybrid-train-{index}"))
+            .find(|name| matches!(feather_split_for_name(name), FeatherSplit::Train))
+            .unwrap();
+        let validation_name = (0..256)
+            .map(|index| format!("hybrid-valid-{index}"))
+            .find(|name| matches!(feather_split_for_name(name), FeatherSplit::Validation))
+            .unwrap();
+        let test_name = (0..256)
+            .map(|index| format!("hybrid-test-{index}"))
+            .find(|name| matches!(feather_split_for_name(name), FeatherSplit::Test))
+            .unwrap();
+        let dataset_path = std::env::temp_dir().join(format!(
+            "nanochat-hybrid-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let icons = vec![
+            serde_json::json!({
+                "name": train_name,
+                "original_svg_path": "/tmp/hybrid-train.svg",
+                "quantized_points": [[[0, 0], [1, 0], [1, 1]]],
+                "dirs": [["E", "S"]],
+                "grid_size": 9,
+                "accepted": true,
+            }),
+            serde_json::json!({
+                "name": validation_name,
+                "original_svg_path": "/tmp/hybrid-valid.svg",
+                "quantized_points": [[[0, 0], [0, 1], [1, 1]]],
+                "dirs": [["S", "E"]],
+                "grid_size": 9,
+                "accepted": true,
+            }),
+            serde_json::json!({
+                "name": test_name,
+                "original_svg_path": "/tmp/hybrid-test.svg",
+                "quantized_points": [[[0, 0], [1, 1], [2, 1]]],
+                "dirs": [["SE", "E"]],
+                "grid_size": 9,
+                "accepted": true,
+            }),
+        ];
+        fs::write(&dataset_path, serde_json::to_vec(&icons).unwrap()).unwrap();
+
+        let config = RuntimeConfig {
+            epochs: 1,
+            warmup_steps: 1,
+            learning_rate: 1e-3,
+            min_learning_rate: 1e-4,
+            beta1: 0.9,
+            beta2: 0.95,
+            adam_eps: 1e-8,
+            weight_decay: 0.1,
+            log_every: 10,
+            eval_batches: 1,
+            sample_tokens: 8,
+            sample_prefix_tokens: 4,
+            sample_temperature: 0.7,
+            sample_top_k: 4,
+            block_size: 48,
+            batch_size: 4,
+            n_embd: 32,
+            n_head: 2,
+            n_kv_head: 2,
+            n_ff: 64,
+            n_layer: 2,
+            conv_kernel_size: 3,
+            attention_period: 1,
+            use_rope: false,
+            rope_theta: 10_000.0,
+            use_canvas_state_embeddings: true,
+            use_extra_norms: false,
+            eps: 1e-5,
+            init_scale: 0.08,
+            seed: 42,
+            save_every_steps: 0,
+            save_final_model: false,
+            save_quantization: crate::config::SaveQuantization::F32,
+            train_examples: 1,
+            validation_examples: 1,
+            test_examples: 1,
+            dataset_path: Some(dataset_path.clone()),
+            include_synthetic_data: true,
+            gguf_path: "test.gguf".into(),
+            sample_output_path: "sample.svg".into(),
+        };
+
+        let source = load_dataset_source(&config);
+        assert_eq!(source.tokenizer.grid_size(), 0);
+        assert_eq!(source.split.train.num_docs(), 2);
+        assert_eq!(source.split.validation.num_docs(), 2);
+        assert_eq!(source.split.test.num_docs(), 2);
+        assert!(source.label.contains("hybrid-stroke-autocomplete"));
+        assert!(
+            source
+                .split
+                .train
+                .files()
+                .iter()
+                .any(|file| file.path().contains("circle-000.stroke"))
+        );
+        assert!(
+            source
+                .split
+                .train
+                .files()
+                .iter()
+                .any(|file| file.path().contains("hybrid-train-"))
+        );
+
+        let _ = fs::remove_file(dataset_path);
+    }
+
+    #[test]
+    fn canvas_state_indexes_track_cursor_and_pen_after_each_token() {
+        let tokenizer = StrokeTokenizer::with_grid(9);
+        let spec = canvas_state_spec(&tokenizer, 2);
+        let tokens = vec![vec![
+            tokenizer.draw_token(Direction::E, 2),
+            tokenizer.travel_token(Direction::S, 1),
+        ]];
+
+        let states = canvas_state_indexes(&tokenizer, &tokens, spec);
+        assert_eq!(states.cursor_x, vec![vec![2, 2]]);
+        assert_eq!(states.cursor_y, vec![vec![0, 1]]);
+        assert_eq!(states.pen_state, vec![vec![1, 0]]);
+    }
+
+    #[test]
     fn synthetic_dataset_split_uses_requested_sizes() {
         let tokenizer = StrokeTokenizer::new();
         let config = RuntimeConfig {
@@ -1323,14 +2440,19 @@ mod tests {
             sample_prefix_tokens: 4,
             sample_temperature: 0.7,
             sample_top_k: 4,
-            block_size: 24,
+            block_size: 48,
             batch_size: 4,
             n_embd: 32,
             n_head: 2,
+            n_kv_head: 2,
             n_ff: 64,
             n_layer: 2,
             conv_kernel_size: 3,
             attention_period: 1,
+            use_rope: false,
+            rope_theta: 10_000.0,
+            use_canvas_state_embeddings: true,
+            use_extra_norms: false,
             eps: 1e-5,
             init_scale: 0.08,
             seed: 42,
@@ -1340,6 +2462,8 @@ mod tests {
             train_examples: 7,
             validation_examples: 3,
             test_examples: 2,
+            dataset_path: None,
+            include_synthetic_data: false,
             gguf_path: "test.gguf".into(),
             sample_output_path: "sample.svg".into(),
         };
@@ -1368,14 +2492,19 @@ mod tests {
             sample_prefix_tokens: 4,
             sample_temperature: 0.7,
             sample_top_k: 4,
-            block_size: 24,
+            block_size: 48,
             batch_size: 8,
             n_embd: 24,
             n_head: 2,
+            n_kv_head: 2,
             n_ff: 48,
             n_layer: 1,
             conv_kernel_size: 3,
             attention_period: 1,
+            use_rope: false,
+            rope_theta: 10_000.0,
+            use_canvas_state_embeddings: true,
+            use_extra_norms: false,
             eps: 1e-5,
             init_scale: 0.1,
             seed: 42,
@@ -1385,6 +2514,8 @@ mod tests {
             train_examples: ShapeKind::all().len() * 2,
             validation_examples: ShapeKind::all().len(),
             test_examples: ShapeKind::all().len(),
+            dataset_path: None,
+            include_synthetic_data: false,
             gguf_path: "test.gguf".into(),
             sample_output_path: "sample.svg".into(),
         };
@@ -1494,14 +2625,10 @@ mod tests {
     fn closed_loop_variants_shift_and_reverse_sequences() {
         let tokenizer = StrokeTokenizer::new();
         let base = vec![
-            tokenizer.move_token(Direction::E),
-            tokenizer.move_token(Direction::E),
-            tokenizer.move_token(Direction::S),
-            tokenizer.move_token(Direction::S),
-            tokenizer.move_token(Direction::W),
-            tokenizer.move_token(Direction::W),
-            tokenizer.move_token(Direction::N),
-            tokenizer.move_token(Direction::N),
+            tokenizer.draw_token(Direction::E, 2),
+            tokenizer.draw_token(Direction::S, 2),
+            tokenizer.draw_token(Direction::W, 2),
+            tokenizer.draw_token(Direction::N, 2),
         ];
 
         let variants = (0..32)
@@ -1527,12 +2654,12 @@ mod tests {
     fn sample_export_produces_valid_svg_bytes() {
         let tokenizer = StrokeTokenizer::new();
         let tokens = vec![
-            tokenizer.move_token(Direction::E),
-            tokenizer.move_token(Direction::SE),
-            tokenizer.move_token(Direction::S),
+            tokenizer.draw_token(Direction::E, 1),
+            tokenizer.draw_token(Direction::SE, 1),
+            tokenizer.draw_token(Direction::S, 1),
         ];
         let root = std::env::temp_dir().join("nanochat-stroke-sample.svg");
-        write_tokens_to_svg_file(&tokenizer, &tokens[..2], &tokens[2..], &root);
+        write_tokens_to_svg_file(&tokenizer, &tokens[..1], &tokens[1..], &root);
         let svg = fs::read_to_string(&root).unwrap();
         assert!(svg.starts_with("<svg"));
         let _ = fs::remove_file(root);
