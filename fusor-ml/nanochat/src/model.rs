@@ -3,7 +3,7 @@ use fusor::{
     autograd::{Gradients, Graph, Tensor},
     base_inverse_frequency,
 };
-use fusor_train::{AdamMoments, AdamWModel, AdamWSettings, adamw_update};
+use fusor_train::{AdamMoments, AdamWModel, AdamWSettings, adamw_update, adamw_update_raw, extract_gradient};
 use rand::{Rng, rngs::StdRng};
 use std::{io::Write, time::Instant};
 
@@ -55,8 +55,7 @@ struct OutputHead {
 pub struct ActionLogits {
     pub mode: Tensor<3>,
     pub direction: Tensor<3>,
-    pub length_ordinal: Tensor<3>,
-    pub length_scalar: Tensor<3>,
+    pub count: Tensor<3>,
 }
 
 #[derive(Clone)]
@@ -78,10 +77,7 @@ pub struct NanoChatModel {
     blocks: Vec<TransformerBlock>,
     ln_f_weight: Tensor<1>,
     ln_f_bias: Tensor<1>,
-    mode_head: OutputHead,
-    direction_head: OutputHead,
-    length_ordinal_head: OutputHead,
-    length_scalar_head: OutputHead,
+    action_head: OutputHead,
 }
 
 pub struct NanoChatAdamState {
@@ -93,10 +89,7 @@ pub struct NanoChatAdamState {
     blocks: Vec<AdamBlockState>,
     ln_f_weight: AdamMoments<1>,
     ln_f_bias: AdamMoments<1>,
-    mode_head: AdamOutputHeadState,
-    direction_head: AdamOutputHeadState,
-    length_ordinal_head: AdamOutputHeadState,
-    length_scalar_head: AdamOutputHeadState,
+    action_head: AdamOutputHeadState,
 }
 
 #[derive(Clone)]
@@ -288,36 +281,12 @@ impl NanoChatModel {
                 .collect(),
             ln_f_weight: ones(&graph, device, shape.n_embd),
             ln_f_bias: zeros(&graph, device, shape.n_embd),
-            mode_head: OutputHead::new(
+            action_head: OutputHead::new(
                 &graph,
                 device,
                 rng,
                 shape.n_embd,
-                ACTION_MODE_COUNT,
-                config.init_scale,
-            ),
-            direction_head: OutputHead::new(
-                &graph,
-                device,
-                rng,
-                shape.n_embd,
-                ACTION_DIRECTION_COUNT,
-                config.init_scale,
-            ),
-            length_ordinal_head: OutputHead::new(
-                &graph,
-                device,
-                rng,
-                shape.n_embd,
-                tokenizer.max_count().saturating_sub(1).max(1),
-                config.init_scale,
-            ),
-            length_scalar_head: OutputHead::new(
-                &graph,
-                device,
-                rng,
-                shape.n_embd,
-                1,
+                ACTION_MODE_COUNT + ACTION_DIRECTION_COUNT + tokenizer.max_count(),
                 config.init_scale,
             ),
         }
@@ -339,10 +308,7 @@ impl NanoChatModel {
                 .sum::<usize>()
             + tensor_len(&self.ln_f_weight)
             + tensor_len(&self.ln_f_bias)
-            + self.mode_head.num_parameters()
-            + self.direction_head.num_parameters()
-            + self.length_ordinal_head.num_parameters()
-            + self.length_scalar_head.num_parameters()
+            + self.action_head.num_parameters()
     }
 
     pub fn graph(&self) -> &Graph {
@@ -368,10 +334,7 @@ impl NanoChatModel {
             blocks,
             ln_f_weight,
             ln_f_bias,
-            mode_head,
-            direction_head,
-            length_ordinal_head,
-            length_scalar_head,
+            action_head,
         } = self;
 
         Self {
@@ -395,10 +358,7 @@ impl NanoChatModel {
                 .collect(),
             ln_f_weight: regraph_tensor(&graph, ln_f_weight),
             ln_f_bias: regraph_tensor(&graph, ln_f_bias),
-            mode_head: mode_head.into_graph(&graph),
-            direction_head: direction_head.into_graph(&graph),
-            length_ordinal_head: length_ordinal_head.into_graph(&graph),
-            length_scalar_head: length_scalar_head.into_graph(&graph),
+            action_head: action_head.into_graph(&graph),
         }
     }
 
@@ -500,17 +460,15 @@ impl NanoChatModel {
         }
 
         let x = x.layer_norm(&self.ln_f_weight, Some(&self.ln_f_bias), self.shape.eps);
+        let action_logits = self.action_head.project(&x, batch_size, self.shape.n_embd);
+        let seq_len = action_logits.shape()[1];
+        let mode_end = ACTION_MODE_COUNT;
+        let direction_end = mode_end + ACTION_DIRECTION_COUNT;
+        let count_end = direction_end + self.max_count;
         ActionLogits {
-            mode: self.mode_head.project(&x, batch_size, self.shape.n_embd),
-            direction: self
-                .direction_head
-                .project(&x, batch_size, self.shape.n_embd),
-            length_ordinal: self
-                .length_ordinal_head
-                .project(&x, batch_size, self.shape.n_embd),
-            length_scalar: self
-                .length_scalar_head
-                .project(&x, batch_size, self.shape.n_embd),
+            mode: action_logits.slice([0..batch_size, 0..seq_len, 0..mode_end]),
+            direction: action_logits.slice([0..batch_size, 0..seq_len, mode_end..direction_end]),
+            count: action_logits.slice([0..batch_size, 0..seq_len, direction_end..count_end]),
         }
     }
 
@@ -540,17 +498,8 @@ impl NanoChatModel {
         push_tensor_1d(&mut tensors, "output_norm.weight", &self.ln_f_weight).await;
         log_materialize_start("output_norm.bias", &self.ln_f_bias.shape());
         push_tensor_1d(&mut tensors, "output_norm.bias", &self.ln_f_bias).await;
-        self.mode_head
-            .append_named_tensors("output_mode", &mut tensors)
-            .await;
-        self.direction_head
-            .append_named_tensors("output_direction", &mut tensors)
-            .await;
-        self.length_ordinal_head
-            .append_named_tensors("output_length_ordinal", &mut tensors)
-            .await;
-        self.length_scalar_head
-            .append_named_tensors("output_length_scalar", &mut tensors)
+        self.action_head
+            .append_named_tensors("output_action", &mut tensors)
             .await;
         tensors
     }
@@ -579,10 +528,7 @@ impl AdamWModel for NanoChatModel {
                 .collect(),
             ln_f_weight: AdamMoments::zeros_like(device, &model.ln_f_weight),
             ln_f_bias: AdamMoments::zeros_like(device, &model.ln_f_bias),
-            mode_head: AdamOutputHeadState::new(device, &model.mode_head),
-            direction_head: AdamOutputHeadState::new(device, &model.direction_head),
-            length_ordinal_head: AdamOutputHeadState::new(device, &model.length_ordinal_head),
-            length_scalar_head: AdamOutputHeadState::new(device, &model.length_scalar_head),
+            action_head: AdamOutputHeadState::new(device, &model.action_head),
         }
     }
 
@@ -593,8 +539,144 @@ impl AdamWModel for NanoChatModel {
         step: usize,
         settings: AdamWSettings,
     ) -> Self {
+        // Phase 1: Extract all gradient RawTensors while the old autograd graph is
+        // alive (needed for NodeId lookups). This only clones lazy handles — no GPU
+        // work happens yet.
+        let extracted = ExtractedModelGradients::extract(&self, gradients);
+        let extracted_blocks: Vec<_> = self
+            .blocks
+            .iter()
+            .map(|block| ExtractedBlockGradients::extract(block, gradients))
+            .collect();
+
+        // Phase 2: Drop the old autograd graph by destructuring the model and
+        // immediately dropping the graph handle and all autograd tensors. This
+        // releases the backward closures and their captured RawTensors, which
+        // decrements GPU compute-graph reference counts and allows the resolver
+        // to free intermediate buffers during the updates below.
         let NanoChatModel {
-            graph,
+            graph: _old_graph,
+            shape,
+            attention_period,
+            vocab_size,
+            max_count,
+            use_rope,
+            rope_theta,
+            use_extra_norms,
+            wte: _,
+            wpe: _,
+            canvas_state: _,
+            rotary,
+            ln_in_weight: _,
+            ln_in_bias: _,
+            blocks: _,
+            ln_f_weight: _,
+            ln_f_bias: _,
+            action_head: _,
+        } = self;
+        // Old graph is now dropped — backward closures and their captured GPU
+        // tensor references are freed.
+
+        // Phase 3: Apply AdamW updates. GPU resolution happens here, with the
+        // old graph's intermediate buffers eligible for cleanup.
+        let new_graph = Graph::new();
+
+        let wte = extracted
+            .wte
+            .map(|(grad, val)| {
+                Tensor::from_raw(
+                    &new_graph,
+                    adamw_update_raw(val, grad, &mut state.wte, step, settings),
+                )
+            })
+            .unwrap_or_else(|| {
+                Tensor::from_raw(&new_graph, extracted.wte_value)
+            });
+
+        let wpe = match (extracted.wpe, state.wpe.as_mut()) {
+            (Some(Some((grad, val))), Some(moments)) => {
+                Some(Tensor::from_raw(
+                    &new_graph,
+                    adamw_update_raw(val, grad, moments, step, settings),
+                ))
+            }
+            (Some(None), Some(_)) => {
+                Some(Tensor::from_raw(&new_graph, extracted.wpe_value.unwrap()))
+            }
+            (None, None) => None,
+            _ => unreachable!("optimizer state does not match optional parameter"),
+        };
+
+        let canvas_state = match (extracted.canvas_state, state.canvas_state.as_mut()) {
+            (Some(cs), Some(cs_state)) => Some(cs.apply(&new_graph, cs_state, step, settings)),
+            (None, None) => None,
+            _ => unreachable!("optimizer state does not match canvas state embeddings"),
+        };
+
+        let ln_in_weight = extracted
+            .ln_in_weight
+            .map(|(grad, val)| {
+                Tensor::from_raw(
+                    &new_graph,
+                    adamw_update_raw(val, grad, &mut state.ln_in_weight, step, settings),
+                )
+            })
+            .unwrap_or_else(|| {
+                Tensor::from_raw(&new_graph, extracted.ln_in_weight_value)
+            });
+
+        let ln_in_bias = extracted
+            .ln_in_bias
+            .map(|(grad, val)| {
+                Tensor::from_raw(
+                    &new_graph,
+                    adamw_update_raw(val, grad, &mut state.ln_in_bias, step, settings),
+                )
+            })
+            .unwrap_or_else(|| {
+                Tensor::from_raw(&new_graph, extracted.ln_in_bias_value)
+            });
+
+        let blocks = extracted_blocks
+            .into_iter()
+            .zip(state.blocks.iter_mut())
+            .map(|(extracted_block, block_state)| {
+                extracted_block.apply(&new_graph, block_state, step, settings)
+            })
+            .collect();
+
+        let ln_f_weight = extracted
+            .ln_f_weight
+            .map(|(grad, val)| {
+                Tensor::from_raw(
+                    &new_graph,
+                    adamw_update_raw(val, grad, &mut state.ln_f_weight, step, settings),
+                )
+            })
+            .unwrap_or_else(|| {
+                Tensor::from_raw(&new_graph, extracted.ln_f_weight_value)
+            });
+
+        let ln_f_bias = extracted
+            .ln_f_bias
+            .map(|(grad, val)| {
+                Tensor::from_raw(
+                    &new_graph,
+                    adamw_update_raw(val, grad, &mut state.ln_f_bias, step, settings),
+                )
+            })
+            .unwrap_or_else(|| {
+                Tensor::from_raw(&new_graph, extracted.ln_f_bias_value)
+            });
+
+        let action_head = extracted
+            .action_head
+            .apply(&new_graph, &mut state.action_head, step, settings);
+
+        let rotary = rotary.map(|cache| cache.into_graph(&new_graph));
+
+        NanoChatModel {
+            graph: new_graph,
             shape,
             attention_period,
             vocab_size,
@@ -611,79 +693,8 @@ impl AdamWModel for NanoChatModel {
             blocks,
             ln_f_weight,
             ln_f_bias,
-            mode_head,
-            direction_head,
-            length_ordinal_head,
-            length_scalar_head,
-        } = self;
-
-        let blocks = blocks
-            .into_iter()
-            .zip(state.blocks.iter_mut())
-            .map(|(block, block_state)| block_state.step(block, gradients, step, settings))
-            .collect();
-
-        let updated = NanoChatModel {
-            graph,
-            shape,
-            attention_period,
-            vocab_size,
-            max_count,
-            use_rope,
-            rope_theta,
-            use_extra_norms,
-            wte: adamw_update(&wte, &mut state.wte, gradients, step, settings),
-            wpe: adamw_update_optional(wpe, &mut state.wpe, gradients, step, settings),
-            canvas_state: match (canvas_state, state.canvas_state.as_mut()) {
-                (Some(canvas_state), Some(state)) => {
-                    Some(state.step(canvas_state, gradients, step, settings))
-                }
-                (None, None) => None,
-                _ => unreachable!("optimizer state does not match canvas state embeddings"),
-            },
-            rotary,
-            ln_in_weight: adamw_update(
-                &ln_in_weight,
-                &mut state.ln_in_weight,
-                gradients,
-                step,
-                settings,
-            ),
-            ln_in_bias: adamw_update(
-                &ln_in_bias,
-                &mut state.ln_in_bias,
-                gradients,
-                step,
-                settings,
-            ),
-            blocks,
-            ln_f_weight: adamw_update(
-                &ln_f_weight,
-                &mut state.ln_f_weight,
-                gradients,
-                step,
-                settings,
-            ),
-            ln_f_bias: adamw_update(&ln_f_bias, &mut state.ln_f_bias, gradients, step, settings),
-            mode_head: state.mode_head.step(mode_head, gradients, step, settings),
-            direction_head: state
-                .direction_head
-                .step(direction_head, gradients, step, settings),
-            length_ordinal_head: state.length_ordinal_head.step(
-                length_ordinal_head,
-                gradients,
-                step,
-                settings,
-            ),
-            length_scalar_head: state.length_scalar_head.step(
-                length_scalar_head,
-                gradients,
-                step,
-                settings,
-            ),
-        };
-
-        updated.into_graph(Graph::new())
+            action_head,
+        }
     }
 }
 
@@ -1724,6 +1735,463 @@ impl ModelShape {
 
     fn num_kv_groups(self) -> usize {
         self.n_head / self.n_kv_head.max(1)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Extracted-gradient structs for the two-phase optimizer step.
+//
+// Phase 1 extracts lazy (RawTensor, RawTensor) pairs keyed by the old autograd
+// NodeIds.  Phase 2 drops the old autograd graph (freeing backward-closure
+// captured GPU buffers) then resolves the extracted gradients.
+// ---------------------------------------------------------------------------
+
+type GradPair<const R: usize> = Option<(fusor::Tensor<R, f32>, fusor::Tensor<R, f32>)>;
+
+struct ExtractedModelGradients {
+    wte: GradPair<2>,
+    wte_value: fusor::Tensor<2, f32>,
+    wpe: Option<GradPair<2>>,
+    wpe_value: Option<fusor::Tensor<2, f32>>,
+    canvas_state: Option<ExtractedCanvasStateGradients>,
+    ln_in_weight: GradPair<1>,
+    ln_in_weight_value: fusor::Tensor<1, f32>,
+    ln_in_bias: GradPair<1>,
+    ln_in_bias_value: fusor::Tensor<1, f32>,
+    ln_f_weight: GradPair<1>,
+    ln_f_weight_value: fusor::Tensor<1, f32>,
+    ln_f_bias: GradPair<1>,
+    ln_f_bias_value: fusor::Tensor<1, f32>,
+    action_head: ExtractedOutputHeadGradients,
+}
+
+impl ExtractedModelGradients {
+    fn extract(model: &NanoChatModel, gradients: &Gradients) -> Self {
+        Self {
+            wte: extract_gradient(&model.wte, gradients),
+            wte_value: model.wte.raw().clone(),
+            wpe: model.wpe.as_ref().map(|wpe| extract_gradient(wpe, gradients)),
+            wpe_value: model.wpe.as_ref().map(|wpe| wpe.raw().clone()),
+            canvas_state: model
+                .canvas_state
+                .as_ref()
+                .map(|cs| ExtractedCanvasStateGradients::extract(cs, gradients)),
+            ln_in_weight: extract_gradient(&model.ln_in_weight, gradients),
+            ln_in_weight_value: model.ln_in_weight.raw().clone(),
+            ln_in_bias: extract_gradient(&model.ln_in_bias, gradients),
+            ln_in_bias_value: model.ln_in_bias.raw().clone(),
+            ln_f_weight: extract_gradient(&model.ln_f_weight, gradients),
+            ln_f_weight_value: model.ln_f_weight.raw().clone(),
+            ln_f_bias: extract_gradient(&model.ln_f_bias, gradients),
+            ln_f_bias_value: model.ln_f_bias.raw().clone(),
+            action_head: ExtractedOutputHeadGradients::extract(&model.action_head, gradients),
+        }
+    }
+}
+
+struct ExtractedCanvasStateGradients {
+    cursor_x: GradPair<2>,
+    cursor_x_value: fusor::Tensor<2, f32>,
+    cursor_y: GradPair<2>,
+    cursor_y_value: fusor::Tensor<2, f32>,
+    pen_state: GradPair<2>,
+    pen_state_value: fusor::Tensor<2, f32>,
+    spec: CanvasStateSpec,
+}
+
+impl ExtractedCanvasStateGradients {
+    fn extract(cs: &CanvasStateEmbeddings, gradients: &Gradients) -> Self {
+        Self {
+            cursor_x: extract_gradient(&cs.cursor_x, gradients),
+            cursor_x_value: cs.cursor_x.raw().clone(),
+            cursor_y: extract_gradient(&cs.cursor_y, gradients),
+            cursor_y_value: cs.cursor_y.raw().clone(),
+            pen_state: extract_gradient(&cs.pen_state, gradients),
+            pen_state_value: cs.pen_state.raw().clone(),
+            spec: cs.spec,
+        }
+    }
+
+    fn apply(
+        self,
+        graph: &Graph,
+        state: &mut CanvasStateAdamState,
+        step: usize,
+        settings: AdamWSettings,
+    ) -> CanvasStateEmbeddings {
+        CanvasStateEmbeddings {
+            spec: self.spec,
+            cursor_x: apply_extracted(
+                graph,
+                self.cursor_x,
+                self.cursor_x_value,
+                &mut state.cursor_x,
+                step,
+                settings,
+            ),
+            cursor_y: apply_extracted(
+                graph,
+                self.cursor_y,
+                self.cursor_y_value,
+                &mut state.cursor_y,
+                step,
+                settings,
+            ),
+            pen_state: apply_extracted(
+                graph,
+                self.pen_state,
+                self.pen_state_value,
+                &mut state.pen_state,
+                step,
+                settings,
+            ),
+        }
+    }
+}
+
+struct ExtractedOutputHeadGradients {
+    weight: GradPair<2>,
+    weight_value: fusor::Tensor<2, f32>,
+    bias: GradPair<1>,
+    bias_value: fusor::Tensor<1, f32>,
+}
+
+impl ExtractedOutputHeadGradients {
+    fn extract(head: &OutputHead, gradients: &Gradients) -> Self {
+        Self {
+            weight: extract_gradient(&head.weight, gradients),
+            weight_value: head.weight.raw().clone(),
+            bias: extract_gradient(&head.bias, gradients),
+            bias_value: head.bias.raw().clone(),
+        }
+    }
+
+    fn apply(
+        self,
+        graph: &Graph,
+        state: &mut AdamOutputHeadState,
+        step: usize,
+        settings: AdamWSettings,
+    ) -> OutputHead {
+        OutputHead {
+            weight: apply_extracted(
+                graph,
+                self.weight,
+                self.weight_value,
+                &mut state.weight,
+                step,
+                settings,
+            ),
+            bias: apply_extracted(
+                graph,
+                self.bias,
+                self.bias_value,
+                &mut state.bias,
+                step,
+                settings,
+            ),
+        }
+    }
+}
+
+struct ExtractedBlockGradients {
+    ln_1_weight: GradPair<1>,
+    ln_1_weight_value: fusor::Tensor<1, f32>,
+    ln_1_bias: GradPair<1>,
+    ln_1_bias_value: fusor::Tensor<1, f32>,
+    mixer: ExtractedMixerGradients,
+    ln_attn_out_weight: GradPair<1>,
+    ln_attn_out_weight_value: fusor::Tensor<1, f32>,
+    ln_attn_out_bias: GradPair<1>,
+    ln_attn_out_bias_value: fusor::Tensor<1, f32>,
+    ln_2_weight: GradPair<1>,
+    ln_2_weight_value: fusor::Tensor<1, f32>,
+    ln_2_bias: GradPair<1>,
+    ln_2_bias_value: fusor::Tensor<1, f32>,
+    mlp: ExtractedMlpGradients,
+    ln_mlp_out_weight: GradPair<1>,
+    ln_mlp_out_weight_value: fusor::Tensor<1, f32>,
+    ln_mlp_out_bias: GradPair<1>,
+    ln_mlp_out_bias_value: fusor::Tensor<1, f32>,
+}
+
+impl ExtractedBlockGradients {
+    fn extract(block: &TransformerBlock, gradients: &Gradients) -> Self {
+        Self {
+            ln_1_weight: extract_gradient(&block.ln_1_weight, gradients),
+            ln_1_weight_value: block.ln_1_weight.raw().clone(),
+            ln_1_bias: extract_gradient(&block.ln_1_bias, gradients),
+            ln_1_bias_value: block.ln_1_bias.raw().clone(),
+            mixer: ExtractedMixerGradients::extract(&block.mixer, gradients),
+            ln_attn_out_weight: extract_gradient(&block.ln_attn_out_weight, gradients),
+            ln_attn_out_weight_value: block.ln_attn_out_weight.raw().clone(),
+            ln_attn_out_bias: extract_gradient(&block.ln_attn_out_bias, gradients),
+            ln_attn_out_bias_value: block.ln_attn_out_bias.raw().clone(),
+            ln_2_weight: extract_gradient(&block.ln_2_weight, gradients),
+            ln_2_weight_value: block.ln_2_weight.raw().clone(),
+            ln_2_bias: extract_gradient(&block.ln_2_bias, gradients),
+            ln_2_bias_value: block.ln_2_bias.raw().clone(),
+            mlp: ExtractedMlpGradients::extract(&block.mlp, gradients),
+            ln_mlp_out_weight: extract_gradient(&block.ln_mlp_out_weight, gradients),
+            ln_mlp_out_weight_value: block.ln_mlp_out_weight.raw().clone(),
+            ln_mlp_out_bias: extract_gradient(&block.ln_mlp_out_bias, gradients),
+            ln_mlp_out_bias_value: block.ln_mlp_out_bias.raw().clone(),
+        }
+    }
+
+    fn apply(
+        self,
+        graph: &Graph,
+        state: &mut AdamBlockState,
+        step: usize,
+        settings: AdamWSettings,
+    ) -> TransformerBlock {
+        TransformerBlock {
+            ln_1_weight: apply_extracted(
+                graph, self.ln_1_weight, self.ln_1_weight_value,
+                &mut state.ln_1_weight, step, settings,
+            ),
+            ln_1_bias: apply_extracted(
+                graph, self.ln_1_bias, self.ln_1_bias_value,
+                &mut state.ln_1_bias, step, settings,
+            ),
+            mixer: self.mixer.apply(graph, &mut state.mixer, step, settings),
+            ln_attn_out_weight: apply_extracted(
+                graph, self.ln_attn_out_weight, self.ln_attn_out_weight_value,
+                &mut state.ln_attn_out_weight, step, settings,
+            ),
+            ln_attn_out_bias: apply_extracted(
+                graph, self.ln_attn_out_bias, self.ln_attn_out_bias_value,
+                &mut state.ln_attn_out_bias, step, settings,
+            ),
+            ln_2_weight: apply_extracted(
+                graph, self.ln_2_weight, self.ln_2_weight_value,
+                &mut state.ln_2_weight, step, settings,
+            ),
+            ln_2_bias: apply_extracted(
+                graph, self.ln_2_bias, self.ln_2_bias_value,
+                &mut state.ln_2_bias, step, settings,
+            ),
+            mlp: self.mlp.apply(graph, &mut state.mlp, step, settings),
+            ln_mlp_out_weight: apply_extracted(
+                graph, self.ln_mlp_out_weight, self.ln_mlp_out_weight_value,
+                &mut state.ln_mlp_out_weight, step, settings,
+            ),
+            ln_mlp_out_bias: apply_extracted(
+                graph, self.ln_mlp_out_bias, self.ln_mlp_out_bias_value,
+                &mut state.ln_mlp_out_bias, step, settings,
+            ),
+        }
+    }
+}
+
+enum ExtractedMixerGradients {
+    Attention(ExtractedAttentionGradients),
+    Conv(ExtractedConvGradients),
+}
+
+impl ExtractedMixerGradients {
+    fn extract(mixer: &SequenceMixer, gradients: &Gradients) -> Self {
+        match mixer {
+            SequenceMixer::Attention(attn) => {
+                Self::Attention(ExtractedAttentionGradients::extract(attn, gradients))
+            }
+            SequenceMixer::Conv(conv) => {
+                Self::Conv(ExtractedConvGradients::extract(conv, gradients))
+            }
+        }
+    }
+
+    fn apply(
+        self,
+        graph: &Graph,
+        state: &mut AdamMixerState,
+        step: usize,
+        settings: AdamWSettings,
+    ) -> SequenceMixer {
+        match (self, state) {
+            (Self::Attention(extracted), AdamMixerState::Attention(state)) => {
+                SequenceMixer::Attention(extracted.apply(graph, state, step, settings))
+            }
+            (Self::Conv(extracted), AdamMixerState::Conv(state)) => {
+                SequenceMixer::Conv(extracted.apply(graph, state, step, settings))
+            }
+            _ => unreachable!("mixer schedule changed after optimizer init"),
+        }
+    }
+}
+
+struct ExtractedAttentionGradients {
+    c_attn_q: GradPair<2>,
+    c_attn_q_value: fusor::Tensor<2, f32>,
+    c_attn_k: GradPair<2>,
+    c_attn_k_value: fusor::Tensor<2, f32>,
+    c_attn_v: GradPair<2>,
+    c_attn_v_value: fusor::Tensor<2, f32>,
+    c_proj: GradPair<2>,
+    c_proj_value: fusor::Tensor<2, f32>,
+}
+
+impl ExtractedAttentionGradients {
+    fn extract(attn: &CausalSelfAttention, gradients: &Gradients) -> Self {
+        Self {
+            c_attn_q: extract_gradient(&attn.c_attn_q, gradients),
+            c_attn_q_value: attn.c_attn_q.raw().clone(),
+            c_attn_k: extract_gradient(&attn.c_attn_k, gradients),
+            c_attn_k_value: attn.c_attn_k.raw().clone(),
+            c_attn_v: extract_gradient(&attn.c_attn_v, gradients),
+            c_attn_v_value: attn.c_attn_v.raw().clone(),
+            c_proj: extract_gradient(&attn.c_proj, gradients),
+            c_proj_value: attn.c_proj.raw().clone(),
+        }
+    }
+
+    fn apply(
+        self,
+        graph: &Graph,
+        state: &mut AdamAttentionState,
+        step: usize,
+        settings: AdamWSettings,
+    ) -> CausalSelfAttention {
+        CausalSelfAttention {
+            c_attn_q: apply_extracted(
+                graph, self.c_attn_q, self.c_attn_q_value,
+                &mut state.c_attn_q, step, settings,
+            ),
+            c_attn_k: apply_extracted(
+                graph, self.c_attn_k, self.c_attn_k_value,
+                &mut state.c_attn_k, step, settings,
+            ),
+            c_attn_v: apply_extracted(
+                graph, self.c_attn_v, self.c_attn_v_value,
+                &mut state.c_attn_v, step, settings,
+            ),
+            c_proj: apply_extracted(
+                graph, self.c_proj, self.c_proj_value,
+                &mut state.c_proj, step, settings,
+            ),
+        }
+    }
+}
+
+struct ExtractedConvGradients {
+    kernels: Vec<GradPair<2>>,
+    kernel_values: Vec<fusor::Tensor<2, f32>>,
+    bias: GradPair<1>,
+    bias_value: fusor::Tensor<1, f32>,
+    out_proj: GradPair<2>,
+    out_proj_value: fusor::Tensor<2, f32>,
+}
+
+impl ExtractedConvGradients {
+    fn extract(conv: &ConvMixer, gradients: &Gradients) -> Self {
+        Self {
+            kernels: conv
+                .kernels
+                .iter()
+                .map(|k| extract_gradient(k, gradients))
+                .collect(),
+            kernel_values: conv.kernels.iter().map(|k| k.raw().clone()).collect(),
+            bias: extract_gradient(&conv.bias, gradients),
+            bias_value: conv.bias.raw().clone(),
+            out_proj: extract_gradient(&conv.out_proj, gradients),
+            out_proj_value: conv.out_proj.raw().clone(),
+        }
+    }
+
+    fn apply(
+        self,
+        graph: &Graph,
+        state: &mut AdamConvState,
+        step: usize,
+        settings: AdamWSettings,
+    ) -> ConvMixer {
+        let kernels = self
+            .kernels
+            .into_iter()
+            .zip(self.kernel_values)
+            .zip(state.kernels.iter_mut())
+            .map(|((grad_pair, value), moments)| {
+                apply_extracted(graph, grad_pair, value, moments, step, settings)
+            })
+            .collect();
+        ConvMixer {
+            kernels,
+            bias: apply_extracted(
+                graph, self.bias, self.bias_value, &mut state.bias, step, settings,
+            ),
+            out_proj: apply_extracted(
+                graph, self.out_proj, self.out_proj_value, &mut state.out_proj, step, settings,
+            ),
+        }
+    }
+}
+
+struct ExtractedMlpGradients {
+    c_fc: GradPair<2>,
+    c_fc_value: fusor::Tensor<2, f32>,
+    c_fc_bias: GradPair<1>,
+    c_fc_bias_value: fusor::Tensor<1, f32>,
+    c_proj: GradPair<2>,
+    c_proj_value: fusor::Tensor<2, f32>,
+    c_proj_bias: GradPair<1>,
+    c_proj_bias_value: fusor::Tensor<1, f32>,
+}
+
+impl ExtractedMlpGradients {
+    fn extract(mlp: &Mlp, gradients: &Gradients) -> Self {
+        Self {
+            c_fc: extract_gradient(&mlp.c_fc, gradients),
+            c_fc_value: mlp.c_fc.raw().clone(),
+            c_fc_bias: extract_gradient(&mlp.c_fc_bias, gradients),
+            c_fc_bias_value: mlp.c_fc_bias.raw().clone(),
+            c_proj: extract_gradient(&mlp.c_proj, gradients),
+            c_proj_value: mlp.c_proj.raw().clone(),
+            c_proj_bias: extract_gradient(&mlp.c_proj_bias, gradients),
+            c_proj_bias_value: mlp.c_proj_bias.raw().clone(),
+        }
+    }
+
+    fn apply(
+        self,
+        graph: &Graph,
+        state: &mut AdamMlpState,
+        step: usize,
+        settings: AdamWSettings,
+    ) -> Mlp {
+        Mlp {
+            c_fc: apply_extracted(
+                graph, self.c_fc, self.c_fc_value, &mut state.c_fc, step, settings,
+            ),
+            c_fc_bias: apply_extracted(
+                graph, self.c_fc_bias, self.c_fc_bias_value,
+                &mut state.c_fc_bias, step, settings,
+            ),
+            c_proj: apply_extracted(
+                graph, self.c_proj, self.c_proj_value, &mut state.c_proj, step, settings,
+            ),
+            c_proj_bias: apply_extracted(
+                graph, self.c_proj_bias, self.c_proj_bias_value,
+                &mut state.c_proj_bias, step, settings,
+            ),
+        }
+    }
+}
+
+/// Helper: apply an extracted gradient pair or fall back to the unchanged value.
+fn apply_extracted<const R: usize>(
+    graph: &Graph,
+    grad_pair: GradPair<R>,
+    fallback_value: fusor::Tensor<R, f32>,
+    moments: &mut AdamMoments<R>,
+    step: usize,
+    settings: AdamWSettings,
+) -> Tensor<R> {
+    match grad_pair {
+        Some((gradient, param_value)) => {
+            Tensor::from_raw(graph, adamw_update_raw(param_value, gradient, moments, step, settings))
+        }
+        None => Tensor::from_raw(graph, fallback_value),
     }
 }
 

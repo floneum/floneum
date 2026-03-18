@@ -120,6 +120,17 @@ pub struct DecodedActionToken {
     pub normalized_count: Option<f32>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StrokePath {
+    pub points: Vec<(i32, i32)>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StrokeScene {
+    pub prompt_strokes: Vec<StrokePath>,
+    pub continuation_strokes: Vec<StrokePath>,
+}
+
 #[derive(Deserialize)]
 struct FeatherIconRecord {
     name: String,
@@ -1363,6 +1374,33 @@ pub fn write_tokens_to_svg_file(
     continuation_tokens: &[u32],
     path: &Path,
 ) {
+    let svg = tokens_to_svg_string(tokenizer, prompt_tokens, continuation_tokens);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).unwrap_or_else(|error| {
+            panic!(
+                "failed to create SVG output directory {}: {error}",
+                parent.display()
+            )
+        });
+    }
+    fs::write(path, svg)
+        .unwrap_or_else(|error| panic!("failed to write SVG sample {}: {error}", path.display()));
+}
+
+pub fn tokens_to_svg_string(
+    tokenizer: &StrokeTokenizer,
+    prompt_tokens: &[u32],
+    continuation_tokens: &[u32],
+) -> String {
+    let scene = tokens_to_stroke_scene(tokenizer, prompt_tokens, continuation_tokens);
+    svg_document(&scene.prompt_strokes, &scene.continuation_strokes)
+}
+
+pub fn tokens_to_stroke_scene(
+    tokenizer: &StrokeTokenizer,
+    prompt_tokens: &[u32],
+    continuation_tokens: &[u32],
+) -> StrokeScene {
     let mut prompt_state = RenderState::default();
     render_tokens_into_state(tokenizer, prompt_tokens, &mut prompt_state);
     prompt_state.finish_current_stroke();
@@ -1377,17 +1415,17 @@ pub fn write_tokens_to_svg_file(
     render_tokens_into_state(tokenizer, continuation_tokens, &mut continuation_state);
     continuation_state.finish_current_stroke();
 
-    let svg = svg_document(&prompt_strokes, &continuation_state.completed_strokes);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).unwrap_or_else(|error| {
-            panic!(
-                "failed to create SVG output directory {}: {error}",
-                parent.display()
-            )
-        });
+    StrokeScene {
+        prompt_strokes: prompt_strokes
+            .into_iter()
+            .map(|points| StrokePath { points })
+            .collect(),
+        continuation_strokes: continuation_state
+            .completed_strokes
+            .into_iter()
+            .map(|points| StrokePath { points })
+            .collect(),
     }
-    fs::write(path, svg)
-        .unwrap_or_else(|error| panic!("failed to write SVG sample {}: {error}", path.display()));
 }
 
 pub fn windows_to_token_inputs(windows: &[Vec<u32>]) -> Vec<Vec<u32>> {
@@ -1567,13 +1605,13 @@ fn encode_canvas_coordinate(value: i32, spec: CanvasStateSpec) -> u32 {
 }
 
 fn svg_document(
-    prompt_strokes: &[Vec<(i32, i32)>],
-    continuation_strokes: &[Vec<(i32, i32)>],
+    prompt_strokes: &[StrokePath],
+    continuation_strokes: &[StrokePath],
 ) -> String {
     let all_points = prompt_strokes
         .iter()
         .chain(continuation_strokes.iter())
-        .flat_map(|stroke| stroke.iter().copied())
+        .flat_map(|stroke| stroke.points.iter().copied())
         .collect::<Vec<_>>();
 
     let (offset_x, offset_y, scale) = if all_points.is_empty() {
@@ -1596,7 +1634,7 @@ fn svg_document(
 
     let prompt_paths = prompt_strokes
         .iter()
-        .filter_map(|stroke| polyline_path(stroke, offset_x, offset_y, scale))
+        .filter_map(|stroke| polyline_path(&stroke.points, offset_x, offset_y, scale))
         .map(|path| {
             format!(
                 "<path d=\"{path}\" fill=\"none\" stroke=\"#264653\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" opacity=\"0.65\"/>"
@@ -1606,7 +1644,7 @@ fn svg_document(
         .join("");
     let continuation_paths = continuation_strokes
         .iter()
-        .filter_map(|stroke| polyline_path(stroke, offset_x, offset_y, scale))
+        .filter_map(|stroke| polyline_path(&stroke.points, offset_x, offset_y, scale))
         .map(|path| {
             format!(
                 "<path d=\"{path}\" fill=\"none\" stroke=\"#e76f51\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
@@ -2663,5 +2701,27 @@ mod tests {
         let svg = fs::read_to_string(&root).unwrap();
         assert!(svg.starts_with("<svg"));
         let _ = fs::remove_file(root);
+    }
+
+    #[test]
+    fn stroke_scene_keeps_prompt_and_continuation_as_separate_layers() {
+        let tokenizer = StrokeTokenizer::with_grid(5);
+        let prompt = vec![tokenizer.draw_token(Direction::E, 1)];
+        let continuation = vec![tokenizer.draw_token(Direction::S, 1)];
+
+        let scene = tokens_to_stroke_scene(&tokenizer, &prompt, &continuation);
+
+        assert_eq!(
+            scene.prompt_strokes,
+            vec![StrokePath {
+                points: vec![(0, 0), (1, 0)],
+            }]
+        );
+        assert_eq!(
+            scene.continuation_strokes,
+            vec![StrokePath {
+                points: vec![(1, 0), (1, 1)],
+            }]
+        );
     }
 }

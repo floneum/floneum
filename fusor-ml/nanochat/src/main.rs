@@ -1,6 +1,5 @@
 mod config;
 mod data;
-mod interactive_model;
 mod model;
 
 use data::{
@@ -8,17 +7,20 @@ use data::{
     autoregressive_context, canvas_state_indexes, load_dataset_source, position_indexes,
     windows_to_token_inputs, windows_to_token_targets, write_tokens_to_svg_file,
 };
-use fusor::{Device, Tensor, ToVec3, VarBuilder};
+use fusor::{Device, Tensor, ToVec3};
 use fusor_gguf::{
     BlockQ4_0, BlockQ8_0, GgmlType, GgufMetadata, GgufTensorMetadata, GgufValue, GgufVersion,
 };
 use fusor_train::{AdamW, AdamWSettings};
+use fusor_nanochat::{
+    ComparisonReport, LivePredictor, RuntimeConfig as SharedRuntimeConfig,
+    SaveQuantization as SharedSaveQuantization,
+    build_comparison_report as build_shared_comparison_report, generate_sample as generate_shared_sample,
+};
 use half::f16;
-use interactive_model::InteractiveNanoChatModel;
 use model::{NamedTensor, NanoChatModel};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use std::{
-    collections::{BTreeMap, BTreeSet},
     env,
     fs::{self, File},
     io::{BufWriter, Write},
@@ -28,14 +30,21 @@ use std::{
 
 use crate::config::{RuntimeConfig, SaveQuantization};
 
-const COMPARISON_SAMPLE_LIMIT: usize = 12;
-const DATASET_GALLERY_LIMIT: usize = 24;
-
 #[tokio::main]
 async fn main() {
     {
         let args = Args::parse();
         let runtime = RuntimeConfig::load();
+
+        if args.infer {
+            run_inference(&runtime, args.force_cpu);
+            return;
+        }
+        if args.compare {
+            run_comparison_report(&runtime, args.force_cpu);
+            return;
+        }
+
         let dataset_source = load_dataset_source(&runtime);
         let dataset_label = dataset_source.label.clone();
         let tokenizer = dataset_source.tokenizer.clone();
@@ -45,15 +54,6 @@ async fn main() {
         } else {
             Device::gpu().await.unwrap()
         };
-
-        if args.infer {
-            run_inference(&device, &tokenizer, &runtime).await;
-            return;
-        }
-        if args.compare {
-            run_comparison_report(&device, &tokenizer, &runtime, dataset_source.split).await;
-            return;
-        }
 
         let DatasetSplit {
             train: train_dataset,
@@ -166,10 +166,13 @@ async fn main() {
                     None
                 };
                 let gradients = loss.backward().unwrap();
-                model = optimizer.step(model, &gradients);
+                drop(loss);
+                drop(logits);
+                drop(causal_mask);
+                model = optimizer.step(model, gradients);
 
                 if let Some(loss_value) = loss_value {
-                    let validation_loss = evaluate_autoregressive_loss(
+                    let validation_metrics = evaluate_autoregressive_metrics(
                         &model,
                         &device,
                         &tokenizer,
@@ -179,13 +182,15 @@ async fn main() {
                     )
                     .await;
                     println!(
-                        "epoch {}/{} batch {:>3}/{} | global {:>6}/{} | lr={learning_rate:.6} | train_loss={loss_value:.6} | eval_loss={validation_loss:.6}",
+                        "epoch {}/{} batch {:>3}/{} | global {:>6}/{} | lr={learning_rate:.6} | train_loss={loss_value:.6} | eval_loss={:.6} | eval_joint_action_acc={:.2}%",
                         epoch + 1,
                         runtime.epochs,
                         batch_index + 1,
                         epoch_batch_count,
                         global_step,
                         total_steps,
+                        validation_metrics.loss,
+                        validation_metrics.joint_action_acc * 100.0,
                     );
                 } else if should_log {
                     println!(
@@ -220,29 +225,19 @@ async fn main() {
 
         let (metrics, sample_generated) = if runtime.save_final_model {
             drop(model);
-            let interactive_model = load_interactive_model(&device, &tokenizer, &runtime);
-            let metrics = evaluate_interactive_continuation(
-                &interactive_model,
-                &device,
-                &tokenizer,
-                evaluation_dataset,
-                &runtime,
-            )
-            .await;
+            let predictor = LivePredictor::load(to_shared_runtime_config(&runtime), args.force_cpu)
+                .unwrap_or_else(|error| panic!("could not load live predictor: {error}"));
+            let metrics =
+                evaluate_interactive_continuation(&predictor, &tokenizer, evaluation_dataset, &runtime)
+                    .await;
             let sample_generated = if let Some(file) = evaluation_dataset.files().first() {
                 let prompt_tokens = continuation_prompt_tokens(&tokenizer, file, &runtime);
                 Some(
-                    generate_interactive_completion(
-                        &interactive_model,
-                        &device,
-                        &tokenizer,
-                        &runtime,
-                        runtime.seed,
-                        &prompt_tokens,
-                        runtime.sample_tokens,
-                        SamplingMode::Sample,
-                    )
-                    .await,
+                    predictor
+                        .predict_greedy(&prompt_tokens[1..], runtime.sample_tokens)
+                        .unwrap_or_else(|error| {
+                            panic!("could not generate continuation sample from checkpoint: {error}")
+                        }),
                 )
             } else {
                 None
@@ -739,16 +734,8 @@ async fn generate_completion(
             .await
             .unwrap()
             .to_vec3();
-        let ordinal_logits: Vec<Vec<Vec<f32>>> = logits
-            .length_ordinal
-            .raw()
-            .clone()
-            .as_slice()
-            .await
-            .unwrap()
-            .to_vec3();
-        let scalar_logits: Vec<Vec<Vec<f32>>> = logits
-            .length_scalar
+        let count_logits: Vec<Vec<Vec<f32>>> = logits
+            .count
             .raw()
             .clone()
             .as_slice()
@@ -760,8 +747,7 @@ async fn generate_completion(
             &context[..=last_index],
             &mode_logits[0][last_index],
             &direction_logits[0][last_index],
-            &ordinal_logits[0][last_index],
-            scalar_logits[0][last_index][0],
+            &count_logits[0][last_index],
             runtime.sample_temperature,
             runtime.sample_top_k,
             rng,
@@ -823,8 +809,7 @@ fn decode_next_action_token(
     context: &[u32],
     mode_logits: &[f32],
     direction_logits: &[f32],
-    ordinal_logits: &[f32],
-    scalar_logit: f32,
+    count_logits: &[f32],
     temperature: f32,
     top_k: usize,
     rng: &mut StdRng,
@@ -845,7 +830,10 @@ fn decode_next_action_token(
             *logit = f32::NEG_INFINITY;
         }
     }
-    if !filtered_direction_logits.iter().any(|logit| logit.is_finite()) {
+    if !filtered_direction_logits
+        .iter()
+        .any(|logit| logit.is_finite())
+    {
         return tokenizer.eot_token();
     }
 
@@ -860,35 +848,20 @@ fn decode_next_action_token(
         return tokenizer.eot_token();
     }
 
-    let ordinal_expected = if ordinal_logits.is_empty() {
-        1.0
-    } else {
-        let ordinal_probs = ordinal_logits
-            .iter()
-            .map(|logit| sigmoid_f32(*logit))
-            .collect::<Vec<_>>();
-        tokenizer.expected_count_from_ordinal(&ordinal_probs)
-    };
-    let ordinal_normalized = if tokenizer.max_count() <= 1 {
-        0.0
-    } else {
-        ((ordinal_expected - 1.0) / (tokenizer.max_count() - 1) as f32).clamp(0.0, 1.0)
-    };
-    let scalar_normalized = sigmoid_f32(scalar_logit);
-    let combined_normalized = if ordinal_logits.is_empty() {
-        scalar_normalized
-    } else {
-        (ordinal_normalized + scalar_normalized) * 0.5
-    };
-    let count = tokenizer
-        .count_from_normalized(combined_normalized)
-        .clamp(1, legal_limit.max(1));
+    let mut filtered_count_logits = count_logits.to_vec();
+    for (count_index, logit) in filtered_count_logits.iter_mut().enumerate() {
+        let count = count_index + 1;
+        if count > legal_limit {
+            *logit = f32::NEG_INFINITY;
+        }
+    }
+    let count_index = match sampling {
+        SamplingMode::Greedy => argmax_from_logits(&filtered_count_logits),
+        SamplingMode::Sample => sample_from_logits(rng, &filtered_count_logits, temperature, top_k),
+    } as usize;
+    let count = (count_index + 1).clamp(1, legal_limit.max(1));
 
     tokenizer.token_from_components(mode_index, direction_index, count)
-}
-
-fn sigmoid_f32(value: f32) -> f32 {
-    1.0 / (1.0 + (-value).exp())
 }
 
 fn causal_mask_tensor(
@@ -955,14 +928,11 @@ fn structured_action_loss_autograd(
 ) -> fusor::autograd::Tensor<0> {
     let batch_size = targets.len();
     let block_size = targets.first().map_or(0, Vec::len);
-    let ordinal_dim = logits.length_ordinal.shape()[2];
     let mut mode_targets = vec![vec![0u32; block_size]; batch_size];
     let mut direction_targets = vec![vec![0u32; block_size]; batch_size];
+    let mut count_targets = vec![vec![0u32; block_size]; batch_size];
     let mut direction_mask = vec![vec![0.0f32; block_size]; batch_size];
-    let mut ordinal_targets = vec![vec![vec![0.0f32; ordinal_dim]; block_size]; batch_size];
-    let mut ordinal_mask = vec![vec![vec![0.0f32; ordinal_dim]; block_size]; batch_size];
-    let mut scalar_targets = vec![vec![vec![0.0f32; 1]; block_size]; batch_size];
-    let mut scalar_mask = vec![vec![vec![0.0f32; 1]; block_size]; batch_size];
+    let mut count_mask = vec![vec![0.0f32; block_size]; batch_size];
     let mut action_tokens = 0.0f32;
 
     for batch in 0..batch_size {
@@ -970,21 +940,12 @@ fn structured_action_loss_autograd(
             let decoded = tokenizer.decode_training_target(targets[batch][position]);
             let valid = mask[batch][position];
             mode_targets[batch][position] = decoded.mode_index;
-            if let (Some(direction_index), Some(count), Some(normalized_count)) = (
-                decoded.direction_index,
-                decoded.count,
-                decoded.normalized_count,
-            ) {
+            if let (Some(direction_index), Some(count)) = (decoded.direction_index, decoded.count) {
                 direction_targets[batch][position] = direction_index;
+                count_targets[batch][position] = (count - 1) as u32;
                 direction_mask[batch][position] = valid;
+                count_mask[batch][position] = valid;
                 action_tokens += valid;
-                for threshold in 0..ordinal_dim {
-                    ordinal_targets[batch][position][threshold] =
-                        if (threshold + 1) < count { 1.0 } else { 0.0 };
-                    ordinal_mask[batch][position][threshold] = valid;
-                }
-                scalar_targets[batch][position][0] = normalized_count;
-                scalar_mask[batch][position][0] = valid;
             }
         }
     }
@@ -1007,66 +968,44 @@ fn structured_action_loss_autograd(
         action_tokens,
         tokenizer.direction_count(),
     );
-    let ordinal_target_tensor = fusor::autograd::Tensor::constant_from_raw(
+    let count_loss = masked_cross_entropy_autograd(
         graph,
-        fusor::Tensor::new(device, &ordinal_targets),
+        device,
+        &logits.count,
+        &count_targets,
+        &count_mask,
+        action_tokens,
+        tokenizer.max_count(),
     );
-    let ordinal_mask_tensor =
-        fusor::autograd::Tensor::constant_from_raw(graph, fusor::Tensor::new(device, &ordinal_mask));
-    let scalar_target_tensor = fusor::autograd::Tensor::constant_from_raw(
-        graph,
-        fusor::Tensor::new(device, &scalar_targets),
-    );
-    let scalar_mask_tensor =
-        fusor::autograd::Tensor::constant_from_raw(graph, fusor::Tensor::new(device, &scalar_mask));
-    let ordinal_probs = sigmoid_autograd(&logits.length_ordinal);
-    let scalar_probs = sigmoid_autograd(&logits.length_scalar);
-    let ordinal_loss = ordinal_probs
-        .sub(&ordinal_target_tensor)
-        .sqr()
-        .mul(&ordinal_mask_tensor)
-        .sum(2)
-        .sum(1)
-        .sum()
-        .div_scalar((action_tokens * ordinal_dim.max(1) as f32).max(1.0));
-    let scalar_loss = scalar_probs
-        .sub(&scalar_target_tensor)
-        .sqr()
-        .mul(&scalar_mask_tensor)
-        .sum(2)
-        .sum(1)
-        .sum()
-        .div_scalar(action_tokens.max(1.0));
 
-    mode_loss
-        .add(&direction_loss)
-        .add(&ordinal_loss.mul_scalar(0.25))
-        .add(&scalar_loss.mul_scalar(0.25))
+    mode_loss.add(&direction_loss).add(&count_loss)
 }
 
-fn sigmoid_autograd<const R: usize>(
-    tensor: &fusor::autograd::Tensor<R>,
-) -> fusor::autograd::Tensor<R> {
-    let ones = fusor::autograd::Tensor::splat(&tensor.graph(), &tensor.device(), 1.0, tensor.shape());
-    let denom = tensor.neg().exp().add(&ones);
-    ones.div(&denom)
+struct EvalMetrics {
+    loss: f32,
+    joint_action_acc: f32,
 }
 
-async fn evaluate_autoregressive_loss(
+async fn evaluate_autoregressive_metrics(
     model: &NanoChatModel,
     device: &Device,
     tokenizer: &StrokeTokenizer,
     pad_token: u32,
     dataset: &SourceDataset,
     runtime: &RuntimeConfig,
-) -> f32 {
+) -> EvalMetrics {
     let batches = dataset.evaluation_batches(pad_token, runtime);
     if batches.is_empty() {
-        return 0.0;
+        return EvalMetrics {
+            loss: 0.0,
+            joint_action_acc: 0.0,
+        };
     }
 
     let mut total_nats = 0.0;
     let mut total_valid_tokens = 0.0;
+    let mut joint_action_correct = 0usize;
+    let mut joint_action_total = 0usize;
     for batch in batches {
         let batch_size = batch.windows.len();
         let batch_causal_mask =
@@ -1097,9 +1036,60 @@ async fn evaluate_autoregressive_loss(
         );
         total_nats += loss.raw().to_scalar().await.unwrap() * batch.valid_tokens.max(1.0);
         total_valid_tokens += batch.valid_tokens;
+
+        let mode_logits: Vec<Vec<Vec<f32>>> = logits
+            .mode
+            .raw()
+            .clone()
+            .as_slice()
+            .await
+            .unwrap()
+            .to_vec3();
+        let direction_logits: Vec<Vec<Vec<f32>>> = logits
+            .direction
+            .raw()
+            .clone()
+            .as_slice()
+            .await
+            .unwrap()
+            .to_vec3();
+        let count_logits: Vec<Vec<Vec<f32>>> = logits
+            .count
+            .raw()
+            .clone()
+            .as_slice()
+            .await
+            .unwrap()
+            .to_vec3();
+        let mut greedy_rng = StdRng::seed_from_u64(0);
+        for batch_index in 0..batch_size {
+            for position in 0..runtime.block_size {
+                if batch.masks[batch_index][position] <= 0.0 {
+                    continue;
+                }
+                joint_action_total += 1;
+                let predicted = decode_next_action_token(
+                    tokenizer,
+                    &input_values[batch_index][..=position],
+                    &mode_logits[batch_index][position],
+                    &direction_logits[batch_index][position],
+                    &count_logits[batch_index][position],
+                    0.0,
+                    1,
+                    &mut greedy_rng,
+                    SamplingMode::Greedy,
+                );
+                if predicted == target_values[batch_index][position] {
+                    joint_action_correct += 1;
+                }
+            }
+        }
     }
 
-    total_nats / total_valid_tokens.max(1.0)
+    EvalMetrics {
+        loss: total_nats / total_valid_tokens.max(1.0),
+        joint_action_acc: joint_action_correct as f32 / joint_action_total.max(1) as f32,
+    }
 }
 
 fn should_materialize_live_training_metrics(device: &Device) -> bool {
@@ -1221,8 +1211,7 @@ async fn evaluate_continuation(
 }
 
 async fn evaluate_interactive_continuation(
-    model: &InteractiveNanoChatModel,
-    device: &Device,
+    predictor: &LivePredictor,
     tokenizer: &StrokeTokenizer,
     dataset: &SourceDataset,
     runtime: &RuntimeConfig,
@@ -1244,19 +1233,16 @@ async fn evaluate_interactive_continuation(
     for (batch_index, chunk) in files.chunks(batch_size).enumerate() {
         let batch_start = Instant::now();
 
-        for (offset, file) in chunk.iter().enumerate() {
+        for file in chunk {
             let prompt_tokens = continuation_prompt_tokens(tokenizer, file, runtime);
-            let generated = generate_interactive_completion(
-                model,
-                device,
-                tokenizer,
-                runtime,
-                runtime.seed + processed_files as u64 + offset as u64,
-                &prompt_tokens,
-                runtime.sample_tokens,
-                SamplingMode::Greedy,
-            )
-            .await;
+            let generated = predictor
+                .predict_greedy(&prompt_tokens[1..], runtime.sample_tokens)
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "interactive continuation evaluation failed at file {}: {error}",
+                        file.path()
+                    )
+                });
             let expected = expected_continuation_tokens(
                 file,
                 prompt_tokens.len().saturating_sub(1),
@@ -1310,6 +1296,60 @@ fn continuation_prompt_tokens(
     prompt
 }
 
+fn to_shared_runtime_config(runtime: &RuntimeConfig) -> SharedRuntimeConfig {
+    SharedRuntimeConfig {
+        epochs: runtime.epochs,
+        warmup_steps: runtime.warmup_steps,
+        learning_rate: runtime.learning_rate,
+        min_learning_rate: runtime.min_learning_rate,
+        beta1: runtime.beta1,
+        beta2: runtime.beta2,
+        adam_eps: runtime.adam_eps,
+        weight_decay: runtime.weight_decay,
+        log_every: runtime.log_every,
+        eval_batches: runtime.eval_batches,
+        sample_tokens: runtime.sample_tokens,
+        sample_prefix_tokens: runtime.sample_prefix_tokens,
+        sample_temperature: runtime.sample_temperature,
+        sample_top_k: runtime.sample_top_k,
+        block_size: runtime.block_size,
+        batch_size: runtime.batch_size,
+        n_embd: runtime.n_embd,
+        n_head: runtime.n_head,
+        n_kv_head: runtime.n_kv_head,
+        n_ff: runtime.n_ff,
+        n_layer: runtime.n_layer,
+        conv_kernel_size: runtime.conv_kernel_size,
+        attention_period: runtime.attention_period,
+        use_rope: runtime.use_rope,
+        rope_theta: runtime.rope_theta,
+        use_canvas_state_embeddings: runtime.use_canvas_state_embeddings,
+        use_extra_norms: runtime.use_extra_norms,
+        eps: runtime.eps,
+        init_scale: runtime.init_scale,
+        seed: runtime.seed,
+        save_every_steps: runtime.save_every_steps,
+        save_final_model: runtime.save_final_model,
+        save_quantization: to_shared_save_quantization(runtime.save_quantization),
+        train_examples: runtime.train_examples,
+        validation_examples: runtime.validation_examples,
+        test_examples: runtime.test_examples,
+        dataset_path: runtime.dataset_path.clone(),
+        include_synthetic_data: runtime.include_synthetic_data,
+        gguf_path: runtime.gguf_path.clone(),
+        sample_output_path: runtime.sample_output_path.clone(),
+    }
+}
+
+fn to_shared_save_quantization(quantization: SaveQuantization) -> SharedSaveQuantization {
+    match quantization {
+        SaveQuantization::F32 => SharedSaveQuantization::F32,
+        SaveQuantization::F16 => SharedSaveQuantization::F16,
+        SaveQuantization::Q4_0 => SharedSaveQuantization::Q4_0,
+        SaveQuantization::Q8_0 => SharedSaveQuantization::Q8_0,
+    }
+}
+
 fn expected_continuation_tokens(
     file: &SourceFile,
     prompt_tokens: usize,
@@ -1340,51 +1380,27 @@ enum SamplingMode {
     Sample,
 }
 
-async fn run_inference(device: &Device, tokenizer: &StrokeTokenizer, runtime: &RuntimeConfig) {
-    let model = load_interactive_model(device, tokenizer, runtime);
+fn run_inference(runtime: &RuntimeConfig, force_cpu: bool) {
     println!("generating {} tokens...", runtime.sample_tokens);
-    let generated = generate_interactive_completion(
-        &model,
-        device,
-        tokenizer,
-        runtime,
-        runtime.seed,
-        &[tokenizer.bos_token()],
-        runtime.sample_tokens,
-        SamplingMode::Sample,
-    )
-    .await;
+    let sample = generate_shared_sample(to_shared_runtime_config(runtime), force_cpu)
+        .unwrap_or_else(|error| panic!("could not generate sample: {error}"));
     let sample_output_path = resolve_output_path(&runtime.sample_output_path);
-    write_tokens_to_svg_file(tokenizer, &[], &generated, &sample_output_path);
+    fs::write(&sample_output_path, &sample.svg).unwrap_or_else(|error| {
+        panic!(
+            "failed to write sample SVG {}: {error}",
+            sample_output_path.display()
+        )
+    });
     println!(
         "generated {} tokens: {}",
-        generated.len(),
-        tokenizer.describe_tokens(&generated, 80)
+        sample.token_count, sample.generated_tokens_description
     );
     println!("wrote sample SVG: {}", sample_output_path.display());
 }
 
-async fn run_comparison_report(
-    device: &Device,
-    tokenizer: &StrokeTokenizer,
-    runtime: &RuntimeConfig,
-    datasets: DatasetSplit,
-) {
-    let train_dataset = datasets.train;
-    let validation_dataset = datasets.validation;
-    let test_dataset = datasets.test;
-    assert!(train_dataset.num_docs() > 0, "training split is empty");
-    let compare_dataset = if test_dataset.num_docs() > 0 {
-        &test_dataset
-    } else {
-        preferred_eval_dataset(&validation_dataset, &test_dataset, &train_dataset)
-    };
-    assert!(
-        compare_dataset.num_docs() > 0,
-        "comparison dataset is empty"
-    );
-
-    let model = load_interactive_model(device, tokenizer, runtime);
+fn run_comparison_report(runtime: &RuntimeConfig, force_cpu: bool) {
+    let report = build_shared_comparison_report(to_shared_runtime_config(runtime), force_cpu)
+        .unwrap_or_else(|error| panic!("could not build comparison report: {error}"));
     let report_dir = resolve_output_path(Path::new("examples/compare"));
     fs::create_dir_all(&report_dir).unwrap_or_else(|error| {
         panic!(
@@ -1392,305 +1408,75 @@ async fn run_comparison_report(
             report_dir.display()
         )
     });
-
-    let mut samples = Vec::new();
-    for (index, file) in compare_dataset
-        .files()
-        .iter()
-        .take(COMPARISON_SAMPLE_LIMIT)
-        .enumerate()
-    {
-        let prompt = file
-            .target_tokens()
-            .iter()
-            .copied()
-            .take(runtime.sample_prefix_tokens)
-            .collect::<Vec<_>>();
-        let expected = &file.target_tokens()[prompt.len()..];
-        let mut model_prompt = vec![tokenizer.bos_token()];
-        model_prompt.extend_from_slice(&prompt);
-        let generated = generate_interactive_completion(
-            &model,
-            device,
-            tokenizer,
-            runtime,
-            runtime.seed + index as u64,
-            &model_prompt,
-            expected.len(),
-            SamplingMode::Greedy,
-        )
-        .await;
-        let generated_name = format!("generated-{index:03}.svg");
-        write_tokens_to_svg_file(
-            tokenizer,
-            &prompt,
-            &generated,
-            &report_dir.join(&generated_name),
-        );
-
-        let expected_name = format!("expected-{index:03}.svg");
-        write_tokens_to_svg_file(
-            tokenizer,
-            &prompt,
-            expected,
-            &report_dir.join(&expected_name),
-        );
-
-        samples.push(ComparisonSample {
-            example_label: format!("Example {:03}", index),
-            source_path: file.path().to_string(),
-            shape: shape_name_from_path(file.path()).to_string(),
-            prompt_tokens: tokenizer.describe_tokens(&prompt, 80),
-            generated_name,
-            expected_name,
-            generated_tokens: tokenizer.describe_tokens(&generated, 80),
-            expected_tokens: tokenizer.describe_tokens(expected, 80),
-            edit_distance: token_edit_distance(&generated, expected),
-            similarity: similarity_score(
-                &generated,
-                expected,
-                token_edit_distance(&generated, expected),
-            ),
-        });
-    }
-
-    let mut dataset_gallery = Vec::new();
-    for (index, file) in train_dataset
-        .files()
-        .iter()
-        .take(DATASET_GALLERY_LIMIT)
-        .enumerate()
-    {
-        let image_name = format!("train-{index:03}.svg");
-        write_tokens_to_svg_file(
-            tokenizer,
-            &[],
-            file.target_tokens(),
-            &report_dir.join(&image_name),
-        );
-        dataset_gallery.push(DatasetGalleryItem {
-            image_name,
-            path: file.path().to_string(),
-            shape: shape_name_from_path(file.path()).to_string(),
-            tokens: tokenizer.describe_tokens(file.target_tokens(), 80),
-        });
-    }
-
-    let report = comparison_report_html(
-        train_dataset.num_docs(),
-        compare_dataset.num_docs(),
-        &samples,
-        &dataset_gallery,
-    );
+    write_comparison_report_assets(&report_dir, &report);
     let report_path = report_dir.join("index.html");
-    fs::write(&report_path, report).unwrap_or_else(|error| {
+    fs::write(&report_path, comparison_report_html(&report)).unwrap_or_else(|error| {
         panic!(
             "failed to write comparison report {}: {error}",
             report_path.display()
         )
     });
 
-    let average_similarity =
-        samples.iter().map(|sample| sample.similarity).sum::<f32>() / samples.len().max(1) as f32;
-    let unique_sequences = samples
-        .iter()
-        .map(|sample| sample.generated_tokens.clone())
-        .collect::<BTreeSet<_>>()
-        .len();
     println!(
         "comparison summary: prompted_examples={} unique_completions={} avg_completion_similarity={:.1}%",
-        samples.len(),
-        unique_sequences,
-        average_similarity * 100.0
+        report.sample_count,
+        report.unique_completions,
+        report.average_similarity * 100.0
     );
-    for (shape, count) in comparison_shape_counts(&samples) {
-        println!("comparison_shape {shape}: {count}");
+    for count in &report.shape_counts {
+        println!("comparison_shape {}: {}", count.shape, count.count);
     }
     println!("wrote comparison report: {}", report_path.display());
 }
 
-fn load_interactive_model(
-    device: &Device,
-    tokenizer: &StrokeTokenizer,
-    runtime: &RuntimeConfig,
-) -> InteractiveNanoChatModel {
-    let gguf_path = resolve_output_path(&runtime.gguf_path);
-    println!("loading model from {}...", gguf_path.display());
-    let mut reader = std::io::BufReader::new(
-        File::open(&gguf_path)
-            .unwrap_or_else(|e| panic!("could not open {}: {e}", gguf_path.display())),
-    );
-    let mut vb = VarBuilder::from_gguf(&mut reader)
-        .unwrap_or_else(|e| panic!("could not parse GGUF {}: {e}", gguf_path.display()));
-    let loaded_tokenizer = StrokeTokenizer::from_var_builder(&vb)
-        .unwrap_or_else(|e| panic!("could not load tokenizer metadata: {e}"));
-    assert!(
-        loaded_tokenizer.same_vocabulary(tokenizer),
-        "checkpoint tokenizer vocabulary does not match runtime tokenizer"
-    );
-    InteractiveNanoChatModel::load(device, &mut vb)
-        .unwrap_or_else(|e| panic!("could not load model: {e}"))
-}
-
-async fn generate_interactive_completion(
-    model: &InteractiveNanoChatModel,
-    device: &Device,
-    tokenizer: &StrokeTokenizer,
-    runtime: &RuntimeConfig,
-    seed: u64,
-    prompt_tokens: &[u32],
-    max_tokens: usize,
-    mode: SamplingMode,
-) -> Vec<u32> {
-    let block_size = model.block_size().min(runtime.block_size);
-    let position_values = position_indexes(1, block_size);
-    let position_inputs: Tensor<2, u32> = Tensor::new(device, &position_values);
-    let causal_mask = fusor::cache::AttentionMask::<f32>::causal(device, block_size);
-    let mut rng = StdRng::seed_from_u64(seed);
-    let mut tokens = prompt_tokens.to_vec();
-
-    for _ in 0..max_tokens {
-        let (context, last_index) =
-            autoregressive_context(&tokens, tokenizer.eot_token(), block_size);
-        let token_inputs: Tensor<2, u32> = Tensor::new(device, std::slice::from_ref(&context));
-        let (cursor_x_inputs, cursor_y_inputs, pen_state_inputs) = canvas_state_tensors(
-            device,
-            tokenizer,
-            std::slice::from_ref(&context),
-            model.canvas_state_spec(),
+fn write_comparison_report_assets(report_dir: &Path, report: &ComparisonReport) {
+    for (index, sample) in report.samples.iter().enumerate() {
+        write_report_svg_asset(
+            &report_dir.join(format!("generated-{index:03}.svg")),
+            &sample.generated_svg,
         );
-        let logits = model.forward(
-            &token_inputs,
-            &position_inputs,
-            &cursor_x_inputs,
-            &cursor_y_inputs,
-            &pen_state_inputs,
-            &causal_mask,
+        write_report_svg_asset(
+            &report_dir.join(format!("expected-{index:03}.svg")),
+            &sample.expected_svg,
         );
-        let mode_logits: Vec<Vec<Vec<f32>>> = logits.mode.as_slice().await.unwrap().to_vec3();
-        let direction_logits: Vec<Vec<Vec<f32>>> =
-            logits.direction.as_slice().await.unwrap().to_vec3();
-        let ordinal_logits: Vec<Vec<Vec<f32>>> =
-            logits.length_ordinal.as_slice().await.unwrap().to_vec3();
-        let scalar_logits: Vec<Vec<Vec<f32>>> =
-            logits.length_scalar.as_slice().await.unwrap().to_vec3();
-        let next = decode_next_action_token(
-            tokenizer,
-            &context[..=last_index],
-            &mode_logits[0][last_index],
-            &direction_logits[0][last_index],
-            &ordinal_logits[0][last_index],
-            scalar_logits[0][last_index][0],
-            runtime.sample_temperature,
-            runtime.sample_top_k,
-            &mut rng,
-            mode,
-        );
-        tokens.push(next);
-        if next == tokenizer.eot_token() {
-            break;
-        }
     }
 
-    tokens[prompt_tokens.len()..]
+    for (index, item) in report.dataset_gallery.iter().enumerate() {
+        write_report_svg_asset(&report_dir.join(format!("train-{index:03}.svg")), &item.svg);
+    }
+}
+
+fn write_report_svg_asset(path: &Path, svg: &str) {
+    fs::write(path, svg)
+        .unwrap_or_else(|error| panic!("failed to write SVG asset {}: {error}", path.display()));
+}
+
+fn comparison_report_html(report: &ComparisonReport) -> String {
+    let comparison_shapes = report
+        .shape_counts
         .iter()
-        .copied()
-        .take_while(|&token| token != tokenizer.eot_token())
-        .collect()
-}
-
-struct ComparisonSample {
-    example_label: String,
-    source_path: String,
-    shape: String,
-    prompt_tokens: String,
-    generated_name: String,
-    expected_name: String,
-    generated_tokens: String,
-    expected_tokens: String,
-    edit_distance: usize,
-    similarity: f32,
-}
-
-struct DatasetGalleryItem {
-    image_name: String,
-    path: String,
-    shape: String,
-    tokens: String,
-}
-
-fn token_edit_distance(left: &[u32], right: &[u32]) -> usize {
-    let mut previous: Vec<usize> = (0..=right.len()).collect();
-    let mut current = vec![0; right.len() + 1];
-
-    for (i, &left_token) in left.iter().enumerate() {
-        current[0] = i + 1;
-        for (j, &right_token) in right.iter().enumerate() {
-            let substitution_cost = usize::from(left_token != right_token);
-            current[j + 1] = (previous[j + 1] + 1)
-                .min(current[j] + 1)
-                .min(previous[j] + substitution_cost);
-        }
-        std::mem::swap(&mut previous, &mut current);
-    }
-
-    previous[right.len()]
-}
-
-fn similarity_score(generated: &[u32], target: &[u32], edit_distance: usize) -> f32 {
-    let scale = generated.len().max(target.len()).max(1) as f32;
-    1.0 - (edit_distance as f32 / scale)
-}
-
-fn shape_name_from_path(path: &str) -> &str {
-    let filename = path.rsplit('/').next().unwrap_or(path);
-    let stem = filename.strip_suffix(".stroke").unwrap_or(filename);
-    match stem.rsplit_once('-') {
-        Some((shape, suffix)) if suffix.chars().all(|character| character.is_ascii_digit()) => {
-            shape
-        }
-        _ => stem,
-    }
-}
-
-fn comparison_shape_counts(samples: &[ComparisonSample]) -> BTreeMap<&str, usize> {
-    let mut counts = BTreeMap::new();
-    for sample in samples {
-        *counts.entry(sample.shape.as_str()).or_insert(0) += 1;
-    }
-    counts
-}
-
-fn comparison_report_html(
-    train_examples: usize,
-    compare_examples: usize,
-    samples: &[ComparisonSample],
-    dataset_gallery: &[DatasetGalleryItem],
-) -> String {
-    let average_similarity =
-        samples.iter().map(|sample| sample.similarity).sum::<f32>() / samples.len().max(1) as f32;
-    let comparison_shapes = comparison_shape_counts(samples)
-        .into_iter()
-        .map(|(shape, count)| {
+        .map(|count| {
             format!(
                 "<li><strong>{}</strong>: {} prompted comparisons</li>",
-                html_escape(shape),
-                count
+                html_escape(&count.shape),
+                count.count
             )
         })
         .collect::<Vec<_>>()
         .join("");
-    let sample_cards = samples
+    let sample_cards = report
+        .samples
         .iter()
-        .map(|sample| {
+        .enumerate()
+        .map(|(index, sample)| {
             format!(
                 "<article class=\"compare-card\"><div class=\"compare-head\"><h2>{label}</h2><p>Prompted from <strong>{shape}</strong> in <code>{path}</code></p><p><strong>Prompt</strong><br><code>{prompt_tokens}</code></p></div><div class=\"pair\"><figure><img src=\"{generated_name}\" alt=\"generated completion for {label}\"><figcaption>Model completion</figcaption></figure><figure><img src=\"{expected_name}\" alt=\"expected continuation for {label}\"><figcaption>Expected completion</figcaption></figure></div><dl class=\"metrics\"><div><dt>Edit distance</dt><dd>{distance}</dd></div><div><dt>Similarity</dt><dd>{similarity:.1}%</dd></div></dl><p><strong>Model continuation</strong><br><code>{generated_tokens}</code></p><p><strong>Expected continuation</strong><br><code>{expected_tokens}</code></p></article>",
                 label = html_escape(&sample.example_label),
                 shape = html_escape(&sample.shape),
                 path = html_escape(&sample.source_path),
                 prompt_tokens = html_escape(&sample.prompt_tokens),
-                generated_name = html_escape(&sample.generated_name),
-                expected_name = html_escape(&sample.expected_name),
+                generated_name = format!("generated-{index:03}.svg"),
+                expected_name = format!("expected-{index:03}.svg"),
                 distance = sample.edit_distance,
                 similarity = sample.similarity * 100.0,
                 generated_tokens = html_escape(&sample.generated_tokens),
@@ -1699,12 +1485,14 @@ fn comparison_report_html(
         })
         .collect::<Vec<_>>()
         .join("");
-    let gallery_cards = dataset_gallery
+    let gallery_cards = report
+        .dataset_gallery
         .iter()
-        .map(|item| {
+        .enumerate()
+        .map(|(index, item)| {
             format!(
                 "<article class=\"gallery-card\"><img src=\"{image_name}\" alt=\"{shape} training sample\"><h3>{shape}</h3><p><code>{path}</code></p><p><code>{tokens}</code></p></article>",
-                image_name = html_escape(&item.image_name),
+                image_name = format!("train-{index:03}.svg"),
                 shape = html_escape(&item.shape),
                 path = html_escape(&item.path),
                 tokens = html_escape(&item.tokens),
@@ -1715,10 +1503,10 @@ fn comparison_report_html(
 
     format!(
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Nanochat Comparison Report</title><style>:root{{--bg:#f5efe3;--panel:#fffaf0;--ink:#2f261c;--muted:#6f6558;--line:#deceb2;--accent:#d96c42;--accent-soft:#f1c9b8;--prompt:#264653;}}body{{margin:0;font-family:\"Iowan Old Style\",\"Palatino Linotype\",serif;background:radial-gradient(circle at top,#fdf7ec 0%,var(--bg) 58%,#eadcc4 100%);color:var(--ink);}}main{{max-width:1320px;margin:0 auto;padding:32px 20px 56px;}}h1,h2,h3,p,ul{{margin:0;}}header{{padding:28px;border:1px solid var(--line);border-radius:24px;background:rgba(255,250,240,0.92);box-shadow:0 20px 60px rgba(83,58,26,0.08);}}header p{{margin-top:10px;color:var(--muted);font-size:18px;line-height:1.45;}}.stats{{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:18px;}}.stat{{padding:14px 16px;border-radius:16px;background:#fffdf7;border:1px solid var(--line);}}.stat strong{{display:block;font-size:28px;color:var(--accent);}}section{{margin-top:28px;}}.shape-list{{margin-top:14px;padding-left:20px;color:var(--muted);}}.compare-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:18px;}}.compare-card,.gallery-card{{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:16px;box-shadow:0 14px 36px rgba(83,58,26,0.08);}}.compare-head h2{{font-size:24px;}}.compare-head p{{margin-top:6px;color:var(--muted);line-height:1.4;}}.pair{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:16px;}}figure{{margin:0;}}img{{display:block;width:100%;aspect-ratio:1;border-radius:14px;background:white;border:1px solid #eadcc4;}}figcaption{{margin-top:8px;font-size:14px;color:var(--muted);text-align:center;}}.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:16px 0;}}.metrics div{{padding:10px 12px;border-radius:14px;background:#fffdf7;border:1px solid var(--line);}}dt{{font-size:13px;color:var(--muted);}}dd{{margin:6px 0 0;font-size:22px;font-weight:700;color:var(--accent);}}code{{font-family:\"SFMono-Regular\",Menlo,Consolas,monospace;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word;}}.gallery-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;}}.gallery-card h3{{margin-top:10px;font-size:20px;}}.gallery-card p{{margin-top:8px;color:var(--muted);line-height:1.4;}}.legend{{display:flex;gap:14px;flex-wrap:wrap;margin-top:14px;color:var(--muted);font-size:14px;}}.swatch{{display:inline-block;width:14px;height:14px;border-radius:999px;vertical-align:-2px;margin-right:6px;border:1px solid rgba(0,0,0,0.08);}}.swatch.prompt{{background:var(--prompt);}}.swatch.cont{{background:var(--accent);}}@media (max-width: 720px){{.pair{{grid-template-columns:1fr;}}}}</style></head><body><main><header><h1>Nanochat Prompted Completion</h1><p>Each comparison starts from the first two commands of a held-out evaluation example. The teal segment is the prompt, and the orange segment is either the model's completion or the expected continuation from the same test example.</p><div class=\"stats\"><div class=\"stat\"><strong>{train_examples}</strong>train examples</div><div class=\"stat\"><strong>{compare_examples}</strong>eval examples</div><div class=\"stat\"><strong>{sample_count}</strong>prompted comparisons</div><div class=\"stat\"><strong>{average_similarity:.1}%</strong>avg completion similarity</div></div><div class=\"legend\"><span><span class=\"swatch prompt\"></span>Prompt</span><span><span class=\"swatch cont\"></span>Continuation</span></div><ul class=\"shape-list\">{comparison_shapes}</ul></header><section><div class=\"compare-grid\">{sample_cards}</div></section><section><header><h2>Training Gallery</h2><p>Representative examples from the current training split, rendered with the same SVG exporter as the prompted completions.</p></header><div class=\"gallery-grid\">{gallery_cards}</div></section></main></body></html>",
-        train_examples = train_examples,
-        compare_examples = compare_examples,
-        sample_count = samples.len(),
-        average_similarity = average_similarity * 100.0,
+        train_examples = report.train_examples,
+        compare_examples = report.compare_examples,
+        sample_count = report.sample_count,
+        average_similarity = report.average_similarity * 100.0,
         comparison_shapes = comparison_shapes,
         sample_cards = sample_cards,
         gallery_cards = gallery_cards,
@@ -1730,4 +1518,106 @@ fn html_escape(text: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('\"', "&quot;")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parity_runtime(gguf_path: PathBuf) -> RuntimeConfig {
+        RuntimeConfig {
+            epochs: 1,
+            warmup_steps: 1,
+            learning_rate: 1e-3,
+            min_learning_rate: 1e-4,
+            beta1: 0.9,
+            beta2: 0.95,
+            adam_eps: 1e-8,
+            weight_decay: 0.01,
+            log_every: 1,
+            eval_batches: 1,
+            sample_tokens: 8,
+            sample_prefix_tokens: 4,
+            sample_temperature: 0.7,
+            sample_top_k: 4,
+            block_size: 8,
+            batch_size: 2,
+            n_embd: 16,
+            n_head: 4,
+            n_kv_head: 1,
+            n_ff: 32,
+            n_layer: 1,
+            conv_kernel_size: 3,
+            attention_period: 1,
+            use_rope: true,
+            rope_theta: 10_000.0,
+            use_canvas_state_embeddings: true,
+            use_extra_norms: false,
+            eps: 1e-5,
+            init_scale: 0.05,
+            seed: 7,
+            save_every_steps: 0,
+            save_final_model: false,
+            save_quantization: SaveQuantization::F32,
+            train_examples: 1,
+            validation_examples: 1,
+            test_examples: 1,
+            dataset_path: None,
+            include_synthetic_data: false,
+            gguf_path,
+            sample_output_path: PathBuf::from("sample.svg"),
+        }
+    }
+
+    #[tokio::test]
+    async fn gguf_runtime_matches_training_greedy_generation() {
+        let gguf_path = std::env::temp_dir().join(format!(
+            "nanochat-parity-{}-{}.gguf",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let runtime = parity_runtime(gguf_path.clone());
+        let device = Device::cpu();
+        let tokenizer = StrokeTokenizer::new();
+        let mut rng = StdRng::seed_from_u64(runtime.seed);
+        let model = NanoChatModel::new(&device, &mut rng, &tokenizer, &runtime);
+
+        save_gguf(&model, &tokenizer, &runtime, &gguf_path).await;
+
+        let position_values = position_indexes(1, runtime.block_size);
+        let position_inputs: Tensor<2, u32> = Tensor::new(&device, &position_values);
+        let causal_mask = causal_mask_tensor(model.graph(), &device, 1, runtime.block_size);
+        let prompt = vec![
+            tokenizer.token_from_components(0, 2, 1),
+            tokenizer.token_from_components(1, 4, 1),
+        ];
+        let mut model_prompt = vec![tokenizer.bos_token()];
+        model_prompt.extend_from_slice(&prompt);
+        let expected = generate_completion(
+            &model,
+            &device,
+            &tokenizer,
+            &position_inputs,
+            &causal_mask,
+            &runtime,
+            &model_prompt,
+            tokenizer.eot_token(),
+            &mut StdRng::seed_from_u64(runtime.seed),
+            SamplingMode::Greedy,
+        )
+        .await;
+
+        let predictor = LivePredictor::load(to_shared_runtime_config(&runtime), true)
+            .unwrap_or_else(|error| panic!("failed to load GGUF predictor: {error}"));
+        let actual = predictor
+            .predict_greedy(&prompt, runtime.sample_tokens)
+            .unwrap_or_else(|error| panic!("failed to generate GGUF continuation: {error}"));
+
+        assert_eq!(actual, expected);
+
+        let _ = fs::remove_file(gguf_path);
+    }
 }

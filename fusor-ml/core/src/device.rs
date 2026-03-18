@@ -10,7 +10,8 @@ use lru::LruCache;
 use parking_lot::RwLock;
 use rustc_hash::FxBuildHasher;
 use wgpu::{
-    BackendOptions, BindGroupLayout, BufferUsages, Dx12BackendOptions, PipelineLayout, ShaderModule,
+    BackendOptions, BindGroupLayout, BufferUsages, COPY_BUFFER_ALIGNMENT, Dx12BackendOptions,
+    PipelineLayout, ShaderModule,
 };
 
 use crate::compute_graph::ComputeGraph;
@@ -26,6 +27,11 @@ const BIND_GROUP_LAYOUT_CACHE_SIZE: usize = 256;
 const PIPELINE_LAYOUT_CACHE_SIZE: usize = 256;
 const SHADER_MODULE_CACHE_SIZE: usize = 128;
 const COMPUTE_PIPELINE_CACHE_SIZE: usize = 128;
+
+fn padded_copy_size(size: u64) -> u64 {
+    let align_mask = COPY_BUFFER_ALIGNMENT - 1;
+    ((size + align_mask) & !align_mask).max(COPY_BUFFER_ALIGNMENT)
+}
 
 impl CachedBuffer {
     fn new(buffer: Arc<wgpu::Buffer>, writen: bool) -> Self {
@@ -417,8 +423,14 @@ impl Device {
 
     /// Get or create a buffer of the specified size.
     pub fn create_buffer_init(&self, data: &[u8], usage: wgpu::BufferUsages) -> Arc<wgpu::Buffer> {
-        let buffer = self.create_buffer_inner(data.len() as u64, usage, true);
-        self.wgpu_queue().write_buffer(&buffer, 0, data);
+        let padded_len = padded_copy_size(data.len() as u64);
+        let buffer = self.create_buffer_inner(padded_len, usage, true);
+        let mut write = self
+            .wgpu_queue()
+            .write_buffer_with(&buffer, 0, NonZeroU64::new(padded_len).unwrap())
+            .expect("failed to map buffer for writing");
+        write[..data.len()].copy_from_slice(data);
+        write[data.len()..].fill(0);
         buffer
     }
 
@@ -430,10 +442,13 @@ impl Device {
         len: u64,
     ) -> Arc<wgpu::Buffer> {
         let mut iter = data.into_iter();
-        let buffer = self.create_buffer_inner(len, usage, true);
+        let padded_len = padded_copy_size(len);
+        let buffer = self.create_buffer_inner(padded_len, usage, true);
         if let Some(len) = NonZeroU64::new(buffer.size()) {
             if let Some(mut write) = self.wgpu_queue().write_buffer_with(&buffer, 0, len) {
-                write.iter_mut().zip(&mut iter).for_each(|(a, b)| *a = b);
+                for byte in write.iter_mut() {
+                    *byte = iter.next().unwrap_or(0);
+                }
             } else {
                 panic!("Failed to map buffer for writing");
             }

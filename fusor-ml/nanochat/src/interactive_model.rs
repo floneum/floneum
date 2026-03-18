@@ -4,7 +4,7 @@ use fusor::{
     layers::{Embedding, RecurrentWeights, recurrent_forward},
 };
 
-use crate::data::CanvasStateSpec;
+use crate::data::{ACTION_DIRECTION_COUNT, ACTION_MODE_COUNT, CanvasStateSpec};
 
 #[derive(Clone, Copy)]
 struct ModelShape {
@@ -32,10 +32,8 @@ pub struct InteractiveNanoChatModel {
     blocks: Vec<TransformerBlock>,
     ln_f_weight: Tensor<1, f32>,
     ln_f_bias: Tensor<1, f32>,
-    mode_head: OutputHead,
-    direction_head: OutputHead,
-    length_ordinal_head: OutputHead,
-    length_scalar_head: OutputHead,
+    max_count: usize,
+    action_head: OutputHead,
 }
 
 #[derive(Clone)]
@@ -47,8 +45,7 @@ struct OutputHead {
 pub struct InteractiveActionLogits {
     pub mode: Tensor<3, f32>,
     pub direction: Tensor<3, f32>,
-    pub length_ordinal: Tensor<3, f32>,
-    pub length_scalar: Tensor<3, f32>,
+    pub count: Tensor<3, f32>,
 }
 
 #[derive(Clone)]
@@ -143,6 +140,12 @@ impl InteractiveNanoChatModel {
             .unwrap_or(4)
             .max(1);
         let vocab_size = metadata_u32(vb, "nanochat.vocab_size")? as usize;
+        let max_count = vb
+            .get_metadata("tokenizer.nanochat.max_count")
+            .and_then(|value| value.to_u32().ok())
+            .map(|value| value as usize)
+            .unwrap_or(8)
+            .max(1);
         let eps = metadata_f32(vb, "nanochat.eps")?;
         let use_rope = vb
             .get_metadata("nanochat.use_rope")
@@ -266,10 +269,7 @@ impl InteractiveNanoChatModel {
             .collect::<fusor::Result<Vec<_>>>()?;
         let ln_f_weight: Tensor<1, f32> = vb.get("output_norm.weight", device)?.dequantize();
         let ln_f_bias: Tensor<1, f32> = vb.get("output_norm.bias", device)?.dequantize();
-        let mode_head = OutputHead::load(device, vb, "output_mode")?;
-        let direction_head = OutputHead::load(device, vb, "output_direction")?;
-        let length_ordinal_head = OutputHead::load(device, vb, "output_length_ordinal")?;
-        let length_scalar_head = OutputHead::load(device, vb, "output_length_scalar")?;
+        let action_head = OutputHead::load(device, vb, "output_action")?;
 
         Ok(Self {
             shape,
@@ -285,10 +285,8 @@ impl InteractiveNanoChatModel {
             blocks,
             ln_f_weight,
             ln_f_bias,
-            mode_head,
-            direction_head,
-            length_ordinal_head,
-            length_scalar_head,
+            max_count,
+            action_head,
         })
     }
 
@@ -358,17 +356,21 @@ impl InteractiveNanoChatModel {
         let x = x
             .layer_norm(&ln_f_weight, Some(&ln_f_bias), self.shape.eps, true)
             .to_concrete();
+        let action_logits = self.action_head.project(&x, batch_size, self.shape.n_embd);
+        let seq_len = action_logits.shape()[1];
+        let mode_end = ACTION_MODE_COUNT;
+        let direction_end = mode_end + ACTION_DIRECTION_COUNT;
+        let count_end = direction_end + self.max_count;
         InteractiveActionLogits {
-            mode: self.mode_head.project(&x, batch_size, self.shape.n_embd),
-            direction: self
-                .direction_head
-                .project(&x, batch_size, self.shape.n_embd),
-            length_ordinal: self
-                .length_ordinal_head
-                .project(&x, batch_size, self.shape.n_embd),
-            length_scalar: self
-                .length_scalar_head
-                .project(&x, batch_size, self.shape.n_embd),
+            mode: action_logits
+                .slice([0..batch_size, 0..seq_len, 0..mode_end])
+                .to_concrete(),
+            direction: action_logits
+                .slice([0..batch_size, 0..seq_len, mode_end..direction_end])
+                .to_concrete(),
+            count: action_logits
+                .slice([0..batch_size, 0..seq_len, direction_end..count_end])
+                .to_concrete(),
         }
     }
 }

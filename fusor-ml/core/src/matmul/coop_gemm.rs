@@ -502,7 +502,11 @@ fn emit_tile_a_load_row_major(
     let total_k_groups = block_k / 4; // 4 K values per vec4 load
     let num_passes = total_k_groups.div_ceil(k_groups_per_pass);
 
-    writeln!(kernel, "    {{ // Load tile A [m][k] (row-major, vec4 in K)").unwrap();
+    writeln!(
+        kernel,
+        "    {{ // Load tile A [m][k] (row-major, vec4 in K)"
+    )
+    .unwrap();
     for pass in 0..num_passes {
         let thread_offset = pass * wg_threads;
         writeln!(
@@ -562,7 +566,11 @@ fn emit_tile_b_load(
         let total_vec4_groups = block_k * (bn_pass / 4);
         let vec4_groups_per_thread = total_vec4_groups.div_ceil(wg_threads);
 
-        writeln!(kernel, "    {{ // Load tile B [k][n] (row-major, vec4 in N)").unwrap();
+        writeln!(
+            kernel,
+            "    {{ // Load tile B [k][n] (row-major, vec4 in N)"
+        )
+        .unwrap();
         for li in 0..vec4_groups_per_thread {
             let base = li * wg_threads;
             writeln!(kernel, "      if (lid + {base}u < {total_vec4_groups}u) {{").unwrap();

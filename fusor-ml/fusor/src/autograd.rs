@@ -61,6 +61,7 @@ struct GraphState {
 trait AnyTensorValue: Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn clone_box(&self) -> Box<dyn AnyTensorValue>;
+    fn into_detached(self: Box<Self>) -> Box<dyn AnyTensorValue>;
     fn add_box(&self, other: &dyn AnyTensorValue) -> Result<Box<dyn AnyTensorValue>>;
 }
 
@@ -875,6 +876,16 @@ impl Gradients {
             .and_then(|gradient| gradient.as_any().downcast_ref::<RawTensor<R, f32>>())
             .cloned()
     }
+
+    pub fn into_detached(self) -> Self {
+        Self {
+            gradients: self
+                .gradients
+                .into_iter()
+                .map(|(id, gradient)| (id, gradient.into_detached()))
+                .collect(),
+        }
+    }
 }
 
 impl BackwardTarget {
@@ -995,6 +1006,13 @@ impl<const R: usize> AnyTensorValue for RawTensor<R, f32> {
 
     fn clone_box(&self) -> Box<dyn AnyTensorValue> {
         Box::new(self.clone())
+    }
+
+    fn into_detached(self: Box<Self>) -> Box<dyn AnyTensorValue> {
+        match *self {
+            RawTensor::Cpu(tensor) => Box::new(RawTensor::Cpu(tensor.to_concrete())),
+            RawTensor::Gpu(tensor) => Box::new(RawTensor::Gpu(tensor.detach())),
+        }
     }
 
     fn add_box(&self, other: &dyn AnyTensorValue) -> Result<Box<dyn AnyTensorValue>> {
@@ -1326,6 +1344,42 @@ mod tests {
         assert!(
             weak.upgrade().is_none(),
             "autograd graph stayed alive after all tensors were dropped",
+        );
+    }
+
+    #[test]
+    fn test_gpu_gradients_can_detach() {
+        let Ok(device) = Device::gpu_blocking() else {
+            eprintln!("skipping GPU gradient detach regression test: GPU unavailable");
+            return;
+        };
+
+        let graph = Graph::new();
+        let x: Tensor<2> = Tensor::new(&graph, &device, &[[1.0f32, 2.0], [3.0, 4.0]]);
+        let w: Tensor<2> = Tensor::new(&graph, &device, &[[0.5f32, -1.0], [1.5, 2.0]]);
+        let gradients = x
+            .mat_mul(&w)
+            .sum(1)
+            .sum()
+            .backward()
+            .unwrap()
+            .into_detached();
+        let dx = gradients.get(&x).expect("missing x gradient");
+        let dw = gradients.get(&w).expect("missing w gradient");
+
+        assert_eq!(
+            dx.as_gpu()
+                .expect("expected GPU x gradient")
+                .count_kernels_to_resolve(),
+            0,
+            "detached x gradient should not retain backward compute graph",
+        );
+        assert_eq!(
+            dw.as_gpu()
+                .expect("expected GPU w gradient")
+                .count_kernels_to_resolve(),
+            0,
+            "detached w gradient should not retain backward compute graph",
         );
     }
 }
