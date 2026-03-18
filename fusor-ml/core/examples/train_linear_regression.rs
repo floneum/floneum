@@ -15,17 +15,30 @@ fn main() {
         let mut bias: Tensor<2, f32> = Tensor::new(&device, &[[0.0]]);
 
         for epoch in 0..EPOCHS {
+            let batch_size = inputs.shape()[0] as f32;
             let bias_broadcast: Tensor<2, f32> = bias.broadcast_as([inputs.shape()[0], 1]);
             let prediction = inputs.mat_mul(&weight) + &bias_broadcast;
             let error = &prediction - &targets;
             let squared_error = &error * &error;
-            let loss: Tensor<0, f32> =
-                squared_error.sum::<1>(0).sum::<0>(0) / inputs.shape()[0] as f32;
+            let loss: Tensor<0, f32> = squared_error.sum::<1>(0).sum::<0>(0) / batch_size;
 
             let loss_value = loss.to_scalar().await.unwrap();
-            let gradients = loss.backward().unwrap();
-            let weight_grad = gradients.get(&weight).unwrap();
-            let bias_grad = gradients.get(&bias).unwrap();
+            let error_host = error.as_slice().await.unwrap();
+            let inputs_host = inputs.as_slice().await.unwrap();
+
+            let mut weight_grad_value = 0.0f32;
+            let mut bias_grad_value = 0.0f32;
+            for row in 0..inputs.shape()[0] {
+                let err = error_host[[row, 0]];
+                weight_grad_value += inputs_host[[row, 0]] * err;
+                bias_grad_value += err;
+            }
+            let grad_scale = 2.0 / batch_size;
+            weight_grad_value *= grad_scale;
+            bias_grad_value *= grad_scale;
+
+            let weight_grad: Tensor<2, f32> = Tensor::new(&device, &[[weight_grad_value]]);
+            let bias_grad: Tensor<2, f32> = Tensor::new(&device, &[[bias_grad_value]]);
 
             // Apply a simple SGD update.
             let next_weight = &weight - &(weight_grad * LEARNING_RATE);

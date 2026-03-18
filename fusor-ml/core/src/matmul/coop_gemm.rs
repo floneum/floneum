@@ -393,8 +393,10 @@ pub(super) fn build_kernel(
                     let base = li * sg_size;
                     writeln!(kernel, "      if (sg_local + {base}u < {total_elems}u) {{").unwrap();
                     writeln!(kernel, "        let idx = sg_local + {base}u;").unwrap();
-                    let local_m = format!("(idx % {mma_size}u)");
-                    let local_n = format!("(idx / {mma_size}u)");
+                    // coopStore writes the 8x8 tile row-major when we spill to scratch,
+                    // so replay edge tiles with N on the inner axis.
+                    let local_m = format!("(idx / {mma_size}u)");
+                    let local_n = format!("(idx % {mma_size}u)");
                     writeln!(
                         kernel,
                         "        let global_m = tile_m_base_{sm}_{sn} + {local_m};"

@@ -154,6 +154,10 @@ impl Direction {
             Self::NW => Self::NE,
         }
     }
+
+    fn opposite(self) -> Self {
+        self.rotate(Direction::all().len() / 2)
+    }
 }
 
 impl ShapeKind {
@@ -185,6 +189,10 @@ impl ShapeKind {
             Self::Trapezoid => "trapezoid",
             Self::Parallelogram => "parallelogram",
         }
+    }
+
+    fn is_closed(self) -> bool {
+        true
     }
 }
 
@@ -866,7 +874,7 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
         ShapeKind::Triangle => {
             let edge = rng.random_range(1..=4);
             let step = rng.random_range(1..=STEP_LEVELS);
-            let rotation = rng.random_range(0..Direction::all().len());
+            let rotation = rng.random_range(0..4) * 2;
             let mirror = rng.random_bool(0.5);
             trace_moves(
                 &mut tokens,
@@ -945,7 +953,7 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
             let roof = rng.random_range(1_usize..=2);
             let base = rng.random_range((roof * 2)..=5);
             let wall = rng.random_range(2_usize..=4);
-            let rotation = rng.random_range(0..Direction::all().len());
+            let rotation = rng.random_range(0..4) * 2;
             let mirror = rng.random_bool(0.5);
             let mut segments = vec![
                 (Direction::E, step, base),
@@ -965,7 +973,7 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
             let top = rng.random_range(2..=4);
             let slope = rng.random_range(1..=2);
             let bottom = top + slope * 2;
-            let rotation = rng.random_range(0..Direction::all().len());
+            let rotation = rng.random_range(0..4) * 2;
             let mirror = rng.random_bool(0.5);
             trace_moves(
                 &mut tokens,
@@ -1000,9 +1008,13 @@ fn shape_tokens(shape: ShapeKind, tokenizer: &StrokeTokenizer, rng: &mut StdRng)
             );
         }
     }
+    if shape.is_closed() {
+        apply_closed_loop_variant(tokenizer, rng, &mut tokens);
+    }
     tokens
 }
 
+#[cfg(test)]
 fn token_displacement(tokenizer: &StrokeTokenizer, tokens: &[u32]) -> (i32, i32) {
     let mut x = 0;
     let mut y = 0;
@@ -1056,6 +1068,29 @@ fn trace_moves(
             step,
             count,
         );
+    }
+}
+
+fn apply_closed_loop_variant(tokenizer: &StrokeTokenizer, rng: &mut StdRng, tokens: &mut Vec<u32>) {
+    if tokens.is_empty() {
+        return;
+    }
+
+    let start_offset = rng.random_range(0..tokens.len());
+    tokens.rotate_left(start_offset);
+
+    if rng.random_bool(0.5) {
+        let reversed = tokens
+            .iter()
+            .rev()
+            .map(|&token| match tokenizer.decode_token_kind(token) {
+                TokenKind::Move(direction, step) => {
+                    tokenizer.move_token(direction.opposite(), step)
+                }
+                _ => token,
+            })
+            .collect();
+        *tokens = reversed;
     }
 }
 
@@ -1219,6 +1254,39 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn closed_loop_variants_shift_and_reverse_sequences() {
+        let tokenizer = StrokeTokenizer::new();
+        let base = vec![
+            tokenizer.move_token(Direction::E, 1),
+            tokenizer.move_token(Direction::E, 1),
+            tokenizer.move_token(Direction::S, 1),
+            tokenizer.move_token(Direction::S, 1),
+            tokenizer.move_token(Direction::W, 1),
+            tokenizer.move_token(Direction::W, 1),
+            tokenizer.move_token(Direction::N, 1),
+            tokenizer.move_token(Direction::N, 1),
+        ];
+
+        let variants = (0..32)
+            .map(|seed| {
+                let mut tokens = base.clone();
+                apply_closed_loop_variant(
+                    &tokenizer,
+                    &mut StdRng::seed_from_u64(seed),
+                    &mut tokens,
+                );
+                assert_eq!(token_displacement(&tokenizer, &tokens), (0, 0));
+                tokens
+            })
+            .collect::<HashSet<_>>();
+
+        assert!(
+            variants.len() > 4,
+            "expected shifted/reversed closed-loop variants"
+        );
     }
 
     #[test]

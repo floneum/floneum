@@ -15,8 +15,15 @@ pub mod sgemv;
 mod sgemv_params;
 
 pub fn get_optimal_params(m: usize, n: usize, k: usize, device: &Device) -> MatMulParams {
-    if device.cooperative_matrix_supported() && m >= 128 && n >= 64 && k >= 16 {
-        return MatMulParams::CoopMatMul(coop_gemm::CoopGemmParams::default());
+    let coop = coop_gemm::CoopGemmParams::default();
+    if device.cooperative_matrix_supported()
+        && m >= coop.block_m as usize
+        && n >= coop.block_n as usize
+        && k >= coop.block_k as usize
+        && m % coop.block_m as usize == 0
+        && n % coop.block_n as usize == 0
+    {
+        return MatMulParams::CoopMatMul(coop);
     }
     match (m, n, k) {
         (_, 0..=64, _) => MatMulParams::Vector(gemv_parameters(m, n, k)),
