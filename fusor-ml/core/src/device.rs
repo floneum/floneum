@@ -33,6 +33,76 @@ fn padded_copy_size(size: u64) -> u64 {
     ((size + align_mask) & !align_mask).max(COPY_BUFFER_ALIGNMENT)
 }
 
+async fn select_adapter(
+    instance: &wgpu::Instance,
+    backends: wgpu::Backends,
+) -> Result<wgpu::Adapter, crate::Error> {
+    let desired_adapter_name = std::env::var("WGPU_ADAPTER_NAME")
+        .ok()
+        .map(|name| name.to_ascii_lowercase());
+
+    let mut adapters = instance.enumerate_adapters(backends).await;
+    if let Some(desired_adapter_name) = desired_adapter_name {
+        return adapters
+            .into_iter()
+            .find(|adapter| {
+                adapter
+                    .get_info()
+                    .name
+                    .to_ascii_lowercase()
+                    .contains(&desired_adapter_name)
+            })
+            .ok_or_else(|| {
+                crate::Error::msg(format!(
+                    "WGPU_ADAPTER_NAME={desired_adapter_name:?} did not match any available adapter"
+                ))
+            });
+    }
+
+    if !adapters.is_empty() {
+        adapters.sort_by_key(|adapter| adapter_preference_rank(adapter));
+        return Ok(adapters.remove(0));
+    }
+
+    let preferred = wgpu::PowerPreference::from_env().unwrap_or_default();
+    let mut last_error = None;
+    for power_preference in [
+        preferred,
+        wgpu::PowerPreference::HighPerformance,
+        wgpu::PowerPreference::LowPower,
+        wgpu::PowerPreference::None,
+    ] {
+        match instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference,
+                force_fallback_adapter: false,
+                compatible_surface: None,
+            })
+            .await
+        {
+            Ok(adapter) => return Ok(adapter),
+            Err(error) => last_error = Some(error),
+        }
+    }
+
+    let detail = last_error
+        .map(|error| error.to_string())
+        .unwrap_or_else(|| "no adapter returned".to_string());
+    Err(crate::Error::msg(format!(
+        "failed to find a suitable GPU adapter: {detail}"
+    )))
+}
+
+fn adapter_preference_rank(adapter: &wgpu::Adapter) -> u8 {
+    match adapter.get_info().device_type {
+        wgpu::DeviceType::DiscreteGpu => 0,
+        wgpu::DeviceType::IntegratedGpu => 1,
+        wgpu::DeviceType::VirtualGpu => 2,
+        wgpu::DeviceType::Other => 3,
+        wgpu::DeviceType::Cpu => 4,
+    }
+}
+
 impl CachedBuffer {
     fn new(buffer: Arc<wgpu::Buffer>, writen: bool) -> Self {
         Self { writen, buffer }
@@ -126,9 +196,7 @@ impl Device {
             },
             ..Default::default()
         });
-        let adapter = wgpu::util::initialize_adapter_from_env_or_default(&instance, None)
-            .await
-            .expect("Failed to find a suitable GPU adapter");
+        let adapter = select_adapter(&instance, backends).await?;
         let mut required_features = wgpu::Features::empty();
         if adapter.features().contains(wgpu::Features::SUBGROUP) {
             required_features |= wgpu::Features::SUBGROUP;

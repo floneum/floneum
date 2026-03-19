@@ -1,7 +1,7 @@
 use async_channel::{Receiver, Sender};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use dioxus::{
-    html::{InteractionLocation, Key},
+    html::{InteractionElementOffset, Key},
     prelude::*,
 };
 use fusor_nanochat::{
@@ -1226,10 +1226,10 @@ fn grid_point_from_event(
     stage_bounds: StageBounds,
     grid_size: usize,
 ) -> GridPoint {
-    let point = event.data().client_coordinates();
+    let point = event.data().element_coordinates();
     let max_index = grid_size.saturating_sub(1) as f64;
-    let local_x = (point.x - stage_bounds.left).clamp(0.0, stage_bounds.width);
-    let local_y = (point.y - stage_bounds.top).clamp(0.0, stage_bounds.height);
+    let local_x = point.x.clamp(0.0, stage_bounds.width);
+    let local_y = point.y.clamp(0.0, stage_bounds.height);
     let x = ((local_x / stage_bounds.width.max(1.0)) * grid_size as f64 - 0.5)
         .round()
         .clamp(0.0, max_index);
