@@ -1,5 +1,5 @@
 use fusor::{
-    Device, Tensor as RawTensor, ToVec1, ToVec2,
+    Device, NodeIndex, Tensor as RawTensor, ToVec1, ToVec2,
     autograd::{Gradients, Graph, Tensor},
     base_inverse_frequency,
 };
@@ -577,8 +577,10 @@ impl AdamWModel for NanoChatModel {
         // Old graph is now dropped — backward closures and their captured GPU
         // tensor references are freed.
 
-        // Phase 3: Apply AdamW updates. GPU resolution happens here, with the
-        // old graph's intermediate buffers eligible for cleanup.
+        // Phase 3: Apply AdamW updates. Each parameter's gradient is
+        // materialized and then dropped before the next one is processed,
+        // so shared intermediate buffers in the compute graph can be freed
+        // incrementally.
         let new_graph = Graph::new();
 
         let wte = extracted
@@ -1800,6 +1802,15 @@ struct ExtractedCanvasStateGradients {
 }
 
 impl ExtractedCanvasStateGradients {
+    fn collect_keys(&self, keys: &mut Vec<NodeIndex>) {
+        collect_grad_pair_keys(&self.cursor_x, keys);
+        collect_tensor_key(&self.cursor_x_value, keys);
+        collect_grad_pair_keys(&self.cursor_y, keys);
+        collect_tensor_key(&self.cursor_y_value, keys);
+        collect_grad_pair_keys(&self.pen_state, keys);
+        collect_tensor_key(&self.pen_state_value, keys);
+    }
+
     fn extract(cs: &CanvasStateEmbeddings, gradients: &Gradients) -> Self {
         Self {
             cursor_x: extract_gradient(&cs.cursor_x, gradients),
@@ -1857,6 +1868,13 @@ struct ExtractedOutputHeadGradients {
 }
 
 impl ExtractedOutputHeadGradients {
+    fn collect_keys(&self, keys: &mut Vec<NodeIndex>) {
+        collect_grad_pair_keys(&self.weight, keys);
+        collect_tensor_key(&self.weight_value, keys);
+        collect_grad_pair_keys(&self.bias, keys);
+        collect_tensor_key(&self.bias_value, keys);
+    }
+
     fn extract(head: &OutputHead, gradients: &Gradients) -> Self {
         Self {
             weight: extract_gradient(&head.weight, gradients),
@@ -1916,6 +1934,27 @@ struct ExtractedBlockGradients {
 }
 
 impl ExtractedBlockGradients {
+    fn collect_keys(&self, keys: &mut Vec<NodeIndex>) {
+        collect_grad_pair_keys(&self.ln_1_weight, keys);
+        collect_tensor_key(&self.ln_1_weight_value, keys);
+        collect_grad_pair_keys(&self.ln_1_bias, keys);
+        collect_tensor_key(&self.ln_1_bias_value, keys);
+        self.mixer.collect_keys(keys);
+        collect_grad_pair_keys(&self.ln_attn_out_weight, keys);
+        collect_tensor_key(&self.ln_attn_out_weight_value, keys);
+        collect_grad_pair_keys(&self.ln_attn_out_bias, keys);
+        collect_tensor_key(&self.ln_attn_out_bias_value, keys);
+        collect_grad_pair_keys(&self.ln_2_weight, keys);
+        collect_tensor_key(&self.ln_2_weight_value, keys);
+        collect_grad_pair_keys(&self.ln_2_bias, keys);
+        collect_tensor_key(&self.ln_2_bias_value, keys);
+        self.mlp.collect_keys(keys);
+        collect_grad_pair_keys(&self.ln_mlp_out_weight, keys);
+        collect_tensor_key(&self.ln_mlp_out_weight_value, keys);
+        collect_grad_pair_keys(&self.ln_mlp_out_bias, keys);
+        collect_tensor_key(&self.ln_mlp_out_bias_value, keys);
+    }
+
     fn extract(block: &TransformerBlock, gradients: &Gradients) -> Self {
         Self {
             ln_1_weight: extract_gradient(&block.ln_1_weight, gradients),
@@ -1991,6 +2030,13 @@ enum ExtractedMixerGradients {
 }
 
 impl ExtractedMixerGradients {
+    fn collect_keys(&self, keys: &mut Vec<NodeIndex>) {
+        match self {
+            Self::Attention(a) => a.collect_keys(keys),
+            Self::Conv(c) => c.collect_keys(keys),
+        }
+    }
+
     fn extract(mixer: &SequenceMixer, gradients: &Gradients) -> Self {
         match mixer {
             SequenceMixer::Attention(attn) => {
@@ -2033,6 +2079,17 @@ struct ExtractedAttentionGradients {
 }
 
 impl ExtractedAttentionGradients {
+    fn collect_keys(&self, keys: &mut Vec<NodeIndex>) {
+        collect_grad_pair_keys(&self.c_attn_q, keys);
+        collect_tensor_key(&self.c_attn_q_value, keys);
+        collect_grad_pair_keys(&self.c_attn_k, keys);
+        collect_tensor_key(&self.c_attn_k_value, keys);
+        collect_grad_pair_keys(&self.c_attn_v, keys);
+        collect_tensor_key(&self.c_attn_v_value, keys);
+        collect_grad_pair_keys(&self.c_proj, keys);
+        collect_tensor_key(&self.c_proj_value, keys);
+    }
+
     fn extract(attn: &CausalSelfAttention, gradients: &Gradients) -> Self {
         Self {
             c_attn_q: extract_gradient(&attn.c_attn_q, gradients),
@@ -2084,6 +2141,19 @@ struct ExtractedConvGradients {
 }
 
 impl ExtractedConvGradients {
+    fn collect_keys(&self, keys: &mut Vec<NodeIndex>) {
+        for gp in &self.kernels {
+            collect_grad_pair_keys(gp, keys);
+        }
+        for v in &self.kernel_values {
+            collect_tensor_key(v, keys);
+        }
+        collect_grad_pair_keys(&self.bias, keys);
+        collect_tensor_key(&self.bias_value, keys);
+        collect_grad_pair_keys(&self.out_proj, keys);
+        collect_tensor_key(&self.out_proj_value, keys);
+    }
+
     fn extract(conv: &ConvMixer, gradients: &Gradients) -> Self {
         Self {
             kernels: conv
@@ -2139,6 +2209,17 @@ struct ExtractedMlpGradients {
 }
 
 impl ExtractedMlpGradients {
+    fn collect_keys(&self, keys: &mut Vec<NodeIndex>) {
+        collect_grad_pair_keys(&self.c_fc, keys);
+        collect_tensor_key(&self.c_fc_value, keys);
+        collect_grad_pair_keys(&self.c_fc_bias, keys);
+        collect_tensor_key(&self.c_fc_bias_value, keys);
+        collect_grad_pair_keys(&self.c_proj, keys);
+        collect_tensor_key(&self.c_proj_value, keys);
+        collect_grad_pair_keys(&self.c_proj_bias, keys);
+        collect_tensor_key(&self.c_proj_bias_value, keys);
+    }
+
     fn extract(mlp: &Mlp, gradients: &Gradients) -> Self {
         Self {
             c_fc: extract_gradient(&mlp.c_fc, gradients),
@@ -2175,6 +2256,23 @@ impl ExtractedMlpGradients {
                 &mut state.c_proj_bias, step, settings,
             ),
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Key collection helpers for batch resolve
+// ---------------------------------------------------------------------------
+
+fn collect_tensor_key<const R: usize>(tensor: &RawTensor<R, f32>, keys: &mut Vec<NodeIndex>) {
+    if let Some(key) = tensor.gpu_key() {
+        keys.push(key);
+    }
+}
+
+fn collect_grad_pair_keys<const R: usize>(pair: &GradPair<R>, keys: &mut Vec<NodeIndex>) {
+    if let Some((gradient, param_value)) = pair {
+        collect_tensor_key(gradient, keys);
+        collect_tensor_key(param_value, keys);
     }
 }
 

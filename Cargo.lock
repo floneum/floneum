@@ -4081,6 +4081,7 @@ dependencies = [
  "base64 0.22.1",
  "dioxus",
  "fusor-nanochat",
+ "web-sys",
 ]
 
 [[package]]

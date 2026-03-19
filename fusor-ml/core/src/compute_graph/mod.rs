@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-pub(crate) use petgraph::graph::NodeIndex;
+pub use petgraph::graph::NodeIndex;
 use petgraph::prelude::StableGraph;
 use resolve::Resolver;
 use rustc_hash::FxHashSet;
 use tabbycat::Graph;
-use wgpu::CommandEncoderDescriptor;
 
 mod layout_pass;
 mod queue;
@@ -102,15 +101,10 @@ impl ComputeGraph {
     }
 
     pub(crate) fn resolve(&self, key: NodeIndex, device: &Device) -> ResolverResult {
-        let mut encoder = device
-            .wgpu_device()
-            .create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("ComputeGraph Encoder"),
-            });
         let (data, removed) = {
             let mut inner = self.inner.write();
             let mut removed = Vec::new();
-            let mut resolver = Resolver::new(&mut inner, key, &mut encoder);
+            let mut resolver = Resolver::new(&mut inner, key);
             let data = resolver.run(&mut inner, &mut removed);
             #[cfg(feature = "extra_assertions")]
             {
@@ -118,12 +112,32 @@ impl ComputeGraph {
             }
             (data, removed)
         };
+        // Drop removed nodes now that the resolver has submitted its commands.
         drop(removed);
-        device.wgpu_queue().submit(Some(encoder.finish()));
-        // Reset the written flag on all buffers
-        device.reset_initialized_buffers();
 
         data
+    }
+
+    /// Resolve multiple targets in a single pass. All targets share one
+    /// execution graph so intermediate nodes can be freed as soon as every
+    /// consumer within the batch has been computed, keeping peak GPU memory
+    /// much lower than resolving targets one-by-one.
+    pub(crate) fn resolve_batch(&self, keys: &[NodeIndex], device: &Device) {
+        if keys.is_empty() {
+            return;
+        }
+        let removed = {
+            let mut inner = self.inner.write();
+            let mut removed = Vec::new();
+            let mut resolver = Resolver::new_batch(&mut inner, keys.to_vec());
+            let _ = resolver.run(&mut inner, &mut removed);
+            #[cfg(feature = "extra_assertions")]
+            {
+                inner.verify_integrity()
+            }
+            removed
+        };
+        drop(removed);
     }
 
     pub(crate) fn graphvis(&self, root: NodeIndex) -> Graph {

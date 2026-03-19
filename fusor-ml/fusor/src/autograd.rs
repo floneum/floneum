@@ -8,8 +8,21 @@ use std::{
 use crate::{Device, Error, Result, Tensor as RawTensor, ToVec1, ToVec2, layers::Embedding};
 
 type NodeId = usize;
+#[cfg(not(target_arch = "wasm32"))]
 type BackwardRule =
     Arc<dyn Fn(Box<dyn AnyTensorValue>) -> Result<Vec<BackwardTarget>> + Send + Sync>;
+#[cfg(target_arch = "wasm32")]
+type BackwardRule = Arc<dyn Fn(Box<dyn AnyTensorValue>) -> Result<Vec<BackwardTarget>>>;
+
+#[cfg(not(target_arch = "wasm32"))]
+trait BackwardClosure: Send + Sync + 'static {}
+#[cfg(not(target_arch = "wasm32"))]
+impl<T> BackwardClosure for T where T: Send + Sync + 'static {}
+
+#[cfg(target_arch = "wasm32")]
+trait BackwardClosure: 'static {}
+#[cfg(target_arch = "wasm32")]
+impl<T> BackwardClosure for T where T: 'static {}
 
 #[derive(Clone)]
 pub struct Graph {
@@ -58,7 +71,16 @@ struct GraphState {
     nodes: HashMap<NodeId, Node>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 trait AnyTensorValue: Send + Sync {
+    fn as_any(&self) -> &dyn Any;
+    fn clone_box(&self) -> Box<dyn AnyTensorValue>;
+    fn into_detached(self: Box<Self>) -> Box<dyn AnyTensorValue>;
+    fn add_box(&self, other: &dyn AnyTensorValue) -> Result<Box<dyn AnyTensorValue>>;
+}
+
+#[cfg(target_arch = "wasm32")]
+trait AnyTensorValue {
     fn as_any(&self) -> &dyn Any;
     fn clone_box(&self) -> Box<dyn AnyTensorValue>;
     fn into_detached(self: Box<Self>) -> Box<dyn AnyTensorValue>;
@@ -193,10 +215,28 @@ impl<const R: usize> Tensor<R> {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn with_backwards<I, F>(self, parents: I, backwards: F) -> Self
     where
         I: IntoIterator<Item = Parent>,
         F: Fn(RawTensor<R, f32>) -> Result<Vec<BackwardTarget>> + Send + Sync + 'static,
+    {
+        self.with_backwards_impl(parents, backwards)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn with_backwards<I, F>(self, parents: I, backwards: F) -> Self
+    where
+        I: IntoIterator<Item = Parent>,
+        F: Fn(RawTensor<R, f32>) -> Result<Vec<BackwardTarget>> + 'static,
+    {
+        self.with_backwards_impl(parents, backwards)
+    }
+
+    fn with_backwards_impl<I, F>(self, parents: I, backwards: F) -> Self
+    where
+        I: IntoIterator<Item = Parent>,
+        F: Fn(RawTensor<R, f32>) -> Result<Vec<BackwardTarget>> + BackwardClosure,
     {
         let parent_handles = parents
             .into_iter()
@@ -447,9 +487,7 @@ impl<const R: usize> Tensor<R> {
         &self,
         value: RawTensor<R, f32>,
         backward: impl Fn(RawTensor<R, f32>, RawTensor<R, f32>) -> RawTensor<R, f32>
-        + Send
-        + Sync
-        + 'static,
+        + BackwardClosure,
     ) -> Self {
         let input_id = self.handle.id;
         let output = value.clone();
@@ -472,9 +510,7 @@ impl<const R: usize> Tensor<R> {
             RawTensor<R, f32>,
             RawTensor<R, f32>,
         ) -> Vec<RawTensor<R, f32>>
-        + Send
-        + Sync
-        + 'static,
+        + BackwardClosure,
     ) -> Self {
         assert!(
             Arc::ptr_eq(&self.handle.graph, &rhs.handle.graph),

@@ -113,7 +113,7 @@ pub use fusor_core::Tensor as GpuTensor;
 // Re-export from fusor-core for GPU types
 pub use fusor_core::{
     CastTensor, D, DataType, Dim, FloatDataType, GgufReadError, LastRank, LastRankInner, MaxRank,
-    NextRank, NextRankInner, SmallerRank, WasmNotSend, WasmNotSync,
+    NextRank, NextRankInner, NodeIndex, SmallerRank, WasmNotSend, WasmNotSync,
 };
 
 /// Runtime dispatch wrapper - holds either CPU or GPU version of an operation/tensor type.
@@ -1254,6 +1254,14 @@ where
     #[inline]
     pub const fn rank(&self) -> usize {
         R
+    }
+
+    /// Return the GPU compute-graph node index, if this is a GPU tensor.
+    pub fn gpu_key(&self) -> Option<NodeIndex> {
+        match self {
+            Tensor::Gpu(t) => Some(t.key()),
+            Tensor::Cpu(_) => None,
+        }
     }
 }
 

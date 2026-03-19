@@ -367,7 +367,8 @@ impl LazyTensorData {
         &self.info
     }
 
-    pub(crate) fn key(&self) -> NodeIndex {
+    /// Return the compute-graph node index for this lazy tensor.
+    pub fn key(&self) -> NodeIndex {
         self.key
     }
 
@@ -1046,7 +1047,8 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         Tensor::from_parts(self.data.map_layout(op))
     }
 
-    pub(crate) fn key(&self) -> NodeIndex {
+    /// Return the compute-graph node index for this tensor.
+    pub fn key(&self) -> NodeIndex {
         self.data.key
     }
 

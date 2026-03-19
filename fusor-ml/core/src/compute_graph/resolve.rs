@@ -36,20 +36,19 @@ struct ExecutionNode {
 type ExecutionGraph = StableGraph<ExecutionNode, ()>;
 type ExecutionNodeIndex = petgraph::graph::NodeIndex;
 
-pub(crate) struct Resolver<'a> {
-    command_encoder: &'a mut CommandEncoder,
+pub(crate) struct Resolver {
     execution_graph: ExecutionGraph,
     node_mapping: FxHashMap<NodeIndex, ExecutionNodeIndex>,
-    target: NodeIndex,
+    targets: Vec<NodeIndex>,
     resolved_set: FxHashSet<NodeIndex>,
 }
 
-impl<'a> Resolver<'a> {
-    pub(crate) fn new(
-        graph: &mut ComputeGraphInner,
-        target: NodeIndex,
-        command_encoder: &'a mut CommandEncoder,
-    ) -> Self {
+impl Resolver {
+    pub(crate) fn new(graph: &mut ComputeGraphInner, target: NodeIndex) -> Self {
+        Self::new_batch(graph, vec![target])
+    }
+
+    pub(crate) fn new_batch(graph: &mut ComputeGraphInner, targets: Vec<NodeIndex>) -> Self {
         let resolved_set = graph
             .nodes
             .nodes
@@ -64,8 +63,7 @@ impl<'a> Resolver<'a> {
             })
             .collect();
         Self {
-            command_encoder,
-            target,
+            targets,
             execution_graph: Default::default(),
             node_mapping: Default::default(),
             resolved_set,
@@ -80,8 +78,11 @@ impl<'a> Resolver<'a> {
         let device = graph.device();
         let max_subgroup_size = device.max_subgroup_size();
 
-        // Pass 1: Build execution graph
-        self.build_execution_graph(graph, self.target);
+        // Pass 1: Build execution graph for all targets
+        let targets = self.targets.clone();
+        for &target in &targets {
+            self.build_execution_graph(graph, target);
+        }
 
         // Pass 2: Apply Rewrite Rules
         self.optimize(graph);
@@ -91,8 +92,10 @@ impl<'a> Resolver<'a> {
             .unwrap_or_else(|_| panic!("Cycle detected in execution graph"));
 
         // Pass 4: Execution
-        // Extract operations in order
+        // Extract operations in order.
+        let target_set: FxHashSet<NodeIndex> = self.targets.iter().copied().collect();
         let mut queued_operations = Vec::with_capacity(sorted_nodes.len());
+
         for idx in sorted_nodes {
             let node = &self.execution_graph[idx];
             // Handle Tensor caching explicitly here
@@ -106,6 +109,27 @@ impl<'a> Resolver<'a> {
             }
         }
 
+        // Build a remaining-consumer count. For each queued operation, we use
+        // the Operation's visit_dependencies (which reflects post-optimization
+        // fused dependencies) to count how many future operations read each
+        // inner NodeIndex.
+        let mut remaining_consumers: FxHashMap<NodeIndex, usize> = FxHashMap::default();
+        for (_, op) in &queued_operations {
+            op.visit_dependencies(&mut |dep| {
+                *remaining_consumers.entry(dep).or_insert(0) += 1;
+            });
+        }
+
+        // Create the first command encoder. We submit and recreate it after
+        // each kernel flush so that the GPU can reclaim freed intermediate
+        // buffers instead of accumulating all commands in one giant encoder.
+        let mut command_encoder =
+            device
+                .wgpu_device()
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Resolver Encoder"),
+                });
+
         // Find runs of compatible dispatch shapes
         let mut current_constraints = WorkgroupShapeConstraints::new();
         let mut pending_operations = Vec::new();
@@ -113,7 +137,6 @@ impl<'a> Resolver<'a> {
         let mut all_input_values = Vec::new();
         let mut kernel = GenericKernel::new();
         let mut total_kernels = 0;
-
         for (node, operation) in queued_operations {
             let new_inputs = operation.inputs(graph);
             let constraint = operation.workgroup_shape_constraints(&device);
@@ -131,7 +154,7 @@ impl<'a> Resolver<'a> {
             } else {
                 if !pending_operations.is_empty() {
                     total_kernels += 1;
-                    self.flush_operations(
+                    Self::flush_operations(
                         graph,
                         &mut kernel,
                         &pending_operations,
@@ -139,6 +162,24 @@ impl<'a> Resolver<'a> {
                         &all_input_values,
                         old_best,
                         removed,
+                        &mut command_encoder,
+                    );
+                    // After flushing, free intermediate cached results whose
+                    // consumers within this execution are all satisfied.
+                    Self::release_dead_intermediates(
+                        graph,
+                        &pending_operations,
+                        &mut remaining_consumers,
+                        &target_set,
+                    );
+                    // Submit the current command encoder so the GPU can
+                    // reclaim buffers we just freed, then start a new one.
+                    device.wgpu_queue().submit(Some(command_encoder.finish()));
+                    device.reset_initialized_buffers();
+                    command_encoder = device.wgpu_device().create_command_encoder(
+                        &wgpu::CommandEncoderDescriptor {
+                            label: Some("Resolver Encoder"),
+                        },
                     );
                     pending_operations.clear();
                     all_input_values.clear();
@@ -161,6 +202,16 @@ impl<'a> Resolver<'a> {
                 let result = map_layout.run(graph);
                 // Cache the result
                 graph.set_cached_result(node, result);
+                // Map-layout nodes are resolved immediately — release any
+                // input buffers that are no longer needed.
+                // Use graph.visit_dependencies for map_layout since they
+                // are not lowered to Operations.
+                Self::release_dead_intermediates_from_graph(
+                    graph,
+                    &[node],
+                    &mut remaining_consumers,
+                    &target_set,
+                );
             } else {
                 self.push_operation(
                     graph,
@@ -182,7 +233,7 @@ impl<'a> Resolver<'a> {
                 )
             });
             total_kernels += 1;
-            self.flush_operations(
+            Self::flush_operations(
                 graph,
                 &mut kernel,
                 &pending_operations,
@@ -190,15 +241,83 @@ impl<'a> Resolver<'a> {
                 &all_input_values,
                 old_best,
                 removed,
+                &mut command_encoder,
+            );
+            Self::release_dead_intermediates(
+                graph,
+                &pending_operations,
+                &mut remaining_consumers,
+                &target_set,
             );
         }
 
+        // Submit any remaining commands.
+        device.wgpu_queue().submit(Some(command_encoder.finish()));
+        device.reset_initialized_buffers();
+
         let data = graph
-            .get_result(self.target)
+            .get_result(self.targets[0])
             .expect("Target result not cached");
         ResolverResult {
             data,
             total_kernels,
+        }
+    }
+
+    /// After a kernel flush produces cached results for a set of nodes,
+    /// decrement the remaining-consumer count for each of their inputs. When
+    /// an input's count reaches zero and it is not a target node, drop its
+    /// cached result to free the GPU buffer.
+    ///
+    /// Uses `op.visit_dependencies()` to match the post-optimization
+    /// dependencies that were used to build the consumer counts.
+    fn release_dead_intermediates(
+        graph: &mut ComputeGraphInner,
+        produced_ops: &[(NodeIndex, Arc<dyn Operation>)],
+        remaining_consumers: &mut FxHashMap<NodeIndex, usize>,
+        targets: &FxHashSet<NodeIndex>,
+    ) {
+        for (_, op) in produced_ops {
+            op.visit_dependencies(&mut |dep| {
+                if let Some(count) = remaining_consumers.get_mut(&dep) {
+                    *count = count.saturating_sub(1);
+                    if *count == 0 && !targets.contains(&dep) {
+                        // All consumers within this execution have been
+                        // processed — free the cached buffer.
+                        if let Some(node) = graph.nodes.nodes.node_weight_mut(dep) {
+                            node.cached = None;
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    /// Like `release_dead_intermediates` but uses the compute graph's
+    /// `visit_dependencies` instead of an Operation's. Used for map-layout
+    /// and resize nodes that are resolved immediately without being lowered
+    /// to an Operation.
+    fn release_dead_intermediates_from_graph(
+        graph: &mut ComputeGraphInner,
+        produced_nodes: &[NodeIndex],
+        remaining_consumers: &mut FxHashMap<NodeIndex, usize>,
+        targets: &FxHashSet<NodeIndex>,
+    ) {
+        for &produced in produced_nodes {
+            let mut deps = Vec::new();
+            graph.visit_dependencies(produced, &mut |dep| {
+                deps.push(dep);
+            });
+            for dep in deps {
+                if let Some(count) = remaining_consumers.get_mut(&dep) {
+                    *count = count.saturating_sub(1);
+                    if *count == 0 && !targets.contains(&dep) {
+                        if let Some(node) = graph.nodes.nodes.node_weight_mut(dep) {
+                            node.cached = None;
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1050,7 +1169,6 @@ impl<'a> Resolver<'a> {
     }
 
     fn flush_operations(
-        &mut self,
         graph: &mut ComputeGraphInner,
         mut kernel: &mut GenericKernel,
         queued_operations: &[(NodeIndex, Arc<dyn Operation>)],
@@ -1058,6 +1176,7 @@ impl<'a> Resolver<'a> {
         all_input_values: &[KernelInputValue],
         workgroup_shape: workgroup_shape::WorkgroupShape,
         removed: &mut Vec<ComputeGraphNode>,
+        command_encoder: &mut CommandEncoder,
     ) {
         let mut max_dispatch_size = [0; 3];
         for ((key, operation), inputs) in queued_operations.iter().zip(inputs) {
@@ -1094,7 +1213,7 @@ impl<'a> Resolver<'a> {
         kernel.run(
             &device,
             all_input_values,
-            self.command_encoder,
+            command_encoder,
             max_dispatch_size,
         );
     }

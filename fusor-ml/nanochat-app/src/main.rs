@@ -1,7 +1,7 @@
 use async_channel::{Receiver, Sender};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use dioxus::{
-    html::{InteractionElementOffset, Key},
+    html::{InteractionLocation, Key},
     prelude::*,
 };
 use fusor_nanochat::{
@@ -294,12 +294,20 @@ fn InteractivePad(
     let mut prediction_tokens = use_signal(Vec::<u32>::new);
     let mut tokenizer = use_signal(|| None::<StrokeTokenizer>);
     let mut worker = use_signal(|| None::<PredictorWorker>);
-    let mut sketch_status =
-        use_signal(|| "SVG board ready. Loading sketch predictor from the current checkpoint…".to_string());
+    let mut sketch_status = use_signal(|| {
+        "SVG board ready. Loading sketch predictor from the current checkpoint…".to_string()
+    });
     let mut dragging = use_signal(|| false);
     let mut last_point = use_signal(|| None::<GridPoint>);
     let mut worker_generation = use_signal(|| 0_u64);
-    let stage_dimensions = use_signal(|| (DEFAULT_SKETCH_STAGE_PX, DEFAULT_SKETCH_STAGE_PX));
+    let stage_bounds = use_signal(|| {
+        StageBounds::new(
+            0.0,
+            0.0,
+            DEFAULT_SKETCH_STAGE_PX,
+            DEFAULT_SKETCH_STAGE_PX,
+        )
+    });
     let mut request_revision = use_signal(|| 0_u64);
     let config_state = config();
     let use_cpu = force_cpu();
@@ -312,9 +320,15 @@ fn InteractivePad(
         dragging.set(false);
         last_point.set(None);
 
-        *request_revision.write() += 1;
-        *worker_generation.write() += 1;
-        let generation = worker_generation();
+        {
+            let mut revision = request_revision.write();
+            *revision += 1;
+        }
+        let generation = {
+            let mut generation = worker_generation.write();
+            *generation += 1;
+            *generation
+        };
 
         match config_state.as_ref() {
             Ok(runtime) => {
@@ -471,21 +485,16 @@ fn InteractivePad(
                 }
 
                 div {
-                    class: "sketch-meta",
-                    div { class: "kv-item", strong { "Predictor" } span { "{sketch_status()}" } }
-                    div { class: "kv-item", strong { "Cursor" } span { "x {current_cursor.0} / y {current_cursor.1}" } }
-                    div { class: "kv-item", strong { "Grid" } span { "{grid_size}x{grid_size}" } }
-                }
-
-                div {
                     class: "sketch-stage",
                     tabindex: "0",
                     onmounted: move |event| {
                         let mounted = event.data();
                         spawn(async move {
                             if let Ok(rect) = mounted.get_client_rect().await {
-                                set_stage_dimensions(
-                                    stage_dimensions,
+                                set_stage_bounds(
+                                    stage_bounds,
+                                    rect.origin.x,
+                                    rect.origin.y,
                                     rect.size.width,
                                     rect.size.height,
                                 );
@@ -494,7 +503,14 @@ fn InteractivePad(
                     },
                     onresize: move |event| {
                         if let Ok(size) = event.data().get_border_box_size() {
-                            set_stage_dimensions(stage_dimensions, size.width, size.height);
+                            let bounds = stage_bounds();
+                            set_stage_bounds(
+                                stage_bounds,
+                                bounds.left,
+                                bounds.top,
+                                size.width,
+                                size.height,
+                            );
                         }
                     },
                     onkeydown: move |event| {
@@ -549,7 +565,7 @@ fn InteractivePad(
                         };
                         let point = grid_point_from_event(
                             &event,
-                            stage_dimensions(),
+                            stage_bounds(),
                             interactive_grid_size(&tokenizer),
                         );
                         let cursor = tokenizer.cursor_after_tokens(&prompt_tokens());
@@ -575,18 +591,16 @@ fn InteractivePad(
                         last_point.set(Some(point));
                     },
                     onpointermove: move |event| {
-                        if dragging() {
-                            event.prevent_default();
-                        }
                         let Some(tokenizer) = tokenizer() else {
                             return;
                         };
                         if !dragging() {
                             return;
                         }
+                        event.prevent_default();
                         let point = grid_point_from_event(
                             &event,
-                            stage_dimensions(),
+                            stage_bounds(),
                             interactive_grid_size(&tokenizer),
                         );
                         let Some(previous_point) = last_point() else {
@@ -706,6 +720,13 @@ fn InteractivePad(
                         strong { "Tab" }
                         span { "accepts the orange continuation" }
                     }
+                }
+
+                div {
+                    class: "sketch-meta",
+                    div { class: "kv-item", strong { "Predictor" } span { "{sketch_status()}" } }
+                    div { class: "kv-item", strong { "Cursor" } span { "x {current_cursor.0} / y {current_cursor.1}" } }
+                    div { class: "kv-item", strong { "Grid" } span { "{grid_size}x{grid_size}" } }
                 }
 
                 div {
@@ -1078,7 +1099,9 @@ async fn run_predictor_loop_async(
         while let Ok(queued) = command_rx.try_recv() {
             latest = queued;
         }
-        let _ = update_tx.send(predict_with_command(&predictor, latest)).await;
+        let _ = update_tx
+            .send(predict_with_command(&predictor, latest))
+            .await;
     }
 }
 
@@ -1116,14 +1139,12 @@ fn request_prediction(
         return;
     };
 
-    *request_revision.write() += 1;
-    let revision = request_revision();
+    let revision = {
+        let mut revision = request_revision.write();
+        *revision += 1;
+        *revision
+    };
     prediction_signal.set(Vec::new());
-    status_signal.set("Updating live prediction…".to_string());
-
-    if request_revision() != revision {
-        return;
-    }
 
     if let Err(error) = worker.commands.try_send(WorkerCommand::Predict {
         generation,
@@ -1166,23 +1187,54 @@ fn interactive_grid_size(tokenizer: &StrokeTokenizer) -> usize {
     tokenizer.grid_size().max(tokenizer.max_count() + 1).max(2)
 }
 
-fn set_stage_dimensions(mut stage_dimensions: Signal<(f64, f64)>, width: f64, height: f64) {
-    stage_dimensions.set((width.max(1.0), height.max(1.0)));
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct StageBounds {
+    left: f64,
+    top: f64,
+    width: f64,
+    height: f64,
+}
+
+impl StageBounds {
+    const fn new(left: f64, top: f64, width: f64, height: f64) -> Self {
+        Self {
+            left,
+            top,
+            width,
+            height,
+        }
+    }
+}
+
+fn set_stage_bounds(
+    mut stage_bounds: Signal<StageBounds>,
+    left: f64,
+    top: f64,
+    width: f64,
+    height: f64,
+) {
+    stage_bounds.set(StageBounds::new(
+        left,
+        top,
+        width.max(1.0),
+        height.max(1.0),
+    ));
 }
 
 fn grid_point_from_event(
     event: &PointerEvent,
-    stage_dimensions: (f64, f64),
+    stage_bounds: StageBounds,
     grid_size: usize,
 ) -> GridPoint {
-    let point = event.data().element_coordinates();
-    let (width, height) = stage_dimensions;
+    let point = event.data().client_coordinates();
     let max_index = grid_size.saturating_sub(1) as f64;
-    let x = ((point.x / width.max(1.0)) * grid_size as f64)
-        .floor()
+    let local_x = (point.x - stage_bounds.left).clamp(0.0, stage_bounds.width);
+    let local_y = (point.y - stage_bounds.top).clamp(0.0, stage_bounds.height);
+    let x = ((local_x / stage_bounds.width.max(1.0)) * grid_size as f64 - 0.5)
+        .round()
         .clamp(0.0, max_index);
-    let y = ((point.y / height.max(1.0)) * grid_size as f64)
-        .floor()
+    let y = ((local_y / stage_bounds.height.max(1.0)) * grid_size as f64 - 0.5)
+        .round()
         .clamp(0.0, max_index);
     GridPoint {
         x: x as i32,
