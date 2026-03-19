@@ -9,6 +9,7 @@ use fusor_nanochat::{
     ShapeCount, StrokeTokenizer, build_comparison_report, load_runtime_config, load_tokenizer,
     tokens_to_stroke_scene,
 };
+use std::rc::Rc;
 #[cfg(not(target_arch = "wasm32"))]
 use std::thread;
 
@@ -308,6 +309,7 @@ fn InteractivePad(
             DEFAULT_SKETCH_STAGE_PX,
         )
     });
+    let mut stage_element = use_signal(|| None::<Rc<MountedData>>);
     let mut request_revision = use_signal(|| 0_u64);
     let config_state = config();
     let use_cpu = force_cpu();
@@ -489,7 +491,9 @@ fn InteractivePad(
                     tabindex: "0",
                     onmounted: move |event| {
                         let mounted = event.data();
+                        stage_element.set(Some(mounted.clone()));
                         spawn(async move {
+                            let _ = mounted.set_focus(true).await;
                             if let Ok(rect) = mounted.get_client_rect().await {
                                 set_stage_bounds(
                                     stage_bounds,
@@ -560,6 +564,11 @@ fn InteractivePad(
                     },
                     onpointerdown: move |event| {
                         event.prevent_default();
+                        if let Some(stage) = stage_element() {
+                            spawn(async move {
+                                let _ = stage.set_focus(true).await;
+                            });
+                        }
                         let Some(tokenizer) = tokenizer() else {
                             return;
                         };
