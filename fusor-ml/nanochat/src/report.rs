@@ -365,15 +365,15 @@ async fn generate_interactive_completion(
     mode: SamplingMode,
 ) -> Vec<u32> {
     let block_size = model.block_size().min(runtime.block_size);
-    let position_values = position_indexes(1, block_size);
-    let position_inputs: Tensor<2, u32> = Tensor::new(device, &position_values);
-    let causal_mask = fusor::cache::AttentionMask::<f32>::causal(device, block_size);
     let mut rng = StdRng::seed_from_u64(seed);
     let mut tokens = prompt_tokens.to_vec();
 
     for _ in 0..max_tokens {
         let (context, last_index) =
             autoregressive_context(&tokens, tokenizer.eot_token(), block_size);
+        let position_values = position_indexes(1, context.len().max(1));
+        let position_inputs: Tensor<2, u32> = Tensor::new(device, &position_values);
+        let causal_mask = fusor::cache::AttentionMask::<f32>::causal(device, context.len().max(1));
         let token_inputs: Tensor<2, u32> = Tensor::new(device, std::slice::from_ref(&context));
         let (cursor_x_inputs, cursor_y_inputs, pen_state_inputs) = canvas_state_tensors(
             device,

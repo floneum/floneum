@@ -1,22 +1,21 @@
-mod config;
-mod data;
 mod model;
 
-use data::{
-    CanvasStateIndexes, CanvasStateSpec, DatasetSplit, SourceDataset, SourceFile, StrokeTokenizer,
-    autoregressive_context, canvas_state_indexes, load_dataset_source, position_indexes,
-    windows_to_token_inputs, windows_to_token_targets, write_tokens_to_svg_file,
-};
 use fusor::{Device, Tensor, ToVec3};
 use fusor_gguf::{
     BlockQ4_0, BlockQ8_0, GgmlType, GgufMetadata, GgufTensorMetadata, GgufValue, GgufVersion,
 };
-use fusor_train::{AdamW, AdamWSettings};
+use fusor_nanochat::data::{
+    CanvasStateIndexes, CanvasStateSpec, DatasetSplit, SourceDataset, SourceFile, StrokeTokenizer,
+    autoregressive_context, canvas_state_indexes, load_dataset_source, position_indexes,
+    windows_to_token_inputs, windows_to_token_targets, write_tokens_to_svg_file,
+};
 use fusor_nanochat::{
     ComparisonReport, LivePredictor, RuntimeConfig as SharedRuntimeConfig,
     SaveQuantization as SharedSaveQuantization,
-    build_comparison_report as build_shared_comparison_report, generate_sample as generate_shared_sample,
+    build_comparison_report as build_shared_comparison_report,
+    generate_sample as generate_shared_sample,
 };
+use fusor_train::{AdamW, AdamWSettings};
 use half::f16;
 use model::{NamedTensor, NanoChatModel};
 use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -28,7 +27,7 @@ use std::{
     time::Instant,
 };
 
-use crate::config::{RuntimeConfig, SaveQuantization};
+use fusor_nanochat::{RuntimeConfig, SaveQuantization};
 
 #[tokio::main]
 async fn main() {
@@ -130,14 +129,13 @@ async fn main() {
                     &input_values,
                     model.canvas_state_spec(),
                 );
-                let position_values =
-                    position_indexes(batch.windows.len().max(1), runtime.block_size);
+                let position_values = position_indexes(batch.windows.len().max(1), batch.seq_len);
                 let position_inputs: Tensor<2, u32> = Tensor::new(&device, &position_values);
                 let causal_mask = causal_mask_tensor(
                     model.graph(),
                     &device,
                     batch.windows.len().max(1),
-                    runtime.block_size,
+                    batch.seq_len,
                 );
                 let logits = model.forward(
                     &token_inputs,
@@ -227,33 +225,8 @@ async fn main() {
             drop(model);
             let predictor = LivePredictor::load(to_shared_runtime_config(&runtime), args.force_cpu)
                 .unwrap_or_else(|error| panic!("could not load live predictor: {error}"));
-            let metrics =
-                evaluate_interactive_continuation(&predictor, &tokenizer, evaluation_dataset, &runtime)
-                    .await;
-            let sample_generated = if let Some(file) = evaluation_dataset.files().first() {
-                let prompt_tokens = continuation_prompt_tokens(&tokenizer, file, &runtime);
-                Some(
-                    predictor
-                        .predict_greedy(&prompt_tokens[1..], runtime.sample_tokens)
-                        .unwrap_or_else(|error| {
-                            panic!("could not generate continuation sample from checkpoint: {error}")
-                        }),
-                )
-            } else {
-                None
-            };
-            (metrics, sample_generated)
-        } else {
-            let sample_position_values = position_indexes(1, runtime.block_size);
-            let sample_position_inputs: Tensor<2, u32> =
-                Tensor::new(&device, &sample_position_values);
-            let sample_causal_mask =
-                causal_mask_tensor(model.graph(), &device, 1, runtime.block_size);
-            let metrics = evaluate_continuation(
-                &model,
-                &device,
-                &sample_position_inputs,
-                &sample_causal_mask,
+            let metrics = evaluate_interactive_continuation(
+                &predictor,
                 &tokenizer,
                 evaluation_dataset,
                 &runtime,
@@ -262,12 +235,29 @@ async fn main() {
             let sample_generated = if let Some(file) = evaluation_dataset.files().first() {
                 let prompt_tokens = continuation_prompt_tokens(&tokenizer, file, &runtime);
                 Some(
+                    predictor
+                        .predict_greedy(&prompt_tokens[1..], runtime.sample_tokens)
+                        .unwrap_or_else(|error| {
+                            panic!(
+                                "could not generate continuation sample from checkpoint: {error}"
+                            )
+                        }),
+                )
+            } else {
+                None
+            };
+            (metrics, sample_generated)
+        } else {
+            let metrics =
+                evaluate_continuation(&model, &device, &tokenizer, evaluation_dataset, &runtime)
+                    .await;
+            let sample_generated = if let Some(file) = evaluation_dataset.files().first() {
+                let prompt_tokens = continuation_prompt_tokens(&tokenizer, file, &runtime);
+                Some(
                     generate_completion(
                         &model,
                         &device,
                         &tokenizer,
-                        &sample_position_inputs,
-                        &sample_causal_mask,
                         &runtime,
                         &prompt_tokens,
                         tokenizer.eot_token(),
@@ -691,8 +681,6 @@ async fn generate_completion(
     model: &NanoChatModel,
     device: &Device,
     tokenizer: &StrokeTokenizer,
-    position_inputs: &Tensor<2, u32>,
-    causal_mask: &fusor::autograd::Tensor<3>,
     runtime: &RuntimeConfig,
     prompt_tokens: &[u32],
     stop_token: u32,
@@ -703,6 +691,9 @@ async fn generate_completion(
 
     for _ in 0..runtime.sample_tokens {
         let (context, last_index) = autoregressive_context(&tokens, stop_token, runtime.block_size);
+        let position_values = position_indexes(1, context.len().max(1));
+        let position_inputs: Tensor<2, u32> = Tensor::new(device, &position_values);
+        let causal_mask = causal_mask_tensor(model.graph(), device, 1, context.len().max(1));
         let token_inputs: Tensor<2, u32> = Tensor::new(device, std::slice::from_ref(&context));
         let (cursor_x_inputs, cursor_y_inputs, pen_state_inputs) = canvas_state_tensors(
             device,
@@ -712,11 +703,11 @@ async fn generate_completion(
         );
         let logits = model.forward(
             &token_inputs,
-            position_inputs,
+            &position_inputs,
             &cursor_x_inputs,
             &cursor_y_inputs,
             &pen_state_inputs,
-            causal_mask,
+            &causal_mask,
         );
         let mode_logits: Vec<Vec<Vec<f32>>> = logits
             .mode
@@ -1009,8 +1000,8 @@ async fn evaluate_autoregressive_metrics(
     for batch in batches {
         let batch_size = batch.windows.len();
         let batch_causal_mask =
-            causal_mask_tensor(model.graph(), device, batch_size, runtime.block_size);
-        let position_values = position_indexes(batch_size, runtime.block_size);
+            causal_mask_tensor(model.graph(), device, batch_size, batch.seq_len);
+        let position_values = position_indexes(batch_size, batch.seq_len);
         let position_inputs: Tensor<2, u32> = Tensor::new(device, &position_values);
         let input_values = windows_to_token_inputs(&batch.windows);
         let target_values = windows_to_token_targets(&batch.windows);
@@ -1063,7 +1054,7 @@ async fn evaluate_autoregressive_metrics(
             .to_vec3();
         let mut greedy_rng = StdRng::seed_from_u64(0);
         for batch_index in 0..batch_size {
-            for position in 0..runtime.block_size {
+            for position in 0..batch.seq_len {
                 if batch.masks[batch_index][position] <= 0.0 {
                     continue;
                 }
@@ -1132,8 +1123,6 @@ impl PrefixMetrics {
 async fn evaluate_continuation(
     model: &NanoChatModel,
     device: &Device,
-    position_inputs: &Tensor<2, u32>,
-    causal_mask: &fusor::autograd::Tensor<3>,
     tokenizer: &StrokeTokenizer,
     dataset: &SourceDataset,
     runtime: &RuntimeConfig,
@@ -1162,8 +1151,6 @@ async fn evaluate_continuation(
                 model,
                 device,
                 tokenizer,
-                position_inputs,
-                causal_mask,
                 runtime,
                 &prompt_tokens,
                 tokenizer.eot_token(),
@@ -1587,9 +1574,6 @@ mod tests {
 
         save_gguf(&model, &tokenizer, &runtime, &gguf_path).await;
 
-        let position_values = position_indexes(1, runtime.block_size);
-        let position_inputs: Tensor<2, u32> = Tensor::new(&device, &position_values);
-        let causal_mask = causal_mask_tensor(model.graph(), &device, 1, runtime.block_size);
         let prompt = vec![
             tokenizer.token_from_components(0, 2, 1),
             tokenizer.token_from_components(1, 4, 1),
@@ -1600,8 +1584,6 @@ mod tests {
             &model,
             &device,
             &tokenizer,
-            &position_inputs,
-            &causal_mask,
             &runtime,
             &model_prompt,
             tokenizer.eot_token(),

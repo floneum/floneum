@@ -3,12 +3,12 @@ use fusor::{
     autograd::{Gradients, Graph, Tensor},
     base_inverse_frequency,
 };
-use fusor_train::{AdamMoments, AdamWModel, AdamWSettings, adamw_update, adamw_update_raw, extract_gradient};
+use fusor_train::{AdamMoments, AdamWModel, AdamWSettings, adamw_update_raw, extract_gradient};
 use rand::{Rng, rngs::StdRng};
 use std::{io::Write, time::Instant};
 
-use crate::{
-    config::RuntimeConfig,
+use fusor_nanochat::{
+    RuntimeConfig,
     data::{
         ACTION_DIRECTION_COUNT, ACTION_MODE_COUNT, CanvasStateSpec, StrokeTokenizer,
         canvas_state_spec,
@@ -90,6 +90,26 @@ pub struct NanoChatAdamState {
     ln_f_weight: AdamMoments<1>,
     ln_f_bias: AdamMoments<1>,
     action_head: AdamOutputHeadState,
+}
+
+impl NanoChatAdamState {
+    fn collect_gpu_keys(&self, keys: &mut Vec<NodeIndex>) {
+        self.wte.collect_gpu_keys(keys);
+        if let Some(wpe) = &self.wpe {
+            wpe.collect_gpu_keys(keys);
+        }
+        if let Some(cs) = &self.canvas_state {
+            cs.collect_gpu_keys(keys);
+        }
+        self.ln_in_weight.collect_gpu_keys(keys);
+        self.ln_in_bias.collect_gpu_keys(keys);
+        for block in &self.blocks {
+            block.collect_gpu_keys(keys);
+        }
+        self.ln_f_weight.collect_gpu_keys(keys);
+        self.ln_f_bias.collect_gpu_keys(keys);
+        self.action_head.collect_gpu_keys(keys);
+    }
 }
 
 #[derive(Clone)]
@@ -182,6 +202,73 @@ struct CanvasStateAdamState {
 struct AdamOutputHeadState {
     weight: AdamMoments<2>,
     bias: AdamMoments<1>,
+}
+
+impl AdamBlockState {
+    fn collect_gpu_keys(&self, keys: &mut Vec<NodeIndex>) {
+        self.ln_1_weight.collect_gpu_keys(keys);
+        self.ln_1_bias.collect_gpu_keys(keys);
+        self.mixer.collect_gpu_keys(keys);
+        self.ln_attn_out_weight.collect_gpu_keys(keys);
+        self.ln_attn_out_bias.collect_gpu_keys(keys);
+        self.ln_2_weight.collect_gpu_keys(keys);
+        self.ln_2_bias.collect_gpu_keys(keys);
+        self.mlp.collect_gpu_keys(keys);
+        self.ln_mlp_out_weight.collect_gpu_keys(keys);
+        self.ln_mlp_out_bias.collect_gpu_keys(keys);
+    }
+}
+
+impl AdamMixerState {
+    fn collect_gpu_keys(&self, keys: &mut Vec<NodeIndex>) {
+        match self {
+            Self::Attention(attn) => attn.collect_gpu_keys(keys),
+            Self::Conv(conv) => conv.collect_gpu_keys(keys),
+        }
+    }
+}
+
+impl AdamAttentionState {
+    fn collect_gpu_keys(&self, keys: &mut Vec<NodeIndex>) {
+        self.c_attn_q.collect_gpu_keys(keys);
+        self.c_attn_k.collect_gpu_keys(keys);
+        self.c_attn_v.collect_gpu_keys(keys);
+        self.c_proj.collect_gpu_keys(keys);
+    }
+}
+
+impl AdamConvState {
+    fn collect_gpu_keys(&self, keys: &mut Vec<NodeIndex>) {
+        for k in &self.kernels {
+            k.collect_gpu_keys(keys);
+        }
+        self.bias.collect_gpu_keys(keys);
+        self.out_proj.collect_gpu_keys(keys);
+    }
+}
+
+impl AdamMlpState {
+    fn collect_gpu_keys(&self, keys: &mut Vec<NodeIndex>) {
+        self.c_fc.collect_gpu_keys(keys);
+        self.c_fc_bias.collect_gpu_keys(keys);
+        self.c_proj.collect_gpu_keys(keys);
+        self.c_proj_bias.collect_gpu_keys(keys);
+    }
+}
+
+impl CanvasStateAdamState {
+    fn collect_gpu_keys(&self, keys: &mut Vec<NodeIndex>) {
+        self.cursor_x.collect_gpu_keys(keys);
+        self.cursor_y.collect_gpu_keys(keys);
+        self.pen_state.collect_gpu_keys(keys);
+    }
+}
+
+impl AdamOutputHeadState {
+    fn collect_gpu_keys(&self, keys: &mut Vec<NodeIndex>) {
+        self.weight.collect_gpu_keys(keys);
+        self.bias.collect_gpu_keys(keys);
+    }
 }
 
 impl NanoChatModel {
@@ -315,59 +402,8 @@ impl NanoChatModel {
         &self.graph
     }
 
-    fn into_graph(self, graph: Graph) -> Self {
-        let NanoChatModel {
-            graph: _,
-            shape,
-            attention_period,
-            vocab_size,
-            max_count,
-            use_rope,
-            rope_theta,
-            use_extra_norms,
-            wte,
-            wpe,
-            canvas_state,
-            rotary,
-            ln_in_weight,
-            ln_in_bias,
-            blocks,
-            ln_f_weight,
-            ln_f_bias,
-            action_head,
-        } = self;
-
-        Self {
-            graph: graph.clone(),
-            shape,
-            attention_period,
-            vocab_size,
-            max_count,
-            use_rope,
-            rope_theta,
-            use_extra_norms,
-            wte: regraph_tensor(&graph, wte),
-            wpe: wpe.map(|tensor| regraph_tensor(&graph, tensor)),
-            canvas_state: canvas_state.map(|state| state.into_graph(&graph)),
-            rotary: rotary.map(|cache| cache.into_graph(&graph)),
-            ln_in_weight: regraph_tensor(&graph, ln_in_weight),
-            ln_in_bias: regraph_tensor(&graph, ln_in_bias),
-            blocks: blocks
-                .into_iter()
-                .map(|block| block.into_graph(&graph))
-                .collect(),
-            ln_f_weight: regraph_tensor(&graph, ln_f_weight),
-            ln_f_bias: regraph_tensor(&graph, ln_f_bias),
-            action_head: action_head.into_graph(&graph),
-        }
-    }
-
     pub fn vocab_size(&self) -> usize {
         self.vocab_size
-    }
-
-    pub fn max_count(&self) -> usize {
-        self.max_count
     }
 
     pub fn block_size(&self) -> usize {
@@ -577,6 +613,28 @@ impl AdamWModel for NanoChatModel {
         // Old graph is now dropped — backward closures and their captured GPU
         // tensor references are freed.
 
+        // Phase 2.5: Batch-resolve all extracted gradient and parameter-value
+        // GPU tensors in a single resolver pass. The batch resolver builds one
+        // shared execution graph so intermediate buffers can be freed as soon as
+        // every consumer within the batch is computed. Without this, resolving
+        // tensors one-by-one in adamw_update_raw keeps all shared intermediates
+        // alive until every individual resolve finishes, causing GPU OOM.
+        {
+            let mut keys = Vec::new();
+            extracted.collect_gpu_keys(&mut keys);
+            for block in &extracted_blocks {
+                block.collect_gpu_keys(&mut keys);
+            }
+            // Also collect keys from the AdamW moment tensors (m, v) since they
+            // will be read during the update step.
+            state.collect_gpu_keys(&mut keys);
+            if !keys.is_empty() {
+                // All GPU tensors share the same device; grab it from the first key's tensor.
+                let device = extracted.device();
+                device.resolve_batch(&keys);
+            }
+        }
+
         // Phase 3: Apply AdamW updates. Each parameter's gradient is
         // materialized and then dropped before the next one is processed,
         // so shared intermediate buffers in the compute graph can be freed
@@ -591,17 +649,13 @@ impl AdamWModel for NanoChatModel {
                     adamw_update_raw(val, grad, &mut state.wte, step, settings),
                 )
             })
-            .unwrap_or_else(|| {
-                Tensor::from_raw(&new_graph, extracted.wte_value)
-            });
+            .unwrap_or_else(|| Tensor::from_raw(&new_graph, extracted.wte_value));
 
         let wpe = match (extracted.wpe, state.wpe.as_mut()) {
-            (Some(Some((grad, val))), Some(moments)) => {
-                Some(Tensor::from_raw(
-                    &new_graph,
-                    adamw_update_raw(val, grad, moments, step, settings),
-                ))
-            }
+            (Some(Some((grad, val))), Some(moments)) => Some(Tensor::from_raw(
+                &new_graph,
+                adamw_update_raw(val, grad, moments, step, settings),
+            )),
             (Some(None), Some(_)) => {
                 Some(Tensor::from_raw(&new_graph, extracted.wpe_value.unwrap()))
             }
@@ -623,9 +677,7 @@ impl AdamWModel for NanoChatModel {
                     adamw_update_raw(val, grad, &mut state.ln_in_weight, step, settings),
                 )
             })
-            .unwrap_or_else(|| {
-                Tensor::from_raw(&new_graph, extracted.ln_in_weight_value)
-            });
+            .unwrap_or_else(|| Tensor::from_raw(&new_graph, extracted.ln_in_weight_value));
 
         let ln_in_bias = extracted
             .ln_in_bias
@@ -635,9 +687,7 @@ impl AdamWModel for NanoChatModel {
                     adamw_update_raw(val, grad, &mut state.ln_in_bias, step, settings),
                 )
             })
-            .unwrap_or_else(|| {
-                Tensor::from_raw(&new_graph, extracted.ln_in_bias_value)
-            });
+            .unwrap_or_else(|| Tensor::from_raw(&new_graph, extracted.ln_in_bias_value));
 
         let blocks = extracted_blocks
             .into_iter()
@@ -655,9 +705,7 @@ impl AdamWModel for NanoChatModel {
                     adamw_update_raw(val, grad, &mut state.ln_f_weight, step, settings),
                 )
             })
-            .unwrap_or_else(|| {
-                Tensor::from_raw(&new_graph, extracted.ln_f_weight_value)
-            });
+            .unwrap_or_else(|| Tensor::from_raw(&new_graph, extracted.ln_f_weight_value));
 
         let ln_f_bias = extracted
             .ln_f_bias
@@ -667,13 +715,12 @@ impl AdamWModel for NanoChatModel {
                     adamw_update_raw(val, grad, &mut state.ln_f_bias, step, settings),
                 )
             })
-            .unwrap_or_else(|| {
-                Tensor::from_raw(&new_graph, extracted.ln_f_bias_value)
-            });
+            .unwrap_or_else(|| Tensor::from_raw(&new_graph, extracted.ln_f_bias_value));
 
-        let action_head = extracted
-            .action_head
-            .apply(&new_graph, &mut state.action_head, step, settings);
+        let action_head =
+            extracted
+                .action_head
+                .apply(&new_graph, &mut state.action_head, step, settings);
 
         let rotary = rotary.map(|cache| cache.into_graph(&new_graph));
 
@@ -743,15 +790,6 @@ impl CanvasStateEmbeddings {
         log_materialize_start("pen_state_embd.weight", &self.pen_state.shape());
         push_tensor_2d(tensors, "pen_state_embd.weight", &self.pen_state).await;
     }
-
-    fn into_graph(self, graph: &Graph) -> Self {
-        Self {
-            spec: self.spec,
-            cursor_x: regraph_tensor(graph, self.cursor_x),
-            cursor_y: regraph_tensor(graph, self.cursor_y),
-            pen_state: regraph_tensor(graph, self.pen_state),
-        }
-    }
 }
 
 impl CanvasStateAdamState {
@@ -760,39 +798,6 @@ impl CanvasStateAdamState {
             cursor_x: AdamMoments::zeros_like(device, &state.cursor_x),
             cursor_y: AdamMoments::zeros_like(device, &state.cursor_y),
             pen_state: AdamMoments::zeros_like(device, &state.pen_state),
-        }
-    }
-
-    fn step(
-        &mut self,
-        state: CanvasStateEmbeddings,
-        gradients: &Gradients,
-        step: usize,
-        settings: AdamWSettings,
-    ) -> CanvasStateEmbeddings {
-        CanvasStateEmbeddings {
-            spec: state.spec,
-            cursor_x: adamw_update(
-                &state.cursor_x,
-                &mut self.cursor_x,
-                gradients,
-                step,
-                settings,
-            ),
-            cursor_y: adamw_update(
-                &state.cursor_y,
-                &mut self.cursor_y,
-                gradients,
-                step,
-                settings,
-            ),
-            pen_state: adamw_update(
-                &state.pen_state,
-                &mut self.pen_state,
-                gradients,
-                step,
-                settings,
-            ),
         }
     }
 }
@@ -836,13 +841,6 @@ impl OutputHead {
         log_materialize_start(&format!("{prefix}.bias"), &self.bias.shape());
         push_tensor_1d(tensors, &format!("{prefix}.bias"), &self.bias).await;
     }
-
-    fn into_graph(self, graph: &Graph) -> Self {
-        Self {
-            weight: regraph_tensor(graph, self.weight),
-            bias: regraph_tensor(graph, self.bias),
-        }
-    }
 }
 
 impl AdamOutputHeadState {
@@ -850,19 +848,6 @@ impl AdamOutputHeadState {
         Self {
             weight: AdamMoments::zeros_like(device, &head.weight),
             bias: AdamMoments::zeros_like(device, &head.bias),
-        }
-    }
-
-    fn step(
-        &mut self,
-        head: OutputHead,
-        gradients: &Gradients,
-        step: usize,
-        settings: AdamWSettings,
-    ) -> OutputHead {
-        OutputHead {
-            weight: adamw_update(&head.weight, &mut self.weight, gradients, step, settings),
-            bias: adamw_update(&head.bias, &mut self.bias, gradients, step, settings),
         }
     }
 }
@@ -995,21 +980,6 @@ impl TransformerBlock {
         )
         .await;
     }
-
-    fn into_graph(self, graph: &Graph) -> Self {
-        Self {
-            ln_1_weight: regraph_tensor(graph, self.ln_1_weight),
-            ln_1_bias: regraph_tensor(graph, self.ln_1_bias),
-            mixer: self.mixer.into_graph(graph),
-            ln_attn_out_weight: regraph_tensor(graph, self.ln_attn_out_weight),
-            ln_attn_out_bias: regraph_tensor(graph, self.ln_attn_out_bias),
-            ln_2_weight: regraph_tensor(graph, self.ln_2_weight),
-            ln_2_bias: regraph_tensor(graph, self.ln_2_bias),
-            mlp: self.mlp.into_graph(graph),
-            ln_mlp_out_weight: regraph_tensor(graph, self.ln_mlp_out_weight),
-            ln_mlp_out_bias: regraph_tensor(graph, self.ln_mlp_out_bias),
-        }
-    }
 }
 
 impl CausalSelfAttention {
@@ -1115,15 +1085,6 @@ impl CausalSelfAttention {
         log_materialize_start(&format!("{prefix}.attn_proj.weight"), &self.c_proj.shape());
         push_tensor_2d(tensors, &format!("{prefix}.attn_proj.weight"), &self.c_proj).await;
     }
-
-    fn into_graph(self, graph: &Graph) -> Self {
-        Self {
-            c_attn_q: regraph_tensor(graph, self.c_attn_q),
-            c_attn_k: regraph_tensor(graph, self.c_attn_k),
-            c_attn_v: regraph_tensor(graph, self.c_attn_v),
-            c_proj: regraph_tensor(graph, self.c_proj),
-        }
-    }
 }
 
 impl ConvMixer {
@@ -1196,18 +1157,6 @@ impl ConvMixer {
         )
         .await;
     }
-
-    fn into_graph(self, graph: &Graph) -> Self {
-        Self {
-            kernels: self
-                .kernels
-                .into_iter()
-                .map(|kernel| regraph_tensor(graph, kernel))
-                .collect(),
-            bias: regraph_tensor(graph, self.bias),
-            out_proj: regraph_tensor(graph, self.out_proj),
-        }
-    }
 }
 
 impl SequenceMixer {
@@ -1238,13 +1187,6 @@ impl SequenceMixer {
         match self {
             SequenceMixer::Attention(attn) => attn.append_named_tensors(prefix, tensors).await,
             SequenceMixer::Conv(conv) => conv.append_named_tensors(prefix, tensors).await,
-        }
-    }
-
-    fn into_graph(self, graph: &Graph) -> Self {
-        match self {
-            SequenceMixer::Attention(attn) => SequenceMixer::Attention(attn.into_graph(graph)),
-            SequenceMixer::Conv(conv) => SequenceMixer::Conv(conv.into_graph(graph)),
         }
     }
 }
@@ -1313,6 +1255,7 @@ impl Mlp {
     }
 
     fn forward(&self, x: &Tensor<3>, batch_size: usize, shape: ModelShape) -> Tensor<3> {
+        let seq_len = x.shape()[1];
         let hidden = x
             .mat_mul(
                 &self
@@ -1322,7 +1265,7 @@ impl Mlp {
             .add(
                 &self
                     .c_fc_bias
-                    .broadcast_as([batch_size, shape.block_size, shape.n_ff]),
+                    .broadcast_as([batch_size, seq_len, shape.n_ff]),
             )
             .relu();
 
@@ -1335,7 +1278,7 @@ impl Mlp {
             .add(
                 &self
                     .c_proj_bias
-                    .broadcast_as([batch_size, shape.block_size, shape.n_embd]),
+                    .broadcast_as([batch_size, seq_len, shape.n_embd]),
             )
     }
 
@@ -1364,15 +1307,6 @@ impl Mlp {
         )
         .await;
     }
-
-    fn into_graph(self, graph: &Graph) -> Self {
-        Self {
-            c_fc: regraph_tensor(graph, self.c_fc),
-            c_fc_bias: regraph_tensor(graph, self.c_fc_bias),
-            c_proj: regraph_tensor(graph, self.c_proj),
-            c_proj_bias: regraph_tensor(graph, self.c_proj_bias),
-        }
-    }
 }
 
 impl AdamBlockState {
@@ -1390,75 +1324,6 @@ impl AdamBlockState {
             ln_mlp_out_bias: AdamMoments::zeros_like(device, &block.ln_mlp_out_bias),
         }
     }
-
-    fn step(
-        &mut self,
-        block: TransformerBlock,
-        gradients: &Gradients,
-        step: usize,
-        settings: AdamWSettings,
-    ) -> TransformerBlock {
-        TransformerBlock {
-            ln_1_weight: adamw_update(
-                &block.ln_1_weight,
-                &mut self.ln_1_weight,
-                gradients,
-                step,
-                settings,
-            ),
-            ln_1_bias: adamw_update(
-                &block.ln_1_bias,
-                &mut self.ln_1_bias,
-                gradients,
-                step,
-                settings,
-            ),
-            mixer: self.mixer.step(block.mixer, gradients, step, settings),
-            ln_attn_out_weight: adamw_update(
-                &block.ln_attn_out_weight,
-                &mut self.ln_attn_out_weight,
-                gradients,
-                step,
-                settings,
-            ),
-            ln_attn_out_bias: adamw_update(
-                &block.ln_attn_out_bias,
-                &mut self.ln_attn_out_bias,
-                gradients,
-                step,
-                settings,
-            ),
-            ln_2_weight: adamw_update(
-                &block.ln_2_weight,
-                &mut self.ln_2_weight,
-                gradients,
-                step,
-                settings,
-            ),
-            ln_2_bias: adamw_update(
-                &block.ln_2_bias,
-                &mut self.ln_2_bias,
-                gradients,
-                step,
-                settings,
-            ),
-            mlp: self.mlp.step(block.mlp, gradients, step, settings),
-            ln_mlp_out_weight: adamw_update(
-                &block.ln_mlp_out_weight,
-                &mut self.ln_mlp_out_weight,
-                gradients,
-                step,
-                settings,
-            ),
-            ln_mlp_out_bias: adamw_update(
-                &block.ln_mlp_out_bias,
-                &mut self.ln_mlp_out_bias,
-                gradients,
-                step,
-                settings,
-            ),
-        }
-    }
 }
 
 impl AdamMixerState {
@@ -1470,24 +1335,6 @@ impl AdamMixerState {
             SequenceMixer::Conv(conv) => Self::Conv(AdamConvState::new(device, conv)),
         }
     }
-
-    fn step(
-        &mut self,
-        mixer: SequenceMixer,
-        gradients: &Gradients,
-        step: usize,
-        settings: AdamWSettings,
-    ) -> SequenceMixer {
-        match (self, mixer) {
-            (AdamMixerState::Attention(state), SequenceMixer::Attention(attn)) => {
-                SequenceMixer::Attention(state.step(attn, gradients, step, settings))
-            }
-            (AdamMixerState::Conv(state), SequenceMixer::Conv(conv)) => {
-                SequenceMixer::Conv(state.step(conv, gradients, step, settings))
-            }
-            _ => unreachable!("mixer schedule changed after optimizer init"),
-        }
-    }
 }
 
 impl AdamAttentionState {
@@ -1497,39 +1344,6 @@ impl AdamAttentionState {
             c_attn_k: AdamMoments::zeros_like(device, &attn.c_attn_k),
             c_attn_v: AdamMoments::zeros_like(device, &attn.c_attn_v),
             c_proj: AdamMoments::zeros_like(device, &attn.c_proj),
-        }
-    }
-
-    fn step(
-        &mut self,
-        attn: CausalSelfAttention,
-        gradients: &Gradients,
-        step: usize,
-        settings: AdamWSettings,
-    ) -> CausalSelfAttention {
-        CausalSelfAttention {
-            c_attn_q: adamw_update(
-                &attn.c_attn_q,
-                &mut self.c_attn_q,
-                gradients,
-                step,
-                settings,
-            ),
-            c_attn_k: adamw_update(
-                &attn.c_attn_k,
-                &mut self.c_attn_k,
-                gradients,
-                step,
-                settings,
-            ),
-            c_attn_v: adamw_update(
-                &attn.c_attn_v,
-                &mut self.c_attn_v,
-                gradients,
-                step,
-                settings,
-            ),
-            c_proj: adamw_update(&attn.c_proj, &mut self.c_proj, gradients, step, settings),
         }
     }
 }
@@ -1546,32 +1360,6 @@ impl AdamConvState {
             out_proj: AdamMoments::zeros_like(device, &conv.out_proj),
         }
     }
-
-    fn step(
-        &mut self,
-        conv: ConvMixer,
-        gradients: &Gradients,
-        step: usize,
-        settings: AdamWSettings,
-    ) -> ConvMixer {
-        let kernels = conv
-            .kernels
-            .into_iter()
-            .zip(self.kernels.iter_mut())
-            .map(|(kernel, state)| adamw_update(&kernel, state, gradients, step, settings))
-            .collect();
-        ConvMixer {
-            kernels,
-            bias: adamw_update(&conv.bias, &mut self.bias, gradients, step, settings),
-            out_proj: adamw_update(
-                &conv.out_proj,
-                &mut self.out_proj,
-                gradients,
-                step,
-                settings,
-            ),
-        }
-    }
 }
 
 impl AdamMlpState {
@@ -1581,33 +1369,6 @@ impl AdamMlpState {
             c_fc_bias: AdamMoments::zeros_like(device, &mlp.c_fc_bias),
             c_proj: AdamMoments::zeros_like(device, &mlp.c_proj),
             c_proj_bias: AdamMoments::zeros_like(device, &mlp.c_proj_bias),
-        }
-    }
-
-    fn step(
-        &mut self,
-        mlp: Mlp,
-        gradients: &Gradients,
-        step: usize,
-        settings: AdamWSettings,
-    ) -> Mlp {
-        Mlp {
-            c_fc: adamw_update(&mlp.c_fc, &mut self.c_fc, gradients, step, settings),
-            c_fc_bias: adamw_update(
-                &mlp.c_fc_bias,
-                &mut self.c_fc_bias,
-                gradients,
-                step,
-                settings,
-            ),
-            c_proj: adamw_update(&mlp.c_proj, &mut self.c_proj, gradients, step, settings),
-            c_proj_bias: adamw_update(
-                &mlp.c_proj_bias,
-                &mut self.c_proj_bias,
-                gradients,
-                step,
-                settings,
-            ),
         }
     }
 }
@@ -1638,28 +1399,8 @@ fn tensor_len<const R: usize>(tensor: &Tensor<R>) -> usize {
     tensor.shape().iter().product()
 }
 
-fn regraph_tensor<const R: usize>(graph: &Graph, tensor: Tensor<R>) -> Tensor<R> {
-    Tensor::from_raw(graph, tensor.into_raw())
-}
-
 fn regraph_constant_tensor<const R: usize>(graph: &Graph, tensor: Tensor<R>) -> Tensor<R> {
     Tensor::constant_from_raw(graph, tensor.into_raw())
-}
-
-fn adamw_update_optional<const R: usize>(
-    parameter: Option<Tensor<R>>,
-    moments: &mut Option<AdamMoments<R>>,
-    gradients: &Gradients,
-    step: usize,
-    settings: AdamWSettings,
-) -> Option<Tensor<R>> {
-    match (parameter, moments.as_mut()) {
-        (Some(parameter), Some(moments)) => {
-            Some(adamw_update(&parameter, moments, gradients, step, settings))
-        }
-        (None, None) => None,
-        _ => unreachable!("optimizer state does not match optional parameter"),
-    }
 }
 
 async fn push_tensor_1d(tensors: &mut Vec<NamedTensor>, name: &str, tensor: &Tensor<1>) {
@@ -1741,6 +1482,32 @@ impl ModelShape {
 }
 
 // ---------------------------------------------------------------------------
+// GPU batch-resolve helpers
+// ---------------------------------------------------------------------------
+
+/// Collect the GPU compute-graph key from a `RawTensor`, if it lives on GPU.
+fn collect_tensor_gpu_key<const R: usize>(
+    tensor: &fusor::Tensor<R, f32>,
+    keys: &mut Vec<NodeIndex>,
+) {
+    if let Some(key) = tensor.gpu_key() {
+        keys.push(key);
+    }
+}
+
+/// Collect GPU keys from an optional (gradient, param_value) pair.
+fn collect_grad_pair_gpu_keys<const R: usize>(
+    pair: &GradPair<R>,
+    keys: &mut Vec<NodeIndex>,
+) {
+    if let Some((grad, val)) = pair {
+        collect_tensor_gpu_key(grad, keys);
+        collect_tensor_gpu_key(val, keys);
+    }
+}
+
+
+// ---------------------------------------------------------------------------
 // Extracted-gradient structs for the two-phase optimizer step.
 //
 // Phase 1 extracts lazy (RawTensor, RawTensor) pairs keyed by the old autograd
@@ -1772,7 +1539,10 @@ impl ExtractedModelGradients {
         Self {
             wte: extract_gradient(&model.wte, gradients),
             wte_value: model.wte.raw().clone(),
-            wpe: model.wpe.as_ref().map(|wpe| extract_gradient(wpe, gradients)),
+            wpe: model
+                .wpe
+                .as_ref()
+                .map(|wpe| extract_gradient(wpe, gradients)),
             wpe_value: model.wpe.as_ref().map(|wpe| wpe.raw().clone()),
             canvas_state: model
                 .canvas_state
@@ -1789,6 +1559,33 @@ impl ExtractedModelGradients {
             action_head: ExtractedOutputHeadGradients::extract(&model.action_head, gradients),
         }
     }
+
+    fn device(&self) -> Device {
+        self.wte_value.device()
+    }
+
+    fn collect_gpu_keys(&self, keys: &mut Vec<NodeIndex>) {
+        collect_grad_pair_gpu_keys(&self.wte, keys);
+        collect_tensor_gpu_key(&self.wte_value, keys);
+        if let Some(wpe) = &self.wpe {
+            collect_grad_pair_gpu_keys(wpe, keys);
+        }
+        if let Some(val) = &self.wpe_value {
+            collect_tensor_gpu_key(val, keys);
+        }
+        if let Some(cs) = &self.canvas_state {
+            cs.collect_gpu_keys(keys);
+        }
+        collect_grad_pair_gpu_keys(&self.ln_in_weight, keys);
+        collect_tensor_gpu_key(&self.ln_in_weight_value, keys);
+        collect_grad_pair_gpu_keys(&self.ln_in_bias, keys);
+        collect_tensor_gpu_key(&self.ln_in_bias_value, keys);
+        collect_grad_pair_gpu_keys(&self.ln_f_weight, keys);
+        collect_tensor_gpu_key(&self.ln_f_weight_value, keys);
+        collect_grad_pair_gpu_keys(&self.ln_f_bias, keys);
+        collect_tensor_gpu_key(&self.ln_f_bias_value, keys);
+        self.action_head.collect_gpu_keys(keys);
+    }
 }
 
 struct ExtractedCanvasStateGradients {
@@ -1802,15 +1599,6 @@ struct ExtractedCanvasStateGradients {
 }
 
 impl ExtractedCanvasStateGradients {
-    fn collect_keys(&self, keys: &mut Vec<NodeIndex>) {
-        collect_grad_pair_keys(&self.cursor_x, keys);
-        collect_tensor_key(&self.cursor_x_value, keys);
-        collect_grad_pair_keys(&self.cursor_y, keys);
-        collect_tensor_key(&self.cursor_y_value, keys);
-        collect_grad_pair_keys(&self.pen_state, keys);
-        collect_tensor_key(&self.pen_state_value, keys);
-    }
-
     fn extract(cs: &CanvasStateEmbeddings, gradients: &Gradients) -> Self {
         Self {
             cursor_x: extract_gradient(&cs.cursor_x, gradients),
@@ -1821,6 +1609,15 @@ impl ExtractedCanvasStateGradients {
             pen_state_value: cs.pen_state.raw().clone(),
             spec: cs.spec,
         }
+    }
+
+    fn collect_gpu_keys(&self, keys: &mut Vec<NodeIndex>) {
+        collect_grad_pair_gpu_keys(&self.cursor_x, keys);
+        collect_tensor_gpu_key(&self.cursor_x_value, keys);
+        collect_grad_pair_gpu_keys(&self.cursor_y, keys);
+        collect_tensor_gpu_key(&self.cursor_y_value, keys);
+        collect_grad_pair_gpu_keys(&self.pen_state, keys);
+        collect_tensor_gpu_key(&self.pen_state_value, keys);
     }
 
     fn apply(
@@ -1868,13 +1665,6 @@ struct ExtractedOutputHeadGradients {
 }
 
 impl ExtractedOutputHeadGradients {
-    fn collect_keys(&self, keys: &mut Vec<NodeIndex>) {
-        collect_grad_pair_keys(&self.weight, keys);
-        collect_tensor_key(&self.weight_value, keys);
-        collect_grad_pair_keys(&self.bias, keys);
-        collect_tensor_key(&self.bias_value, keys);
-    }
-
     fn extract(head: &OutputHead, gradients: &Gradients) -> Self {
         Self {
             weight: extract_gradient(&head.weight, gradients),
@@ -1882,6 +1672,13 @@ impl ExtractedOutputHeadGradients {
             bias: extract_gradient(&head.bias, gradients),
             bias_value: head.bias.raw().clone(),
         }
+    }
+
+    fn collect_gpu_keys(&self, keys: &mut Vec<NodeIndex>) {
+        collect_grad_pair_gpu_keys(&self.weight, keys);
+        collect_tensor_gpu_key(&self.weight_value, keys);
+        collect_grad_pair_gpu_keys(&self.bias, keys);
+        collect_tensor_gpu_key(&self.bias_value, keys);
     }
 
     fn apply(
@@ -1934,27 +1731,6 @@ struct ExtractedBlockGradients {
 }
 
 impl ExtractedBlockGradients {
-    fn collect_keys(&self, keys: &mut Vec<NodeIndex>) {
-        collect_grad_pair_keys(&self.ln_1_weight, keys);
-        collect_tensor_key(&self.ln_1_weight_value, keys);
-        collect_grad_pair_keys(&self.ln_1_bias, keys);
-        collect_tensor_key(&self.ln_1_bias_value, keys);
-        self.mixer.collect_keys(keys);
-        collect_grad_pair_keys(&self.ln_attn_out_weight, keys);
-        collect_tensor_key(&self.ln_attn_out_weight_value, keys);
-        collect_grad_pair_keys(&self.ln_attn_out_bias, keys);
-        collect_tensor_key(&self.ln_attn_out_bias_value, keys);
-        collect_grad_pair_keys(&self.ln_2_weight, keys);
-        collect_tensor_key(&self.ln_2_weight_value, keys);
-        collect_grad_pair_keys(&self.ln_2_bias, keys);
-        collect_tensor_key(&self.ln_2_bias_value, keys);
-        self.mlp.collect_keys(keys);
-        collect_grad_pair_keys(&self.ln_mlp_out_weight, keys);
-        collect_tensor_key(&self.ln_mlp_out_weight_value, keys);
-        collect_grad_pair_keys(&self.ln_mlp_out_bias, keys);
-        collect_tensor_key(&self.ln_mlp_out_bias_value, keys);
-    }
-
     fn extract(block: &TransformerBlock, gradients: &Gradients) -> Self {
         Self {
             ln_1_weight: extract_gradient(&block.ln_1_weight, gradients),
@@ -1978,6 +1754,27 @@ impl ExtractedBlockGradients {
         }
     }
 
+    fn collect_gpu_keys(&self, keys: &mut Vec<NodeIndex>) {
+        collect_grad_pair_gpu_keys(&self.ln_1_weight, keys);
+        collect_tensor_gpu_key(&self.ln_1_weight_value, keys);
+        collect_grad_pair_gpu_keys(&self.ln_1_bias, keys);
+        collect_tensor_gpu_key(&self.ln_1_bias_value, keys);
+        self.mixer.collect_gpu_keys(keys);
+        collect_grad_pair_gpu_keys(&self.ln_attn_out_weight, keys);
+        collect_tensor_gpu_key(&self.ln_attn_out_weight_value, keys);
+        collect_grad_pair_gpu_keys(&self.ln_attn_out_bias, keys);
+        collect_tensor_gpu_key(&self.ln_attn_out_bias_value, keys);
+        collect_grad_pair_gpu_keys(&self.ln_2_weight, keys);
+        collect_tensor_gpu_key(&self.ln_2_weight_value, keys);
+        collect_grad_pair_gpu_keys(&self.ln_2_bias, keys);
+        collect_tensor_gpu_key(&self.ln_2_bias_value, keys);
+        self.mlp.collect_gpu_keys(keys);
+        collect_grad_pair_gpu_keys(&self.ln_mlp_out_weight, keys);
+        collect_tensor_gpu_key(&self.ln_mlp_out_weight_value, keys);
+        collect_grad_pair_gpu_keys(&self.ln_mlp_out_bias, keys);
+        collect_tensor_gpu_key(&self.ln_mlp_out_bias_value, keys);
+    }
+
     fn apply(
         self,
         graph: &Graph,
@@ -1987,38 +1784,70 @@ impl ExtractedBlockGradients {
     ) -> TransformerBlock {
         TransformerBlock {
             ln_1_weight: apply_extracted(
-                graph, self.ln_1_weight, self.ln_1_weight_value,
-                &mut state.ln_1_weight, step, settings,
+                graph,
+                self.ln_1_weight,
+                self.ln_1_weight_value,
+                &mut state.ln_1_weight,
+                step,
+                settings,
             ),
             ln_1_bias: apply_extracted(
-                graph, self.ln_1_bias, self.ln_1_bias_value,
-                &mut state.ln_1_bias, step, settings,
+                graph,
+                self.ln_1_bias,
+                self.ln_1_bias_value,
+                &mut state.ln_1_bias,
+                step,
+                settings,
             ),
             mixer: self.mixer.apply(graph, &mut state.mixer, step, settings),
             ln_attn_out_weight: apply_extracted(
-                graph, self.ln_attn_out_weight, self.ln_attn_out_weight_value,
-                &mut state.ln_attn_out_weight, step, settings,
+                graph,
+                self.ln_attn_out_weight,
+                self.ln_attn_out_weight_value,
+                &mut state.ln_attn_out_weight,
+                step,
+                settings,
             ),
             ln_attn_out_bias: apply_extracted(
-                graph, self.ln_attn_out_bias, self.ln_attn_out_bias_value,
-                &mut state.ln_attn_out_bias, step, settings,
+                graph,
+                self.ln_attn_out_bias,
+                self.ln_attn_out_bias_value,
+                &mut state.ln_attn_out_bias,
+                step,
+                settings,
             ),
             ln_2_weight: apply_extracted(
-                graph, self.ln_2_weight, self.ln_2_weight_value,
-                &mut state.ln_2_weight, step, settings,
+                graph,
+                self.ln_2_weight,
+                self.ln_2_weight_value,
+                &mut state.ln_2_weight,
+                step,
+                settings,
             ),
             ln_2_bias: apply_extracted(
-                graph, self.ln_2_bias, self.ln_2_bias_value,
-                &mut state.ln_2_bias, step, settings,
+                graph,
+                self.ln_2_bias,
+                self.ln_2_bias_value,
+                &mut state.ln_2_bias,
+                step,
+                settings,
             ),
             mlp: self.mlp.apply(graph, &mut state.mlp, step, settings),
             ln_mlp_out_weight: apply_extracted(
-                graph, self.ln_mlp_out_weight, self.ln_mlp_out_weight_value,
-                &mut state.ln_mlp_out_weight, step, settings,
+                graph,
+                self.ln_mlp_out_weight,
+                self.ln_mlp_out_weight_value,
+                &mut state.ln_mlp_out_weight,
+                step,
+                settings,
             ),
             ln_mlp_out_bias: apply_extracted(
-                graph, self.ln_mlp_out_bias, self.ln_mlp_out_bias_value,
-                &mut state.ln_mlp_out_bias, step, settings,
+                graph,
+                self.ln_mlp_out_bias,
+                self.ln_mlp_out_bias_value,
+                &mut state.ln_mlp_out_bias,
+                step,
+                settings,
             ),
         }
     }
@@ -2030,13 +1859,6 @@ enum ExtractedMixerGradients {
 }
 
 impl ExtractedMixerGradients {
-    fn collect_keys(&self, keys: &mut Vec<NodeIndex>) {
-        match self {
-            Self::Attention(a) => a.collect_keys(keys),
-            Self::Conv(c) => c.collect_keys(keys),
-        }
-    }
-
     fn extract(mixer: &SequenceMixer, gradients: &Gradients) -> Self {
         match mixer {
             SequenceMixer::Attention(attn) => {
@@ -2045,6 +1867,13 @@ impl ExtractedMixerGradients {
             SequenceMixer::Conv(conv) => {
                 Self::Conv(ExtractedConvGradients::extract(conv, gradients))
             }
+        }
+    }
+
+    fn collect_gpu_keys(&self, keys: &mut Vec<NodeIndex>) {
+        match self {
+            Self::Attention(attn) => attn.collect_gpu_keys(keys),
+            Self::Conv(conv) => conv.collect_gpu_keys(keys),
         }
     }
 
@@ -2079,17 +1908,6 @@ struct ExtractedAttentionGradients {
 }
 
 impl ExtractedAttentionGradients {
-    fn collect_keys(&self, keys: &mut Vec<NodeIndex>) {
-        collect_grad_pair_keys(&self.c_attn_q, keys);
-        collect_tensor_key(&self.c_attn_q_value, keys);
-        collect_grad_pair_keys(&self.c_attn_k, keys);
-        collect_tensor_key(&self.c_attn_k_value, keys);
-        collect_grad_pair_keys(&self.c_attn_v, keys);
-        collect_tensor_key(&self.c_attn_v_value, keys);
-        collect_grad_pair_keys(&self.c_proj, keys);
-        collect_tensor_key(&self.c_proj_value, keys);
-    }
-
     fn extract(attn: &CausalSelfAttention, gradients: &Gradients) -> Self {
         Self {
             c_attn_q: extract_gradient(&attn.c_attn_q, gradients),
@@ -2103,6 +1921,17 @@ impl ExtractedAttentionGradients {
         }
     }
 
+    fn collect_gpu_keys(&self, keys: &mut Vec<NodeIndex>) {
+        collect_grad_pair_gpu_keys(&self.c_attn_q, keys);
+        collect_tensor_gpu_key(&self.c_attn_q_value, keys);
+        collect_grad_pair_gpu_keys(&self.c_attn_k, keys);
+        collect_tensor_gpu_key(&self.c_attn_k_value, keys);
+        collect_grad_pair_gpu_keys(&self.c_attn_v, keys);
+        collect_tensor_gpu_key(&self.c_attn_v_value, keys);
+        collect_grad_pair_gpu_keys(&self.c_proj, keys);
+        collect_tensor_gpu_key(&self.c_proj_value, keys);
+    }
+
     fn apply(
         self,
         graph: &Graph,
@@ -2112,20 +1941,36 @@ impl ExtractedAttentionGradients {
     ) -> CausalSelfAttention {
         CausalSelfAttention {
             c_attn_q: apply_extracted(
-                graph, self.c_attn_q, self.c_attn_q_value,
-                &mut state.c_attn_q, step, settings,
+                graph,
+                self.c_attn_q,
+                self.c_attn_q_value,
+                &mut state.c_attn_q,
+                step,
+                settings,
             ),
             c_attn_k: apply_extracted(
-                graph, self.c_attn_k, self.c_attn_k_value,
-                &mut state.c_attn_k, step, settings,
+                graph,
+                self.c_attn_k,
+                self.c_attn_k_value,
+                &mut state.c_attn_k,
+                step,
+                settings,
             ),
             c_attn_v: apply_extracted(
-                graph, self.c_attn_v, self.c_attn_v_value,
-                &mut state.c_attn_v, step, settings,
+                graph,
+                self.c_attn_v,
+                self.c_attn_v_value,
+                &mut state.c_attn_v,
+                step,
+                settings,
             ),
             c_proj: apply_extracted(
-                graph, self.c_proj, self.c_proj_value,
-                &mut state.c_proj, step, settings,
+                graph,
+                self.c_proj,
+                self.c_proj_value,
+                &mut state.c_proj,
+                step,
+                settings,
             ),
         }
     }
@@ -2141,19 +1986,6 @@ struct ExtractedConvGradients {
 }
 
 impl ExtractedConvGradients {
-    fn collect_keys(&self, keys: &mut Vec<NodeIndex>) {
-        for gp in &self.kernels {
-            collect_grad_pair_keys(gp, keys);
-        }
-        for v in &self.kernel_values {
-            collect_tensor_key(v, keys);
-        }
-        collect_grad_pair_keys(&self.bias, keys);
-        collect_tensor_key(&self.bias_value, keys);
-        collect_grad_pair_keys(&self.out_proj, keys);
-        collect_tensor_key(&self.out_proj_value, keys);
-    }
-
     fn extract(conv: &ConvMixer, gradients: &Gradients) -> Self {
         Self {
             kernels: conv
@@ -2167,6 +1999,17 @@ impl ExtractedConvGradients {
             out_proj: extract_gradient(&conv.out_proj, gradients),
             out_proj_value: conv.out_proj.raw().clone(),
         }
+    }
+
+    fn collect_gpu_keys(&self, keys: &mut Vec<NodeIndex>) {
+        for (pair, val) in self.kernels.iter().zip(&self.kernel_values) {
+            collect_grad_pair_gpu_keys(pair, keys);
+            collect_tensor_gpu_key(val, keys);
+        }
+        collect_grad_pair_gpu_keys(&self.bias, keys);
+        collect_tensor_gpu_key(&self.bias_value, keys);
+        collect_grad_pair_gpu_keys(&self.out_proj, keys);
+        collect_tensor_gpu_key(&self.out_proj_value, keys);
     }
 
     fn apply(
@@ -2188,10 +2031,20 @@ impl ExtractedConvGradients {
         ConvMixer {
             kernels,
             bias: apply_extracted(
-                graph, self.bias, self.bias_value, &mut state.bias, step, settings,
+                graph,
+                self.bias,
+                self.bias_value,
+                &mut state.bias,
+                step,
+                settings,
             ),
             out_proj: apply_extracted(
-                graph, self.out_proj, self.out_proj_value, &mut state.out_proj, step, settings,
+                graph,
+                self.out_proj,
+                self.out_proj_value,
+                &mut state.out_proj,
+                step,
+                settings,
             ),
         }
     }
@@ -2209,17 +2062,6 @@ struct ExtractedMlpGradients {
 }
 
 impl ExtractedMlpGradients {
-    fn collect_keys(&self, keys: &mut Vec<NodeIndex>) {
-        collect_grad_pair_keys(&self.c_fc, keys);
-        collect_tensor_key(&self.c_fc_value, keys);
-        collect_grad_pair_keys(&self.c_fc_bias, keys);
-        collect_tensor_key(&self.c_fc_bias_value, keys);
-        collect_grad_pair_keys(&self.c_proj, keys);
-        collect_tensor_key(&self.c_proj_value, keys);
-        collect_grad_pair_keys(&self.c_proj_bias, keys);
-        collect_tensor_key(&self.c_proj_bias_value, keys);
-    }
-
     fn extract(mlp: &Mlp, gradients: &Gradients) -> Self {
         Self {
             c_fc: extract_gradient(&mlp.c_fc, gradients),
@@ -2233,6 +2075,17 @@ impl ExtractedMlpGradients {
         }
     }
 
+    fn collect_gpu_keys(&self, keys: &mut Vec<NodeIndex>) {
+        collect_grad_pair_gpu_keys(&self.c_fc, keys);
+        collect_tensor_gpu_key(&self.c_fc_value, keys);
+        collect_grad_pair_gpu_keys(&self.c_fc_bias, keys);
+        collect_tensor_gpu_key(&self.c_fc_bias_value, keys);
+        collect_grad_pair_gpu_keys(&self.c_proj, keys);
+        collect_tensor_gpu_key(&self.c_proj_value, keys);
+        collect_grad_pair_gpu_keys(&self.c_proj_bias, keys);
+        collect_tensor_gpu_key(&self.c_proj_bias_value, keys);
+    }
+
     fn apply(
         self,
         graph: &Graph,
@@ -2242,37 +2095,38 @@ impl ExtractedMlpGradients {
     ) -> Mlp {
         Mlp {
             c_fc: apply_extracted(
-                graph, self.c_fc, self.c_fc_value, &mut state.c_fc, step, settings,
+                graph,
+                self.c_fc,
+                self.c_fc_value,
+                &mut state.c_fc,
+                step,
+                settings,
             ),
             c_fc_bias: apply_extracted(
-                graph, self.c_fc_bias, self.c_fc_bias_value,
-                &mut state.c_fc_bias, step, settings,
+                graph,
+                self.c_fc_bias,
+                self.c_fc_bias_value,
+                &mut state.c_fc_bias,
+                step,
+                settings,
             ),
             c_proj: apply_extracted(
-                graph, self.c_proj, self.c_proj_value, &mut state.c_proj, step, settings,
+                graph,
+                self.c_proj,
+                self.c_proj_value,
+                &mut state.c_proj,
+                step,
+                settings,
             ),
             c_proj_bias: apply_extracted(
-                graph, self.c_proj_bias, self.c_proj_bias_value,
-                &mut state.c_proj_bias, step, settings,
+                graph,
+                self.c_proj_bias,
+                self.c_proj_bias_value,
+                &mut state.c_proj_bias,
+                step,
+                settings,
             ),
         }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Key collection helpers for batch resolve
-// ---------------------------------------------------------------------------
-
-fn collect_tensor_key<const R: usize>(tensor: &RawTensor<R, f32>, keys: &mut Vec<NodeIndex>) {
-    if let Some(key) = tensor.gpu_key() {
-        keys.push(key);
-    }
-}
-
-fn collect_grad_pair_keys<const R: usize>(pair: &GradPair<R>, keys: &mut Vec<NodeIndex>) {
-    if let Some((gradient, param_value)) = pair {
-        collect_tensor_key(gradient, keys);
-        collect_tensor_key(param_value, keys);
     }
 }
 
@@ -2286,9 +2140,10 @@ fn apply_extracted<const R: usize>(
     settings: AdamWSettings,
 ) -> Tensor<R> {
     match grad_pair {
-        Some((gradient, param_value)) => {
-            Tensor::from_raw(graph, adamw_update_raw(param_value, gradient, moments, step, settings))
-        }
+        Some((gradient, param_value)) => Tensor::from_raw(
+            graph,
+            adamw_update_raw(param_value, gradient, moments, step, settings),
+        ),
         None => Tensor::from_raw(graph, fallback_value),
     }
 }
@@ -2296,9 +2151,9 @@ fn apply_extracted<const R: usize>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        config::{RuntimeConfig, SaveQuantization},
-        data::StrokeTokenizer,
+    use fusor_nanochat::{
+        RuntimeConfig, SaveQuantization,
+        data::{StrokeTokenizer, canvas_state_indexes, position_indexes},
     };
     use rand::SeedableRng;
 
@@ -2384,5 +2239,104 @@ mod tests {
         assert_eq!(attn_k.shape, vec![16, 4]);
         assert_eq!(attn_v.shape, vec![16, 4]);
         assert_eq!(cursor_x.shape, vec![129, 16]);
+    }
+
+    #[test]
+    fn forward_accepts_sequences_shorter_than_block_size() {
+        let device = Device::cpu();
+        let mut rng = StdRng::seed_from_u64(11);
+        let config = RuntimeConfig {
+            epochs: 1,
+            warmup_steps: 1,
+            learning_rate: 1e-3,
+            min_learning_rate: 1e-4,
+            beta1: 0.9,
+            beta2: 0.95,
+            adam_eps: 1e-8,
+            weight_decay: 0.01,
+            log_every: 1,
+            eval_batches: 1,
+            sample_tokens: 8,
+            sample_prefix_tokens: 4,
+            sample_temperature: 0.7,
+            sample_top_k: 4,
+            block_size: 8,
+            batch_size: 2,
+            n_embd: 16,
+            n_head: 4,
+            n_kv_head: 1,
+            n_ff: 32,
+            n_layer: 1,
+            conv_kernel_size: 3,
+            attention_period: 1,
+            use_rope: true,
+            rope_theta: 10_000.0,
+            use_canvas_state_embeddings: true,
+            use_extra_norms: false,
+            eps: 1e-5,
+            init_scale: 0.05,
+            seed: 11,
+            save_every_steps: 0,
+            save_final_model: false,
+            save_quantization: SaveQuantization::F32,
+            train_examples: 1,
+            validation_examples: 1,
+            test_examples: 1,
+            dataset_path: None,
+            include_synthetic_data: false,
+            gguf_path: "test.gguf".into(),
+            sample_output_path: "sample.svg".into(),
+        };
+
+        let tokenizer = StrokeTokenizer::new();
+        let model = NanoChatModel::new(&device, &mut rng, &tokenizer, &config);
+        let inputs = vec![
+            vec![
+                tokenizer.bos_token(),
+                tokenizer.token_from_components(1, 2, 1),
+                tokenizer.eot_token(),
+            ],
+            vec![
+                tokenizer.bos_token(),
+                tokenizer.token_from_components(0, 4, 1),
+                tokenizer.eot_token(),
+            ],
+        ];
+        let token_inputs: RawTensor<2, u32> = RawTensor::new(&device, &inputs);
+        let position_values = position_indexes(2, 3);
+        let position_inputs: RawTensor<2, u32> = RawTensor::new(&device, &position_values);
+        let canvas = canvas_state_indexes(
+            &tokenizer,
+            &inputs,
+            model
+                .canvas_state_spec()
+                .expect("canvas embeddings enabled"),
+        );
+        let cursor_x_inputs: RawTensor<2, u32> = RawTensor::new(&device, &canvas.cursor_x);
+        let cursor_y_inputs: RawTensor<2, u32> = RawTensor::new(&device, &canvas.cursor_y);
+        let pen_state_inputs: RawTensor<2, u32> = RawTensor::new(&device, &canvas.pen_state);
+        let causal_mask_values = vec![
+            vec![
+                vec![0.0f32, f32::NEG_INFINITY, f32::NEG_INFINITY],
+                vec![0.0f32, 0.0f32, f32::NEG_INFINITY],
+                vec![0.0f32, 0.0f32, 0.0f32]
+            ];
+            2
+        ];
+        let causal_mask =
+            Tensor::constant_from_raw(model.graph(), RawTensor::new(&device, &causal_mask_values));
+
+        let logits = model.forward(
+            &token_inputs,
+            &position_inputs,
+            &cursor_x_inputs,
+            &cursor_y_inputs,
+            &pen_state_inputs,
+            &causal_mask,
+        );
+
+        assert_eq!(logits.mode.shape(), [2, 3, 3]);
+        assert_eq!(logits.direction.shape(), [2, 3, 8]);
+        assert_eq!(logits.count.shape(), [2, 3, tokenizer.max_count()]);
     }
 }

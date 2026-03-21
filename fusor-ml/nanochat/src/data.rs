@@ -1,4 +1,5 @@
 use std::{
+    cmp::Reverse,
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
@@ -219,6 +220,7 @@ pub struct Batch {
     pub windows: Vec<Vec<u32>>,
     pub masks: Vec<Vec<f32>>,
     pub valid_tokens: f32,
+    pub seq_len: usize,
 }
 
 impl Direction {
@@ -752,24 +754,16 @@ impl SourceDataset {
                 windows: Vec::new(),
                 masks: Vec::new(),
                 valid_tokens: 0.0,
+                seq_len: 0,
             };
         }
 
-        let sampled = (0..config.batch_size)
-            .map(|_| {
-                let file_index = rng.random_range(0..self.files.len());
-                self.sample_window_at(file_index, pad_token, config.block_size)
-            })
+        let mut sampled = (0..config.batch_size)
+            .map(|_| rng.random_range(0..self.files.len()))
             .collect::<Vec<_>>();
+        sampled.sort_by_key(|&index| Reverse(self.window_len_at(index, config.block_size)));
 
-        Batch {
-            windows: sampled
-                .iter()
-                .map(|(window, _, _)| window.clone())
-                .collect(),
-            masks: sampled.iter().map(|(_, mask, _)| mask.clone()).collect(),
-            valid_tokens: sampled.iter().map(|(_, _, valid)| *valid).sum(),
-        }
+        self.build_batch(&sampled, pad_token, config.block_size)
     }
 
     pub fn epoch_batches(
@@ -784,22 +778,19 @@ impl SourceDataset {
 
         let mut indices: Vec<usize> = (0..self.files.len()).collect();
         indices.shuffle(rng);
+        let batch_size = config.batch_size.max(1);
+        let bucket_size = batch_size.saturating_mul(32).max(batch_size);
 
-        let mut batches = Vec::with_capacity(indices.len().div_ceil(config.batch_size));
-        for chunk in indices.chunks(config.batch_size) {
-            let sampled: Vec<_> = chunk
-                .iter()
-                .map(|&index| self.sample_window_at(index, pad_token, config.block_size))
-                .collect();
-            batches.push(Batch {
-                windows: sampled
-                    .iter()
-                    .map(|(window, _, _)| window.clone())
-                    .collect(),
-                masks: sampled.iter().map(|(_, mask, _)| mask.clone()).collect(),
-                valid_tokens: sampled.iter().map(|(_, _, valid)| *valid).sum(),
-            });
+        let mut batches = Vec::with_capacity(indices.len().div_ceil(batch_size));
+        for bucket in indices.chunks(bucket_size) {
+            let mut sorted_bucket = bucket.to_vec();
+            sorted_bucket
+                .sort_by_key(|&index| Reverse(self.window_len_at(index, config.block_size)));
+            for chunk in sorted_bucket.chunks(batch_size) {
+                batches.push(self.build_batch(chunk, pad_token, config.block_size));
+            }
         }
+        batches.shuffle(rng);
         batches
     }
 
@@ -816,60 +807,71 @@ impl SourceDataset {
             .eval_batches
             .saturating_mul(config.batch_size)
             .min(self.files.len());
+        let batch_size = config.batch_size.max(1);
+        let mut indices: Vec<usize> = (0..steps).collect();
+        indices.sort_by_key(|&index| Reverse(self.window_len_at(index, config.block_size)));
         let mut batches = Vec::new();
-        let mut current_windows = Vec::new();
-        let mut current_masks = Vec::new();
-        let mut current_valid_tokens = 0.0;
-
-        for file_index in 0..steps {
-            let (window, mask, valid_tokens) =
-                self.sample_window_at(file_index, pad_token, config.block_size);
-            current_windows.push(window);
-            current_masks.push(mask);
-            current_valid_tokens += valid_tokens;
-
-            if current_windows.len() == config.batch_size {
-                batches.push(Batch {
-                    windows: std::mem::take(&mut current_windows),
-                    masks: std::mem::take(&mut current_masks),
-                    valid_tokens: current_valid_tokens,
-                });
-                current_valid_tokens = 0.0;
-            }
-        }
-
-        if !current_windows.is_empty() {
-            batches.push(Batch {
-                windows: current_windows,
-                masks: current_masks,
-                valid_tokens: current_valid_tokens,
-            });
+        for chunk in indices.chunks(batch_size) {
+            batches.push(self.build_batch(chunk, pad_token, config.block_size));
         }
 
         batches
     }
 
-    fn sample_window_at(
-        &self,
-        file_index: usize,
-        pad_token: u32,
-        block_size: usize,
-    ) -> (Vec<u32>, Vec<f32>, f32) {
-        let file = &self.files[file_index];
-        let start = file.tokens.len().saturating_sub(block_size + 1);
-        let slice = &file.tokens[start..];
-
-        let mut window = vec![pad_token; block_size + 1];
-        let mut mask = vec![0.0; block_size];
-        window[..slice.len()].copy_from_slice(slice);
-
-        let mut valid = 0.0;
-        for local_index in 0..slice.len().saturating_sub(1) {
-            mask[local_index] = 1.0;
-            valid += 1.0;
+    fn build_batch(&self, file_indices: &[usize], pad_token: u32, block_size: usize) -> Batch {
+        if file_indices.is_empty() {
+            return Batch {
+                windows: Vec::new(),
+                masks: Vec::new(),
+                valid_tokens: 0.0,
+                seq_len: 0,
+            };
         }
 
-        (window, mask, valid)
+        let slices = file_indices
+            .iter()
+            .map(|&index| self.window_slice_at(index, block_size))
+            .collect::<Vec<_>>();
+        let seq_len = slices
+            .iter()
+            .map(|slice| slice.len().saturating_sub(1))
+            .max()
+            .unwrap_or(0);
+
+        let mut windows = Vec::with_capacity(slices.len());
+        let mut masks = Vec::with_capacity(slices.len());
+        let mut valid_tokens = 0.0;
+        for slice in slices {
+            let mut window = vec![pad_token; seq_len + 1];
+            let mut mask = vec![0.0; seq_len];
+            window[..slice.len()].copy_from_slice(slice);
+
+            let valid = slice.len().saturating_sub(1);
+            for local_index in 0..valid {
+                mask[local_index] = 1.0;
+            }
+
+            valid_tokens += valid as f32;
+            windows.push(window);
+            masks.push(mask);
+        }
+
+        Batch {
+            windows,
+            masks,
+            valid_tokens,
+            seq_len,
+        }
+    }
+
+    fn window_slice_at(&self, file_index: usize, block_size: usize) -> &[u32] {
+        let file = &self.files[file_index];
+        let start = file.tokens.len().saturating_sub(block_size + 1);
+        &file.tokens[start..]
+    }
+
+    fn window_len_at(&self, file_index: usize, block_size: usize) -> usize {
+        self.window_slice_at(file_index, block_size).len()
     }
 }
 
@@ -1441,17 +1443,16 @@ pub fn windows_to_token_targets(windows: &[Vec<u32>]) -> Vec<Vec<u32>> {
 
 pub fn autoregressive_context(
     tokens: &[u32],
-    pad_token: u32,
+    _pad_token: u32,
     block_size: usize,
 ) -> (Vec<u32>, usize) {
-    let mut context = vec![pad_token; block_size];
-    let slice = if tokens.len() > block_size {
-        &tokens[tokens.len() - block_size..]
+    let context = if tokens.len() > block_size {
+        tokens[tokens.len() - block_size..].to_vec()
     } else {
-        tokens
+        tokens.to_vec()
     };
-    context[..slice.len()].copy_from_slice(slice);
-    (context, slice.len().saturating_sub(1))
+    let last_index = context.len().saturating_sub(1);
+    (context, last_index)
 }
 
 pub fn position_indexes(batch_size: usize, block_size: usize) -> Vec<Vec<u32>> {
@@ -1604,10 +1605,7 @@ fn encode_canvas_coordinate(value: i32, spec: CanvasStateSpec) -> u32 {
         .clamp(0, max_index) as u32
 }
 
-fn svg_document(
-    prompt_strokes: &[StrokePath],
-    continuation_strokes: &[StrokePath],
-) -> String {
+fn svg_document(prompt_strokes: &[StrokePath], continuation_strokes: &[StrokePath]) -> String {
     let all_points = prompt_strokes
         .iter()
         .chain(continuation_strokes.iter())
@@ -2221,8 +2219,68 @@ fn token_segments(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{RuntimeConfig, SaveQuantization};
     use fusor_gguf::{GgufMetadata, GgufVersion};
     use std::{collections::HashSet, io::Cursor};
+
+    fn test_runtime(block_size: usize, batch_size: usize, eval_batches: usize) -> RuntimeConfig {
+        RuntimeConfig {
+            epochs: 1,
+            warmup_steps: 1,
+            learning_rate: 1e-3,
+            min_learning_rate: 1e-4,
+            beta1: 0.9,
+            beta2: 0.95,
+            adam_eps: 1e-8,
+            weight_decay: 0.1,
+            log_every: 10,
+            eval_batches,
+            sample_tokens: 8,
+            sample_prefix_tokens: 4,
+            sample_temperature: 0.7,
+            sample_top_k: 4,
+            block_size,
+            batch_size,
+            n_embd: 32,
+            n_head: 2,
+            n_kv_head: 2,
+            n_ff: 64,
+            n_layer: 2,
+            conv_kernel_size: 3,
+            attention_period: 1,
+            use_rope: false,
+            rope_theta: 10_000.0,
+            use_canvas_state_embeddings: true,
+            use_extra_norms: false,
+            eps: 1e-5,
+            init_scale: 0.08,
+            seed: 42,
+            save_every_steps: 0,
+            save_final_model: false,
+            save_quantization: SaveQuantization::F32,
+            train_examples: 0,
+            validation_examples: 0,
+            test_examples: 0,
+            dataset_path: None,
+            include_synthetic_data: false,
+            gguf_path: "test.gguf".into(),
+            sample_output_path: "sample.svg".into(),
+        }
+    }
+
+    fn test_file(path: &str, len: usize) -> SourceFile {
+        let tokens = (0..len as u32).collect::<Vec<_>>();
+        SourceFile {
+            path: path.to_string(),
+            tokens: tokens.clone(),
+            prompt_tokens: tokens.clone(),
+            target_tokens: tokens,
+        }
+    }
+
+    fn valid_len(mask: &[f32]) -> usize {
+        mask.iter().filter(|&&value| value > 0.0).count()
+    }
 
     #[test]
     fn tokenizer_survives_gguf_metadata_round_trip() {
@@ -2246,6 +2304,76 @@ mod tests {
         assert_eq!(restored.vocab_size(), tokenizer.vocab_size());
         assert_eq!(restored.bos_token(), tokenizer.bos_token());
         assert_eq!(restored.eot_token(), tokenizer.eot_token());
+    }
+
+    #[test]
+    fn epoch_batches_pad_to_local_max_length() {
+        let dataset = SourceDataset {
+            files: vec![
+                test_file("a.stroke", 4),
+                test_file("b.stroke", 7),
+                test_file("c.stroke", 5),
+                test_file("d.stroke", 9),
+            ],
+        };
+        let config = test_runtime(32, 2, 2);
+        let mut rng = StdRng::seed_from_u64(7);
+        let batches = dataset.epoch_batches(&mut rng, 99, &config);
+
+        assert_eq!(batches.len(), 2);
+        assert!(
+            batches
+                .iter()
+                .all(|batch| batch.seq_len < config.block_size)
+        );
+        assert!(batches.iter().all(|batch| {
+            batch
+                .windows
+                .iter()
+                .all(|window| window.len() == batch.seq_len + 1)
+                && batch.masks.iter().all(|mask| mask.len() == batch.seq_len)
+        }));
+        assert!(batches.iter().all(|batch| {
+            let valid_lengths = batch
+                .masks
+                .iter()
+                .map(|mask| valid_len(mask))
+                .collect::<Vec<_>>();
+            valid_lengths.windows(2).all(|pair| pair[0] >= pair[1])
+        }));
+    }
+
+    #[test]
+    fn evaluation_batches_sort_by_length_and_pad_locally() {
+        let dataset = SourceDataset {
+            files: vec![
+                test_file("short.stroke", 4),
+                test_file("long.stroke", 8),
+                test_file("mid.stroke", 6),
+            ],
+        };
+        let config = test_runtime(32, 2, 2);
+        let batches = dataset.evaluation_batches(77, &config);
+
+        assert_eq!(batches.len(), 2);
+        assert_eq!(batches[0].seq_len, 7);
+        assert_eq!(valid_len(&batches[0].masks[0]), 7);
+        assert_eq!(valid_len(&batches[0].masks[1]), 5);
+        assert_eq!(batches[0].windows[1][6], 77);
+        assert_eq!(batches[0].windows[1][7], 77);
+        assert_eq!(batches[1].seq_len, 3);
+        assert_eq!(valid_len(&batches[1].masks[0]), 3);
+    }
+
+    #[test]
+    fn autoregressive_context_is_trimmed_not_padded() {
+        let (full, full_last) = autoregressive_context(&[1, 2, 3], 99, 8);
+        assert_eq!(full, vec![1, 2, 3]);
+        assert_eq!(full_last, 2);
+
+        let (trimmed, trimmed_last) = autoregressive_context(&[1, 2, 3, 4], 99, 2);
+        assert_eq!(trimmed, vec![3, 4]);
+        assert_eq!(trimmed_last, 1);
     }
 
     #[test]

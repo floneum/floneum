@@ -301,14 +301,8 @@ fn InteractivePad(
     let mut dragging = use_signal(|| false);
     let mut last_point = use_signal(|| None::<GridPoint>);
     let mut worker_generation = use_signal(|| 0_u64);
-    let stage_bounds = use_signal(|| {
-        StageBounds::new(
-            0.0,
-            0.0,
-            DEFAULT_SKETCH_STAGE_PX,
-            DEFAULT_SKETCH_STAGE_PX,
-        )
-    });
+    let stage_bounds =
+        use_signal(|| StageBounds::new(0.0, 0.0, DEFAULT_SKETCH_STAGE_PX, DEFAULT_SKETCH_STAGE_PX));
     let mut stage_element = use_signal(|| None::<Rc<MountedData>>);
     let mut request_revision = use_signal(|| 0_u64);
     let config_state = config();
@@ -1222,12 +1216,7 @@ fn set_stage_bounds(
     width: f64,
     height: f64,
 ) {
-    stage_bounds.set(StageBounds::new(
-        left,
-        top,
-        width.max(1.0),
-        height.max(1.0),
-    ));
+    stage_bounds.set(StageBounds::new(left, top, width.max(1.0), height.max(1.0)));
 }
 
 fn grid_point_from_event(

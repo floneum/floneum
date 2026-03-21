@@ -20,8 +20,6 @@ struct ModelShape {
 #[derive(Clone)]
 pub struct InteractiveNanoChatModel {
     shape: ModelShape,
-    attention_period: usize,
-    vocab_size: usize,
     use_extra_norms: bool,
     wte: Tensor<2, f32>,
     wpe: Option<Tensor<2, f32>>,
@@ -139,7 +137,6 @@ impl InteractiveNanoChatModel {
             .map(|value| value as usize)
             .unwrap_or(4)
             .max(1);
-        let vocab_size = metadata_u32(vb, "nanochat.vocab_size")? as usize;
         let max_count = vb
             .get_metadata("tokenizer.nanochat.max_count")
             .and_then(|value| value.to_u32().ok())
@@ -273,8 +270,6 @@ impl InteractiveNanoChatModel {
 
         Ok(Self {
             shape,
-            attention_period,
-            vocab_size,
             use_extra_norms,
             wte,
             wpe,
@@ -292,10 +287,6 @@ impl InteractiveNanoChatModel {
 
     pub fn block_size(&self) -> usize {
         self.shape.block_size
-    }
-
-    pub fn attention_period(&self) -> usize {
-        self.attention_period
     }
 
     pub fn canvas_state_spec(&self) -> Option<CanvasStateSpec> {
