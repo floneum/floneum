@@ -14,7 +14,6 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             self.shape(),
         );
         let data = on_true.data();
-
         Tensor::from_parts(data.where_cond(operation))
     }
 }
@@ -74,8 +73,10 @@ async fn test_where_cond() {
 
     let device = Device::test_instance();
 
-    let data = Tensor::arange(&device, 0., 10.);
-    let even = Tensor::arange(&device, 0, 10) % 2;
+    let data_vec_f32: Vec<f32> = (0..10).map(|i| i as f32).collect();
+    let data = Tensor::new(&device, &data_vec_f32);
+    let data_vec_u32: Vec<u32> = (0..10).collect();
+    let even = Tensor::new(&device, &data_vec_u32) % 2;
     let zero = Tensor::splat(&device, 0., *data.shape());
 
     let data_where_even = even.where_cond(&data, &zero);

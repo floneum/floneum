@@ -102,24 +102,45 @@ impl Operation for MapLayoutOperation {
 }
 
 impl<const R: usize, T: DataType> Tensor<R, T> {
+    pub fn restride<const R2: usize>(
+        &self,
+        specs: [crate::StrideSpec; R2],
+    ) -> Tensor<R2, T> {
+        self.add_map_layout(MapLayoutOperation::new(
+            self.key(),
+            move |layout| layout.restride(&specs),
+        ))
+    }
+
     pub fn slice(&self, slices: [Range<usize>; R]) -> Tensor<R, T> {
-        self.add_map_layout(MapLayoutOperation::new(self.key(), move |layout| {
-            layout.slice(&slices)
-        }))
+        let specs: [crate::StrideSpec; R] = std::array::from_fn(|i| {
+            crate::StrideSpec::dim(i, slices[i].len()).with_offset(slices[i].start)
+        });
+        self.restride(specs)
     }
 
     pub fn permute(&self, axes: [usize; R]) -> Tensor<R, T> {
-        self.add_map_layout(MapLayoutOperation::new(self.key(), move |layout| {
-            layout.permute(&axes)
-        }))
+        let shape = self.shape();
+        let specs: [crate::StrideSpec; R] = std::array::from_fn(|i| {
+            crate::StrideSpec::dim(axes[i], shape[axes[i]])
+        });
+        self.restride(specs)
     }
 
     pub fn transpose(&self, first_axis: impl Dim<R>, second_axis: impl Dim<R>) -> Tensor<R, T> {
         let first_axis = first_axis.resolve();
         let second_axis = second_axis.resolve();
-        self.add_map_layout(MapLayoutOperation::new(self.key(), move |layout| {
-            layout.transpose(first_axis, second_axis)
-        }))
+        let shape = self.shape();
+        let specs: [crate::StrideSpec; R] = std::array::from_fn(|i| {
+            if i == first_axis {
+                crate::StrideSpec::dim(second_axis, shape[second_axis])
+            } else if i == second_axis {
+                crate::StrideSpec::dim(first_axis, shape[first_axis])
+            } else {
+                crate::StrideSpec::dim(i, shape[i])
+            }
+        });
+        self.restride(specs)
     }
 
     pub fn t(&self) -> Tensor<R, T> {
@@ -145,9 +166,21 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
             )
         };
 
-        self.add_map_layout(MapLayoutOperation::new(self.key(), move |layout| {
-            layout.broadcast_to(&out_shape)
-        }))
+        let shape = self.shape();
+        let specs: [crate::StrideSpec; R2] = std::array::from_fn(|out_i| {
+            let in_i = out_i as isize - (R2 as isize - R as isize);
+            if in_i < 0 {
+                crate::StrideSpec::dim_with(0, out_shape[out_i], 0)
+            } else {
+                let in_i = in_i as usize;
+                if shape[in_i] == 1 && out_shape[out_i] > 1 {
+                    crate::StrideSpec::dim_with(in_i, out_shape[out_i], 0)
+                } else {
+                    crate::StrideSpec::dim(in_i, out_shape[out_i])
+                }
+            }
+        });
+        self.restride(specs)
     }
 
     pub(crate) fn broadcast_together<const R2: usize, const R3: usize>(

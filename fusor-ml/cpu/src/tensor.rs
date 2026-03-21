@@ -4,7 +4,7 @@ use std::ops::{
     Add as StdAdd, Div as StdDiv, Mul as StdMul, Neg as StdNeg, Range, Rem as StdRem, Sub as StdSub,
 };
 
-use fusor_types::{Layout, SlidingWindow};
+use fusor_types::{Layout, SlidingWindow, StrideSpec};
 use pulp::Simd;
 
 use crate::cast::{CastTo, cast_tensor};
@@ -121,9 +121,10 @@ where
     /// Returns a view into the tensor's data with updated layout.
     /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn slice(self, slices: [Range<usize>; R]) -> Tensor<R, MapLayout<T, R>> {
-        let current_layout = self.inner.layout();
-        let new_layout = current_layout.slice(&slices);
-        Tensor::new(MapLayout::new(self.inner, new_layout))
+        let specs: [StrideSpec; R] = std::array::from_fn(|i| {
+            StrideSpec::dim(i, slices[i].len()).with_offset(slices[i].start)
+        });
+        self.restride(specs)
     }
 
     /// Permute the tensor dimensions according to the given axes order
@@ -133,9 +134,11 @@ where
     ///
     /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn permute(self, axes: [usize; R]) -> Tensor<R, MapLayout<T, R>> {
-        let current_layout = self.inner.layout();
-        let new_layout = current_layout.permute(&axes);
-        Tensor::new(MapLayout::new(self.inner, new_layout))
+        let shape = self.shape();
+        let specs: [StrideSpec; R] = std::array::from_fn(|i| {
+            StrideSpec::dim(axes[i], shape[axes[i]])
+        });
+        self.restride(specs)
     }
 
     /// Transpose two dimensions of the tensor
@@ -146,8 +149,41 @@ where
     ///
     /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn transpose(self, dim0: usize, dim1: usize) -> Tensor<R, MapLayout<T, R>> {
+        let shape = self.shape();
+        let specs: [StrideSpec; R] = std::array::from_fn(|i| {
+            if i == dim0 {
+                StrideSpec::dim(dim1, shape[dim1])
+            } else if i == dim1 {
+                StrideSpec::dim(dim0, shape[dim0])
+            } else {
+                StrideSpec::dim(i, shape[i])
+            }
+        });
+        self.restride(specs)
+    }
+
+    /// Create a view with stride patterns specified per output dimension.
+    ///
+    /// Each [`StrideSpec`] maps an output dimension to an input dimension's stride
+    /// with an optional multiplier. The output rank can differ from the input.
+    ///
+    /// This operation is lazy and preserves laziness of the inner tensor.
+    pub fn restride<const R2: usize>(
+        self,
+        specs: [StrideSpec; R2],
+    ) -> Tensor<R2, MapLayout<T, R2>> {
         let current_layout = self.inner.layout();
-        let new_layout = current_layout.transpose(dim0, dim1);
+        let new_layout = current_layout.restride(&specs);
+        Tensor::new(MapLayout::new(self.inner, new_layout))
+    }
+
+    /// Set the layout directly from a pre-computed Layout.
+    ///
+    /// This is a zero-copy operation. The caller is responsible for ensuring
+    /// the layout produces valid memory access patterns.
+    ///
+    /// This operation is lazy and preserves laziness of the inner tensor.
+    pub fn restride_layout<const R2: usize>(self, new_layout: Layout) -> Tensor<R2, MapLayout<T, R2>> {
         Tensor::new(MapLayout::new(self.inner, new_layout))
     }
 
@@ -163,9 +199,23 @@ where
         self,
         out_shape: [usize; R2],
     ) -> Tensor<R2, MapLayout<T, R2>> {
-        let current_layout = self.inner.layout();
-        let new_layout = current_layout.broadcast_to(&out_shape);
-        Tensor::new(MapLayout::new(self.inner, new_layout))
+        let shape = self.shape();
+        let specs: [StrideSpec; R2] = std::array::from_fn(|out_i| {
+            let in_i = out_i as isize - (R2 as isize - R as isize);
+            if in_i < 0 {
+                // New dimension (left-padded), stride 0
+                StrideSpec::dim_with(0, out_shape[out_i], 0)
+            } else {
+                let in_i = in_i as usize;
+                if shape[in_i] == 1 && out_shape[out_i] > 1 {
+                    // Broadcast size-1 dim: stride 0
+                    StrideSpec::dim_with(in_i, out_shape[out_i], 0)
+                } else {
+                    StrideSpec::dim(in_i, out_shape[out_i])
+                }
+            }
+        });
+        self.restride(specs)
     }
 
     /// Reshape the tensor to a new shape
@@ -217,9 +267,15 @@ where
     ///
     /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn narrow(self, dim: usize, start: usize, length: usize) -> Tensor<R, MapLayout<T, R>> {
-        let current_layout = self.inner.layout();
-        let new_layout = current_layout.narrow(dim, start, length);
-        Tensor::new(MapLayout::new(self.inner, new_layout))
+        let shape = self.shape();
+        let specs: [StrideSpec; R] = std::array::from_fn(|i| {
+            if i == dim {
+                StrideSpec::dim(i, length).with_offset(start)
+            } else {
+                StrideSpec::dim(i, shape[i])
+            }
+        });
+        self.restride(specs)
     }
 
     /// Split the tensor into chunks along a given dimension
@@ -289,9 +345,13 @@ where
     /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn squeeze<const R2: usize>(self, dim: usize) -> Tensor<R2, MapLayout<T, R2>> {
         assert!(R2 == R - 1, "Output rank must be R - 1");
-        let current_layout = self.inner.layout();
-        let new_layout = current_layout.squeeze(dim);
-        Tensor::new(MapLayout::new(self.inner, new_layout))
+        let shape = self.shape();
+        assert!(shape[dim] == 1, "Cannot squeeze dimension {} of size {} (must be 1)", dim, shape[dim]);
+        let specs: [StrideSpec; R2] = std::array::from_fn(|out_i| {
+            let in_i = if out_i < dim { out_i } else { out_i + 1 };
+            StrideSpec::dim(in_i, shape[in_i])
+        });
+        self.restride(specs)
     }
 
     /// Unsqueeze (add a dimension of size 1)
@@ -302,9 +362,17 @@ where
     /// This operation is lazy and preserves laziness of the inner tensor.
     pub fn unsqueeze<const R2: usize>(self, dim: usize) -> Tensor<R2, MapLayout<T, R2>> {
         assert!(R2 == R + 1, "Output rank must be R + 1");
-        let current_layout = self.inner.layout();
-        let new_layout = current_layout.unsqueeze(dim);
-        Tensor::new(MapLayout::new(self.inner, new_layout))
+        let shape = self.shape();
+        let specs: [StrideSpec; R2] = std::array::from_fn(|out_i| {
+            if out_i == dim {
+                // New size-1 dimension; reference dim 0 with multiplier 0
+                StrideSpec::dim_with(0, 1, 0)
+            } else {
+                let in_i = if out_i < dim { out_i } else { out_i - 1 };
+                StrideSpec::dim(in_i, shape[in_i])
+            }
+        });
+        self.restride(specs)
     }
 
     /// Expand the tensor to a larger shape (alias for broadcast_as)
@@ -362,9 +430,25 @@ where
         axes: [usize; DIFF],
     ) -> Tensor<R2, MapLayout<T, R2>> {
         assert!(R2 == R - DIFF, "Output rank must be R - DIFF");
-        let current_layout = self.inner.layout();
-        let new_layout = current_layout.squeeze_dims(&axes);
-        Tensor::new(MapLayout::new(self.inner, new_layout))
+        let shape = self.shape();
+        for &axis in &axes {
+            assert!(shape[axis] == 1, "Cannot squeeze dimension {} of size {} (must be 1)", axis, shape[axis]);
+        }
+        let mut sorted_axes = axes;
+        sorted_axes.sort_unstable();
+        // Build specs skipping squeezed dims
+        let mut in_i = 0;
+        let mut axis_idx = 0;
+        let specs: [StrideSpec; R2] = std::array::from_fn(|_| {
+            while axis_idx < DIFF && in_i == sorted_axes[axis_idx] {
+                in_i += 1;
+                axis_idx += 1;
+            }
+            let spec = StrideSpec::dim(in_i, shape[in_i]);
+            in_i += 1;
+            spec
+        });
+        self.restride(specs)
     }
 
     /// Unsqueeze (add) multiple dimensions of size 1 at specified positions
@@ -382,9 +466,22 @@ where
         axes: [usize; DIFF],
     ) -> Tensor<R2, MapLayout<T, R2>> {
         assert!(R2 == R + DIFF, "Output rank must be R + DIFF");
-        let current_layout = self.inner.layout();
-        let new_layout = current_layout.unsqueeze_dims(&axes);
-        Tensor::new(MapLayout::new(self.inner, new_layout))
+        let shape = self.shape();
+        let mut sorted_axes = axes;
+        sorted_axes.sort_unstable();
+        let mut old_idx = 0;
+        let mut axis_idx = 0;
+        let specs: [StrideSpec; R2] = std::array::from_fn(|out_i| {
+            if axis_idx < DIFF && out_i == sorted_axes[axis_idx] {
+                axis_idx += 1;
+                StrideSpec::dim_with(0, 1, 0)
+            } else {
+                let spec = StrideSpec::dim(old_idx, shape[old_idx]);
+                old_idx += 1;
+                spec
+            }
+        });
+        self.restride(specs)
     }
 
     /// Create a sliding window view of the tensor (zero-copy)
@@ -407,9 +504,25 @@ where
         windows: [SlidingWindow; DIFF],
     ) -> Tensor<R2, MapLayout<T, R2>> {
         assert!(R2 == R + DIFF, "Output rank must be R + DIFF");
-        let current_layout = self.inner.layout();
-        let new_layout = current_layout.sliding_window(&windows);
-        Tensor::new(MapLayout::new(self.inner, new_layout))
+        let shape = self.shape();
+        let mut sorted_windows = windows;
+        sorted_windows.sort_by_key(|w| w.axis);
+        let specs: [StrideSpec; R2] = std::array::from_fn(|out_i| {
+            if out_i < R {
+                // Original dimension
+                if let Some(w) = sorted_windows.iter().find(|w| w.axis == out_i) {
+                    let num_positions = (shape[out_i] - w.window_size) / w.step + 1;
+                    StrideSpec::dim_with(out_i, num_positions, w.step)
+                } else {
+                    StrideSpec::dim(out_i, shape[out_i])
+                }
+            } else {
+                // New window dimension (appended after original dims)
+                let w = &sorted_windows[out_i - R];
+                StrideSpec::dim(w.axis, w.window_size)
+            }
+        });
+        self.restride(specs)
     }
 
     /// Sum all elements in the tensor

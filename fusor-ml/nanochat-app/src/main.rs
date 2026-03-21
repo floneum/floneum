@@ -1,0 +1,1454 @@
+use async_channel::{Receiver, Sender};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use dioxus::{
+    html::{InteractionElementOffset, Key},
+    prelude::*,
+};
+use fusor_nanochat::{
+    ComparisonReport, ComparisonSample, DatasetGalleryItem, LivePredictor, RuntimeConfig,
+    ShapeCount, StrokeTokenizer, build_comparison_report, load_runtime_config, load_tokenizer,
+    tokens_to_stroke_scene,
+};
+use std::rc::Rc;
+#[cfg(not(target_arch = "wasm32"))]
+use std::thread;
+
+const MAIN_CSS: Asset = asset!("/assets/main.css");
+const DEFAULT_SKETCH_STAGE_PX: f64 = 480.0;
+const PREVIEW_TOKEN_LIMIT: usize = 16;
+
+fn main() {
+    dioxus::launch(App);
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum TaskState {
+    Idle,
+    Running(String),
+    Failed(String),
+    Succeeded(String),
+}
+
+impl TaskState {
+    fn is_running(&self) -> bool {
+        matches!(self, Self::Running(_))
+    }
+}
+
+#[derive(Clone)]
+struct PredictorWorker {
+    commands: Sender<WorkerCommand>,
+}
+
+#[derive(Clone)]
+enum WorkerCommand {
+    Predict {
+        generation: u64,
+        revision: u64,
+        prompt_tokens: Vec<u32>,
+        max_tokens: usize,
+    },
+}
+
+#[derive(Clone)]
+enum WorkerUpdate {
+    Ready {
+        generation: u64,
+        tokenizer: StrokeTokenizer,
+    },
+    Prediction {
+        generation: u64,
+        revision: u64,
+        completion_tokens: Vec<u32>,
+    },
+    Failed {
+        generation: u64,
+        message: String,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct GridPoint {
+    x: i32,
+    y: i32,
+}
+
+#[component]
+fn App() -> Element {
+    let mut config = use_signal(load_runtime_config);
+    let mut force_cpu = use_signal(|| true);
+    let mut status = use_signal(|| TaskState::Idle);
+    let report = use_signal(|| None::<ComparisonReport>);
+
+    let busy = status().is_running();
+
+    let run_report = move |_| {
+        let runtime = match config.read().as_ref() {
+            Ok(runtime) => runtime.clone(),
+            Err(error) => {
+                status.set(TaskState::Failed(error.clone()));
+                return;
+            }
+        };
+        let use_cpu = force_cpu();
+        status.set(TaskState::Running(
+            "Building the prompted completion comparison report.".to_string(),
+        ));
+        spawn_report_task(runtime, use_cpu, report, status);
+    };
+
+    rsx! {
+        document::Title { "Nanochat Studio" }
+        document::Stylesheet { href: MAIN_CSS }
+
+        main {
+            class: "shell",
+            section {
+                class: "hero",
+                p { class: "eyebrow", "Dioxus Desktop Workbench" }
+                h1 { "Nanochat Studio" }
+                p {
+                    "The app now keeps the nanochat model loaded as a live sketch predictor. "
+                    "Draw on the SVG board, watch the completion update in real time, and press Tab to accept the model's continuation."
+                }
+            }
+
+            div {
+                class: "layout",
+                aside {
+                    class: "sidebar",
+                    div {
+                        class: "panel",
+                        div {
+                            class: "panel-head",
+                            h2 { "Controls" }
+                            p { "Rebuild the report, reload config, or switch between CPU and GPU-backed inference." }
+                        }
+                        div {
+                            class: "panel-body",
+                            div {
+                                class: "button-stack",
+                                button {
+                                    class: if force_cpu() { "button button-toggle is-active" } else { "button button-toggle" },
+                                    disabled: busy,
+                                    onclick: move |_| force_cpu.set(!force_cpu()),
+                                    if force_cpu() { "CPU Mode Enabled" } else { "Prefer GPU" }
+                                }
+                                button {
+                                    class: "button button-primary",
+                                    disabled: busy,
+                                    onclick: run_report,
+                                    "Build Report"
+                                }
+                                button {
+                                    class: "button",
+                                    disabled: busy,
+                                    onclick: move |_| {
+                                        config.set(load_runtime_config());
+                                        status.set(TaskState::Succeeded(
+                                            "Reloaded runtime configuration from nanochat/.env."
+                                                .to_string(),
+                                        ));
+                                    },
+                                    "Reload Config"
+                                }
+                            }
+                        }
+                    }
+
+                    div {
+                        class: "panel",
+                        div {
+                            class: "panel-head",
+                            h2 { "Status" }
+                        }
+                        div {
+                            class: "panel-body",
+                            StatusPanel { status: status() }
+                        }
+                    }
+
+                    div {
+                        class: "panel",
+                        div {
+                            class: "panel-head",
+                            h2 { "Runtime" }
+                            p { "Loaded directly from nanochat's current env-backed configuration." }
+                        }
+                        div {
+                            class: "panel-body",
+                            RuntimePanel {
+                                config: config(),
+                                force_cpu: force_cpu()
+                            }
+                        }
+                    }
+                }
+
+                section {
+                    class: "content",
+                    div {
+                        class: "feature-grid",
+                        div {
+                            class: "panel",
+                            div {
+                                class: "panel-head",
+                                h2 { "Live Sketch" }
+                                p { "Click and drag like a normal sketch pad. New strokes automatically reposition the hidden cursor, and Tab accepts the orange continuation." }
+                            }
+                            InteractivePad { config, force_cpu }
+                        }
+
+                        div {
+                            class: "panel",
+                            div {
+                                class: "panel-head",
+                                h2 { "Comparison Report" }
+                                p { "Prompted completions and a training gallery rendered from typed nanochat report data." }
+                            }
+                            ComparisonReportPanel { report }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn StatusPanel(status: TaskState) -> Element {
+    let (class, title, body) = match status {
+        TaskState::Idle => (
+            "status".to_string(),
+            "Ready".to_string(),
+            "No report task is running. The sketch predictor loads automatically in the live panel."
+                .to_string(),
+        ),
+        TaskState::Running(message) => (
+            "status running".to_string(),
+            "Running".to_string(),
+            message,
+        ),
+        TaskState::Failed(message) => (
+            "status failed".to_string(),
+            "Error".to_string(),
+            message,
+        ),
+        TaskState::Succeeded(message) => (
+            "status success".to_string(),
+            "Updated".to_string(),
+            message,
+        ),
+    };
+
+    rsx! {
+        div {
+            class,
+            strong { "{title}" }
+            p { "{body}" }
+        }
+    }
+}
+
+#[component]
+fn RuntimePanel(config: Result<RuntimeConfig, String>, force_cpu: bool) -> Element {
+    match config {
+        Ok(config) => rsx! {
+            div {
+                class: "kv",
+                RuntimeItem { label: "Device", value: if force_cpu { "CPU".to_string() } else { "GPU if available".to_string() } }
+                RuntimeItem { label: "Checkpoint", value: config.gguf_path.display().to_string() }
+                RuntimeItem { label: "Dataset", value: config.dataset_path.as_ref().map(|path| path.display().to_string()).unwrap_or_else(|| "bundled examples".to_string()) }
+                RuntimeItem { label: "Sample Tokens", value: config.sample_tokens.to_string() }
+                RuntimeItem { label: "Prompt Prefix", value: config.sample_prefix_tokens.to_string() }
+                RuntimeItem { label: "Block Size", value: config.block_size.to_string() }
+                RuntimeItem { label: "Model Width", value: format!("embd {} / layers {}", config.n_embd, config.n_layer) }
+            }
+        },
+        Err(error) => rsx! {
+            div {
+                class: "empty",
+                strong { "Config load failed" }
+                p { "{error}" }
+            }
+        },
+    }
+}
+
+#[component]
+fn RuntimeItem(label: String, value: String) -> Element {
+    rsx! {
+        div {
+            class: "kv-item",
+            strong { "{label}" }
+            span { "{value}" }
+        }
+    }
+}
+
+#[component]
+fn InteractivePad(
+    config: Signal<Result<RuntimeConfig, String>>,
+    force_cpu: Signal<bool>,
+) -> Element {
+    let mut prompt_tokens = use_signal(Vec::<u32>::new);
+    let mut prediction_tokens = use_signal(Vec::<u32>::new);
+    let mut tokenizer = use_signal(|| None::<StrokeTokenizer>);
+    let mut worker = use_signal(|| None::<PredictorWorker>);
+    let mut sketch_status = use_signal(|| {
+        "SVG board ready. Loading sketch predictor from the current checkpoint…".to_string()
+    });
+    let mut dragging = use_signal(|| false);
+    let mut last_point = use_signal(|| None::<GridPoint>);
+    let mut worker_generation = use_signal(|| 0_u64);
+    let stage_bounds =
+        use_signal(|| StageBounds::new(0.0, 0.0, DEFAULT_SKETCH_STAGE_PX, DEFAULT_SKETCH_STAGE_PX));
+    let mut stage_element = use_signal(|| None::<Rc<MountedData>>);
+    let mut request_revision = use_signal(|| 0_u64);
+    let config_state = config();
+    let use_cpu = force_cpu();
+
+    use_effect(use_reactive!(|(config_state, use_cpu)| {
+        prompt_tokens.set(Vec::new());
+        prediction_tokens.set(Vec::new());
+        tokenizer.set(None);
+        worker.set(None);
+        dragging.set(false);
+        last_point.set(None);
+
+        {
+            let mut revision = request_revision.write();
+            *revision += 1;
+        }
+        let generation = {
+            let mut generation = worker_generation.write();
+            *generation += 1;
+            *generation
+        };
+
+        match config_state.as_ref() {
+            Ok(runtime) => {
+                let runtime = runtime.clone();
+                match load_tokenizer(&runtime) {
+                    Ok(loaded_tokenizer) => tokenizer.set(Some(loaded_tokenizer)),
+                    Err(error) => {
+                        sketch_status.set(error);
+                        return;
+                    }
+                }
+
+                sketch_status.set(
+                    "SVG board ready. Loading sketch predictor from the current checkpoint…"
+                        .to_string(),
+                );
+                let predictor_worker = spawn_predictor_worker(
+                    runtime,
+                    use_cpu,
+                    generation,
+                    tokenizer,
+                    prediction_tokens,
+                    sketch_status,
+                    request_revision,
+                    worker_generation,
+                );
+                worker.set(Some(predictor_worker.clone()));
+                request_prediction(
+                    Some(predictor_worker),
+                    generation,
+                    request_revision,
+                    sketch_status,
+                    prediction_tokens,
+                    Vec::new(),
+                );
+            }
+            Err(error) => {
+                sketch_status.set(error.clone());
+            }
+        }
+    }));
+
+    let tokenizer_loaded = tokenizer();
+    let prompt_preview = prompt_tokens();
+    let prediction_preview = prediction_tokens();
+    let prompt_display = tokenizer_loaded
+        .as_ref()
+        .map(|tokenizer| tokenizer.describe_tokens(&prompt_preview, 80))
+        .filter(|text| !text.is_empty())
+        .unwrap_or_else(|| "<empty>".to_string());
+    let prediction_display = tokenizer_loaded
+        .as_ref()
+        .map(|tokenizer| tokenizer.describe_tokens(&prediction_preview, 80))
+        .filter(|text| !text.is_empty())
+        .unwrap_or_else(|| "<none>".to_string());
+    let current_cursor = tokenizer_loaded
+        .as_ref()
+        .map(|tokenizer| tokenizer.cursor_after_tokens(&prompt_preview))
+        .unwrap_or((0, 0));
+    let grid_size = tokenizer_loaded
+        .as_ref()
+        .map(interactive_grid_size)
+        .unwrap_or(16);
+    let stroke_scene = tokenizer_loaded
+        .as_ref()
+        .map(|tokenizer| tokens_to_stroke_scene(tokenizer, &prompt_preview, &prediction_preview));
+    let prompt_paths = stroke_scene
+        .as_ref()
+        .map(|scene| {
+            scene
+                .prompt_strokes
+                .iter()
+                .filter_map(|stroke| grid_path_data(&stroke.points))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let prediction_paths = stroke_scene
+        .as_ref()
+        .map(|scene| {
+            scene
+                .continuation_strokes
+                .iter()
+                .filter_map(|stroke| grid_path_data(&stroke.points))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let inner_board_size = grid_size as f32 - 0.28;
+    let view_box = format!("0 0 {grid_size} {grid_size}");
+    let cursor_x = current_cursor.0 as f32 + 0.5;
+    let cursor_y = current_cursor.1 as f32 + 0.5;
+
+    rsx! {
+        div {
+            class: "panel-body",
+            div {
+                class: "sketch-shell",
+                div {
+                    class: "sketch-toolbar",
+                    div {
+                        class: "button-row",
+                        button {
+                            class: "button",
+                            disabled: prompt_tokens.read().is_empty(),
+                            onclick: move |_| {
+                                let mut next = prompt_tokens();
+                                if next.pop().is_some() {
+                                    prompt_tokens.set(next.clone());
+                                    prediction_tokens.set(Vec::new());
+                                    request_prediction(
+                                        worker(),
+                                        worker_generation(),
+                                        request_revision,
+                                        sketch_status,
+                                        prediction_tokens,
+                                        next,
+                                    );
+                                }
+                            },
+                            "Undo"
+                        }
+                        button {
+                            class: "button",
+                            disabled: prompt_tokens.read().is_empty() && prediction_tokens.read().is_empty(),
+                            onclick: move |_| {
+                                prompt_tokens.set(Vec::new());
+                                prediction_tokens.set(Vec::new());
+                                request_prediction(
+                                    worker(),
+                                    worker_generation(),
+                                    request_revision,
+                                    sketch_status,
+                                    prediction_tokens,
+                                    Vec::new(),
+                                );
+                            },
+                            "Clear"
+                        }
+                        button {
+                            class: "button button-primary",
+                            disabled: prediction_tokens.read().is_empty(),
+                            onclick: move |_| {
+                                accept_prediction(
+                                    prompt_tokens,
+                                    prediction_tokens,
+                                    worker(),
+                                    worker_generation(),
+                                    request_revision,
+                                    sketch_status,
+                                );
+                            },
+                            "Accept Tab"
+                        }
+                    }
+                }
+
+                div {
+                    class: "sketch-stage",
+                    tabindex: "0",
+                    onmounted: move |event| {
+                        let mounted = event.data();
+                        stage_element.set(Some(mounted.clone()));
+                        spawn(async move {
+                            let _ = mounted.set_focus(true).await;
+                            if let Ok(rect) = mounted.get_client_rect().await {
+                                set_stage_bounds(
+                                    stage_bounds,
+                                    rect.origin.x,
+                                    rect.origin.y,
+                                    rect.size.width,
+                                    rect.size.height,
+                                );
+                            }
+                        });
+                    },
+                    onresize: move |event| {
+                        if let Ok(size) = event.data().get_border_box_size() {
+                            let bounds = stage_bounds();
+                            set_stage_bounds(
+                                stage_bounds,
+                                bounds.left,
+                                bounds.top,
+                                size.width,
+                                size.height,
+                            );
+                        }
+                    },
+                    onkeydown: move |event| {
+                        match event.key() {
+                            Key::Tab => {
+                                event.prevent_default();
+                                accept_prediction(
+                                    prompt_tokens,
+                                    prediction_tokens,
+                                    worker(),
+                                    worker_generation(),
+                                    request_revision,
+                                    sketch_status,
+                                );
+                            }
+                            Key::Backspace => {
+                                event.prevent_default();
+                                let mut next = prompt_tokens();
+                                if next.pop().is_some() {
+                                    prompt_tokens.set(next.clone());
+                                    prediction_tokens.set(Vec::new());
+                                    request_prediction(
+                                        worker(),
+                                        worker_generation(),
+                                        request_revision,
+                                        sketch_status,
+                                        prediction_tokens,
+                                        next,
+                                    );
+                                }
+                            }
+                            Key::Escape => {
+                                event.prevent_default();
+                                prompt_tokens.set(Vec::new());
+                                prediction_tokens.set(Vec::new());
+                                request_prediction(
+                                    worker(),
+                                    worker_generation(),
+                                    request_revision,
+                                    sketch_status,
+                                    prediction_tokens,
+                                    Vec::new(),
+                                );
+                            }
+                            _ => {}
+                        }
+                    },
+                    onpointerdown: move |event| {
+                        event.prevent_default();
+                        if let Some(stage) = stage_element() {
+                            spawn(async move {
+                                let _ = stage.set_focus(true).await;
+                            });
+                        }
+                        let Some(tokenizer) = tokenizer() else {
+                            return;
+                        };
+                        let point = grid_point_from_event(
+                            &event,
+                            stage_bounds(),
+                            interactive_grid_size(&tokenizer),
+                        );
+                        let cursor = tokenizer.cursor_after_tokens(&prompt_tokens());
+                        let current = GridPoint {
+                            x: cursor.0,
+                            y: cursor.1,
+                        };
+                        if point != current {
+                            let mut next = prompt_tokens();
+                            append_tokens_for_path(&tokenizer, &mut next, current, point, false);
+                            prompt_tokens.set(next.clone());
+                            prediction_tokens.set(Vec::new());
+                            request_prediction(
+                                worker(),
+                                worker_generation(),
+                                request_revision,
+                                sketch_status,
+                                prediction_tokens,
+                                next,
+                            );
+                        }
+                        dragging.set(true);
+                        last_point.set(Some(point));
+                    },
+                    onpointermove: move |event| {
+                        let Some(tokenizer) = tokenizer() else {
+                            return;
+                        };
+                        if !dragging() {
+                            return;
+                        }
+                        event.prevent_default();
+                        let point = grid_point_from_event(
+                            &event,
+                            stage_bounds(),
+                            interactive_grid_size(&tokenizer),
+                        );
+                        let Some(previous_point) = last_point() else {
+                            last_point.set(Some(point));
+                            return;
+                        };
+                        if point == previous_point {
+                            return;
+                        }
+                        let mut next = prompt_tokens();
+                        append_tokens_for_path(&tokenizer, &mut next, previous_point, point, true);
+                        pixel_perfect_filter(&tokenizer, &mut next);
+                        prompt_tokens.set(next.clone());
+                        prediction_tokens.set(Vec::new());
+                        last_point.set(Some(point));
+                        request_prediction(
+                            worker(),
+                            worker_generation(),
+                            request_revision,
+                            sketch_status,
+                            prediction_tokens,
+                            next,
+                        );
+                    },
+                    onpointerup: move |_| {
+                        dragging.set(false);
+                        last_point.set(None);
+                    },
+                    onpointercancel: move |_| {
+                        dragging.set(false);
+                        last_point.set(None);
+                    },
+                    onpointerleave: move |_| {
+                        dragging.set(false);
+                        last_point.set(None);
+                    },
+                    svg {
+                        class: "sketch-board",
+                        view_box,
+                        preserve_aspect_ratio: "none",
+                        pointer_events: "none",
+                        title { "Live nanochat sketch board" }
+                        rect {
+                            x: "0",
+                            y: "0",
+                            width: "{grid_size}",
+                            height: "{grid_size}",
+                            fill: "#fdf6e3",
+                        }
+                        rect {
+                            x: "0.14",
+                            y: "0.14",
+                            width: "{inner_board_size}",
+                            height: "{inner_board_size}",
+                            rx: "0.48",
+                            fill: "#fffaf0",
+                            stroke: "#e9dcc3",
+                            stroke_width: "0.08",
+                        }
+                        g {
+                            opacity: "0.28",
+                            stroke: "#264653",
+                            stroke_width: "0.03",
+                            for axis in 1..grid_size {
+                                line {
+                                    x1: "{axis}",
+                                    y1: "0",
+                                    x2: "{axis}",
+                                    y2: "{grid_size}",
+                                }
+                            }
+                            for axis in 1..grid_size {
+                                line {
+                                    x1: "0",
+                                    y1: "{axis}",
+                                    x2: "{grid_size}",
+                                    y2: "{axis}",
+                                }
+                            }
+                        }
+                        g {
+                            stroke: "#264653",
+                            stroke_width: "0.34",
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            fill: "none",
+                            opacity: "0.76",
+                            for path_data in prompt_paths {
+                                path { d: "{path_data}" }
+                            }
+                        }
+                        g {
+                            stroke: "#e76f51",
+                            stroke_width: "0.34",
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            fill: "none",
+                            for path_data in prediction_paths {
+                                path { d: "{path_data}" }
+                            }
+                        }
+                        circle {
+                            cx: "{cursor_x}",
+                            cy: "{cursor_y}",
+                            r: "0.28",
+                            fill: "#fffaf0",
+                            opacity: "0.94",
+                        }
+                        circle {
+                            cx: "{cursor_x}",
+                            cy: "{cursor_y}",
+                            r: "0.14",
+                            fill: "#264653",
+                        }
+                    }
+                    div {
+                        class: "sketch-hint",
+                        strong { "Tab" }
+                        span { "accepts the orange continuation" }
+                    }
+                }
+
+                div {
+                    class: "sketch-meta",
+                    div { class: "kv-item", strong { "Predictor" } span { "{sketch_status()}" } }
+                    div { class: "kv-item", strong { "Cursor" } span { "x {current_cursor.0} / y {current_cursor.1}" } }
+                    div { class: "kv-item", strong { "Grid" } span { "{grid_size}x{grid_size}" } }
+                }
+
+                div {
+                    class: "sketch-log",
+                    div {
+                        class: "sketch-log-block",
+                        strong { "Prompt" }
+                        code { "{prompt_display}" }
+                    }
+                    div {
+                        class: "sketch-log-block",
+                        strong { "Prediction" }
+                        code { "{prediction_display}" }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn ComparisonReportPanel(report: ReadSignal<Option<ComparisonReport>>) -> Element {
+    let report = report.read();
+    match report.as_ref() {
+        Some(report) => rsx! {
+            div {
+                class: "panel-body",
+                div {
+                    class: "stats",
+                    StatCard { value: report.train_examples.to_string(), label: "train examples".to_string() }
+                    StatCard { value: report.compare_examples.to_string(), label: "eval examples".to_string() }
+                    StatCard { value: report.sample_count.to_string(), label: "prompted samples".to_string() }
+                    StatCard { value: format!("{:.1}%", report.average_similarity * 100.0), label: "avg similarity".to_string() }
+                }
+                p {
+                    style: "margin: 16px 0 10px; color: var(--muted);",
+                    "Dataset label: {report.dataset_label}"
+                }
+                ul {
+                    class: "shape-list",
+                    for count in report.shape_counts.iter().cloned() {
+                        ShapeCountRow { count }
+                    }
+                }
+                div {
+                    style: "height: 18px;"
+                }
+                div {
+                    class: "compare-grid",
+                    for sample in report.samples.iter().cloned() {
+                        ComparisonCard { sample }
+                    }
+                }
+                div {
+                    style: "height: 18px;"
+                }
+                div {
+                    class: "panel-head",
+                    h3 { "Training Gallery" }
+                    p { "Representative examples from the current training split rendered through the shared SVG helper." }
+                }
+                div {
+                    class: "gallery-grid",
+                    for item in report.dataset_gallery.iter().cloned() {
+                        GalleryCard { item }
+                    }
+                }
+            }
+        },
+        None => rsx! {
+            div {
+                class: "panel-body",
+                div {
+                    class: "empty",
+                    "No comparison report generated yet."
+                }
+            }
+        },
+    }
+}
+
+#[component]
+fn StatCard(value: String, label: String) -> Element {
+    rsx! {
+        div {
+            class: "stat",
+            strong { "{value}" }
+            span { "{label}" }
+        }
+    }
+}
+
+#[component]
+fn ShapeCountRow(count: ShapeCount) -> Element {
+    rsx! {
+        li {
+            strong { "{count.shape}" }
+            " : {count.count} prompted comparisons"
+        }
+    }
+}
+
+#[component]
+fn ComparisonCard(sample: ComparisonSample) -> Element {
+    let similarity = format!("{:.1}%", sample.similarity * 100.0);
+
+    rsx! {
+        article {
+            class: "compare-card",
+            div {
+                class: "compare-head",
+                h3 { "{sample.example_label}" }
+                p {
+                    "Prompted from "
+                    strong { "{sample.shape}" }
+                    " in "
+                    code { "{sample.source_path}" }
+                }
+                p {
+                    strong { "Prompt" }
+                    code { "{sample.prompt_tokens}" }
+                }
+            }
+            div {
+                class: "compare-pair",
+                figure {
+                    class: "compare-figure",
+                    img {
+                        src: svg_data_uri(&sample.generated_svg),
+                        alt: "Generated completion for {sample.example_label}"
+                    }
+                    figcaption { "Model completion" }
+                }
+                figure {
+                    class: "compare-figure",
+                    img {
+                        src: svg_data_uri(&sample.expected_svg),
+                        alt: "Expected completion for {sample.example_label}"
+                    }
+                    figcaption { "Expected continuation" }
+                }
+            }
+            div {
+                class: "metrics",
+                div {
+                    class: "metric",
+                    strong { "Edit distance" }
+                    span { "{sample.edit_distance}" }
+                }
+                div {
+                    class: "metric",
+                    strong { "Similarity" }
+                    span { "{similarity}" }
+                }
+            }
+            p {
+                strong { "Model continuation" }
+                code { "{sample.generated_tokens}" }
+            }
+            p {
+                strong { "Expected continuation" }
+                code { "{sample.expected_tokens}" }
+            }
+        }
+    }
+}
+
+#[component]
+fn GalleryCard(item: DatasetGalleryItem) -> Element {
+    rsx! {
+        article {
+            class: "gallery-card",
+            img {
+                src: svg_data_uri(&item.svg),
+                alt: "{item.shape} training sample"
+            }
+            h3 { "{item.shape}" }
+            p { code { "{item.path}" } }
+            p { code { "{item.tokens}" } }
+        }
+    }
+}
+
+fn spawn_report_task(
+    runtime: RuntimeConfig,
+    force_cpu: bool,
+    report_signal: Signal<Option<ComparisonReport>>,
+    status_signal: Signal<TaskState>,
+) {
+    let (report_tx, report_rx) = async_channel::bounded::<Result<ComparisonReport, String>>(1);
+
+    #[cfg(not(target_arch = "wasm32"))]
+    thread::spawn(move || {
+        let result = build_comparison_report(runtime, force_cpu);
+        let _ = report_tx.send_blocking(result);
+    });
+
+    #[cfg(target_arch = "wasm32")]
+    spawn(async move {
+        let result = build_comparison_report(runtime, force_cpu);
+        let _ = report_tx.send(result).await;
+    });
+
+    spawn(async move {
+        if let Ok(result) = report_rx.recv().await {
+            handle_report_result(result, report_signal, status_signal);
+        }
+    });
+}
+
+fn handle_report_result(
+    result: Result<ComparisonReport, String>,
+    mut report_signal: Signal<Option<ComparisonReport>>,
+    mut status_signal: Signal<TaskState>,
+) {
+    match result {
+        Ok(report) => {
+            let summary = format!(
+                "Built comparison report with {} prompted samples from {} training examples.",
+                report.sample_count, report.train_examples
+            );
+            report_signal.set(Some(report));
+            status_signal.set(TaskState::Succeeded(summary));
+        }
+        Err(error) => {
+            status_signal.set(TaskState::Failed(error));
+        }
+    }
+}
+
+fn spawn_predictor_worker(
+    runtime: RuntimeConfig,
+    force_cpu: bool,
+    generation: u64,
+    mut tokenizer_signal: Signal<Option<StrokeTokenizer>>,
+    mut prediction_signal: Signal<Vec<u32>>,
+    mut status_signal: Signal<String>,
+    request_revision: Signal<u64>,
+    worker_generation: Signal<u64>,
+) -> PredictorWorker {
+    let (command_tx, command_rx) = async_channel::unbounded::<WorkerCommand>();
+    let (update_tx, update_rx) = async_channel::unbounded::<WorkerUpdate>();
+
+    #[cfg(not(target_arch = "wasm32"))]
+    thread::spawn(move || {
+        run_predictor_loop_blocking(runtime, force_cpu, generation, command_rx, update_tx);
+    });
+
+    #[cfg(target_arch = "wasm32")]
+    spawn(async move {
+        run_predictor_loop_async(runtime, force_cpu, generation, command_rx, update_tx).await;
+    });
+
+    spawn(async move {
+        while let Ok(update) = update_rx.recv().await {
+            match update {
+                WorkerUpdate::Ready {
+                    generation,
+                    tokenizer,
+                } => {
+                    if generation != worker_generation() {
+                        continue;
+                    }
+                    tokenizer_signal.set(Some(tokenizer));
+                    prediction_signal.set(Vec::new());
+                    status_signal.set(
+                        "Predictor ready. Draw on the pad and press Tab to accept the continuation."
+                            .to_string(),
+                    );
+                }
+                WorkerUpdate::Prediction {
+                    generation,
+                    revision,
+                    completion_tokens,
+                } => {
+                    if generation != worker_generation() || revision != request_revision() {
+                        continue;
+                    }
+                    let has_prediction = !completion_tokens.is_empty();
+                    prediction_signal.set(completion_tokens);
+                    status_signal.set(if has_prediction {
+                        "Prediction updated. Press Tab to accept the continuation.".to_string()
+                    } else {
+                        "The model has no continuation to suggest from the current sketch."
+                            .to_string()
+                    });
+                }
+                WorkerUpdate::Failed {
+                    generation,
+                    message,
+                } => {
+                    if generation != worker_generation() {
+                        continue;
+                    }
+                    prediction_signal.set(Vec::new());
+                    status_signal.set(message);
+                }
+            }
+        }
+    });
+
+    PredictorWorker {
+        commands: command_tx,
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn run_predictor_loop_blocking(
+    runtime: RuntimeConfig,
+    force_cpu: bool,
+    generation: u64,
+    command_rx: Receiver<WorkerCommand>,
+    update_tx: Sender<WorkerUpdate>,
+) {
+    let predictor = match LivePredictor::load(runtime, force_cpu) {
+        Ok(predictor) => predictor,
+        Err(error) => {
+            let _ = update_tx.send_blocking(WorkerUpdate::Failed {
+                generation,
+                message: error,
+            });
+            return;
+        }
+    };
+
+    let _ = update_tx.send_blocking(WorkerUpdate::Ready {
+        generation,
+        tokenizer: predictor.tokenizer().clone(),
+    });
+
+    while let Ok(command) = command_rx.recv_blocking() {
+        let mut latest = command;
+        while let Ok(queued) = command_rx.try_recv() {
+            latest = queued;
+        }
+        let _ = update_tx.send_blocking(predict_with_command(&predictor, latest));
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn run_predictor_loop_async(
+    runtime: RuntimeConfig,
+    force_cpu: bool,
+    generation: u64,
+    command_rx: Receiver<WorkerCommand>,
+    update_tx: Sender<WorkerUpdate>,
+) {
+    let predictor = match LivePredictor::load(runtime, force_cpu) {
+        Ok(predictor) => predictor,
+        Err(error) => {
+            let _ = update_tx
+                .send(WorkerUpdate::Failed {
+                    generation,
+                    message: error,
+                })
+                .await;
+            return;
+        }
+    };
+
+    let _ = update_tx
+        .send(WorkerUpdate::Ready {
+            generation,
+            tokenizer: predictor.tokenizer().clone(),
+        })
+        .await;
+
+    while let Ok(command) = command_rx.recv().await {
+        let mut latest = command;
+        while let Ok(queued) = command_rx.try_recv() {
+            latest = queued;
+        }
+        let _ = update_tx
+            .send(predict_with_command(&predictor, latest))
+            .await;
+    }
+}
+
+fn predict_with_command(predictor: &LivePredictor, command: WorkerCommand) -> WorkerUpdate {
+    match command {
+        WorkerCommand::Predict {
+            generation,
+            revision,
+            prompt_tokens,
+            max_tokens,
+        } => match predictor.predict_greedy(&prompt_tokens, max_tokens) {
+            Ok(completion_tokens) => WorkerUpdate::Prediction {
+                generation,
+                revision,
+                completion_tokens,
+            },
+            Err(error) => WorkerUpdate::Failed {
+                generation,
+                message: error,
+            },
+        },
+    }
+}
+
+fn request_prediction(
+    worker: Option<PredictorWorker>,
+    generation: u64,
+    mut request_revision: Signal<u64>,
+    mut status_signal: Signal<String>,
+    mut prediction_signal: Signal<Vec<u32>>,
+    prompt_tokens: Vec<u32>,
+) {
+    let Some(worker) = worker else {
+        status_signal.set("Predictor is not ready yet.".to_string());
+        return;
+    };
+
+    let revision = {
+        let mut revision = request_revision.write();
+        *revision += 1;
+        *revision
+    };
+    prediction_signal.set(Vec::new());
+
+    if let Err(error) = worker.commands.try_send(WorkerCommand::Predict {
+        generation,
+        revision,
+        prompt_tokens,
+        max_tokens: PREVIEW_TOKEN_LIMIT,
+    }) {
+        status_signal.set(format!("predictor worker is unavailable: {error}"));
+    }
+}
+
+fn accept_prediction(
+    mut prompt_tokens: Signal<Vec<u32>>,
+    mut prediction_tokens: Signal<Vec<u32>>,
+    worker: Option<PredictorWorker>,
+    generation: u64,
+    request_revision: Signal<u64>,
+    status_signal: Signal<String>,
+) {
+    let prediction = prediction_tokens();
+    if prediction.is_empty() {
+        return;
+    }
+
+    let mut next = prompt_tokens();
+    next.extend_from_slice(&prediction);
+    prompt_tokens.set(next.clone());
+    prediction_tokens.set(Vec::new());
+    request_prediction(
+        worker,
+        generation,
+        request_revision,
+        status_signal,
+        prediction_tokens,
+        next,
+    );
+}
+
+fn interactive_grid_size(tokenizer: &StrokeTokenizer) -> usize {
+    tokenizer.grid_size().max(tokenizer.max_count() + 1).max(2)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct StageBounds {
+    left: f64,
+    top: f64,
+    width: f64,
+    height: f64,
+}
+
+impl StageBounds {
+    const fn new(left: f64, top: f64, width: f64, height: f64) -> Self {
+        Self {
+            left,
+            top,
+            width,
+            height,
+        }
+    }
+}
+
+fn set_stage_bounds(
+    mut stage_bounds: Signal<StageBounds>,
+    left: f64,
+    top: f64,
+    width: f64,
+    height: f64,
+) {
+    stage_bounds.set(StageBounds::new(left, top, width.max(1.0), height.max(1.0)));
+}
+
+fn grid_point_from_event(
+    event: &PointerEvent,
+    stage_bounds: StageBounds,
+    grid_size: usize,
+) -> GridPoint {
+    let point = event.data().element_coordinates();
+    let max_index = grid_size.saturating_sub(1) as f64;
+    let local_x = point.x.clamp(0.0, stage_bounds.width);
+    let local_y = point.y.clamp(0.0, stage_bounds.height);
+    let x = ((local_x / stage_bounds.width.max(1.0)) * grid_size as f64 - 0.5)
+        .round()
+        .clamp(0.0, max_index);
+    let y = ((local_y / stage_bounds.height.max(1.0)) * grid_size as f64 - 0.5)
+        .round()
+        .clamp(0.0, max_index);
+    GridPoint {
+        x: x as i32,
+        y: y as i32,
+    }
+}
+
+fn grid_path_data(points: &[(i32, i32)]) -> Option<String> {
+    let mut points = points.iter();
+    let &(first_x, first_y) = points.next()?;
+    let mut path = format!("M {:.2} {:.2}", first_x as f32 + 0.5, first_y as f32 + 0.5);
+    for &(x, y) in points {
+        path.push_str(&format!(" L {:.2} {:.2}", x as f32 + 0.5, y as f32 + 0.5));
+    }
+    Some(path)
+}
+
+fn append_tokens_for_path(
+    tokenizer: &StrokeTokenizer,
+    prompt_tokens: &mut Vec<u32>,
+    from: GridPoint,
+    to: GridPoint,
+    is_draw: bool,
+) {
+    // Use Bresenham-style rasterization to produce smooth diagonal lines
+    // instead of the L-shaped paths that signum-only walking creates.
+    //
+    // For a line from (0,0) to (3,7) the old code produced SE_3 then S_4
+    // (an L-shape). This version interleaves diagonal and cardinal steps
+    // to approximate the true line: e.g. S, SE, S, SE, S, SE, S.
+    let total_dx = to.x - from.x;
+    let total_dy = to.y - from.y;
+    let abs_dx = total_dx.unsigned_abs() as usize;
+    let abs_dy = total_dy.unsigned_abs() as usize;
+    let step_x = total_dx.signum();
+    let step_y = total_dy.signum();
+
+    // Decompose into `minor` diagonal steps and `major - minor` cardinal
+    // steps along the longer axis, then interleave them evenly.
+    let minor = abs_dx.min(abs_dy);
+    let major = abs_dx.max(abs_dy);
+    if major == 0 {
+        return;
+    }
+
+    let (cardinal_dx, cardinal_dy) = if abs_dx >= abs_dy {
+        (step_x, 0)
+    } else {
+        (0, step_y)
+    };
+    let diagonal = (step_x, step_y);
+
+    // Bresenham-style interleave: distribute `minor` diagonal steps evenly
+    // among `major` total steps.  Each step is either cardinal-only or
+    // diagonal depending on the accumulated error.
+    let mut steps: Vec<(i32, i32)> = Vec::with_capacity(major);
+    let mut error: isize = 0;
+    for _ in 0..major {
+        error += minor as isize;
+        if 2 * error >= major as isize {
+            steps.push(diagonal);
+            error -= major as isize;
+        } else {
+            steps.push((cardinal_dx, cardinal_dy));
+        }
+    }
+
+    // Run-length encode consecutive same-direction steps into tokens.
+    let mode = if is_draw { 1u32 } else { 0 };
+    let mut current = from;
+    let mut i = 0;
+    while i < steps.len() {
+        let (dx, dy) = steps[i];
+        let direction_index = direction_index_from_delta(dx, dy);
+        let legal_limit = tokenizer
+            .legal_count_limit((current.x, current.y), direction_index)
+            .min(tokenizer.max_count())
+            .max(1);
+
+        let mut count = 0usize;
+        while i < steps.len() && count < legal_limit {
+            if steps[i] != (dx, dy) {
+                break;
+            }
+            current.x += dx;
+            current.y += dy;
+            count += 1;
+            i += 1;
+        }
+
+        if count == 0 {
+            break;
+        }
+
+        prompt_tokens.push(tokenizer.token_from_components(mode, direction_index, count));
+    }
+}
+
+/// Pixel-perfect filter: removes L-shaped corners from the end of the token
+/// list.  When two consecutive count-1 draw tokens form perpendicular cardinal
+/// steps (e.g. E then S), the first is redundant — removing it yields a
+/// smoother diagonal (the second step effectively becomes SE).  This mirrors
+/// the approach used by Aseprite and other pixel-art editors.
+///
+/// The filter inspects the last three tokens (A, B, C) and removes B when:
+///   - A, B, and C are all draw tokens with count 1
+///   - B is cardinal (not diagonal)
+///   - A's direction ≠ B's direction ≠ C's direction  (a direction change at B)
+///   - A and C move in the same direction             (B is a detour)
+///
+/// Additionally handles the simpler two-token tail case: if the last two
+/// tokens are perpendicular cardinals with count 1, replace them with a
+/// single diagonal.
+fn pixel_perfect_filter(tokenizer: &StrokeTokenizer, tokens: &mut Vec<u32>) {
+    if tokens.len() < 2 {
+        return;
+    }
+
+    // Decode the last two (and optionally three) tokens.
+    let len = tokens.len();
+    let dec_last = tokenizer.decode_segment_token(tokens[len - 1]);
+    let dec_prev = tokenizer.decode_segment_token(tokens[len - 2]);
+
+    let (Some(last), Some(prev)) = (dec_last, dec_prev) else {
+        return;
+    };
+
+    // Both must be draw-mode, count-1 tokens.
+    if last.mode_index != 1 || prev.mode_index != 1 {
+        return;
+    }
+    if last.count != Some(1) || prev.count != Some(1) {
+        return;
+    }
+
+    let last_dir = last.direction_index.unwrap();
+    let prev_dir = prev.direction_index.unwrap();
+
+    if last_dir == prev_dir {
+        return;
+    }
+
+    // Compute the deltas for both directions.
+    let prev_delta = delta_from_direction_index(prev_dir);
+    let last_delta = delta_from_direction_index(last_dir);
+
+    let combined_dx = prev_delta.0 + last_delta.0;
+    let combined_dy = prev_delta.1 + last_delta.1;
+
+    // The combination must itself be a valid single-step direction (one of
+    // the 8 directions).  Two perpendicular cardinals combine into a diagonal;
+    // other combinations (e.g. opposite directions) do not.
+    if combined_dx.abs() > 1 || combined_dy.abs() > 1 {
+        return;
+    }
+    if combined_dx == 0 && combined_dy == 0 {
+        return;
+    }
+
+    // Three-token check: if there is a token before prev, use the A-B-C
+    // pattern.  Remove B (prev) only when A and C share a direction,
+    // confirming B was an unintentional detour.
+    if len >= 3 {
+        if let Some(before) = tokenizer.decode_segment_token(tokens[len - 3]) {
+            if before.mode_index == 1
+                && before.count == Some(1)
+                && before.direction_index == last.direction_index
+            {
+                // A == C direction — remove B (the middle corner pixel).
+                tokens.remove(len - 2);
+                return;
+            }
+            // A ≠ C — this isn't clearly an L-shape artifact; leave it alone.
+            return;
+        }
+    }
+
+    // Two-token tail: replace both perpendicular cardinals with one diagonal.
+    let diag_dir = direction_index_from_delta(combined_dx, combined_dy);
+    tokens.pop();
+    tokens.pop();
+    tokens.push(tokenizer.token_from_components(1, diag_dir, 1));
+}
+
+fn delta_from_direction_index(dir: u32) -> (i32, i32) {
+    match dir {
+        0 => (0, -1),  // N
+        1 => (1, -1),  // NE
+        2 => (1, 0),   // E
+        3 => (1, 1),   // SE
+        4 => (0, 1),   // S
+        5 => (-1, 1),  // SW
+        6 => (-1, 0),  // W
+        7 => (-1, -1), // NW
+        _ => (0, 0),
+    }
+}
+
+fn direction_index_from_delta(dx: i32, dy: i32) -> u32 {
+    match (dx, dy) {
+        (0, -1) => 0,
+        (1, -1) => 1,
+        (1, 0) => 2,
+        (1, 1) => 3,
+        (0, 1) => 4,
+        (-1, 1) => 5,
+        (-1, 0) => 6,
+        (-1, -1) => 7,
+        other => panic!("unsupported direction delta {other:?}"),
+    }
+}
+
+fn svg_data_uri(svg: &str) -> String {
+    format!(
+        "data:image/svg+xml;base64,{}",
+        STANDARD.encode(svg.as_bytes())
+    )
+}

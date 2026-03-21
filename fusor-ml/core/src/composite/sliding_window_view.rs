@@ -1,5 +1,5 @@
 use crate::{
-    DataType, LargerRank, LargerRankInner, SlidingWindow, Tensor, map_layout::MapLayoutOperation,
+    DataType, LargerRank, LargerRankInner, SlidingWindow, StrideSpec, Tensor,
 };
 
 impl<const R: usize, D: DataType> Tensor<R, D> {
@@ -18,11 +18,23 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
     where
         Self: LargerRank<DIFF, R2, D>,
     {
-        let windows: [SlidingWindow; DIFF] = windows.map(|w| w.into());
-
-        self.add_map_layout(MapLayoutOperation::new(self.key(), move |layout| {
-            layout.sliding_window(&windows)
-        }))
+        let mut sorted_windows: [SlidingWindow; DIFF] = windows.map(|w| w.into());
+        sorted_windows.sort_by_key(|w| w.axis);
+        let shape = self.shape();
+        let specs: [StrideSpec; R2] = std::array::from_fn(|out_i| {
+            if out_i < R {
+                if let Some(w) = sorted_windows.iter().find(|w| w.axis == out_i) {
+                    let num_positions = (shape[out_i] - w.window_size) / w.step + 1;
+                    StrideSpec::dim_with(out_i, num_positions, w.step)
+                } else {
+                    StrideSpec::dim(out_i, shape[out_i])
+                }
+            } else {
+                let w = &sorted_windows[out_i - R];
+                StrideSpec::dim(w.axis, w.window_size)
+            }
+        });
+        self.restride(specs)
     }
 }
 
