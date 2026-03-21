@@ -1,5 +1,60 @@
 use crate::{DataType, FloatDataType, MaxRank, Tensor};
 
+/// Helper: narrow a tensor along a dimension (slice convenience)
+fn narrow<const R: usize, D: DataType>(
+    tensor: &Tensor<R, D>,
+    dim: usize,
+    start: usize,
+    length: usize,
+) -> Tensor<R, D> {
+    let slices = std::array::from_fn(|i| {
+        if i == dim {
+            start..(start + length)
+        } else {
+            0..tensor.shape()[i]
+        }
+    });
+    tensor.slice(slices)
+}
+
+/// Helper: concatenate tensors along a dimension
+fn cat<const R: usize, D: DataType>(
+    tensors: impl IntoIterator<Item = Tensor<R, D>>,
+    dim: usize,
+) -> Tensor<R, D> {
+    let tensors: Vec<_> = tensors.into_iter().collect();
+    assert!(!tensors.is_empty(), "Cannot cat empty list of tensors");
+    // Calculate total size along concat dim
+    let total_dim_size: usize = tensors.iter().map(|t| t.shape()[dim]).sum();
+    let new_shape: [usize; R] = std::array::from_fn(|i| {
+        if i == dim {
+            total_dim_size
+        } else {
+            tensors[0].shape()[i]
+        }
+    });
+    let mut result = tensors[0].resize(new_shape);
+    let mut offset = 0;
+    for tensor in &tensors {
+        let len = tensor.shape()[dim];
+        let slice = std::array::from_fn(|i| {
+            if i == dim {
+                offset..(offset + len)
+            } else {
+                0..tensor.shape()[i]
+            }
+        });
+        result = result.slice_assign(slice, tensor);
+        offset += len;
+    }
+    result
+}
+
+/// Helper: create a zeros tensor
+fn zeros<const R: usize, D: DataType>(device: &crate::Device, shape: [usize; R]) -> Tensor<R, D> {
+    Tensor::splat(device, D::zero(), shape)
+}
+
 /// A growable tensor cache.
 /// This cache manages tensor data with exponentially larger allocations as the sequence length increases.
 #[derive(Clone)]
@@ -52,17 +107,22 @@ impl<const R: usize, D: DataType> TensorCache<R, D> {
             let mut tensors = Vec::new();
             // Cut the start of the cache.
             if let Some(all_data) = self.all_data.as_ref() {
-                tensors.push(all_data.narrow(
+                tensors.push(narrow(
+                    all_data,
                     self.concat_dim,
                     new_start,
                     self.current_seq_len - new_start,
                 ));
             }
             tensors.push(v.clone());
-            let all_data = Tensor::cat(tensors, self.concat_dim);
+            let all_data = cat(tensors, self.concat_dim);
             let all_data_len = all_data.shape()[self.concat_dim];
-            self.all_data =
-                Some(all_data.narrow(self.concat_dim, all_data_len - max_seq_len, max_seq_len));
+            self.all_data = Some(narrow(
+                &all_data,
+                self.concat_dim,
+                all_data_len - max_seq_len,
+                max_seq_len,
+            ));
             self.current_seq_len = max_seq_len;
             self.allocated_seq_len = max_seq_len;
             return all_data;
@@ -82,8 +142,8 @@ impl<const R: usize, D: DataType> TensorCache<R, D> {
                     }
                 });
                 // Allocate new tensor with larger size
-                let new_data = Tensor::<R, D>::zeros(v.device(), new_data_shape);
-                *cached = Tensor::cat([cached.clone(), new_data], self.concat_dim);
+                let new_data: Tensor<R, D> = zeros(v.device(), new_data_shape);
+                *cached = cat([cached.clone(), new_data], self.concat_dim);
             }
             // Assign the new data into the cached tensor
             let slice = std::array::from_fn(|i| {
@@ -96,7 +156,7 @@ impl<const R: usize, D: DataType> TensorCache<R, D> {
             *cached = cached.slice_assign(slice, v);
             self.current_seq_len = required_seq_len;
             // Return only the valid portion of the cache, not the full allocated tensor
-            cached.narrow(self.concat_dim, 0, self.current_seq_len)
+            narrow(cached, self.concat_dim, 0, self.current_seq_len)
         } else {
             // First append - just store it
             self.all_data = Some(v.clone());
@@ -278,7 +338,7 @@ impl<T: FloatDataType> MaskCache<T> {
             // Pad the mask on the left with zeros
             let mask_tensor = mask.mask();
             let shape = mask_tensor.shape();
-            let zeros = Tensor::zeros(device, [shape[0], seqlen_offset + shape[1]]);
+            let zeros = zeros(device, [shape[0], seqlen_offset + shape[1]]);
             let padded_mask = zeros.slice_assign(
                 [0..shape[0], seqlen_offset..(seqlen_offset + shape[1])],
                 mask_tensor,

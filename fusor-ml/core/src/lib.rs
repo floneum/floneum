@@ -23,13 +23,11 @@ pub use varbuilder::{ShardedVarBuilder, VarBuilder};
 
 pub mod cache;
 mod composite;
-pub use composite::{ToVec1, ToVec2, ToVec3};
 mod compute_graph;
 pub use compute_graph::NodeIndex;
 mod device;
 mod element_wise;
 mod index_select;
-pub mod layers;
 mod layout;
 mod map_layout;
 pub mod matmul;

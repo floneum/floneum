@@ -16,6 +16,26 @@ use crate::{
     tensor::{DataType, DataTypeEnum, TensorData},
 };
 
+/// Unsqueeze a reduced tensor back to its original rank by inserting a size-1 dim.
+/// This is equivalent to `tensor.unsqueeze(dim)` but implemented inline to avoid
+/// depending on the removed composite unsqueeze operation.
+fn unsqueeze_dim<const N: usize, const O: usize, D: DataType>(
+    tensor: &Tensor<O, D>,
+    dim_idx: usize,
+) -> Tensor<N, D> {
+    let old_shape = tensor.shape();
+    let new_shape: [usize; N] = std::array::from_fn(|i| {
+        if i < dim_idx {
+            old_shape[i]
+        } else if i == dim_idx {
+            1
+        } else {
+            old_shape[i - 1]
+        }
+    });
+    tensor.reshape(new_shape)
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ReduceOperation {
     pub(crate) value: NodeIndex,
@@ -503,7 +523,9 @@ impl<const N: usize, D: DataType> Tensor<N, D> {
         Self: LastRank<O, D>,
         <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
     {
-        self.sum(dim).unsqueeze(dim)
+        let dim_idx = dim.resolve();
+        let reduced = self.sum(dim);
+        unsqueeze_dim::<N, O, D>(&reduced, dim_idx)
     }
 }
 
@@ -757,7 +779,9 @@ impl<const N: usize, T: DataType> Tensor<N, T> {
         Self: LastRank<O, T>,
         <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
     {
-        self.max(dim).unsqueeze(dim)
+        let dim_idx = dim.resolve();
+        let reduced = self.max(dim);
+        unsqueeze_dim::<N, O, T>(&reduced, dim_idx)
     }
 }
 
@@ -818,7 +842,9 @@ impl<const N: usize, D: DataType> Tensor<N, D> {
         Self: LastRank<O, D>,
         <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
     {
-        self.min(dim).unsqueeze(dim)
+        let dim_idx = dim.resolve();
+        let reduced = self.min(dim);
+        unsqueeze_dim::<N, O, D>(&reduced, dim_idx)
     }
 }
 
@@ -881,7 +907,9 @@ impl<const N: usize, D: DataType> Tensor<N, D> {
         Self: LastRank<O, D>,
         <Self as LastRankInner>::LastRank: NextRankInner<NextRank = Self>,
     {
-        self.product(dim).unsqueeze(dim)
+        let dim_idx = dim.resolve();
+        let reduced = self.product(dim);
+        unsqueeze_dim::<N, O, D>(&reduced, dim_idx)
     }
 }
 

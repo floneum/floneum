@@ -109,9 +109,6 @@ impl Resolver {
             }
         }
 
-        let total_ops = queued_operations.len();
-        eprintln!("[resolver] queued_operations={total_ops} targets={}", self.targets.len());
-
         // Build a remaining-consumer count. For each queued operation, we use
         // the Operation's visit_dependencies (which reflects post-optimization
         // fused dependencies) to count how many future operations read each
@@ -140,12 +137,7 @@ impl Resolver {
         let mut all_input_values = Vec::new();
         let mut kernel = GenericKernel::new();
         let mut total_kernels = 0;
-        let mut op_index = 0usize;
         for (node, operation) in queued_operations {
-            op_index += 1;
-            if total_ops >= 100 && op_index % 100 == 0 {
-                eprintln!("[resolver] executing op {op_index}/{total_ops}");
-            }
             let new_inputs = operation.inputs(graph);
             let constraint = operation.workgroup_shape_constraints(&device);
             let mut new_merged = current_constraints.clone();
@@ -174,17 +166,12 @@ impl Resolver {
                     );
                     // After flushing, free intermediate cached results whose
                     // consumers within this execution are all satisfied.
-                    let cached_before = graph.nodes.nodes.node_weights().filter(|n| n.cached.is_some()).count();
                     Self::release_dead_intermediates(
                         graph,
                         &pending_operations,
                         &mut remaining_consumers,
                         &target_set,
                     );
-                    let cached_after = graph.nodes.nodes.node_weights().filter(|n| n.cached.is_some()).count();
-                    if total_ops >= 100 && op_index % 100 == 0 {
-                        eprintln!("[resolver] op {op_index}: cached {cached_before} -> {cached_after} (freed {})", cached_before.saturating_sub(cached_after));
-                    }
                     // Submit the current command encoder so the GPU can
                     // reclaim buffers we just freed, then start a new one.
                     device.wgpu_queue().submit(Some(command_encoder.finish()));
@@ -691,7 +678,23 @@ impl Resolver {
             // Only fuse if substitution was successful
             // If not, the expression still references the original input which must remain
             if success {
-                // Check if fusing would exceed GPU storage binding limit
+                // Check if fusing would exceed the GPU's per-stage buffer limit.
+                // On Metal, `max_buffers_per_stage` is 31 and covers ALL buffer
+                // types (storage + uniform) plus an implicit sizes buffer added
+                // by wgpu. Each unique tensor input needs at least 1 storage
+                // binding, and there will also be a small number of uniform
+                // "info" bindings (for tensor shape/stride metadata), plus the
+                // output storage binding, plus the wgpu sizes buffer.
+                //
+                // We use `max_storage_bindings` (which equals `max_buffers_per_stage`
+                // on Metal = 31) as the hard ceiling and reserve slots for:
+                //   - 1 output storage binding
+                //   - 1 wgpu sizes buffer
+                //   - up to `info_headroom` uniform info bindings
+                let info_headroom = 4usize;
+                let max_fused_inputs =
+                    max_storage_bindings.saturating_sub(2 + info_headroom);
+
                 // Count unique inputs after potential merge (duplicates share a binding)
                 let unique_inputs: FxHashSet<_> = all_inputs
                     .iter()
@@ -699,8 +702,7 @@ impl Resolver {
                     .copied()
                     .collect();
 
-                // Each unique input needs a binding, plus 1 for output
-                if unique_inputs.len() + 1 >= max_storage_bindings {
+                if unique_inputs.len() >= max_fused_inputs {
                     // Skip fusion - would exceed GPU binding limit
                     continue;
                 }

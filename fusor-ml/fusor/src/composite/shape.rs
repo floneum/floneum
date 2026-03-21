@@ -106,10 +106,15 @@ where
         length: usize,
     ) -> Tensor<R, D, MapLayout<&B, R>> {
         let dim = dim.resolve();
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().narrow(dim, start, length)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.narrow(dim, start, length)),
-        }
+        let shape = self.shape();
+        let slices: [std::ops::Range<usize>; R] = std::array::from_fn(|i| {
+            if i == dim {
+                start..(start + length)
+            } else {
+                0..shape[i]
+            }
+        });
+        self.slice(slices)
     }
 
     /// Split the tensor into chunks along a given dimension.
@@ -140,7 +145,17 @@ where
     /// # Arguments
     /// * `repeats` - Number of times to repeat along each dimension
     pub fn repeat(&self, repeats: [usize; R]) -> Tensor<R, D> {
-        self.dispatch_ref(|t| t.as_ref().repeat(repeats), |t| t.repeat(repeats))
+        let shape = self.shape();
+        // Concatenate copies along each dimension
+        let mut result: Tensor<R, D> = self.to_concrete();
+        for dim in 0..R {
+            if repeats[dim] > 1 {
+                let copies: Vec<Tensor<R, D>> =
+                    (0..repeats[dim]).map(|_| result.clone()).collect();
+                result = cat(copies, dim);
+            }
+        }
+        result
     }
 
     /// Squeeze a dimension of size 1.
@@ -152,10 +167,12 @@ where
         ConcreteTensor<D, R>: fusor_cpu::LastRank<R2, D>,
         fusor_core::Tensor<R, D>: fusor_core::LastRank<R2, D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().squeeze(dim)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.squeeze(dim)),
-        }
+        let shape = self.shape();
+        assert_eq!(shape[dim], 1, "Squeeze dimension must have size 1");
+        let new_shape: [usize; R2] = std::array::from_fn(|i| {
+            if i < dim { shape[i] } else { shape[i + 1] }
+        });
+        self.reshape(new_shape)
     }
 
     /// Unsqueeze (add a dimension of size 1).
@@ -167,10 +184,11 @@ where
         ConcreteTensor<D, R>: fusor_cpu::NextRank<R2, D>,
         fusor_core::Tensor<R, D>: fusor_core::NextRank<R2, D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().unsqueeze(dim)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.unsqueeze(dim)),
-        }
+        let shape = self.shape();
+        let new_shape: [usize; R2] = std::array::from_fn(|i| {
+            if i < dim { shape[i] } else if i == dim { 1 } else { shape[i - 1] }
+        });
+        self.reshape(new_shape)
     }
 
     /// Squeeze multiple dimensions of size 1.
@@ -189,10 +207,19 @@ where
         ConcreteTensor<D, R>: fusor_cpu::SmallerRank<R2, DIFF, D>,
         fusor_core::Tensor<R, D>: fusor_core::SmallerRank<DIFF, R2, D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().squeeze_dims(axes)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.squeeze_dims(axes)),
+        let shape = self.shape();
+        for &ax in &axes {
+            assert_eq!(shape[ax], 1, "Squeeze dimension {} must have size 1", ax);
         }
+        // Build new shape by skipping squeezed axes
+        let mut new_dims = Vec::with_capacity(R2);
+        for i in 0..R {
+            if !axes.contains(&i) {
+                new_dims.push(shape[i]);
+            }
+        }
+        let new_shape: [usize; R2] = std::array::from_fn(|i| new_dims[i]);
+        self.reshape(new_shape)
     }
 
     /// Unsqueeze multiple dimensions (add dimensions of size 1).
@@ -211,10 +238,21 @@ where
         ConcreteTensor<D, R>: fusor_cpu::LargerRank<R2, DIFF, D>,
         fusor_core::Tensor<R, D>: fusor_core::LargerRank<DIFF, R2, D>,
     {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().unsqueeze_dims(axes)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.unsqueeze_dims(axes)),
-        }
+        let shape = self.shape();
+        let new_shape: [usize; R2] = {
+            let mut result = [0usize; R2];
+            let mut old_idx = 0;
+            for i in 0..R2 {
+                if axes.contains(&i) {
+                    result[i] = 1;
+                } else {
+                    result[i] = shape[old_idx];
+                    old_idx += 1;
+                }
+            }
+            result
+        };
+        self.reshape(new_shape)
     }
 
     /// Create a sliding window view of the tensor (zero-copy).
@@ -328,11 +366,27 @@ where
     D: SimdElement + DataType + Default,
     B: TensorBacking<R, Elem = D>,
 {
-    dispatch_vec(
-        tensors,
-        |cpu_tensors| Tensor::Cpu(fusor_cpu::Tensor::cat(cpu_tensors, dim)),
-        |gpu_tensors| Tensor::Gpu(fusor_core::Tensor::cat(gpu_tensors, dim)),
-    )
+    let tensors: Vec<Tensor<R, D>> = tensors.into_iter().map(|t| t.to_concrete()).collect();
+    assert!(!tensors.is_empty(), "Cannot cat empty list of tensors");
+
+    let first_shape = tensors[0].shape();
+    let total_dim_size: usize = tensors.iter().map(|t| t.shape()[dim]).sum();
+    let new_shape: [usize; R] = std::array::from_fn(|i| {
+        if i == dim { total_dim_size } else { first_shape[i] }
+    });
+
+    // Create the output tensor with splat, then slice_assign each tensor into it
+    let mut result = Tensor::splat(&tensors[0].device(), D::default(), new_shape);
+    let mut offset = 0;
+    for tensor in &tensors {
+        let len = tensor.shape()[dim];
+        let slice: [std::ops::Range<usize>; R] = std::array::from_fn(|i| {
+            if i == dim { offset..(offset + len) } else { 0..new_shape[i] }
+        });
+        result = result.slice_assign(slice, tensor);
+        offset += len;
+    }
+    result
 }
 
 /// Stack tensors along a new dimension.
@@ -350,11 +404,12 @@ where
     fusor_core::Tensor<R, D>: fusor_core::NextRank<R2, D>,
     B: TensorBacking<R, Elem = D>,
 {
-    dispatch_vec(
-        tensors,
-        |cpu_tensors| Tensor::Cpu(fusor_cpu::Tensor::stack(cpu_tensors, dim)),
-        |gpu_tensors| Tensor::Gpu(fusor_core::Tensor::stack(gpu_tensors, dim)),
-    )
+    // Unsqueeze each tensor at the target dim, then cat along that dim
+    let unsqueezed: Vec<Tensor<R2, D>> = tensors
+        .into_iter()
+        .map(|t| t.to_concrete().unsqueeze::<R2>(dim).to_concrete())
+        .collect();
+    cat(unsqueezed, dim)
 }
 
 /// Create a range tensor from start (inclusive) to end (exclusive).
@@ -373,13 +428,22 @@ pub fn arange_step<D>(
     step: D,
 ) -> Tensor<1, D, ConcreteTensor<D, 1>>
 where
-    D: SimdElement + DataType + Default + std::ops::Add<Output = D> + PartialOrd,
+    D: SimdElement + DataType + Default + std::ops::Add<Output = D> + PartialOrd + Copy,
 {
+    // Build the data on CPU, then transfer to the right device
+    let mut data = Vec::new();
+    let mut val = start;
+    while val < end {
+        data.push(val);
+        val = val + step;
+    }
+    let len = data.len();
     match device {
-        Device::Cpu => Tensor::Cpu(fusor_cpu::Tensor::arange_step(start, end, step)),
-        Device::Gpu(gpu_device) => Tensor::Gpu(fusor_core::Tensor::arange_step(
-            gpu_device, start, end, step,
-        )),
+        Device::Cpu => Tensor::Cpu(fusor_cpu::Tensor::from_slice([len], &data)),
+        Device::Gpu(gpu_device) => {
+            let t1d: fusor_core::Tensor<1, D> = fusor_core::Tensor::new(gpu_device, &data);
+            Tensor::Gpu(t1d)
+        }
     }
 }
 

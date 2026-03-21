@@ -1174,7 +1174,7 @@ async fn test_tensor() {
 async fn test_zeros_f16() {
     let device = Device::test_instance();
 
-    let tensor: Tensor<2, half::f16> = Tensor::zeros(&device, [2, 2]);
+    let tensor: Tensor<2, half::f16> = Tensor::splat(&device, half::f16::ZERO, [2, 2]);
 
     let as_slice = tensor.as_slice().await.unwrap();
     assert_eq!(as_slice[[0, 0]], half::f16::ZERO);
