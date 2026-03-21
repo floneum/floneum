@@ -157,19 +157,19 @@ async fn main() {
 
                 let is_last = global_step == total_steps;
                 let should_log = global_step % runtime.log_every == 0 || is_last;
-                let materialize_live_metrics = should_materialize_live_training_metrics(&device);
-                let loss_value = if should_log && materialize_live_metrics {
-                    Some(loss.raw().to_scalar().await.unwrap())
-                } else {
-                    None
-                };
+                // Always materialize the loss before backward(). On GPU, this
+                // forces the forward-pass compute graph to resolve, caching all
+                // intermediate buffers. The backward pass then only adds its own
+                // operations on top of already-resolved tensors, keeping the
+                // compute graph small enough for the GPU to handle.
+                let loss_value = loss.raw().to_scalar().await.unwrap();
                 let gradients = loss.backward().unwrap();
                 drop(loss);
                 drop(logits);
                 drop(causal_mask);
                 model = optimizer.step(model, gradients);
 
-                if let Some(loss_value) = loss_value {
+                if should_log {
                     let validation_metrics = evaluate_autoregressive_metrics(
                         &model,
                         &device,
@@ -189,16 +189,6 @@ async fn main() {
                         total_steps,
                         validation_metrics.loss,
                         validation_metrics.joint_action_acc * 100.0,
-                    );
-                } else if should_log {
-                    println!(
-                        "epoch {}/{} batch {:>3}/{} | global {:>6}/{} | lr={learning_rate:.6} | metrics=skipped_on_gpu",
-                        epoch + 1,
-                        runtime.epochs,
-                        batch_index + 1,
-                        epoch_batch_count,
-                        global_step,
-                        total_steps,
                     );
                 }
 
@@ -1081,10 +1071,6 @@ async fn evaluate_autoregressive_metrics(
         loss: total_nats / total_valid_tokens.max(1.0),
         joint_action_acc: joint_action_correct as f32 / joint_action_total.max(1) as f32,
     }
-}
-
-fn should_materialize_live_training_metrics(device: &Device) -> bool {
-    device.is_cpu()
 }
 
 fn scheduled_learning_rate(step: usize, total_steps: usize, runtime: &RuntimeConfig) -> f32 {

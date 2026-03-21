@@ -19,4 +19,6 @@ todo.md
 rust-analyzer
 *.gguf
 *.svg
+*.env
 fusor-ml/nanochat/examples/
+fusor-ml/feather-pipeline/output*/

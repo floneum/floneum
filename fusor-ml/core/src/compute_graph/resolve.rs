@@ -109,6 +109,9 @@ impl Resolver {
             }
         }
 
+        let total_ops = queued_operations.len();
+        eprintln!("[resolver] queued_operations={total_ops} targets={}", self.targets.len());
+
         // Build a remaining-consumer count. For each queued operation, we use
         // the Operation's visit_dependencies (which reflects post-optimization
         // fused dependencies) to count how many future operations read each
@@ -137,7 +140,12 @@ impl Resolver {
         let mut all_input_values = Vec::new();
         let mut kernel = GenericKernel::new();
         let mut total_kernels = 0;
+        let mut op_index = 0usize;
         for (node, operation) in queued_operations {
+            op_index += 1;
+            if total_ops >= 100 && op_index % 100 == 0 {
+                eprintln!("[resolver] executing op {op_index}/{total_ops}");
+            }
             let new_inputs = operation.inputs(graph);
             let constraint = operation.workgroup_shape_constraints(&device);
             let mut new_merged = current_constraints.clone();
@@ -166,12 +174,17 @@ impl Resolver {
                     );
                     // After flushing, free intermediate cached results whose
                     // consumers within this execution are all satisfied.
+                    let cached_before = graph.nodes.nodes.node_weights().filter(|n| n.cached.is_some()).count();
                     Self::release_dead_intermediates(
                         graph,
                         &pending_operations,
                         &mut remaining_consumers,
                         &target_set,
                     );
+                    let cached_after = graph.nodes.nodes.node_weights().filter(|n| n.cached.is_some()).count();
+                    if total_ops >= 100 && op_index % 100 == 0 {
+                        eprintln!("[resolver] op {op_index}: cached {cached_before} -> {cached_after} (freed {})", cached_before.saturating_sub(cached_after));
+                    }
                     // Submit the current command encoder so the GPU can
                     // reclaim buffers we just freed, then start a new one.
                     device.wgpu_queue().submit(Some(command_encoder.finish()));
