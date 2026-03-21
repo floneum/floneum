@@ -13,7 +13,7 @@ mod resolve;
 mod visualize;
 
 use crate::{
-    DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, QMatrix,
+    DataTypeEnum, Device, MatMulOperation, QMatrix,
     ReduceOperation, composite::where_cond::WhereCondOperation,
     compute_graph::resolve::ResolverResult, dequantize::DequantizeOperation,
     index_select::IndexSelectOperation, map_layout::MapLayoutOperation, mir::operation::Operation,
@@ -46,12 +46,8 @@ impl ComputeGraph {
         self.with_mut(|inner| inner.create_node(node))
     }
 
-    pub(crate) fn create_element_wise(&self, op: ElementWiseOperation) -> NodeIndex {
-        self.create_node(ComputeGraphNodeVariant::ElementWise(op))
-    }
-
-    pub(crate) fn create_pair_wise(&self, op: PairWiseOperation) -> NodeIndex {
-        self.create_node(ComputeGraphNodeVariant::PairWise(op))
+    pub(crate) fn create_nary(&self, op: NaryOperation) -> NodeIndex {
+        self.create_node(ComputeGraphNodeVariant::Nary(op))
     }
 
     pub(crate) fn create_mat_mul(&self, op: MatMulOperation) -> NodeIndex {
@@ -176,8 +172,6 @@ pub(crate) struct ComputeGraphNode {
 
 #[derive(Clone, Debug)]
 pub(crate) enum ComputeGraphNodeVariant {
-    ElementWise(ElementWiseOperation),
-    PairWise(PairWiseOperation),
     Nary(NaryOperation),
     SliceAssign(SliceAssignOperation),
     Resize(ResizeOperation),
@@ -195,11 +189,6 @@ pub(crate) enum ComputeGraphNodeVariant {
 impl ComputeGraphNodeVariant {
     fn visit_dependencies(&self, f: &mut dyn FnMut(NodeIndex)) {
         match &self {
-            ComputeGraphNodeVariant::ElementWise(op) => f(op.value),
-            ComputeGraphNodeVariant::PairWise(op) => {
-                f(op.first);
-                f(op.second);
-            }
             ComputeGraphNodeVariant::Nary(op) => {
                 for input in &op.inputs {
                     f(*input);

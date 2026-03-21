@@ -5,7 +5,7 @@ use std::ops::Range;
 use crate::{ConcreteTensor, Device, SimdElement, Tensor};
 use fusor_core::{DataType, Dim, ShapeWithOneHole};
 use fusor_cpu::{MapLayout, TensorBacking};
-use fusor_types::SlidingWindow;
+use fusor_types::{SlidingWindow, StrideSpec};
 
 impl<const R: usize, D, B> Tensor<R, D, B>
 where
@@ -34,19 +34,45 @@ where
     /// * `dim0` - First dimension to swap
     /// * `dim1` - Second dimension to swap
     pub fn transpose(&self, dim0: usize, dim1: usize) -> Tensor<R, D, MapLayout<&B, R>> {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().transpose(dim0, dim1)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.transpose(dim0, dim1)),
-        }
+        let shape = self.shape();
+        let specs: [StrideSpec; R] = std::array::from_fn(|i| {
+            if i == dim0 {
+                StrideSpec::dim(dim1, shape[dim1])
+            } else if i == dim1 {
+                StrideSpec::dim(dim0, shape[dim0])
+            } else {
+                StrideSpec::dim(i, shape[i])
+            }
+        });
+        self.restride(specs)
     }
 
     /// Slice the tensor along all dimensions.
     ///
     /// Returns a view into the tensor's data with updated layout.
     pub fn slice(&self, slices: [Range<usize>; R]) -> Tensor<R, D, MapLayout<&B, R>> {
+        let specs: [StrideSpec; R] = std::array::from_fn(|i| {
+            StrideSpec::dim(i, slices[i].len()).with_offset(slices[i].start)
+        });
+        self.restride(specs)
+    }
+
+    /// Create a view with stride patterns specified per output dimension.
+    ///
+    /// Each [`StrideSpec`] maps an output dimension to an input dimension's stride
+    /// with an optional multiplier. This is relative to the current strides, so it
+    /// composes correctly when the GPU optimizer changes upstream strides.
+    /// The output rank can differ from the input.
+    pub fn restride<const R2: usize>(
+        &self,
+        specs: [StrideSpec; R2],
+    ) -> Tensor<R2, D, MapLayout<&B, R2>> {
         match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().slice(slices)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.slice(slices)),
+            Tensor::Cpu(t) => {
+                let new_layout = t.layout().restride(&specs);
+                Tensor::Cpu(t.as_ref().restride_layout(new_layout))
+            }
+            Tensor::Gpu(t) => Tensor::Gpu(t.restride(specs)),
         }
     }
 
@@ -55,10 +81,11 @@ where
     /// # Arguments
     /// * `axes` - A permutation of [0, 1, ..., R-1] specifying the new order
     pub fn permute(&self, axes: [usize; R]) -> Tensor<R, D, MapLayout<&B, R>> {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().permute(axes)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.permute(axes)),
-        }
+        let shape = self.shape();
+        let specs: [StrideSpec; R] = std::array::from_fn(|i| {
+            StrideSpec::dim(axes[i], shape[axes[i]])
+        });
+        self.restride(specs)
     }
 
     /// Broadcast the tensor to a larger shape.
@@ -71,10 +98,21 @@ where
         &self,
         out_shape: [usize; R2],
     ) -> Tensor<R2, D, MapLayout<&B, R2>> {
-        match self {
-            Tensor::Cpu(t) => Tensor::Cpu(t.as_ref().broadcast_as(out_shape)),
-            Tensor::Gpu(t) => Tensor::Gpu(t.broadcast_as(out_shape)),
-        }
+        let shape = self.shape();
+        let specs: [StrideSpec; R2] = std::array::from_fn(|out_i| {
+            let in_i = out_i as isize - (R2 as isize - R as isize);
+            if in_i < 0 {
+                StrideSpec::dim_with(0, out_shape[out_i], 0)
+            } else {
+                let in_i = in_i as usize;
+                if shape[in_i] == 1 && out_shape[out_i] > 1 {
+                    StrideSpec::dim_with(in_i, out_shape[out_i], 0)
+                } else {
+                    StrideSpec::dim(in_i, out_shape[out_i])
+                }
+            }
+        });
+        self.restride(specs)
     }
 
     /// Expand the tensor to a larger shape (alias for broadcast_as).
@@ -107,14 +145,14 @@ where
     ) -> Tensor<R, D, MapLayout<&B, R>> {
         let dim = dim.resolve();
         let shape = self.shape();
-        let slices: [std::ops::Range<usize>; R] = std::array::from_fn(|i| {
+        let specs: [StrideSpec; R] = std::array::from_fn(|i| {
             if i == dim {
-                start..(start + length)
+                StrideSpec::dim(i, length).with_offset(start)
             } else {
-                0..shape[i]
+                StrideSpec::dim(i, shape[i])
             }
         });
-        self.slice(slices)
+        self.restride(specs)
     }
 
     /// Split the tensor into chunks along a given dimension.
@@ -630,5 +668,47 @@ mod tests {
         assert_eq!(slice[[1]], 0.5);
         assert_eq!(slice[[2]], 1.0);
         assert_eq!(slice[[3]], 1.5);
+    }
+
+    #[tokio::test]
+    async fn test_restride_skip_elements_cpu() {
+        use fusor_types::StrideSpec;
+        // [2, 3] tensor with default strides [3, 1]
+        // multiplier [1, 2] → strides [3, 2] (skip every other element in last dim)
+        let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
+        let restrided = t.restride([
+            StrideSpec::dim(0, 2),
+            StrideSpec::dim_with(1, 2, 2),
+        ]);
+        assert_eq!(restrided.shape(), [2, 2]);
+        let slice = restrided.as_slice().await.unwrap();
+        // strides [3, 2]: index [i, j] -> offset i*3 + j*2
+        assert_eq!(slice[[0, 0]], 1.0); // offset 0
+        assert_eq!(slice[[0, 1]], 3.0); // offset 2
+        assert_eq!(slice[[1, 0]], 4.0); // offset 3
+        assert_eq!(slice[[1, 1]], 6.0); // offset 5
+    }
+
+    #[tokio::test]
+    async fn test_restride_transpose_cpu() {
+        use fusor_types::StrideSpec;
+        // Transpose a [2, 3] tensor by swapping dimension stride references
+        let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let t: Tensor<2, f32> = Tensor::Cpu(fusor_cpu::Tensor::from_slice([2, 3], &data));
+        // Default strides are [3, 1]. Transpose: output dim 0 uses input dim 1's stride,
+        // output dim 1 uses input dim 0's stride.
+        let restrided = t.restride([
+            StrideSpec::dim(1, 3), // 3 rows in transposed view, stride = input_stride[1] = 1
+            StrideSpec::dim(0, 2), // 2 cols in transposed view, stride = input_stride[0] = 3
+        ]);
+        assert_eq!(restrided.shape(), [3, 2]);
+        let slice = restrided.as_slice().await.unwrap();
+        assert_eq!(slice[[0, 0]], 1.0); // offset 0
+        assert_eq!(slice[[0, 1]], 4.0); // offset 3
+        assert_eq!(slice[[1, 0]], 2.0); // offset 1
+        assert_eq!(slice[[1, 1]], 5.0); // offset 4
+        assert_eq!(slice[[2, 0]], 3.0); // offset 2
+        assert_eq!(slice[[2, 1]], 6.0); // offset 5
     }
 }

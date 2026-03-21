@@ -14,50 +14,6 @@ struct GraphVisPass {
 }
 
 impl GraphVisPass {
-    fn visit_element_wise(&mut self, key: NodeIndex, operation: &crate::ElementWiseOperation) {
-        let input = self.identities.get(&operation.value).unwrap();
-        let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
-        let id = Identity::quoted(format!(
-            "{} ({}) #{:?}",
-            operation.name(),
-            output_layout,
-            key
-        ));
-        self.statements.push(Stmt::Node {
-            id: id.clone(),
-            port: None,
-            attr: None,
-        });
-        self.statements.push(Stmt::Edge(
-            Edge::head_node(input.clone(), None).arrow_to_node(id.clone(), None),
-        ));
-        self.identities.insert(key, id.clone());
-    }
-
-    fn visit_pair_wise(&mut self, key: NodeIndex, operation: &crate::PairWiseOperation) {
-        let first = self.identities.get(&operation.first).unwrap();
-        let second = self.identities.get(&operation.second).unwrap();
-        let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
-        let id = Identity::quoted(format!(
-            "{} ({}) #{:?}",
-            operation.function.name(),
-            output_layout,
-            key
-        ));
-        self.statements.push(Stmt::Node {
-            id: id.clone(),
-            port: None,
-            attr: None,
-        });
-        self.statements.push(Stmt::Edge(
-            Edge::head_node(first.clone(), None).arrow_to_node(id.clone(), None),
-        ));
-        self.statements.push(Stmt::Edge(
-            Edge::head_node(second.clone(), None).arrow_to_node(id.clone(), None),
-        ));
-        self.identities.insert(key, id.clone());
-    }
-
     fn visit_nary(&mut self, key: NodeIndex, operation: &crate::nary_wise::NaryOperation) {
         let output_layout = self.layout_pass.output_layout.get(&key).unwrap();
         let id = Identity::quoted(format!("nary ({}) #{:?}", output_layout, key));
@@ -330,10 +286,6 @@ impl ComputeGraphInner {
 
             let node_data = self.nodes.nodes.node_weight(node).expect("Node not found");
             match &node_data.variant {
-                ComputeGraphNodeVariant::ElementWise(op) => {
-                    graph_vis_pass.visit_element_wise(node, op)
-                }
-                ComputeGraphNodeVariant::PairWise(op) => graph_vis_pass.visit_pair_wise(node, op),
                 ComputeGraphNodeVariant::Nary(op) => graph_vis_pass.visit_nary(node, op),
                 ComputeGraphNodeVariant::MatMul(op) => graph_vis_pass.visit_mat_mul(node, op),
                 ComputeGraphNodeVariant::QMatMul(op) => graph_vis_pass.visit_q_mat_mul(node, op),

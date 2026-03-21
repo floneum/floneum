@@ -8,14 +8,13 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use wgpu::CommandEncoder;
 
 use crate::{
-    ElementWiseFunctions,
     mir::{
         inputs::{KernelInputValue, MirValue},
         kernel::GenericKernel,
         operation::Operation,
         workgroup_shape::{self, WorkgroupShapeConstraints},
     },
-    nary_wise::{NaryExpr, NaryOperation},
+    nary_wise::{ExtractedUnaryChain, NaryExpr, NaryOperation, UnaryFunctionChain},
     quantized::matmul::QMatMulOperation,
     tensor::TensorData,
 };
@@ -364,42 +363,6 @@ impl Resolver {
 
     fn lower_node(&self, node: &ExecutionNode) -> Option<Arc<dyn Operation>> {
         match &node.variant {
-            ComputeGraphNodeVariant::ElementWise(op) => {
-                let inputs = vec![op.value];
-                let shape: Box<[_]> = op.shape().into();
-                let rank = shape.len();
-                // Construct NaryExpr for simple unary chain
-                let expression =
-                    self.wrap_with_element_wise_functions(NaryExpr::input(0, rank), &op.functions);
-
-                let final_output_datatype = op.functions.out_datatype();
-                let nary = NaryOperation {
-                    inputs,
-                    expression,
-                    shape,
-                    output_datatype: final_output_datatype,
-                };
-                Some(Arc::new(nary))
-            }
-            ComputeGraphNodeVariant::PairWise(op) => {
-                let inputs = vec![op.first, op.second];
-                let shape: Box<[_]> = op.shape().into();
-                let rank = shape.len();
-                let ty = op.function.datatype;
-                let expression = NaryExpr::Op {
-                    children: vec![NaryExpr::input(0, rank), NaryExpr::input(1, rank)],
-                    function: op.function.to_nary_function(ty, ty),
-                };
-
-                let final_output_datatype = op.function.datatype;
-                let nary = NaryOperation {
-                    inputs,
-                    expression,
-                    shape,
-                    output_datatype: final_output_datatype,
-                };
-                Some(Arc::new(nary))
-            }
             ComputeGraphNodeVariant::Nary(op) => Some(Arc::new(op.clone())),
             ComputeGraphNodeVariant::MatMul(op) => Some(Arc::new(op.clone())),
             ComputeGraphNodeVariant::Reduce(op) => Some(Arc::new(op.clone())),
@@ -455,14 +418,12 @@ impl Resolver {
                 .neighbors_undirected(node_idx)
                 .collect();
 
-            // 1. Convert elementwise/pairwise/where_cond to nary (canonical form)
+            // 1. Convert where_cond to nary (canonical form)
             // 2. Fuse naries together (combine expression trees)
             // 3. Try to fuse resulting nary into specialized ops (reduce, matmul, etc.)
             // Note: IndexSelect is converted to Nary in lower_node, not during optimization,
             // because its custom indexing pattern doesn't fuse well with other naries.
-            let changed = self.try_convert_elementwise_to_nary(graph, node_idx)
-                || self.try_convert_pairwise_to_nary(graph, node_idx)
-                || self.try_convert_where_cond_to_nary(graph, node_idx)
+            let changed = self.try_convert_where_cond_to_nary(graph, node_idx)
                 || self.try_fuse_naries(graph, node_idx)
                 || self.try_fuse_into_reduce(graph, node_idx)
                 || self.try_fuse_into_matmul(graph, node_idx)
@@ -544,72 +505,6 @@ impl Resolver {
     }
 
     // Rules
-
-    /// Convert an ElementWise operation to a simple Nary operation with one input.
-    fn try_convert_elementwise_to_nary(
-        &mut self,
-        graph: &mut ComputeGraphInner,
-        node_idx: ExecutionNodeIndex,
-    ) -> bool {
-        let node_variant = self.execution_graph[node_idx].variant.clone();
-
-        let ComputeGraphNodeVariant::ElementWise(op) = node_variant else {
-            return false;
-        };
-
-        let inputs = vec![op.value];
-        let shape: Box<[_]> = op.shape().into();
-        let rank = shape.len();
-        let expression =
-            self.wrap_with_element_wise_functions(NaryExpr::input(0, rank), &op.functions);
-        let output_datatype = op.functions.out_datatype();
-
-        let nary = NaryOperation {
-            inputs,
-            expression,
-            shape,
-            output_datatype,
-        };
-
-        self.execution_graph[node_idx].variant = ComputeGraphNodeVariant::Nary(nary.clone());
-        self.add_physical_dependencies(graph, node_idx, &nary.inputs);
-
-        true
-    }
-
-    /// Convert a PairWise operation to a simple Nary operation with two inputs.
-    fn try_convert_pairwise_to_nary(
-        &mut self,
-        graph: &mut ComputeGraphInner,
-        node_idx: ExecutionNodeIndex,
-    ) -> bool {
-        let node_variant = self.execution_graph[node_idx].variant.clone();
-
-        let ComputeGraphNodeVariant::PairWise(op) = node_variant else {
-            return false;
-        };
-
-        let inputs = vec![op.first, op.second];
-        let shape: Box<[_]> = op.shape().into();
-        let rank = shape.len();
-        let ty = op.function.datatype;
-        let expression = NaryExpr::Op {
-            children: vec![NaryExpr::input(0, rank), NaryExpr::input(1, rank)],
-            function: op.function.to_nary_function(ty, ty),
-        };
-
-        let nary = NaryOperation {
-            inputs,
-            expression,
-            shape,
-            output_datatype: ty,
-        };
-
-        self.execution_graph[node_idx].variant = ComputeGraphNodeVariant::Nary(nary.clone());
-        self.add_physical_dependencies(graph, node_idx, &nary.inputs);
-
-        true
-    }
 
     /// Convert a WhereCond operation to a Nary operation with Select expression.
     fn try_convert_where_cond_to_nary(
@@ -944,12 +839,13 @@ impl Resolver {
         }
     }
 
-    /// Try to extract ElementWiseOperation from a node variant (only Nary with single input can be converted).
-    fn try_get_elementwise(
+    /// Try to extract a unary function chain from a node variant.
+    /// Only Nary ops with a single input and element-wise access can be converted.
+    fn try_get_unary_chain(
         variant: &ComputeGraphNodeVariant,
-    ) -> Option<crate::ElementWiseOperation> {
+    ) -> Option<ExtractedUnaryChain> {
         match variant {
-            ComputeGraphNodeVariant::Nary(nary) => nary.try_into_elementwise_op(),
+            ComputeGraphNodeVariant::Nary(nary) => nary.try_extract_unary_chain(),
             _ => None,
         }
     }
@@ -961,7 +857,7 @@ impl Resolver {
     ) -> bool {
         let node_variant = self.execution_graph[node_idx].variant.clone();
 
-        let Some(el_op) = Self::try_get_elementwise(&node_variant) else {
+        let Some(el_op) = Self::try_get_unary_chain(&node_variant) else {
             return false;
         };
 
@@ -983,7 +879,7 @@ impl Resolver {
         let mut existing_post = new_reduce.post_element_wise.functions.clone();
         existing_post.extend(el_op.functions.functions.iter().cloned());
         new_reduce.post_element_wise =
-            ElementWiseFunctions::new(existing_post, reduce_op.post_element_wise.input_datatype());
+            UnaryFunctionChain::new(existing_post, reduce_op.post_element_wise.input_datatype());
 
         self.execution_graph[node_idx].variant =
             ComputeGraphNodeVariant::Reduce(new_reduce.clone());
@@ -1010,7 +906,7 @@ impl Resolver {
         let node_variant = self.execution_graph[node_idx].variant.clone();
 
         // Post-op: fuse elementwise after matmul
-        if let Some(el_op) = Self::try_get_elementwise(&node_variant) {
+        if let Some(el_op) = Self::try_get_unary_chain(&node_variant) {
             let input_inner = el_op.value;
             if !self.check_cached(graph, input_inner)
                 && let Some(input_exec_idx) = self.get_input_node_in_exec_graph(input_inner)
@@ -1020,7 +916,7 @@ impl Resolver {
                     let mut new_matmul = matmul_op.clone();
                     let mut existing_post = new_matmul.post_element_wise.functions.clone();
                     existing_post.extend(el_op.functions.functions.iter().cloned());
-                    new_matmul.post_element_wise = ElementWiseFunctions::new(
+                    new_matmul.post_element_wise = UnaryFunctionChain::new(
                         existing_post,
                         matmul_op.post_element_wise.input_datatype(),
                     );
@@ -1054,7 +950,7 @@ impl Resolver {
             if !self.check_cached(graph, matmul_op.first)
                 && let Some(first_exec) = self.get_input_node_in_exec_graph(matmul_op.first)
                 && let Some(el_op) =
-                    Self::try_get_elementwise(&self.execution_graph[first_exec].variant)
+                    Self::try_get_unary_chain(&self.execution_graph[first_exec].variant)
             {
                 new_matmul.first = el_op.value;
                 new_matmul.pre_element_wise[0] = el_op.functions.clone();
@@ -1065,7 +961,7 @@ impl Resolver {
             if !self.check_cached(graph, matmul_op.second)
                 && let Some(second_exec) = self.get_input_node_in_exec_graph(matmul_op.second)
                 && let Some(el_op) =
-                    Self::try_get_elementwise(&self.execution_graph[second_exec].variant)
+                    Self::try_get_unary_chain(&self.execution_graph[second_exec].variant)
             {
                 new_matmul.second = el_op.value;
                 new_matmul.pre_element_wise[1] = el_op.functions.clone();
@@ -1114,7 +1010,7 @@ impl Resolver {
         node_idx: ExecutionNodeIndex,
     ) -> bool {
         let node_variant = self.execution_graph[node_idx].variant.clone();
-        let Some(el_op) = Self::try_get_elementwise(&node_variant) else {
+        let Some(el_op) = Self::try_get_unary_chain(&node_variant) else {
             return false;
         };
 
@@ -1135,7 +1031,7 @@ impl Resolver {
         let mut new_deq = deq_op.clone();
         let mut existing_post = new_deq.post_dequantize.functions.clone();
         existing_post.extend(el_op.functions.functions.iter().cloned());
-        new_deq.post_dequantize = ElementWiseFunctions::new(existing_post, deq_op.datatype);
+        new_deq.post_dequantize = UnaryFunctionChain::new(existing_post, deq_op.datatype);
 
         self.execution_graph[node_idx].variant = ComputeGraphNodeVariant::Dequantize(new_deq);
 
@@ -1233,20 +1129,4 @@ impl Resolver {
         );
     }
 
-    /// Wrap an expression with element-wise functions (each becomes a unary Op node)
-    fn wrap_with_element_wise_functions(
-        &self,
-        mut expr: NaryExpr,
-        funcs: &ElementWiseFunctions,
-    ) -> NaryExpr {
-        let mut current_input_type = funcs.input_datatype();
-        for func in funcs.functions.iter() {
-            expr = NaryExpr::Op {
-                children: vec![expr],
-                function: func.to_nary_function(current_input_type),
-            };
-            current_input_type = func.datatype;
-        }
-        expr
-    }
 }

@@ -1,7 +1,8 @@
 use std::fmt::{Display, Write};
 
 use crate::{
-    Dim, ElementWiseFunctions, LastRank, LastRankInner, NextRankInner,
+    Dim, LastRank, LastRankInner, NextRankInner,
+    nary_wise::UnaryFunctionChain,
     mir::{
         globals::KernelGlobalSpace,
         operation::Operation,
@@ -39,9 +40,9 @@ fn unsqueeze_dim<const N: usize, const O: usize, D: DataType>(
 #[derive(Debug, Clone)]
 pub(crate) struct ReduceOperation {
     pub(crate) value: NodeIndex,
-    pub(crate) pre_element_wise: ElementWiseFunctions,
+    pub(crate) pre_element_wise: UnaryFunctionChain,
     pub(crate) function: ReduceFunction,
-    pub(crate) post_element_wise: ElementWiseFunctions,
+    pub(crate) post_element_wise: UnaryFunctionChain,
     pub(crate) axis: usize,
     pub(crate) shape: Box<[usize]>,
 }
@@ -51,9 +52,9 @@ impl ReduceOperation {
         let datatype = function.datatype();
         Self {
             value,
-            pre_element_wise: ElementWiseFunctions::empty(datatype),
+            pre_element_wise: UnaryFunctionChain::empty(datatype),
             function,
-            post_element_wise: ElementWiseFunctions::empty(datatype),
+            post_element_wise: UnaryFunctionChain::empty(datatype),
             axis,
             shape: shape.into(),
         }

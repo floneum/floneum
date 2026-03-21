@@ -368,9 +368,47 @@ async fn generate_interactive_completion(
     let mut rng = StdRng::seed_from_u64(seed);
     let mut tokens = prompt_tokens.to_vec();
 
-    for _ in 0..max_tokens {
+    let prompt_names: Vec<&str> = prompt_tokens
+        .iter()
+        .map(|&t| tokenizer.token_name(t))
+        .collect();
+    eprintln!(
+        "[DEBUG] generate_interactive_completion: block_size={}, prompt_len={}, prompt={:?}",
+        block_size,
+        prompt_tokens.len(),
+        prompt_names
+    );
+
+    for step in 0..max_tokens {
         let (context, last_index) =
             autoregressive_context(&tokens, tokenizer.eot_token(), block_size);
+
+        let context_names: Vec<&str> = context
+            .iter()
+            .map(|&t| tokenizer.token_name(t))
+            .collect();
+        eprintln!(
+            "[DEBUG] step={}: context_len={}, last_index={}, context={:?}",
+            step,
+            context.len(),
+            last_index,
+            context_names
+        );
+
+        // Compute canvas state indices for logging
+        if let Some(spec) = model.canvas_state_spec() {
+            let indexes =
+                canvas_state_indexes(tokenizer, std::slice::from_ref(&context), spec);
+            eprintln!(
+                "[DEBUG] step={}: canvas_x={:?}, canvas_y={:?}, pen={:?}",
+                step, indexes.cursor_x[0], indexes.cursor_y[0], indexes.pen_state[0]
+            );
+            eprintln!(
+                "[DEBUG] step={}: canvas_spec: vocab_size={}, offset={}",
+                step, spec.coordinate_vocab_size, spec.coordinate_offset
+            );
+        }
+
         let position_values = position_indexes(1, context.len().max(1));
         let position_inputs: Tensor<2, u32> = Tensor::new(device, &position_values);
         let causal_mask = fusor::cache::AttentionMask::<f32>::causal(device, context.len().max(1));
@@ -393,6 +431,33 @@ async fn generate_interactive_completion(
         let direction_logits: Vec<Vec<Vec<f32>>> =
             logits.direction.as_slice().await.unwrap().to_vec3();
         let count_logits: Vec<Vec<Vec<f32>>> = logits.count.as_slice().await.unwrap().to_vec3();
+
+        let ml = &mode_logits[0][last_index];
+        let dl = &direction_logits[0][last_index];
+        let cl = &count_logits[0][last_index];
+        eprintln!(
+            "[DEBUG] step={}: mode_logits={:?}",
+            step, ml
+        );
+        // Log top-3 direction logits
+        let mut dir_indexed: Vec<(usize, f32)> =
+            dl.iter().copied().enumerate().collect();
+        dir_indexed.sort_by(|a, b| b.1.total_cmp(&a.1));
+        let top3_dir: Vec<(usize, f32)> = dir_indexed.into_iter().take(3).collect();
+        eprintln!(
+            "[DEBUG] step={}: top3_direction={:?}",
+            step, top3_dir
+        );
+        // Log top-3 count logits
+        let mut count_indexed: Vec<(usize, f32)> =
+            cl.iter().copied().enumerate().collect();
+        count_indexed.sort_by(|a, b| b.1.total_cmp(&a.1));
+        let top3_count: Vec<(usize, f32)> = count_indexed.into_iter().take(3).collect();
+        eprintln!(
+            "[DEBUG] step={}: top3_count={:?}",
+            step, top3_count
+        );
+
         let next = decode_next_action_token(
             tokenizer,
             &context[..=last_index],
@@ -403,6 +468,12 @@ async fn generate_interactive_completion(
             runtime.sample_top_k,
             &mut rng,
             mode,
+        );
+        eprintln!(
+            "[DEBUG] step={}: predicted token={} ({})",
+            step,
+            next,
+            tokenizer.token_name(next)
         );
         tokens.push(next);
         if next == tokenizer.eot_token() {

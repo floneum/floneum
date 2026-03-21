@@ -1,98 +1,27 @@
-use std::{
-    fmt::Display,
-    ops::{Add, Div, Mul, Sub},
-};
+use std::ops::{Add, Div, Mul, Sub};
 
 use crate::{
-    ElementWiseFunction, MaxRank, Tensor,
-    compute_graph::NodeIndex,
-    tensor::{DataType, DataTypeEnum},
+    MaxRank, Tensor,
+    nary_wise::NaryFunction,
+    tensor::DataType,
 };
 
-#[derive(Clone, Debug)]
-pub(crate) struct PairWiseOperation {
-    pub(crate) first: NodeIndex,
-    pub(crate) second: NodeIndex,
-    pub(crate) function: PairWiseFunction,
-    shape: Box<[usize]>,
-}
-
-impl PairWiseOperation {
-    pub fn new(
-        function: PairWiseFunction,
-        first: NodeIndex,
-        second: NodeIndex,
-        shape: &[usize],
-    ) -> Self {
-        Self {
-            function,
-            first,
-            second,
-            shape: shape.into(),
-        }
-    }
-
-    pub fn shape(&self) -> &[usize] {
-        &self.shape
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct PairWiseFunction {
-    pub(crate) name: Option<String>,
-    pub(crate) operation: String,
-    pub(crate) datatype: DataTypeEnum,
-}
-
-impl PairWiseFunction {
-    pub fn new(operation: impl Display, datatype: DataTypeEnum) -> Self {
-        Self {
-            name: None,
-            operation: operation.to_string(),
-            datatype,
-        }
-    }
-
-    pub fn with_name(mut self, name: impl ToString) -> Self {
-        self.name = Some(name.to_string());
-        self
-    }
-
-    pub(crate) fn name(&self) -> &str {
-        self.name.as_deref().unwrap_or("pair_wise")
-    }
-
-    /// Lower the function to an element-wise function where the a and b inputs are
-    /// the same.
-    pub(crate) fn lower_to_element_wise(self) -> ElementWiseFunction {
-        ElementWiseFunction::new(
-            format!("let a = input;\nlet b = input;\n{}", self.operation),
-            self.datatype,
-        )
-        .with_name(self.name())
-    }
-
-    pub(crate) fn to_nary_function(
-        &self,
-        input_a_type: DataTypeEnum,
-        input_b_type: DataTypeEnum,
-    ) -> crate::nary_wise::NaryFunction {
-        crate::nary_wise::NaryFunction {
-            name: self.name.clone(),
-            operation: self.operation.clone(),
-            input_names: vec!["a".to_string(), "b".to_string()],
-            input_types: vec![input_a_type, input_b_type],
-            output_type: self.datatype,
-        }
-    }
-}
-
-fn pairwise_op<const R: usize, T: DataType>(
+fn binary_op<const R: usize, T: DataType>(
     lhs: &Tensor<R, T>,
     rhs: &Tensor<R, T>,
-    function: PairWiseFunction,
+    name: &str,
+    operation: &str,
 ) -> Tensor<R, T> {
-    lhs.pair_wise(rhs, function)
+    lhs.binary_nary(
+        rhs,
+        NaryFunction::binary(
+            Some(name.to_string()),
+            operation.to_string(),
+            T::WGSL_TYPE,
+            T::WGSL_TYPE,
+            T::WGSL_TYPE,
+        ),
+    )
 }
 
 /// Macro to implement pairwise operators (Add, Sub, Mul, Div) for Tensor.
@@ -120,14 +49,11 @@ macro_rules! impl_pairwise_op {
             type Output = Tensor<R, T>;
 
             fn $method(self, rhs: &Tensor<R, T>) -> Self::Output {
-                pairwise_op(
+                binary_op(
                     self,
                     rhs,
-                    PairWiseFunction::new(
-                        concat!("let output = a ", $op_str, " b;"),
-                        T::WGSL_TYPE,
-                    )
-                    .with_name($op_name),
+                    $op_name,
+                    concat!("let output = a ", $op_str, " b;"),
                 )
             }
         }
@@ -435,11 +361,11 @@ macro_rules! impl_pairwise_method {
     ($method:ident, $wgsl_op:literal, $op_name:literal, $broadcast_method:ident, |$a:ident, $b:ident| $expr:expr) => {
         impl<const R: usize, T: DataType> Tensor<R, T> {
             pub fn $method(&self, other: &Self) -> Self {
-                pairwise_op(
+                binary_op(
                     self,
                     other,
-                    PairWiseFunction::new(concat!("let output = ", $wgsl_op, ";"), T::WGSL_TYPE)
-                        .with_name($op_name),
+                    $op_name,
+                    concat!("let output = ", $wgsl_op, ";"),
                 )
             }
 

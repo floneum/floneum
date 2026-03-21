@@ -26,8 +26,6 @@ impl LayoutPass {
                 continue;
             }
             match &node_data.variant {
-                ComputeGraphNodeVariant::ElementWise(op) => self.visit_element_wise(node, op),
-                ComputeGraphNodeVariant::PairWise(op) => self.visit_pair_wise(node, op),
                 ComputeGraphNodeVariant::Nary(op) => self.visit_nary(node, op),
                 ComputeGraphNodeVariant::MatMul(op) => self.visit_mat_mul(node, op),
                 ComputeGraphNodeVariant::QMatMul(op) => self.visit_q_mat_mul(node, op),
@@ -42,34 +40,6 @@ impl LayoutPass {
                 ComputeGraphNodeVariant::Custom(op) => self.visit_custom(node, op),
             }
         }
-    }
-
-    fn visit_element_wise(&mut self, key: NodeIndex, operation: &crate::ElementWiseOperation) {
-        let input = operation.value;
-        let Some(input_layout) = self.output_layout.get(&input) else {
-            self.queue.push_back(input);
-            self.queue.push_back(key);
-            return;
-        };
-        let output_layout = TensorLayoutInfo::new(
-            input_layout.layout().clone(),
-            operation.functions.out_datatype(),
-        );
-        self.output_layout.insert(key, output_layout);
-    }
-
-    fn visit_pair_wise(&mut self, key: NodeIndex, operation: &crate::PairWiseOperation) {
-        let Some(first_layout) = self.output_layout.get(&operation.first) else {
-            self.queue.push_back(operation.first);
-            self.queue.push_back(key);
-            return;
-        };
-        let Some(_) = self.output_layout.get(&operation.second) else {
-            self.queue.push_back(operation.second);
-            self.queue.push_back(key);
-            return;
-        };
-        self.output_layout.insert(key, first_layout.clone());
     }
 
     fn visit_nary(&mut self, key: NodeIndex, operation: &NaryOperation) {

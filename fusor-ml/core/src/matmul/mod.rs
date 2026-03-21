@@ -2,9 +2,10 @@ use crate::matmul::sgemm_params::gemm_parameters;
 use crate::matmul::sgemv_params::gemv_parameters;
 use crate::mir::operation::Operation;
 use crate::{
-    Device, ElementWiseFunctions, Tensor,
+    Device, Tensor,
     compute_graph::NodeIndex,
     mir::kernel::GenericKernel,
+    nary_wise::UnaryFunctionChain,
     tensor::{DataType, DataTypeEnum, TensorData},
 };
 
@@ -46,8 +47,8 @@ pub(crate) struct MatMulOperation {
     pub(crate) first_shape: Box<[usize]>,
     pub(crate) second_shape: Box<[usize]>,
     pub(crate) out_shape: Box<[usize]>,
-    pub(crate) pre_element_wise: [ElementWiseFunctions; 2],
-    pub(crate) post_element_wise: ElementWiseFunctions,
+    pub(crate) pre_element_wise: [UnaryFunctionChain; 2],
+    pub(crate) post_element_wise: UnaryFunctionChain,
     pub(crate) parameters: MatMulParams,
 }
 
@@ -108,10 +109,10 @@ impl MatMulOperation {
             out_shape: out_shape.into(),
             datatype,
             pre_element_wise: [
-                ElementWiseFunctions::empty(datatype),
-                ElementWiseFunctions::empty(datatype),
+                UnaryFunctionChain::empty(datatype),
+                UnaryFunctionChain::empty(datatype),
             ],
-            post_element_wise: ElementWiseFunctions::empty(datatype),
+            post_element_wise: UnaryFunctionChain::empty(datatype),
             parameters,
         }
     }

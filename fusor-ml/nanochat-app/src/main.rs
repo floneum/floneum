@@ -615,6 +615,7 @@ fn InteractivePad(
                         }
                         let mut next = prompt_tokens();
                         append_tokens_for_path(&tokenizer, &mut next, previous_point, point, true);
+                        pixel_perfect_filter(&tokenizer, &mut next);
                         prompt_tokens.set(next.clone());
                         prediction_tokens.set(Vec::new());
                         last_point.set(Some(point));
@@ -1257,10 +1258,55 @@ fn append_tokens_for_path(
     to: GridPoint,
     is_draw: bool,
 ) {
+    // Use Bresenham-style rasterization to produce smooth diagonal lines
+    // instead of the L-shaped paths that signum-only walking creates.
+    //
+    // For a line from (0,0) to (3,7) the old code produced SE_3 then S_4
+    // (an L-shape). This version interleaves diagonal and cardinal steps
+    // to approximate the true line: e.g. S, SE, S, SE, S, SE, S.
+    let total_dx = to.x - from.x;
+    let total_dy = to.y - from.y;
+    let abs_dx = total_dx.unsigned_abs() as usize;
+    let abs_dy = total_dy.unsigned_abs() as usize;
+    let step_x = total_dx.signum();
+    let step_y = total_dy.signum();
+
+    // Decompose into `minor` diagonal steps and `major - minor` cardinal
+    // steps along the longer axis, then interleave them evenly.
+    let minor = abs_dx.min(abs_dy);
+    let major = abs_dx.max(abs_dy);
+    if major == 0 {
+        return;
+    }
+
+    let (cardinal_dx, cardinal_dy) = if abs_dx >= abs_dy {
+        (step_x, 0)
+    } else {
+        (0, step_y)
+    };
+    let diagonal = (step_x, step_y);
+
+    // Bresenham-style interleave: distribute `minor` diagonal steps evenly
+    // among `major` total steps.  Each step is either cardinal-only or
+    // diagonal depending on the accumulated error.
+    let mut steps: Vec<(i32, i32)> = Vec::with_capacity(major);
+    let mut error: isize = 0;
+    for _ in 0..major {
+        error += minor as isize;
+        if 2 * error >= major as isize {
+            steps.push(diagonal);
+            error -= major as isize;
+        } else {
+            steps.push((cardinal_dx, cardinal_dy));
+        }
+    }
+
+    // Run-length encode consecutive same-direction steps into tokens.
+    let mode = if is_draw { 1u32 } else { 0 };
     let mut current = from;
-    while current != to {
-        let dx = (to.x - current.x).signum();
-        let dy = (to.y - current.y).signum();
+    let mut i = 0;
+    while i < steps.len() {
+        let (dx, dy) = steps[i];
         let direction_index = direction_index_from_delta(dx, dy);
         let legal_limit = tokenizer
             .legal_count_limit((current.x, current.y), direction_index)
@@ -1268,26 +1314,121 @@ fn append_tokens_for_path(
             .max(1);
 
         let mut count = 0usize;
-        while current != to && count < legal_limit {
-            let next_dx = (to.x - current.x).signum();
-            let next_dy = (to.y - current.y).signum();
-            if next_dx != dx || next_dy != dy {
+        while i < steps.len() && count < legal_limit {
+            if steps[i] != (dx, dy) {
                 break;
             }
             current.x += dx;
             current.y += dy;
             count += 1;
+            i += 1;
         }
 
         if count == 0 {
             break;
         }
 
-        prompt_tokens.push(tokenizer.token_from_components(
-            if is_draw { 1 } else { 0 },
-            direction_index,
-            count,
-        ));
+        prompt_tokens.push(tokenizer.token_from_components(mode, direction_index, count));
+    }
+}
+
+/// Pixel-perfect filter: removes L-shaped corners from the end of the token
+/// list.  When two consecutive count-1 draw tokens form perpendicular cardinal
+/// steps (e.g. E then S), the first is redundant — removing it yields a
+/// smoother diagonal (the second step effectively becomes SE).  This mirrors
+/// the approach used by Aseprite and other pixel-art editors.
+///
+/// The filter inspects the last three tokens (A, B, C) and removes B when:
+///   - A, B, and C are all draw tokens with count 1
+///   - B is cardinal (not diagonal)
+///   - A's direction ≠ B's direction ≠ C's direction  (a direction change at B)
+///   - A and C move in the same direction             (B is a detour)
+///
+/// Additionally handles the simpler two-token tail case: if the last two
+/// tokens are perpendicular cardinals with count 1, replace them with a
+/// single diagonal.
+fn pixel_perfect_filter(tokenizer: &StrokeTokenizer, tokens: &mut Vec<u32>) {
+    if tokens.len() < 2 {
+        return;
+    }
+
+    // Decode the last two (and optionally three) tokens.
+    let len = tokens.len();
+    let dec_last = tokenizer.decode_segment_token(tokens[len - 1]);
+    let dec_prev = tokenizer.decode_segment_token(tokens[len - 2]);
+
+    let (Some(last), Some(prev)) = (dec_last, dec_prev) else {
+        return;
+    };
+
+    // Both must be draw-mode, count-1 tokens.
+    if last.mode_index != 1 || prev.mode_index != 1 {
+        return;
+    }
+    if last.count != Some(1) || prev.count != Some(1) {
+        return;
+    }
+
+    let last_dir = last.direction_index.unwrap();
+    let prev_dir = prev.direction_index.unwrap();
+
+    if last_dir == prev_dir {
+        return;
+    }
+
+    // Compute the deltas for both directions.
+    let prev_delta = delta_from_direction_index(prev_dir);
+    let last_delta = delta_from_direction_index(last_dir);
+
+    let combined_dx = prev_delta.0 + last_delta.0;
+    let combined_dy = prev_delta.1 + last_delta.1;
+
+    // The combination must itself be a valid single-step direction (one of
+    // the 8 directions).  Two perpendicular cardinals combine into a diagonal;
+    // other combinations (e.g. opposite directions) do not.
+    if combined_dx.abs() > 1 || combined_dy.abs() > 1 {
+        return;
+    }
+    if combined_dx == 0 && combined_dy == 0 {
+        return;
+    }
+
+    // Three-token check: if there is a token before prev, use the A-B-C
+    // pattern.  Remove B (prev) only when A and C share a direction,
+    // confirming B was an unintentional detour.
+    if len >= 3 {
+        if let Some(before) = tokenizer.decode_segment_token(tokens[len - 3]) {
+            if before.mode_index == 1
+                && before.count == Some(1)
+                && before.direction_index == last.direction_index
+            {
+                // A == C direction — remove B (the middle corner pixel).
+                tokens.remove(len - 2);
+                return;
+            }
+            // A ≠ C — this isn't clearly an L-shape artifact; leave it alone.
+            return;
+        }
+    }
+
+    // Two-token tail: replace both perpendicular cardinals with one diagonal.
+    let diag_dir = direction_index_from_delta(combined_dx, combined_dy);
+    tokens.pop();
+    tokens.pop();
+    tokens.push(tokenizer.token_from_components(1, diag_dir, 1));
+}
+
+fn delta_from_direction_index(dir: u32) -> (i32, i32) {
+    match dir {
+        0 => (0, -1),  // N
+        1 => (1, -1),  // NE
+        2 => (1, 0),   // E
+        3 => (1, 1),   // SE
+        4 => (0, 1),   // S
+        5 => (-1, 1),  // SW
+        6 => (-1, 0),  // W
+        7 => (-1, -1), // NW
+        _ => (0, 0),
     }
 }
 

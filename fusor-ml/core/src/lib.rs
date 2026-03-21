@@ -5,7 +5,7 @@
 pub use device::*;
 pub use element_wise::CastTensor;
 pub use fusor_gguf::GgufReadError;
-pub use fusor_types::{Layout, SlidingWindow, TILE_SIZE, TensorSlice, slice_shape, slice_strides};
+pub use fusor_types::{Layout, SlidingWindow, StrideSpec, TILE_SIZE, TensorSlice, slice_shape, slice_strides};
 pub use quantized::*;
 pub use rank::*;
 pub use reduce::*;
@@ -15,9 +15,7 @@ pub use tensor::*;
 // Re-export wasm-compatible Send/Sync traits
 pub use wgpu::{WasmNotSend, WasmNotSendSync, WasmNotSync};
 
-pub(crate) use element_wise::*;
 pub use matmul::*;
-pub(crate) use pair_wise::*;
 pub use resize::ShapeWithOneHole;
 pub use varbuilder::{ShardedVarBuilder, VarBuilder};
 

@@ -11,12 +11,13 @@ use tabbycat::Graph;
 use wgpu::COPY_BUFFER_ALIGNMENT;
 
 use crate::{
-    Device, Dim, ElementWiseOperation, Layout, MatMulOperation, MatMulParams, PairWiseFunction,
-    PairWiseOperation, ReduceFunction, ReduceOperation,
+    Device, Dim, Layout, MatMulOperation, MatMulParams,
+    ReduceFunction, ReduceOperation,
     compute_graph::NodeIndex,
     index_select::IndexSelectOperation,
     map_layout::MapLayoutOperation,
     mir::operation::Operation,
+    nary_wise::{NaryExpr, NaryFunction, NaryOperation},
     quantized::{QMatrix, matmul::QMatMulOperation},
     resize::ResizeOperation,
     slice_assign::SliceAssignOperation,
@@ -266,19 +267,40 @@ impl LazyTensorData {
         Self::from_parts(device, info, key)
     }
 
-    pub(crate) fn element_wise(&self, function: ElementWiseOperation) -> Self {
+    pub(crate) fn unary_nary(&self, function: NaryFunction) -> Self {
         let device = self.device.clone();
         let mut info = self.info.clone();
-        info.datatype = function.functions.out_datatype();
-        let key = device.compute_graph().create_element_wise(function);
+        info.datatype = function.output_type;
+        let rank = info.rank();
+        let nary = NaryOperation {
+            inputs: vec![self.key],
+            expression: NaryExpr::Op {
+                children: vec![NaryExpr::input(0, rank)],
+                function,
+            },
+            shape: info.shape().into(),
+            output_datatype: info.datatype,
+        };
+        let key = device.compute_graph().create_nary(nary);
 
         Self::from_parts(device, info, key)
     }
 
-    pub(crate) fn pair_wise(&self, function: PairWiseOperation) -> Self {
+    pub(crate) fn binary_nary(&self, other_key: NodeIndex, function: NaryFunction, shape: &[usize]) -> Self {
         let device = self.device.clone();
-        let info = self.info.clone();
-        let key = device.compute_graph().create_pair_wise(function);
+        let mut info = self.info.clone();
+        info.datatype = function.output_type;
+        let rank = shape.len();
+        let nary = NaryOperation {
+            inputs: vec![self.key, other_key],
+            expression: NaryExpr::Op {
+                children: vec![NaryExpr::input(0, rank), NaryExpr::input(1, rank)],
+                function,
+            },
+            shape: shape.into(),
+            output_datatype: info.datatype,
+        };
+        let key = device.compute_graph().create_nary(nary);
 
         Self::from_parts(device, info, key)
     }
@@ -956,28 +978,27 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         self
     }
 
-    pub(crate) fn element_wise<D2: DataType>(
+    pub(crate) fn unary_nary<D2: DataType>(
         &self,
-        function: ElementWiseOperation,
+        function: NaryFunction,
     ) -> Tensor<R, D2> {
-        Tensor::from_parts(self.data.element_wise(function))
+        Tensor::from_parts(self.data.unary_nary(function))
     }
 
-    pub(crate) fn pair_wise(&self, other: &Self, function: PairWiseFunction) -> Self {
-        // If the two tensors are the same, we can lower this to a cheaper element wise operation
+    pub(crate) fn binary_nary(&self, other: &Self, function: NaryFunction) -> Self {
+        // If the two tensors are the same, we can lower this to a cheaper unary operation
         if self.data.key == other.data.key {
-            return self.element_wise(ElementWiseOperation::new(
-                self.datatype(),
-                self.key(),
-                function.lower_to_element_wise(),
-                self.shape().as_slice(),
-            ));
+            let unary = NaryFunction::unary(
+                function.name.clone(),
+                format!("let a = input;\nlet b = input;\n{}", function.operation),
+                function.input_types[0],
+                function.output_type,
+            );
+            return self.unary_nary(unary);
         }
 
         assert_eq!(self.shape(), other.shape());
-        let operation =
-            PairWiseOperation::new(function, self.data.key, other.data.key, self.shape());
-        Self::from_parts(self.data.pair_wise(operation))
+        Self::from_parts(self.data.binary_nary(other.data.key, function, self.shape()))
     }
 
     pub(crate) fn add_mat_mul(&self, other: &Self, parameters: Option<MatMulParams>) -> Self {
