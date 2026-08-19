@@ -32,7 +32,6 @@ kalosm-model-types.workspace = true
 kalosm-common = { workspace = true }
 thiserror.workspace = true
 safetensors = "0.4.5"
-ahash = "0.8.12"
 minijinja = { version = "2.5.0", features = ["json", "loader"] }
 minijinja-contrib = { version = "2.5.0", features = ["pycompat"] }
 
