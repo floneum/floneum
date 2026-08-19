@@ -1,11 +1,9 @@
 use std::fmt::Display;
 
-use kalosm_language_model::ChatMessage;
-use minijinja::{context, Environment, ErrorKind};
+use kalosm_language_model::{ChatMessage, MessageType};
+use minijinja::{context, Environment, ErrorKind, Value};
 use minijinja_contrib::pycompat;
 
-#[cfg(test)]
-use kalosm_language_model::MessageType;
 #[cfg(test)]
 use pretty_assertions::assert_eq;
 
@@ -13,15 +11,87 @@ pub(crate) struct HuggingFaceChatTemplate {
     environment: Environment<'static>,
 }
 
+fn role_name(role: MessageType) -> &'static str {
+    match role {
+        MessageType::SystemPrompt => "system",
+        MessageType::UserMessage => "user",
+        MessageType::ModelAnswer => "assistant",
+    }
+}
+
+fn template_messages(messages: &[ChatMessage]) -> Vec<Value> {
+    messages
+        .iter()
+        .map(|message| context! { role => role_name(message.role()), content => message.content() })
+        .collect()
+}
+
+fn rewrite_generation_tags(chat_template: &str) -> String {
+    let mut result = String::with_capacity(chat_template.len());
+    let mut rest = chat_template;
+
+    while let Some(start) = rest.find("{%") {
+        let (prefix, after_prefix) = rest.split_at(start);
+        result.push_str(prefix);
+        let Some(end) = after_prefix.find("%}") else {
+            result.push_str(after_prefix);
+            return result;
+        };
+        let tag = &after_prefix[2..end];
+        let trimmed = tag.trim();
+        let (start_trim, body) = if let Some(first) = trimmed.chars().next() {
+            if first == '-' || first == '+' {
+                (Some(first), trimmed[1..].trim_start())
+            } else {
+                (None, trimmed)
+            }
+        } else {
+            (None, trimmed)
+        };
+        let (body, end_trim) = if let Some(last) = body.chars().last() {
+            if last == '-' || last == '+' {
+                (body[..body.len() - last.len_utf8()].trim_end(), Some(last))
+            } else {
+                (body, None)
+            }
+        } else {
+            (body, None)
+        };
+        if body == "generation" || body == "endgeneration" {
+            result.push_str("{% ");
+            if let Some(start_trim) = start_trim {
+                result.push(start_trim);
+                result.push(' ');
+            }
+            result.push_str(if body == "generation" {
+                "if true"
+            } else {
+                "endif"
+            });
+            if let Some(end_trim) = end_trim {
+                result.push(' ');
+                result.push(end_trim);
+            }
+            result.push_str(" %}");
+        } else {
+            result.push_str(&after_prefix[..end + 2]);
+        }
+        rest = &after_prefix[end + 2..];
+    }
+
+    result.push_str(rest);
+    result
+}
+
 impl HuggingFaceChatTemplate {
     pub(crate) fn create(chat_template: impl Display) -> Result<Self, minijinja::Error> {
-        let chat_template = chat_template.to_string();
+        let chat_template = rewrite_generation_tags(&chat_template.to_string());
         let mut environment = Environment::new();
+        environment.set_trim_blocks(true);
+        environment.set_lstrip_blocks(true);
 
-        // enable python compatibility methods because most models are tested with python
         environment.set_unknown_method_callback(pycompat::unknown_method_callback);
 
-        // add the raise_exception function from huggingface templates to the environment
         let raise_exception = |err_text: String| -> Result<String, minijinja::Error> {
             Err(minijinja::Error::new(
                 ErrorKind::InvalidOperation,
@@ -29,8 +99,6 @@ impl HuggingFaceChatTemplate {
             ))
         };
         environment.add_function("raise_exception", raise_exception);
-
-        // compile the template expression in the environment
         environment.add_template_owned("main", chat_template)?;
 
         Ok(Self { environment })
@@ -44,11 +112,49 @@ impl HuggingFaceChatTemplate {
         add_generation_prompt: bool,
     ) -> Result<String, minijinja::Error> {
         let tools: Option<()> = None;
+        let messages = template_messages(messages);
         let ctx = context! { bos_token, eos_token, messages, add_generation_prompt, tools };
         let template = self.environment.get_template("main")?;
         let result = template.render(&ctx)?;
         Ok(result)
     }
+}
+
+#[test]
+fn test_generation_tag_is_ignored() {
+    let template = "{% for message in messages %}<|{{ message['role'] }}|>{% if message['role'] == 'assistant' %}{% generation %}{{ message['content'] }}{% endgeneration %}{% else %}{{ message['content'] }}{% endif %}{% endfor %}";
+    let template = HuggingFaceChatTemplate::create(template).unwrap();
+    let inputs = [
+        ChatMessage::new(MessageType::UserMessage, "Hello!".to_string()),
+        ChatMessage::new(MessageType::ModelAnswer, "Hi.".to_string()),
+    ];
+    let result = template.format("<s>", "</s>", &inputs, false).unwrap();
+    assert_eq!(result, "<|user|>Hello!<|assistant|>Hi.");
+}
+
+#[test]
+fn test_whitespace_control_matches_transformers() {
+    let template = "{% for message in messages %}\n{{ message['role'] }}\n{% endfor %}";
+    let template = HuggingFaceChatTemplate::create(template).unwrap();
+    let inputs = [
+        ChatMessage::new(MessageType::UserMessage, "Hello".to_string()),
+        ChatMessage::new(MessageType::ModelAnswer, "Hi".to_string()),
+    ];
+    let result = template.format("<s>", "</s>", &inputs, false).unwrap();
+    assert_eq!(result, "user\nassistant\n");
+}
+
+#[test]
+fn test_system_role_is_serialized_as_system() {
+    let template =
+        "{% if messages[0]['role'] == 'system' %}{{ messages[0]['content'] }}{% endif %}";
+    let template = HuggingFaceChatTemplate::create(template).unwrap();
+    let inputs = [ChatMessage::new(
+        MessageType::SystemPrompt,
+        "You are Qwen".to_string(),
+    )];
+    let result = template.format("<s>", "</s>", &inputs, false).unwrap();
+    assert_eq!(result, "You are Qwen");
 }
 
 #[test]
