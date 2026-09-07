@@ -69,6 +69,33 @@ pub fn wrong_member_count() -> u64 {
     WRONG_MEMBERS.load(Ordering::Relaxed)
 }
 
+/// Whether the tune race sweeps every class member of every launch instead
+/// of only the candidates worth timing.
+///
+/// Starts from `FUSOR_VERIFY_MEMBERS` and is settable from there on, because
+/// the sweep is a per-kernel correctness pass and a suite that reruns a case
+/// at several shapes does not need to pay for it at every one. It is by far
+/// the most expensive thing a resolve can do: one small sampling case races
+/// about 470 candidates under it.
+static VERIFY_MEMBERS: std::sync::OnceLock<std::sync::atomic::AtomicBool> =
+    std::sync::OnceLock::new();
+
+fn verify_members_flag() -> &'static std::sync::atomic::AtomicBool {
+    VERIFY_MEMBERS.get_or_init(|| {
+        std::sync::atomic::AtomicBool::new(std::env::var_os("FUSOR_VERIFY_MEMBERS").is_some())
+    })
+}
+
+/// Whether the member sweep is currently on. See [`set_verify_members`].
+pub fn verify_members() -> bool {
+    verify_members_flag().load(Ordering::Relaxed)
+}
+
+/// Turn the member sweep on or off for the resolves that follow.
+pub fn set_verify_members(on: bool) {
+    verify_members_flag().store(on, Ordering::Relaxed);
+}
+
 /// Proof that the holder owns a graph's `resolve_lock`.
 pub(crate) type ResolveGuard<'a> = parking_lot::MutexGuard<'a, ()>;
 
@@ -1854,7 +1881,7 @@ impl Session {
         // Member verification: race every candidate of every launch so each
         // gets value-checked, but adopt none — a plan that changes under
         // measurement would make suite dispatch counts nondeterministic.
-        let verify_members = std::env::var_os("FUSOR_VERIFY_MEMBERS").is_some();
+        let verify_members = verify_members();
         let min_macs = if verify_members {
             0
         } else {

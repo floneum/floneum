@@ -48,10 +48,9 @@ fn main() -> ExitCode {
     let _ = log::set_logger(&LOGGER).map(|()| log::set_max_level(log::LevelFilter::Warn));
     // Race every class member of every launch, value-checking each against
     // the selected plan, so a case covers the *class* rather than whichever
-    // member extraction happened to pick.
-    //
-    // SAFETY: set before any thread reads the environment.
-    unsafe { std::env::set_var("FUSOR_VERIFY_MEMBERS", "1") };
+    // member extraction happened to pick. A fuzzed case pays for this on one
+    // of its runs, not all of them (see `harness::fuzz_case`).
+    fusor::session::set_verify_members(true);
     let args: Vec<String> = std::env::args().skip(1).collect();
     // Everything after the flags is a case-name substring filter.
     let filter = args.iter().find(|a| !a.starts_with("--")).cloned();
