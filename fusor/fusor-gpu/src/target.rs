@@ -1316,6 +1316,15 @@ impl Target for GpuTarget {
         self.pool.alloc(bytes, persistence)
     }
 
+    fn copy(&self, src: &Buf) -> Result<Buf> {
+        let source = src
+            .downcast_ref::<crate::pool::GpuBuffer>()
+            .ok_or_else(|| Error::Device("copy source is not pooled".into()))?;
+        let dst = self.pool.alloc_with_usage(source.size, source.usage)?;
+        self.launcher.copy_buffer(src, &dst, source.size)?;
+        Ok(dst)
+    }
+
     fn wait(&self) -> Result<()> {
         self.launcher.poll_wait()
     }

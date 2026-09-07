@@ -16,6 +16,9 @@ const MAX_RENDERED_STEPS: usize = 80;
 const DETAIL_SWEEP_CONFIG: BenchmarkConfig = BenchmarkConfig::new(3, 3, 15);
 
 fn main() {
+    // Failures also land in the browser console (see `run_test_suite`),
+    // where a headless probe or a bug report can read them whole.
+    let _ = dioxus::logger::init(dioxus::logger::tracing::Level::INFO);
     dioxus::launch(App);
 }
 
@@ -254,6 +257,7 @@ async fn run_test_suite(mut progress: Signal<TestProgressState>, mut result: Sig
             let state = match &report.outcome {
                 Outcome::Pass | Outcome::Skipped(_) => StepState::Passed,
                 Outcome::Fail(message) => {
+                    dioxus::logger::tracing::error!("FAILED {}: {message}", report.case);
                     failures += 1;
                     if first_failure.is_none() {
                         first_failure = Some(format!("{}: {message}", report.case));

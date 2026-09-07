@@ -221,6 +221,10 @@ impl Backend {
     /// Copy a device buffer back to the host. One of exactly three host
     /// syncs, and the one that is awaited: on WebGPU the copy completes only
     /// when the browser's event loop runs, so it cannot be spun on.
+    fn copy(&self, buf: &Buf) -> Result<Buf> {
+        self.target().copy(buf)
+    }
+
     async fn download(&self, buf: &Buf, bytes: u64) -> Result<Vec<u8>> {
         match self {
             #[cfg(feature = "gpu")]
@@ -1413,6 +1417,22 @@ impl Session {
             None => raw,
             Some(g) => g.apply(&raw),
         })
+    }
+
+    /// A device-side copy of an already-resolved value's buffer, with the
+    /// layout that buffer carries. Nothing crosses to the host, so this is
+    /// the same call on every platform.
+    pub(crate) fn copy_device_locked(
+        &self,
+        _resolving: &ResolveGuard<'_>,
+        graph: &GraphRef,
+        id: Id,
+    ) -> Result<(Buf, Option<fusor_ir::shape::Layout>)> {
+        let buf = graph
+            .device_buf(id)
+            .ok_or_else(|| Error::Plan(format!("{id} has no device buffer; resolve it first")))?;
+        let copy = self.inner.device.copy(&buf)?;
+        Ok((copy, graph.device_layout(id)))
     }
 
     /// Bytes of an already-resolved value, blocking. Native only: on wasm a

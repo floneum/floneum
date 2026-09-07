@@ -130,12 +130,19 @@ impl Tensor {
 
     /// Materialize and re-leaf, cutting this value off from its producers.
     ///
-    /// Expensive: it resolves, reads the bytes back to the host and uploads
-    /// them into a fresh `Leaf::Buffer`.
+    /// Resolves this value and builds a fresh `Leaf::Buffer` on a device-side
+    /// copy of its bytes: the original keeps its buffer, the leaf owns the
+    /// copy, and nothing crosses to the host — so this is the same call on
+    /// every platform, the web included. The copy is what makes an in-place
+    /// write to either side invisible to the other.
     pub fn detach(&self) -> Result<Tensor> {
         let facts = self.facts();
-        let bytes = self.graph.read_back(self.id)?;
-        construction::upload(&self.graph, facts.dtype, &facts.shape, bytes)
+        let (buf, layout) = self.graph.copy_device(self.id)?;
+        let leaf = construction::leaf_buffer_node(&self.graph, facts.dtype, &facts.shape)?;
+        let layout = layout.map(std::sync::Arc::new);
+        self.graph
+            .set_device_buf_class(&[leaf.id], &buf, layout.as_ref());
+        Ok(leaf)
     }
 
     /// Put this external leaf's bytes on the device now; see
@@ -157,11 +164,11 @@ impl Tensor {
         Ok(leaf)
     }
 
-    /// [`Self::detach`], awaited.
+    /// [`Self::detach`], awaited. The copy never waits on the host, so this
+    /// completes at once; it is kept for callers written against the awaited
+    /// readback surface.
     pub async fn detach_async(&self) -> Result<Tensor> {
-        let facts = self.facts();
-        let bytes = self.graph.read_back_async(self.id).await?;
-        construction::upload(&self.graph, facts.dtype, &facts.shape, bytes)
+        self.detach()
     }
 
     /// Attach host bytes to this external leaf, invalidating any device copy.

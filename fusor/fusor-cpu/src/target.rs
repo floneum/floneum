@@ -141,6 +141,24 @@ impl Target for CpuTarget {
         Ok(buf)
     }
 
+    fn copy(&self, src: &Buf) -> Result<Buf> {
+        let source = src
+            .downcast_ref::<AlignedBuf>()
+            .ok_or_else(|| Error::Device("copy source is not an AlignedBuf".into()))?;
+        let dst = self.alloc(source.len() as u64, Persistence::Persistent)?;
+        let target = dst
+            .downcast_ref::<AlignedBuf>()
+            .ok_or_else(|| Error::Device("copy target is not an AlignedBuf".into()))?;
+        // SAFETY: `alloc` rounds up, so `target` is at least `source.len()`
+        // bytes; the two are distinct allocations; and a buffer the pool has
+        // just handed out has no other user. `as_mut_ptr` is the allocator's
+        // documented write path (see `alloc.rs`).
+        unsafe {
+            std::ptr::copy_nonoverlapping(source.as_ptr(), target.as_mut_ptr(), source.len());
+        }
+        Ok(dst)
+    }
+
     /// No-op: [`crate::pool::WorkerPool::parallel_for`] joins synchronously, so
     /// every dispatch has already retired when `launch` returns.
     fn wait(&self) -> Result<()> {
