@@ -172,7 +172,7 @@ impl BufferPool {
                         .iter()
                         .map(|(k, b)| k.size.saturating_mul(b.len() as u64))
                         .sum();
-                    let entries: usize = free.iter().map(|(_, b)| b.len()).sum();
+                    let entries: usize = free.values().map(Vec::len).sum();
                     eprintln!(
                         "[pool] tracked {} MB in {entries} entries across {} buckets; live_bytes {} MB",
                         tracked >> 20,
@@ -365,7 +365,7 @@ impl BufferPool {
     pub fn reclaim(&self) {
         let mut free = self.free.lock();
         let mut released = 0u64;
-        let keys: Vec<PoolKey> = free.iter().map(|(k, _)| *k).collect();
+        let keys: Vec<PoolKey> = free.keys().copied().collect();
         for key in keys {
             if let Some(bucket) = free.get_mut(&key) {
                 bucket.retain(|b| {
@@ -390,7 +390,7 @@ impl BufferPool {
             return;
         }
         let free = self.free.lock();
-        for (_, bucket) in free.iter() {
+        for bucket in free.values() {
             // The pool tracks in-use buffers now; poisoning one would
             // overwrite a live tensor.
             for buf in bucket.iter().filter(|b| b.refcount() == 1) {
