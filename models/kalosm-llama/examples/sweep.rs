@@ -8,9 +8,11 @@ use kalosm_llama::prelude::*;
 use std::io::Write;
 use std::time::Instant;
 
+type Preset = (&'static str, fn() -> LlamaSource);
+
 macro_rules! presets {
     ($($name:ident),* $(,)?) => {
-        fn presets() -> Vec<(&'static str, fn() -> LlamaSource)> {
+        fn presets() -> Vec<Preset> {
             vec![$((stringify!($name), LlamaSource::$name as fn() -> LlamaSource)),*]
         }
     };
@@ -189,7 +191,7 @@ fn main() {
         .try_init();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let all = presets();
-    let selected: Vec<(&'static str, fn() -> LlamaSource)> = if args.iter().any(|a| a == "--all") {
+    let selected: Vec<Preset> = if args.iter().any(|a| a == "--all") {
         all
     } else {
         all.into_iter()

@@ -49,10 +49,25 @@ pub use typed::{Axis, Element};
 /// [`crate::Tensor::into_dyn`] / [`crate::Tensor::as_dyn`]) when a rank or a
 /// dtype is *data*: a loader that reads it from a file, a pass that walks a
 /// heterogeneous list. Every op on it returns `Result`.
-#[derive(Clone)]
 pub struct Dyn {
     pub(crate) id: Id,
     pub(crate) graph: GraphRef,
+}
+
+impl Clone for Dyn {
+    fn clone(&self) -> Self {
+        self.graph.retain(self.id);
+        Self {
+            id: self.id,
+            graph: self.graph.clone(),
+        }
+    }
+}
+
+impl Drop for Dyn {
+    fn drop(&mut self) {
+        self.graph.release(self.id);
+    }
 }
 
 /// The in-crate spelling of [`Dyn`].

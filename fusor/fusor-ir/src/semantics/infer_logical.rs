@@ -341,7 +341,7 @@ fn check_restride_specs(specs: &[StrideSpec], in_rank: usize) -> Result<()> {
 /// view survive an upstream layout rewrite.
 ///
 /// A product or sum over a symbolic dim becomes a derived symbol
-/// ([`Dim::add`], [`Dim::mul`]), evaluated from the bindings at dispatch;
+/// (`Dim + Dim`, `Dim * Dim`), evaluated from the bindings at dispatch;
 /// only overflow falls to the opaque placeholder.
 pub fn restride_layout(input: &Layout, specs: &[StrideSpec]) -> Result<Layout> {
     check_restride_specs(specs, input.rank())?;
@@ -354,7 +354,7 @@ pub fn restride_layout(input: &Layout, specs: &[StrideSpec]) -> Result<Layout> {
             if s.multiplier == 0 {
                 Dim::Const(0)
             } else {
-                in_strides[s.input_dim as usize].mul(Dim::Const(s.multiplier as u64))
+                in_strides[s.input_dim as usize] * Dim::Const(s.multiplier as u64)
             }
         })
         .collect();
@@ -367,7 +367,7 @@ pub fn restride_layout(input: &Layout, specs: &[StrideSpec]) -> Result<Layout> {
             continue;
         }
         let stride = in_strides[s.input_dim as usize];
-        offset = offset.add(s.offset.mul(stride));
+        offset = offset + s.offset * stride;
     }
     Layout::from_parts(offset, &shape, &strides)
 }

@@ -128,8 +128,9 @@ impl Dim {
         Dim::Sym(SymId(DERIVED_BASE + i))
     }
 
-    /// `self + other`, folded when both are constant; `0` is the identity.
-    pub fn add(self, other: Dim) -> Dim {
+    /// `self + other`, spelled `+`: folded when both are constant, `0` the
+    /// identity, else a derived symbol.
+    fn plus(self, other: Dim) -> Dim {
         match (self, other) {
             (Dim::Const(x), Dim::Const(y)) => {
                 x.checked_add(y).map_or(Dim::Sym(OPAQUE_SYM), Dim::Const)
@@ -148,9 +149,9 @@ impl Dim {
         }
     }
 
-    /// `self * other`, folded when both are constant; `1` is the identity
-    /// and `0` annihilates.
-    pub fn mul(self, other: Dim) -> Dim {
+    /// `self * other` spelled as `*`: folded when both are constant, `1`
+    /// the identity, `0` annihilating, else a derived symbol.
+    fn times(self, other: Dim) -> Dim {
         match (self, other) {
             (Dim::Const(x), Dim::Const(y)) => {
                 x.checked_mul(y).map_or(Dim::Sym(OPAQUE_SYM), Dim::Const)
@@ -182,6 +183,20 @@ impl Dim {
                 None => resolve(s),
             },
         }
+    }
+}
+
+impl std::ops::Add for Dim {
+    type Output = Dim;
+    fn add(self, other: Dim) -> Dim {
+        self.plus(other)
+    }
+}
+
+impl std::ops::Mul for Dim {
+    type Output = Dim;
+    fn mul(self, other: Dim) -> Dim {
+        self.times(other)
     }
 }
 
@@ -339,7 +354,7 @@ impl Layout {
     }
 
     /// Row-major strides. A stride past a `Sym` axis is the product of the
-    /// extents inside it as a derived symbol ([`Dim::mul`]), materialized
+    /// extents inside it as a derived symbol (`Dim * Dim`), materialized
     /// into the uniform block at dispatch; only overflow leaves the opaque
     /// placeholder.
     pub fn row_major_strides(shape: &[Dim]) -> SmallVec<[Dim; 6]> {
@@ -347,7 +362,7 @@ impl Layout {
         let mut acc = Dim::Const(1);
         for axis in (0..shape.len()).rev() {
             out[axis] = acc;
-            acc = acc.mul(shape[axis]);
+            acc = acc * shape[axis];
         }
         out
     }

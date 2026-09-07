@@ -3,7 +3,6 @@
 //! On macOS, exceeding unified memory kills the OS rather than erroring, which
 //! is why the ceiling is a hard gate and not a warning.
 
-use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use fusor_ir::Result;
@@ -11,15 +10,10 @@ use fusor_ir::dtype::Persistence;
 use fusor_ir::error::Error;
 use fusor_ir::target::Buf;
 use parking_lot::Mutex;
+use rustc_hash::FxHashMap;
 
 use crate::target::GpuConfig;
 
-/// Buckets kept alive in the LRU.
-pub const POOL_BUCKETS: usize = if cfg!(target_arch = "wasm32") {
-    32
-} else {
-    128
-};
 /// Free buffers retained per bucket.
 pub const FREE_PER_BUCKET: usize = if cfg!(target_arch = "wasm32") { 1 } else { 4 };
 
@@ -64,7 +58,10 @@ pub struct GpuBuffer {
 pub struct BufferPool {
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
-    free: Mutex<lru::LruCache<PoolKey, Vec<Buf>>>,
+    /// Free-list buckets by size and usage. A plain map: a bounded cache
+    /// evicted whole buckets once a run used more sizes than its capacity,
+    /// dropping their tracking while `live_bytes` kept counting them.
+    free: Mutex<FxHashMap<PoolKey, Vec<Buf>>>,
     counters: Mutex<BufferPoolCounters>,
     ceiling_bytes: Mutex<u64>,
     poison: bool,
@@ -110,9 +107,7 @@ impl BufferPool {
         Self {
             device,
             queue,
-            free: Mutex::new(lru::LruCache::new(
-                NonZeroUsize::new(POOL_BUCKETS).expect("POOL_BUCKETS is nonzero"),
-            )),
+            free: Mutex::new(FxHashMap::default()),
             counters: Mutex::new(BufferPoolCounters::default()),
             ceiling_bytes: Mutex::new(ceiling),
             poison: config.poison_allocations,
@@ -173,6 +168,17 @@ impl BufferPool {
                             size * *pinned as u64 / (1 << 20)
                         );
                     }
+                    let tracked: u64 = free
+                        .iter()
+                        .map(|(k, b)| k.size.saturating_mul(b.len() as u64))
+                        .sum();
+                    let entries: usize = free.iter().map(|(_, b)| b.len()).sum();
+                    eprintln!(
+                        "[pool] tracked {} MB in {entries} entries across {} buckets; live_bytes {} MB",
+                        tracked >> 20,
+                        free.len(),
+                        live >> 20
+                    );
                 }
                 return Err(Error::Device(format!(
                     "gpu allocation of {size} bytes would exceed the {ceiling}-byte ceiling \
@@ -306,7 +312,7 @@ impl BufferPool {
         // test until it drops it.
         let released = {
             let mut free = self.free.lock();
-            let bucket = free.get_or_insert_mut(key, Vec::new);
+            let bucket = free.entry(key).or_default();
             if !bucket.iter().any(|b| b.addr() == addr) {
                 bucket.push(buf);
             }
@@ -446,7 +452,7 @@ impl BufferPool {
         };
         let released = {
             let mut free = self.free.lock();
-            let bucket = free.get_or_insert_mut(key, Vec::new);
+            let bucket = free.entry(key).or_default();
             let released = prune_bucket(bucket);
             bucket.push(buf.clone());
             released
@@ -613,7 +619,7 @@ fn pool_fields_are_send_sync() {
     fn assert<T: Send + Sync>() {}
     assert::<Arc<wgpu::Device>>();
     assert::<Arc<wgpu::Queue>>();
-    assert::<Mutex<lru::LruCache<PoolKey, Vec<Buf>>>>();
+    assert::<Mutex<FxHashMap<PoolKey, Vec<Buf>>>>();
     assert::<Mutex<BufferPoolCounters>>();
     assert::<Mutex<u64>>();
     assert::<bool>();

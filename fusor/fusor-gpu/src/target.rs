@@ -431,6 +431,7 @@ impl GpuTarget {
         // resolve, so the caller-owned buffers seed the map before anything
         // is allocated on top of them.
         let mut resolved: FxHashMap<Id, Buf> = binds.buffers.clone();
+        let mut pending: FxHashMap<Id, (u64, Persistence)> = FxHashMap::default();
         for buffer in &plan.buffers {
             if resolved.contains_key(&buffer.value) {
                 continue;
@@ -468,29 +469,30 @@ impl GpuTarget {
             }
             .ok_or_else(|| Error::Plan(format!("buffer {} has an unbound extent", buffer.value)))?;
             let bytes = elements.saturating_mul(buffer.dtype.byte_size()).max(4);
-            resolved.insert(buffer.value, self.pool.alloc(bytes, buffer.persistence)?);
+            // Not allocated yet: a step-local buffer lives from the first
+            // launch that binds it to the last, and phase 3 allocates and
+            // recycles it on that interval, so a plan's intermediates share
+            // pool buffers instead of all existing at once. A model whose
+            // whole forward is one lazy plan would otherwise need every
+            // intermediate resident together — a batch of 64 mask decodes
+            // past 22 GB — where an eager executor frees each as it goes.
+            pending.insert(buffer.value, (bytes, buffer.persistence));
+        }
+        // The last launch that binds each value, in plan order; the buffer
+        // returns to the pool right after that launch is encoded.
+        let mut last_use: FxHashMap<Id, usize> = FxHashMap::default();
+        for (launch_ix, launch) in plan.launches.iter().enumerate() {
+            for b in &launch.bindings {
+                last_use.insert(b.value, launch_ix);
+            }
         }
 
         let mut work: Vec<LaunchWork> = Vec::with_capacity(plan.launches.len());
         for (launch_ix, launch) in plan.launches.iter().enumerate() {
-            let mut ordered: Vec<_> = launch.bindings.iter().collect();
-            ordered.sort_by_key(|b| b.binding);
-            let mut buffers = Vec::with_capacity(ordered.len() + 1);
-            buffers.push(uniform_buf.clone());
-            for b in &ordered {
-                let buf = resolved.get(&b.value).cloned().ok_or_else(|| {
-                    Error::Plan(format!(
-                        "launch binds {} which the plan never allocates",
-                        b.value
-                    ))
-                })?;
-                buffers.push(buf);
-            }
             work.push(LaunchWork {
                 root: launch.root,
                 launch_ix,
                 grid: launch.grid,
-                buffers,
                 artifact: None,
             });
         }
@@ -526,7 +528,6 @@ impl GpuTarget {
                     root: work[i].root,
                     launch_ix: work[i].launch_ix,
                     grid: work[i].grid,
-                    buffers: work[i].buffers.clone(),
                     artifact: None,
                 })
                 .collect();
@@ -612,7 +613,7 @@ impl GpuTarget {
         // that dispatch alone.
         let focus_plan_ix = self.launcher.take_tuning_focus();
         let mut records = Vec::with_capacity(total);
-        for item in &work {
+        for item in &mut work {
             let artifact = item
                 .artifact
                 .as_ref()
@@ -620,14 +621,73 @@ impl GpuTarget {
             let gpu = artifact
                 .downcast_ref::<GpuArtifact>()
                 .ok_or_else(|| Error::Device("artifact is not a gpu pipeline".into()))?;
-            crate::launch::trace_binds(gpu.name, item.grid, &item.buffers);
-            let bind_group = self.launcher.bind_group(gpu, &item.buffers)?;
+            // This launch's buffers: the caller's, or the plan's, allocated
+            // at their first use here.
+            let launch = &plan.launches[item.launch_ix];
+            let mut ordered: Vec<_> = launch.bindings.iter().collect();
+            ordered.sort_by_key(|b| b.binding);
+            let mut buffers = Vec::with_capacity(ordered.len() + 1);
+            buffers.push(uniform_buf.clone());
+            for b in &ordered {
+                let buf = match resolved.get(&b.value) {
+                    Some(buf) => buf.clone(),
+                    None => {
+                        let (bytes, persistence) = pending.remove(&b.value).ok_or_else(|| {
+                            Error::Plan(format!(
+                                "launch binds {} which the plan never allocates",
+                                b.value
+                            ))
+                        })?;
+                        let buf = self.pool.alloc(bytes, persistence).map_err(|e| {
+                            let held: u64 = resolved
+                                .values()
+                                .filter_map(|b| b.downcast_ref::<crate::pool::GpuBuffer>())
+                                .map(|g| g.size)
+                                .sum();
+                            Error::Device(format!(
+                                "{e} (at launch {} of {}: {} plan buffers live holding {} MB, \
+                                 {} not yet allocated)",
+                                item.launch_ix,
+                                total,
+                                resolved.len(),
+                                held >> 20,
+                                pending.len()
+                            ))
+                        })?;
+                        resolved.insert(b.value, buf.clone());
+                        buf
+                    }
+                };
+                buffers.push(buf);
+            }
+            crate::launch::trace_binds(gpu.name, item.grid, &buffers);
+            let bind_group = self.launcher.bind_group(gpu, &buffers)?;
+            // `buffers` is dropped here: the bind group holds the device
+            // buffers, and a pool handle kept past this point would pin
+            // every intermediate for the whole resolve.
+            drop(buffers);
             records.push(CommandRecord::Dispatch {
                 name: gpu.name,
                 pipeline: gpu.pipeline.clone(),
                 bind_group,
                 grid: item.grid,
             });
+            // A step-local buffer whose last reader or writer is this launch
+            // returns to the pool now: the bind group keeps the device
+            // buffer alive, and dispatches execute in encoding order, so a
+            // later launch may reuse it.
+            for b in &ordered {
+                if last_use.get(&b.value) == Some(&item.launch_ix)
+                    && !binds.buffers.contains_key(&b.value)
+                    && plan
+                        .buffers
+                        .iter()
+                        .any(|p| p.value == b.value && p.persistence == Persistence::Step)
+                    && let Some(buf) = resolved.remove(&b.value)
+                {
+                    self.pool.recycle(buf);
+                }
+            }
         }
         let __t_bind = start.elapsed();
         // The focused indices are stated in plan order; the encoder counts
@@ -1123,7 +1183,6 @@ struct LaunchWork {
     /// Index into `plan.launches` (and the per-plan key vector).
     launch_ix: usize,
     grid: [u32; 3],
-    buffers: Vec<Buf>,
     artifact: Option<Artifact>,
 }
 
@@ -1153,10 +1212,8 @@ impl BindingEnv {
         self
     }
     fn dim(&self, d: fusor_ir::shape::Dim) -> Option<u64> {
-        match d {
-            fusor_ir::shape::Dim::Const(v) => Some(v),
-            fusor_ir::shape::Dim::Sym(s) => self.dims.get(&s).copied(),
-        }
+        // A derived symbol evaluates through the symbols it reaches.
+        d.evaluate(&mut |s| self.dims.get(&s).copied())
     }
 }
 

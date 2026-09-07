@@ -551,6 +551,10 @@ impl Session {
             }
         }
 
+        // Values whose last handle dropped release their buffers first, so a
+        // loop's dead batches never reach the pool ceiling.
+        graph.reap_dead();
+
         // Every requested value already has a device buffer: nothing to plan.
         if values.iter().all(|v| graph.device_buf(v.id).is_some()) {
             return Ok(None);
@@ -1075,12 +1079,12 @@ impl Session {
                 }
                 let mut by_value: FxHashMap<(usize, u64, u64), usize> = FxHashMap::default();
                 let mut regrouped = fam.group.clone();
-                for slot in 0..term.consts.len() {
+                for (slot, group) in regrouped.iter_mut().enumerate() {
                     if !fam.varying[slot] {
                         continue;
                     }
                     let next = by_value.len();
-                    regrouped[slot] = *by_value
+                    *group = *by_value
                         .entry((fam.group[slot], fam.consts[slot], term.consts[slot]))
                         .or_insert(next);
                 }
@@ -1479,8 +1483,6 @@ impl Session {
             .iter()
             .map(|v| self.selected(graph, plan, v.id))
             .collect();
-        let launch_roots: rustc_hash::FxHashSet<Id> =
-            plan.launches.iter().map(|launch| launch.root).collect();
         // An in-place launch that writes through a *persistent* leaf (a
         // cache store) produces that leaf's next contents, so its output
         // stays bound whether or not it was requested: the cache commits it
@@ -1549,8 +1551,12 @@ impl Session {
             if supplied.contains_key(&buffer.value) {
                 continue;
             }
-            let is_launch_root = launch_roots.contains(&buffer.value);
-            if !is_launch_root && !wanted.contains(&buffer.value) {
+            // Only a requested value (and an in-place output through a
+            // persistent leaf) is allocated here, where its handle can be
+            // bound for readback. Every other plan buffer is the backend's:
+            // it allocates each at its first launch and recycles it after
+            // its last, so a plan's intermediates share pool buffers.
+            if !wanted.contains(&buffer.value) && !in_place_roots.contains(&buffer.value) {
                 continue;
             }
             let elements = resolve_buffer_elements(buffer.elements, &buffer.layout, graph)?;

@@ -5,7 +5,9 @@ use kalosm::sound::*;
 use rodio::Decoder;
 use std::time::Instant;
 
-fn presets() -> Vec<(&'static str, fn() -> WhisperSource)> {
+type Preset = (&'static str, fn() -> WhisperSource);
+
+fn presets() -> Vec<Preset> {
     vec![
         ("tiny_en", WhisperSource::tiny_en),
         ("tiny", WhisperSource::tiny),

@@ -170,7 +170,7 @@ pub(crate) fn operand_dtypes(b: &Builder<'_>, ops: &[Operand]) -> Vec<Dtype> {
 /// Apply a relative restride spec vector to a dense row-major input shape.
 ///
 /// A symbolic offset or stride composes into a derived symbol
-/// ([`Dim::add`], [`Dim::mul`]) the backends evaluate at dispatch. Returns
+/// (`Dim + Dim`, `Dim * Dim`) the backends evaluate at dispatch. Returns
 /// `None` only when a stride or offset is genuinely opaque (a row-major
 /// stride past a symbolic axis, or overflow): a view of those cannot be
 /// stated as one layout, and a rule must decline rather than invent one.
@@ -193,7 +193,7 @@ pub(crate) fn composed_layout(specs: &[StrideSpec], in_shape: &[Dim]) -> Option<
         // Accumulated for every spec, including a stride-0 one: an axis being
         // broadcast says nothing about where in the input it starts.
         if !s.offset.known_eq(Dim::Const(0)) {
-            offset = offset.add(s.offset.mul(base));
+            offset = offset + s.offset * base;
             if opaque(offset) {
                 return None;
             }
@@ -202,7 +202,7 @@ pub(crate) fn composed_layout(specs: &[StrideSpec], in_shape: &[Dim]) -> Option<
             strides.push(Dim::Const(0));
             continue;
         }
-        let stride = base.mul(Dim::Const(u64::from(s.multiplier)));
+        let stride = base * Dim::Const(u64::from(s.multiplier));
         if opaque(stride) {
             return None;
         }

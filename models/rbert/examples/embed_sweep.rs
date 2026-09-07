@@ -5,7 +5,9 @@
 use rbert::*;
 use std::time::Instant;
 
-fn presets() -> Vec<(&'static str, fn() -> BertSource)> {
+type Preset = (&'static str, fn() -> BertSource);
+
+fn presets() -> Vec<Preset> {
     vec![
         ("bge_large_en", BertSource::bge_large_en),
         ("bge_base_en", BertSource::bge_base_en),

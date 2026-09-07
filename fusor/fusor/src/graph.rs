@@ -80,6 +80,16 @@ impl Drop for GraphInner {
 pub(crate) struct GraphInner {
     pub(crate) egraph: Mutex<EGraph>,
     pub(crate) session: Session,
+    /// Live `Tensor` handles per value. A value whose last handle drops is
+    /// dead to the caller: its device buffer binding is released at the next
+    /// resolve, so a loop that reads one batch per step does not pin every
+    /// batch's buffer until the pool ceiling.
+    handles: Mutex<FxHashMap<Id, u32>>,
+    /// Values whose last handle dropped since the last reap.
+    dead: Mutex<Vec<Id>>,
+    /// Dead bound values a live handle still reached at the last reap;
+    /// re-examined at the next one.
+    zombies: Mutex<Vec<Id>>,
     /// The `AttrId` side table. Attributes live outside `Op` so `Op` stays
     /// `Hash + Eq` and the hash-cons memo stays exact.
     pub(crate) attrs: Mutex<Vec<MacroAttr>>,
@@ -200,10 +210,90 @@ impl GraphRef {
 
     /// Wrap a node id as a user-facing tensor.
     pub(crate) fn tensor(&self, id: Id) -> Tensor {
+        self.retain(id);
         Tensor {
             id,
             graph: self.clone(),
         }
+    }
+
+    /// One more handle on `id`.
+    pub(crate) fn retain(&self, id: Id) {
+        *self.state.handles.lock().entry(id).or_insert(0) += 1;
+    }
+
+    /// One handle on `id` fewer; the last one marks the value dead.
+    pub(crate) fn release(&self, id: Id) {
+        let mut handles = self.state.handles.lock();
+        let Some(count) = handles.get_mut(&id) else {
+            return;
+        };
+        *count -= 1;
+        if *count == 0 {
+            handles.remove(&id);
+            self.state.dead.lock().push(id);
+        }
+    }
+
+    /// Drop the device buffer bindings of dead values: those with no live
+    /// handle that no live handle's term reaches either. A value below a
+    /// live handle is still an input the next resolve of that handle reads
+    /// (a `from_slice` leaf consumed into a `stack`, a cut leaf under a
+    /// chunk), so it keeps its buffer until the handle above it dies too.
+    /// Only bound values cost anything, so the reachability walk runs only
+    /// when a bound value has died.
+    pub(crate) fn reap_dead(&self) {
+        let dead: Vec<Id> = std::mem::take(&mut *self.state.dead.lock());
+        let mut candidates: Vec<Id> = std::mem::take(&mut *self.state.zombies.lock());
+        {
+            let store = self.state.leaves.lock();
+            candidates.extend(dead.into_iter().filter(|id| store.device.contains_key(id)));
+        }
+        candidates.sort_unstable();
+        candidates.dedup();
+        candidates.retain(|id| !self.state.handles.lock().contains_key(id));
+        if candidates.is_empty() {
+            return;
+        }
+        // Everything a live handle reaches: its class's members and, below
+        // them, their children, so a launch spelling's own inputs (a
+        // repacked weight) count as reached.
+        let live: Vec<bool> = {
+            let roots: Vec<Id> = self.state.handles.lock().keys().copied().collect();
+            let mut g = self.state.egraph.lock();
+            let mut seen = vec![false; g.len()];
+            let mut stack = roots;
+            while let Some(id) = stack.pop() {
+                if id.index() >= seen.len() || seen[id.index()] {
+                    continue;
+                }
+                let class = g.class_of(id);
+                for m in g.class_ids_cached(class).iter() {
+                    if std::mem::replace(&mut seen[m.index()], true) {
+                        continue;
+                    }
+                    stack.extend(g.node(*m).children.iter().copied());
+                }
+            }
+            seen
+        };
+        let mut zombies = Vec::new();
+        for id in candidates {
+            if live.get(id.index()).copied().unwrap_or(false) {
+                zombies.push(id);
+            } else {
+                self.clear_class_device_buf(id);
+            }
+        }
+        if std::env::var_os("FUSOR_REAP_DEBUG").is_some() {
+            eprintln!(
+                "[reap] zombies {} (live handles {}, bound {})",
+                zombies.len(),
+                self.state.handles.lock().len(),
+                self.state.leaves.lock().device.len()
+            );
+        }
+        *self.state.zombies.lock() = zombies;
     }
 
     /// Intern a macro attribute blob. Equal attributes share an id, so two
@@ -605,6 +695,9 @@ impl Graph {
                 state: Arc::new(GraphInner {
                     egraph: Mutex::new(EGraph::new(session.semantics())),
                     session: session.clone(),
+                    handles: Mutex::new(FxHashMap::default()),
+                    dead: Mutex::new(Vec::new()),
+                    zombies: Mutex::new(Vec::new()),
                     attrs: Mutex::new(Vec::new()),
                     leaves: Mutex::new(LeafStore::default()),
                     symbols: Mutex::new(SymbolStore::default()),
