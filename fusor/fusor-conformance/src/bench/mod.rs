@@ -55,8 +55,12 @@ impl BenchmarkConfig {
 }
 
 impl Default for BenchmarkConfig {
+    /// Ten iterations to a round, because one download closes a round and
+    /// burn's costs about 35 ms however small the tensor is: at three
+    /// iterations that latency is still a third of what a cheap case
+    /// reports, and at ten it is a few percent.
     fn default() -> Self {
-        Self::new(2, 3, 7)
+        Self::new(2, 10, 5)
     }
 }
 
@@ -176,25 +180,46 @@ impl BenchmarkCase {
     }
 }
 
-pub(crate) async fn time_samples<F, Fut>(
+/// Time `samples` rounds of `iterations` computations, each round ending in
+/// one `flush`.
+///
+/// The flush is per round, never per iteration, and that is the whole point.
+/// Retrieving a result costs each library a fixed latency that has nothing to
+/// do with the kernels: burn's is about 35 ms, so a suite that downloaded
+/// every iteration reported that latency for every case and the same number
+/// came back for a 128x128 add as for a 2048x2048 matmul. Amortized over a
+/// round, what is left is the work. `run_once` therefore only has to get an
+/// iteration *started*; `flush` makes the round's results real, and holds
+/// every one of them alive until it does, so neither library can skip the
+/// results nobody asked for.
+pub(crate) async fn time_samples<F, Fut, T, G, GFut>(
     config: BenchmarkConfig,
     mut run_once: F,
+    mut flush: G,
 ) -> BenchmarkResult<Vec<Duration>>
 where
     F: FnMut() -> Fut,
-    Fut: Future<Output = BenchmarkResult<()>>,
+    Fut: Future<Output = BenchmarkResult<T>>,
+    G: FnMut(Vec<T>) -> GFut,
+    GFut: Future<Output = BenchmarkResult<()>>,
 {
     let config = config.sanitized();
-    for _ in 0..config.warmups {
-        run_once().await?;
+    if config.warmups > 0 {
+        let mut warm = Vec::with_capacity(config.warmups);
+        for _ in 0..config.warmups {
+            warm.push(run_once().await?);
+        }
+        flush(warm).await?;
     }
 
     let mut samples = Vec::with_capacity(config.samples);
     for _ in 0..config.samples {
         let started = Instant::now();
+        let mut round = Vec::with_capacity(config.iterations);
         for _ in 0..config.iterations {
-            run_once().await?;
+            round.push(run_once().await?);
         }
+        flush(round).await?;
         samples.push(started.elapsed());
     }
     Ok(samples)

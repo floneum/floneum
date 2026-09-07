@@ -67,7 +67,48 @@ fn elements(shape: &[usize]) -> usize {
     shape.iter().product()
 }
 
-/// Dispatch everything `value` needs and wait for the device to retire it.
+/// Dispatch everything `value` needs and read the result back to the host.
+///
+/// The readback is the point: burn's only awaitable completion signal is
+/// `into_data_async`, which downloads the whole tensor, so a fusor side that
+/// stopped at a queue fence would be timed against a burn side that also
+/// paid for the download. Both suites now end an iteration the same way —
+/// compute the value and retrieve it — and the comparison is between the
+/// two libraries rather than between two different definitions of "done".
+/// Dispatch everything `value` needs, without waiting for it.
+///
+/// The graph hash-conses, so rebuilding the same expression in the next
+/// iteration yields the same node, and a node whose class still holds a
+/// device buffer resolves to nothing. Dropping that binding first is what
+/// makes every iteration real work: without it the second iteration and each
+/// one after would dispatch no kernels at all, and the suite would time an
+/// empty submit against a burn side that recomputes each time.
+fn dispatch<const R: usize, T: fusor::Element>(
+    device: &Device,
+    value: Tensor<R, T>,
+) -> BenchmarkResult<Tensor<R, T>> {
+    value.as_dyn().clear_device_buf();
+    device
+        .session()
+        .resolve(std::slice::from_ref(value.as_dyn()))?;
+    Ok(value)
+}
+
+/// Wait for the round's dispatches and bring one result back, which is the
+/// same shape of work the burn side's `flush` does.
+async fn flush<const R: usize, T: fusor::Element>(
+    device: &Device,
+    outputs: Vec<Tensor<R, T>>,
+) -> BenchmarkResult<()> {
+    device.wait_async().await?;
+    if let Some(last) = outputs.last() {
+        let _ = last.as_slice().await?;
+    }
+    drop(outputs);
+    Ok(())
+}
+
+/// Dispatch `value` and read it back: the one-shot form the input setup uses.
 async fn materialize<const R: usize, T: fusor::Element>(
     device: &Device,
     value: &Tensor<R, T>,
@@ -76,6 +117,7 @@ async fn materialize<const R: usize, T: fusor::Element>(
         .session()
         .resolve(std::slice::from_ref(value.as_dyn()))?;
     device.wait_async().await?;
+    let _ = value.as_slice().await?;
     Ok(())
 }
 
@@ -175,14 +217,19 @@ pub async fn run_webgpu_bench_suite_with_progress(
         .await
 }
 
-/// Time `iterations` of: build `output`, dispatch it, fence.
+/// Time rounds of `iterations` of: build `output` and dispatch it, with one
+/// download closing each round (see `bench::time_samples`).
 macro_rules! timed {
     ($device:expr, $config:expr, $output:expr) => {{
         let device = $device;
-        time_samples($config, || {
-            let output = $output;
-            async move { materialize(device, &output).await }
-        })
+        time_samples(
+            $config,
+            || {
+                let output = $output;
+                async move { dispatch(device, output) }
+            },
+            |outputs| async move { flush(device, outputs).await },
+        )
         .await?
     }};
 }
@@ -497,18 +544,23 @@ pub(super) async fn top_k_case(
     values: Vec<f32>,
 ) -> BenchmarkResult<BenchmarkReport> {
     let input = values_input(device, [input_len], &values).await?;
-    let samples = time_samples(config, || {
-        let (top_values, top_indices) = input.top_k(k as u32);
-        async move {
-            materialize(device, &top_values).await?;
-            materialize(device, &top_indices).await?;
-            let got = top_indices.elem_count().unwrap_or(0) as usize;
-            if got != k {
-                return Err(format!("top_k returned {got} pairs, expected {k}").into());
+    let samples = time_samples(
+        config,
+        || {
+            let (top_values, top_indices) = input.top_k(k as u32);
+            async move {
+                let got = top_indices.elem_count().unwrap_or(0) as usize;
+                if got != k {
+                    return Err(format!("top_k returned {got} pairs, expected {k}").into());
+                }
+                // Both halves of the pair are dispatched; the round's flush
+                // downloads the indices, which is what the caller reads.
+                dispatch(device, top_values)?;
+                dispatch(device, top_indices)
             }
-            Ok(())
-        }
-    })
+        },
+        |outputs| async move { flush(device, outputs).await },
+    )
     .await?;
     Ok(BenchmarkReport::new(
         name,

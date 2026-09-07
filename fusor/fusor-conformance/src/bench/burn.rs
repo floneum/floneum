@@ -91,6 +91,27 @@ async fn materialize<const R: usize>(tensor: BurnTensor<R>) -> BenchmarkResult<(
     Ok(())
 }
 
+/// Hand one round's tensors to the timing loop. Burn is lazy, so an
+/// iteration is the op stream this builds; `flush` is what makes it run.
+async fn queue<const R: usize>(tensor: BurnTensor<R>) -> BenchmarkResult<BurnTensor<R>> {
+    Ok(tensor)
+}
+
+/// Run everything the round queued and bring one result back.
+///
+/// Reading the last tensor forces the whole round: burn does not skip the
+/// results nobody reads (an unread 2048-square matmul still costs its 4.8 ms),
+/// and every tensor stays alive until after the download, so none of them can
+/// be dropped before it runs.
+async fn flush<const R: usize>(outputs: Vec<BurnTensor<R>>) -> BenchmarkResult<()> {
+    let Some(last) = outputs.last().cloned() else {
+        return Ok(());
+    };
+    let _ = last.into_data_async().await;
+    drop(outputs);
+    Ok(())
+}
+
 async fn values_input<const R: usize>(
     device: &WgpuDevice,
     shape: [usize; R],
@@ -133,10 +154,14 @@ pub(super) async fn elementwise_add_square_case(
     let shape = [size, size];
     let lhs = input_tensor(&device, shape, 1, 0.01).await?;
     let rhs = input_tensor(&device, shape, 2, 0.008).await?;
-    let samples = time_samples(config, || {
-        let output = lhs.clone() + rhs.clone();
-        async move { materialize(output).await }
-    })
+    let samples = time_samples(
+        config,
+        || {
+            let output = lhs.clone() + rhs.clone();
+            async move { queue(output).await }
+        },
+        flush,
+    )
     .await?;
     Ok(BenchmarkReport::new(
         name,
@@ -154,10 +179,14 @@ pub(super) async fn elementwise_mul_rank4_case(
     let device = initialized_device().await;
     let lhs = input_tensor(&device, shape, 3, 0.012).await?;
     let rhs = input_tensor(&device, shape, 4, 0.009).await?;
-    let samples = time_samples(config, || {
-        let output = lhs.clone() * rhs.clone();
-        async move { materialize(output).await }
-    })
+    let samples = time_samples(
+        config,
+        || {
+            let output = lhs.clone() * rhs.clone();
+            async move { queue(output).await }
+        },
+        flush,
+    )
     .await?;
     Ok(BenchmarkReport::new(
         name,
@@ -175,10 +204,14 @@ pub(super) async fn unary_trig_chain_case(
     let device = initialized_device().await;
     let shape = [size, size];
     let input = input_tensor(&device, shape, 10, 0.01).await?;
-    let samples = time_samples(config, || {
-        let output = input.clone().sin() + input.clone().cos();
-        async move { materialize(output).await }
-    })
+    let samples = time_samples(
+        config,
+        || {
+            let output = input.clone().sin() + input.clone().cos();
+            async move { queue(output).await }
+        },
+        flush,
+    )
     .await?;
     Ok(BenchmarkReport::new(
         name,
@@ -195,10 +228,14 @@ pub(super) async fn activation_gelu_case(
 ) -> BenchmarkResult<BenchmarkReport> {
     let device = initialized_device().await;
     let input = input_tensor(&device, shape, 11, 0.015).await?;
-    let samples = time_samples(config, || {
-        let output = activation::gelu(input.clone());
-        async move { materialize(output).await }
-    })
+    let samples = time_samples(
+        config,
+        || {
+            let output = activation::gelu(input.clone());
+            async move { queue(output).await }
+        },
+        flush,
+    )
     .await?;
     Ok(BenchmarkReport::new(
         name,
@@ -218,10 +255,14 @@ pub(super) async fn broadcast_add_case(
     let vector_shape = [512usize];
     let matrix = input_tensor(&device, matrix_shape, 12, 0.006).await?;
     let vector = input_tensor(&device, vector_shape, 13, 0.01).await?;
-    let samples = time_samples(config, || {
-        let output = matrix.clone() + vector.clone().reshape([1, vector_shape[0]]);
-        async move { materialize(output).await }
-    })
+    let samples = time_samples(
+        config,
+        || {
+            let output = matrix.clone() + vector.clone().reshape([1, vector_shape[0]]);
+            async move { queue(output).await }
+        },
+        flush,
+    )
     .await?;
     Ok(BenchmarkReport::new(
         name,
@@ -238,11 +279,15 @@ pub(super) async fn transpose_then_elementwise_case(
 ) -> BenchmarkResult<BenchmarkReport> {
     let device = initialized_device().await;
     let input = input_tensor(&device, shape, 14, 0.01).await?;
-    let samples = time_samples(config, || {
-        let transposed = input.clone().transpose();
-        let output = transposed.clone() * transposed;
-        async move { materialize(output).await }
-    })
+    let samples = time_samples(
+        config,
+        || {
+            let transposed = input.clone().transpose();
+            let output = transposed.clone() * transposed;
+            async move { queue(output).await }
+        },
+        flush,
+    )
     .await?;
     Ok(BenchmarkReport::new(
         name,
@@ -260,10 +305,14 @@ pub(super) async fn reduction_sum_last_dim_case(
     let device = initialized_device().await;
     let shape = [rows, 512usize];
     let input = input_tensor(&device, shape, 15, 0.004).await?;
-    let samples = time_samples(config, || {
-        let output = input.clone().sum_dim(1);
-        async move { materialize(output).await }
-    })
+    let samples = time_samples(
+        config,
+        || {
+            let output = input.clone().sum_dim(1);
+            async move { queue(output).await }
+        },
+        flush,
+    )
     .await?;
     Ok(BenchmarkReport::new(
         name,
@@ -280,10 +329,14 @@ pub(super) async fn reduction_max_middle_axis_case(
 ) -> BenchmarkResult<BenchmarkReport> {
     let device = initialized_device().await;
     let input = input_tensor(&device, shape, 16, 0.004).await?;
-    let samples = time_samples(config, || {
-        let output = input.clone().max_dim(1);
-        async move { materialize(output).await }
-    })
+    let samples = time_samples(
+        config,
+        || {
+            let output = input.clone().max_dim(1);
+            async move { queue(output).await }
+        },
+        flush,
+    )
     .await?;
     Ok(BenchmarkReport::new(
         name,
@@ -301,10 +354,14 @@ pub(super) async fn softmax_last_dim_case(
     let device = initialized_device().await;
     let shape = [rows, 256usize];
     let input = input_tensor(&device, shape, 5, 0.006).await?;
-    let samples = time_samples(config, || {
-        let output = activation::softmax(input.clone(), 1);
-        async move { materialize(output).await }
-    })
+    let samples = time_samples(
+        config,
+        || {
+            let output = activation::softmax(input.clone(), 1);
+            async move { queue(output).await }
+        },
+        flush,
+    )
     .await?;
     Ok(BenchmarkReport::new(
         name,
@@ -321,10 +378,14 @@ pub(super) async fn softmax_middle_axis_case(
 ) -> BenchmarkResult<BenchmarkReport> {
     let device = initialized_device().await;
     let input = input_tensor(&device, shape, 17, 0.004).await?;
-    let samples = time_samples(config, || {
-        let output = activation::softmax(input.clone(), 1);
-        async move { materialize(output).await }
-    })
+    let samples = time_samples(
+        config,
+        || {
+            let output = activation::softmax(input.clone(), 1);
+            async move { queue(output).await }
+        },
+        flush,
+    )
     .await?;
     Ok(BenchmarkReport::new(
         name,
@@ -345,10 +406,14 @@ pub(super) async fn layer_norm_last_dim_case(
     let layer = LayerNormConfig::new(last_dim)
         .with_epsilon(1.0e-5)
         .init::<Wgpu>(&device);
-    let samples = time_samples(config, || {
-        let output = layer.clone().forward(input.clone());
-        async move { materialize(output).await }
-    })
+    let samples = time_samples(
+        config,
+        || {
+            let output = layer.clone().forward(input.clone());
+            async move { queue(output).await }
+        },
+        flush,
+    )
     .await?;
     Ok(BenchmarkReport::new(
         name,
@@ -369,10 +434,14 @@ pub(super) async fn rms_norm_fused_case(
     let rms = RmsNormConfig::new(last_dim)
         .with_epsilon(1.0e-5)
         .init::<Wgpu>(&device);
-    let samples = time_samples(config, || {
-        let output = rms.clone().forward(input.clone());
-        async move { materialize(output).await }
-    })
+    let samples = time_samples(
+        config,
+        || {
+            let output = rms.clone().forward(input.clone());
+            async move { queue(output).await }
+        },
+        flush,
+    )
     .await?;
     Ok(BenchmarkReport::new(
         name,
@@ -392,10 +461,14 @@ pub(super) async fn dense_matmul_square_case(
     let rhs_shape = [size, size];
     let lhs = input_tensor(&device, lhs_shape, 6, 0.004).await?;
     let rhs = input_tensor(&device, rhs_shape, 7, 0.004).await?;
-    let samples = time_samples(config, || {
-        let output = lhs.clone().matmul(rhs.clone());
-        async move { materialize(output).await }
-    })
+    let samples = time_samples(
+        config,
+        || {
+            let output = lhs.clone().matmul(rhs.clone());
+            async move { queue(output).await }
+        },
+        flush,
+    )
     .await?;
     Ok(BenchmarkReport::new(
         name,
@@ -421,10 +494,14 @@ pub(super) async fn dense_batched_matmul_case(
     let rhs_shape = [batch, k, m];
     let lhs = input_tensor(&device, lhs_shape, 23, 0.004).await?;
     let rhs = input_tensor(&device, rhs_shape, 24, 0.004).await?;
-    let samples = time_samples(config, || {
-        let output = lhs.clone().matmul(rhs.clone());
-        async move { materialize(output).await }
-    })
+    let samples = time_samples(
+        config,
+        || {
+            let output = lhs.clone().matmul(rhs.clone());
+            async move { queue(output).await }
+        },
+        flush,
+    )
     .await?;
     Ok(BenchmarkReport::new(
         name,
@@ -450,15 +527,19 @@ pub(super) async fn conv1d_small_case(
     let input = input_tensor(&device, input_shape, 25, 0.01).await?;
     let weight = input_tensor(&device, weight_shape, 26, 0.01).await?;
     let bias = input_tensor(&device, bias_shape, 27, 0.001).await?;
-    let samples = time_samples(config, || {
-        let output = module::conv1d(
-            input.clone(),
-            weight.clone(),
-            Some(bias.clone()),
-            ConvOptions::new([2], [1], [1], 1),
-        );
-        async move { materialize(output).await }
-    })
+    let samples = time_samples(
+        config,
+        || {
+            let output = module::conv1d(
+                input.clone(),
+                weight.clone(),
+                Some(bias.clone()),
+                ConvOptions::new([2], [1], [1], 1),
+            );
+            async move { queue(output).await }
+        },
+        flush,
+    )
     .await?;
     Ok(BenchmarkReport::new(
         name,
@@ -481,10 +562,14 @@ pub(super) async fn top_k_case(
 ) -> BenchmarkResult<BenchmarkReport> {
     let device = initialized_device().await;
     let input = values_input(&device, [input_len], values).await?;
-    let samples = time_samples(config, || {
-        let output = input.clone().topk(k, 0);
-        async move { materialize(output).await }
-    })
+    let samples = time_samples(
+        config,
+        || {
+            let output = input.clone().topk(k, 0);
+            async move { queue(output).await }
+        },
+        flush,
+    )
     .await?;
     Ok(BenchmarkReport::new(
         name,
@@ -507,10 +592,14 @@ pub(super) async fn qgemv_dense_case(
     let dense_weight_shape = [weight_shape[1], weight_shape[0]];
     let input = input_tensor(&device, input_shape, input_seed, 0.003).await?;
     let weights = input_tensor(&device, dense_weight_shape, weight_seed, 0.003).await?;
-    let samples = time_samples(config, || {
-        let output = input.clone().matmul(weights.clone());
-        async move { materialize(output).await }
-    })
+    let samples = time_samples(
+        config,
+        || {
+            let output = input.clone().matmul(weights.clone());
+            async move { queue(output).await }
+        },
+        flush,
+    )
     .await?;
     Ok(BenchmarkReport::new(
         name,
@@ -536,13 +625,17 @@ pub(super) async fn q4k_paired_silu_case(
     let pair_len = weight_shape[0] / 2;
     let input = input_tensor(&device, input_shape, 30, 0.003).await?;
     let weights = input_tensor(&device, dense_weight_shape, 82, 0.003).await?;
-    let samples = time_samples(config, || {
-        let projected = input.clone().matmul(weights.clone());
-        let gate = projected.clone().narrow(1, 0, pair_len);
-        let up = projected.narrow(1, pair_len, pair_len);
-        let output = activation::silu(gate) * up;
-        async move { materialize(output).await }
-    })
+    let samples = time_samples(
+        config,
+        || {
+            let projected = input.clone().matmul(weights.clone());
+            let gate = projected.clone().narrow(1, 0, pair_len);
+            let up = projected.narrow(1, pair_len, pair_len);
+            let output = activation::silu(gate) * up;
+            async move { queue(output).await }
+        },
+        flush,
+    )
     .await?;
     Ok(BenchmarkReport::new(
         name,
@@ -569,21 +662,25 @@ pub(super) async fn attention_case(
     let q = input_tensor(&device, shape, seeds[0], 0.003).await?;
     let k = input_tensor(&device, shape, seeds[1], 0.003).await?;
     let v = input_tensor(&device, shape, seeds[2], 0.003).await?;
-    let samples = time_samples(config, || {
-        let output = module::attention(
-            q.clone(),
-            k.clone(),
-            v.clone(),
-            None,
-            None,
-            AttentionModuleOptions {
-                scale: Some(1.0 / (64.0f64).sqrt()),
-                softcap: None,
-                is_causal: causal,
-            },
-        );
-        async move { materialize(output).await }
-    })
+    let samples = time_samples(
+        config,
+        || {
+            let output = module::attention(
+                q.clone(),
+                k.clone(),
+                v.clone(),
+                None,
+                None,
+                AttentionModuleOptions {
+                    scale: Some(1.0 / (64.0f64).sqrt()),
+                    softcap: None,
+                    is_causal: causal,
+                },
+            );
+            async move { queue(output).await }
+        },
+        flush,
+    )
     .await?;
     Ok(BenchmarkReport::new(
         name,
@@ -603,10 +700,14 @@ pub(super) async fn rope_fused_decode_case(
     let [_, _, _, head_dim] = shape;
     let input = input_tensor(&device, shape, 9, 0.01).await?;
     let rope = RotaryEncodingConfig::new(seq_len * 2, head_dim).init::<Wgpu>(&device);
-    let samples = time_samples(config, || {
-        let output = rope.clone().forward(input.clone());
-        async move { materialize(output).await }
-    })
+    let samples = time_samples(
+        config,
+        || {
+            let output = rope.clone().forward(input.clone());
+            async move { queue(output).await }
+        },
+        flush,
+    )
     .await?;
     Ok(BenchmarkReport::new(
         name,

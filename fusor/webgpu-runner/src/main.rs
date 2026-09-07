@@ -13,7 +13,7 @@ use components::card::{Card, CardContent, CardDescription, CardHeader, CardTitle
 use components::separator::Separator;
 
 const MAX_RENDERED_STEPS: usize = 80;
-const DETAIL_SWEEP_CONFIG: BenchmarkConfig = BenchmarkConfig::new(3, 3, 15);
+const DETAIL_SWEEP_CONFIG: BenchmarkConfig = BenchmarkConfig::new(2, 10, 5);
 
 fn main() {
     // Failures also land in the browser console (see `run_test_suite`),
@@ -508,24 +508,32 @@ fn benchmark_case_slug(name: &str) -> String {
 }
 
 /// When a `burn` baseline exists for this non-burn case, returns
-/// `(burn_mean_ms, our_mean_ms)` so callers can format and color the comparison.
+/// `(burn_median_ms, our_median_ms)` so callers can format and color the
+/// comparison.
+///
+/// Medians, not means: a backend's first timed round carries its own warmup
+/// and shader compilation, which lands as one huge sample in an otherwise
+/// tight set — burn's elementwise cases have run a 0.45 ms median under a
+/// 5.35 ms mean. A ratio of means reads that startup cost as a speed
+/// difference and reports an order of magnitude that no round measured. The
+/// sweep chart already compares medians for the same reason.
 fn burn_baseline_pair(row: &BenchRow, rows: &[BenchRow]) -> Option<(f64, f64)> {
     let (suite, case) = suite_and_case(&row.name)?;
     if suite == "burn" {
         return None;
     }
-    let mean_ms = row.mean_ms?;
-    let burn_mean_ms = rows
+    let median_ms = row.median_ms?;
+    let burn_median_ms = rows
         .iter()
         .find(|candidate| {
             candidate.state == BenchState::Passed
                 && suite_and_case(&candidate.name) == Some(("burn", case))
         })
-        .and_then(|candidate| candidate.mean_ms)?;
-    if mean_ms <= 0.0 || burn_mean_ms <= 0.0 {
+        .and_then(|candidate| candidate.median_ms)?;
+    if median_ms <= 0.0 || burn_median_ms <= 0.0 {
         return None;
     }
-    Some((burn_mean_ms, mean_ms))
+    Some((burn_median_ms, median_ms))
 }
 
 fn format_burn_comparison(row: &BenchRow, rows: &[BenchRow]) -> String {
@@ -533,17 +541,17 @@ fn format_burn_comparison(row: &BenchRow, rows: &[BenchRow]) -> String {
         return "baseline".to_string();
     }
     match burn_baseline_pair(row, rows) {
-        Some((burn_mean_ms, mean_ms)) if mean_ms <= burn_mean_ms => {
-            format!("{:.2}x faster", burn_mean_ms / mean_ms)
+        Some((burn_median_ms, median_ms)) if median_ms <= burn_median_ms => {
+            format!("{:.2}x faster", burn_median_ms / median_ms)
         }
-        Some((burn_mean_ms, mean_ms)) => format!("{:.2}x slower", mean_ms / burn_mean_ms),
+        Some((burn_median_ms, median_ms)) => format!("{:.2}x slower", median_ms / burn_median_ms),
         None => "-".to_string(),
     }
 }
 
 fn burn_comparison_class(row: &BenchRow, rows: &[BenchRow]) -> &'static str {
     match burn_baseline_pair(row, rows) {
-        Some((burn_mean_ms, mean_ms)) if mean_ms <= burn_mean_ms => "cmp-faster",
+        Some((burn_median_ms, median_ms)) if median_ms <= burn_median_ms => "cmp-faster",
         Some(_) => "cmp-slower",
         None => "",
     }
