@@ -586,6 +586,77 @@ pub struct Geometry {
     pub workgroups: u64,
 }
 
+/// How much cheaper a re-read served by the last-level cache is than one
+/// served by DRAM. Not free, which is the point, but nearly so.
+const CACHE_REREAD_DISCOUNT: u64 = 32;
+
+/// The bytes a tiled operand is charged for, given how many times its
+/// tiling reads it.
+///
+/// The first pass is a real DRAM pass. The rest are charged at
+/// [`CACHE_REREAD_DISCOUNT`], because an operand a small matmul re-reads is
+/// sitting in cache and the traffic is real but cheap.
+fn charged_bytes(bytes: u64, rereads: u32) -> u64 {
+    let extra = u64::from(rereads.saturating_sub(1));
+    bytes.saturating_add(bytes / CACHE_REREAD_DISCOUNT * extra)
+}
+
+/// How many times a contraction's *tiling* re-reads each of its operands.
+///
+/// The iteration space cannot tell the schedules apart. It is the same
+/// whether a workgroup owns a 128x128 block of the output or a single
+/// column of it, so every family was charged identical DRAM traffic and the
+/// choice fell to terms that favour the simplest kernel. That is how a
+/// matrix-vector schedule came to win a 256x256 by 256x256 product, at five
+/// times the runtime of the tiled alternative sitting next to it in the
+/// domain.
+///
+/// The tile is what actually decides. A workgroup covering `bm x bn` of the
+/// output sweeps the left operand once per column tile and the right once
+/// per row tile, so the left is read `ceil(n / bn)` times and the right
+/// `ceil(m / bm)`. A wider tile reads less, which is the entire reason to
+/// want one.
+fn contract_rereads(
+    graph: &EGraph,
+    extraction: &Extraction,
+    root: Id,
+) -> Result<rustc_hash::FxHashMap<Id, u32>> {
+    let mut out = rustc_hash::FxHashMap::default();
+    let Op::Launch(Launch::Contract { m, n, a, b, .. }) = &graph.node(root).op else {
+        return Ok(out);
+    };
+    let (bm, bn) = match extraction.theta.get(&root).copied() {
+        Some(SchedPoint::Coop { geom, .. }) => (geom.bm, geom.bn),
+        Some(SchedPoint::Sgemm(p)) => (p.bm, p.bn),
+        // One row of `cols` outputs per workgroup: the whole point of the
+        // family is that it does not tile the reduced side.
+        Some(SchedPoint::Sgemv(p)) => (1, p.cols.max(1)),
+        _ => return Ok(out),
+    };
+    let extent = |d: &Dim| d.as_const().unwrap_or(1).max(1);
+    let (m, n) = (extent(m), extent(n));
+    // A matrix-vector product has no operand reuse for a tiling to keep or
+    // lose: one side is swept once whatever the schedule does. Only a
+    // matrix-matrix product is worth pricing this way, and pretending
+    // otherwise made the decode path's gemv chase a term that does not
+    // exist there.
+    if m == 1 || n == 1 {
+        return Ok(out);
+    }
+    let times = |whole: u64, tile: u32| -> u32 {
+        u32::try_from(whole.div_ceil(u64::from(tile.max(1))).max(1)).unwrap_or(u32::MAX)
+    };
+    let (a_reread, b_reread) = (times(n, bn), times(m, bm));
+    for (side, reread) in [(a, a_reread), (b, b_reread)] {
+        for op in &side.ops {
+            let src = select(graph, extraction, op.src)?;
+            let slot = out.entry(src).or_insert(reread);
+            *slot = (*slot).max(reread);
+        }
+    }
+    Ok(out)
+}
+
 pub fn geometry(theta: Option<SchedPoint>, space: &IndexSpace, caps: &Caps) -> Geometry {
     let width = caps.subgroup_width().max(1);
     let default_block = caps
@@ -908,8 +979,10 @@ fn build_component(
     }
 
     // Distinct external operands, with the reread factor the consuming
-    // iteration space implies.
+    // iteration space implies — except for a contraction, whose tiling
+    // decides it (see `contract_rereads`).
     let mut ext: Vec<(Id, u64, u32)> = Vec::new();
+    let tiled_rereads = contract_rereads(graph, extraction, root)?;
     for m in &members {
         let iters = iterations_of(&index_space(graph, *m));
         for c in graph.node(*m).children.iter() {
@@ -922,10 +995,24 @@ fn build_component(
             }
             let facts = graph.facts(c);
             let elems = elements_of(facts).max(1);
-            let reread = iters.div_ceil(elems).max(1).min(u32::MAX as u64) as u32;
+            // A tiled contraction reports its reuse as bytes rather than as
+            // a reread count: `effective_read_bytes` treats a cache-resident
+            // operand's rereads as free, and every tiling of a small matmul
+            // is cache-resident, so a count would vanish there. Confined to
+            // this one node kind so no other launch's traffic changes.
+            let (bytes, reread) = match tiled_rereads.get(&c) {
+                Some(eff) => (charged_bytes(bytes_of(facts), *eff), 1),
+                None => (
+                    bytes_of(facts),
+                    iters.div_ceil(elems).max(1).min(u32::MAX as u64) as u32,
+                ),
+            };
             match ext.iter_mut().find(|(id, _, _)| *id == c) {
-                Some(slot) => slot.2 = slot.2.max(reread),
-                None => ext.push((c, bytes_of(facts), reread)),
+                Some(slot) => {
+                    slot.1 = slot.1.max(bytes);
+                    slot.2 = slot.2.max(reread);
+                }
+                None => ext.push((c, bytes, reread)),
             }
         }
     }
