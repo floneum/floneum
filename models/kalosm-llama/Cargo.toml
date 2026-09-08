@@ -1,6 +1,6 @@
 [package]
 name = "kalosm-llama"
-version = "0.4.0"
+version = "0.4.3"
 edition = "2021"
 description = "A simple interface for Llama models"
 license = "MIT/Apache-2.0"
@@ -14,6 +14,7 @@ candle-nn.workspace = true
 candle-transformers.workspace = true
 tokenizers = { workspace = true }
 
+ahash = "0.8.12"
 accelerate-src = { version = "0.3.2", optional = true }
 intel-mkl-src = { version = "0.8.1", features = [
     "mkl-static-lp64-iomp",
@@ -35,6 +36,8 @@ safetensors = "0.4.5"
 ahash = "0.8.12"
 minijinja = { version = "2.5.0", features = ["json", "loader"] }
 minijinja-contrib = { version = "2.5.0", features = ["pycompat"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0.139"
 
 [dev-dependencies]
 tracing-subscriber = "0.3.18"

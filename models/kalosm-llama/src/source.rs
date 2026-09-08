@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use kalosm_common::CacheError;
 use kalosm_model_types::{FileLoadingProgress, FileSource};
 
+use crate::raw::RopeScalingConfig;
+
 fn llama_tokenizer() -> FileSource {
     FileSource::huggingface(
         "hf-internal-testing/llama-tokenizer".to_string(),
@@ -35,11 +37,17 @@ fn qwen_tokenizer() -> FileSource {
     )
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub(crate) struct LlamaConfigJson {
+    pub(crate) rope_scaling: Option<RopeScalingConfig>,
+}
+
 /// A source for the Llama model.
 #[derive(Clone, Debug)]
 pub struct LlamaSource {
     pub(crate) model: FileSource,
     pub(crate) tokenizer: Option<FileSource>,
+    pub(crate) config: Option<FileSource>,
     pub(crate) group_query_attention: u8,
     pub(crate) cache: kalosm_common::Cache,
     pub(crate) override_stop_token_string: Option<String>,
@@ -52,6 +60,9 @@ pub enum LlamaSourceError {
     /// An error occurred while loading the tokenizer.
     #[error("Failed to load the tokenizer: {0}")]
     Tokenizer(Box<dyn std::error::Error + Send + Sync>),
+    /// An error occurred while loading the config.
+    #[error("Failed to load the config: {0}")]
+    Config(#[from] serde_json::Error),
     /// An error occurred while loading the model (from the cache or downloading it).
     #[error("Failed to load the model: {0}")]
     Model(#[from] CacheError),
@@ -78,6 +89,7 @@ impl LlamaSource {
         Self {
             model,
             tokenizer: None,
+            config: None,
             group_query_attention: 1,
             cache: Default::default(),
             override_stop_token_string: None,
@@ -93,6 +105,12 @@ impl LlamaSource {
     /// Set the tokenizer to use for the model. Kalosm will try to load the tokenizer from the gguf file if no tokenizer is provided.
     pub fn with_tokenizer(mut self, tokenizer: FileSource) -> Self {
         self.tokenizer = Some(tokenizer);
+        self
+    }
+
+    /// Set the config to use for the model. Kalosm will try to load the config from the gguf file if no config is provided.
+    pub fn with_config(mut self, config: FileSource) -> Self {
+        self.config = Some(config);
         self
     }
 
@@ -400,6 +418,12 @@ impl LlamaSource {
             "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf".to_string(),
         ))
         .with_tokenizer(llama_v3_tokenizer())
+        // https://huggingface.co/unsloth/Meta-Llama-3.1-8B-Instruct/blob/main/config.json
+        .with_config(FileSource::huggingface(
+            "unsloth/Meta-Llama-3.1-8B-Instruct".to_string(),
+            "main".to_string(),
+            "config.json".to_string(),
+        ))
         .with_group_query_attention(1)
     }
 
@@ -433,6 +457,11 @@ impl LlamaSource {
             "Llama-3.2-1B-Instruct-Q4_K_M.gguf".to_string(),
         ))
         .with_tokenizer(llama_v3_tokenizer())
+        .with_config(FileSource::huggingface(
+            "NousResearch/Llama-3.2-1B".to_string(),
+            "main".to_string(),
+            "config.json".to_string(),
+        ))
         .with_group_query_attention(1)
     }
 
@@ -444,6 +473,11 @@ impl LlamaSource {
             "Llama-3.2-3B-Instruct-Q4_K_M.gguf".to_string(),
         ))
         .with_tokenizer(llama_v3_tokenizer())
+        .with_config(FileSource::huggingface(
+            "NousResearch/Hermes-3-Llama-3.2-3B".to_string(),
+            "main".to_string(),
+            "config.json".to_string(),
+        ))
         .with_group_query_attention(1)
     }
 

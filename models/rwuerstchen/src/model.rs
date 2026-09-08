@@ -263,7 +263,7 @@ impl WuerstchenInner {
                     noise_pred
                 );
             }
-            ((latents * 42.)? - 1.).map_err(Into::into)
+            (latents * 42.)? - 1.
         }
     }
 

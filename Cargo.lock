@@ -1138,18 +1138,18 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.23"
+version = "4.5.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3135e7ec2ef7b10c6ed8950f0f792ed96ee093fa088608f1c76e569722700c84"
+checksum = "3e77c3243bd94243c03672cb5154667347c457ca271254724f9f393aee1c05ff"
 dependencies = [
  "clap_builder",
 ]
 
 [[package]]
 name = "clap_builder"
-version = "4.5.23"
+version = "4.5.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30582fc632330df2bd26877bde0c1f4470d57c582bbc070376afcd04d8cb4838"
+checksum = "1b26884eb4b57140e4d2d93652abfa49498b938b3c9179f9fc487b0acc3edad7"
 dependencies = [
  "anstyle",
  "clap_lex 0.7.4",
@@ -1365,7 +1365,7 @@ dependencies = [
  "anes",
  "cast",
  "ciborium",
- "clap 4.5.23",
+ "clap 4.5.28",
  "criterion-plot",
  "is-terminal",
  "itertools 0.10.5",
@@ -3356,13 +3356,13 @@ checksum = "ddc24109865250148c2e0f3d25d4f0f479571723792d3802153c60922a4fb708"
 
 [[package]]
 name = "is-terminal"
-version = "0.4.13"
+version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "261f68e344040fbd0edea105bef17c66edf46f984ddb1115b775ce31be948f4b"
+checksum = "e19b23d53f35ce9f56aebc7d1bb4e6ac1e9c0db7ac85c8d1760c04379edced37"
 dependencies = [
  "hermit-abi 0.4.0",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3520,7 +3520,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-language"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "arroy",
@@ -3565,7 +3565,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-language-model"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "async-lock",
@@ -3615,7 +3615,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-llama"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "accelerate-src",
  "ahash 0.8.12",
@@ -3639,6 +3639,8 @@ dependencies = [
  "rand 0.8.5",
  "rayon",
  "safetensors",
+ "serde",
+ "serde_json",
  "thiserror 2.0.9",
  "tokenizers",
  "tokio",
@@ -3678,7 +3680,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-parse-macro"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "kalosm",
  "pretty_assertions",
@@ -3691,7 +3693,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-sample"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "criterion",
  "kalosm-parse-macro",
@@ -5327,9 +5329,9 @@ dependencies = [
 
 [[package]]
 name = "quick_cache"
-version = "0.6.9"
+version = "0.6.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d7c94f8935a9df96bb6380e8592c70edf497a643f94bd23b2f76b399385dbf4"
+checksum = "3f67cfc9c723c39f3615eb0840b00c4cb9e2b068d2fa761a30d845ec91730a59"
 dependencies = [
  "ahash 0.8.12",
  "equivalent",
@@ -6153,7 +6155,7 @@ checksum = "f7c45b9784283f1b2e7fb61b42047c2fd678ef0960d4f6f1eba131594cc369d4"
 
 [[package]]
 name = "rwhisper"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -6422,9 +6424,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.134"
+version = "1.0.139"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d00f4175c42ee48b15416f6193a959ba3a0d67fc699a0db9ad12df9f83991c7d"
+checksum = "44f86c3acccc9c65b153fe1b85a3be07fe5515274ec9f0653b4a0875731c72a6"
 dependencies = [
  "indexmap 2.7.0",
  "itoa",
@@ -6987,7 +6989,7 @@ dependencies = [
  "getrandom 0.2.15",
  "lru",
  "parking_lot",
- "quick_cache 0.6.9",
+ "quick_cache 0.6.10",
  "revision",
  "tokio",
  "vart",
@@ -7966,9 +7968,9 @@ dependencies = [
 
 [[package]]
 name = "valuable"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "830b7e5d4d90034032940e4ace0d9a9a057e7a45cd94e6c007832e39edb82f6d"
+checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vart"

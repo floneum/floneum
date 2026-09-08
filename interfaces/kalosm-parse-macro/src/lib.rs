@@ -1838,7 +1838,7 @@ impl Parse for BoolOptions {
 impl ToTokens for BoolOptions {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         let quote = quote! {
-            kalosm_sample::BoolParser::new()
+            <bool as kalosm_sample::Parse>::new_parser()
         };
         tokens.extend(quote);
     }

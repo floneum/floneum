@@ -112,6 +112,7 @@ pub(crate) fn generate_structured<P: Parser>(
             &tokens[tokens.len() - unprocessed_token_count..],
             Some(&mut *session),
             &mut logit_probs,
+            &llm.tokenizer,
         )?;
         let resources = &mut SamplerResources {
             previous_tokens: tokens,

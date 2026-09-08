@@ -591,6 +591,11 @@ fn test_integer_schema() {
 pub struct BooleanSchema;
 
 impl BooleanSchema {
+    /// Create a new boolean schema
+    pub fn new() -> Self {
+        Self
+    }
+
     fn display_with_description(
         &self,
         f: &mut std::fmt::Formatter<'_>,

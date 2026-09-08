@@ -42,6 +42,7 @@ pub struct LlamaConfig {
     pub(crate) stop_token: u32,
     pub(crate) stop_token_string: String,
     pub(crate) chat_template: Option<HuggingFaceChatTemplate>,
+    pub(crate) rope_scaling: Option<RopeScalingConfig>,
 }
 
 impl LlamaConfig {
@@ -62,8 +63,17 @@ impl LlamaConfig {
             stop_token: 0,
             stop_token_string: "<|endoftext|>".to_string(),
             chat_template: None,
+            rope_scaling: None,
         }
     }
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct RopeScalingConfig {
+    pub(crate) factor: f32,
+    pub(crate) high_freq_factor: f32,
+    pub(crate) low_freq_factor: f32,
+    pub(crate) original_max_position_embeddings: usize,
 }
 
 pub struct Model {
@@ -83,6 +93,7 @@ impl Model {
         start_token_string: String,
         stop_token: u32,
         stop_token_string: String,
+        rope_scaling: Option<RopeScalingConfig>,
     ) -> Result<Self> {
         let head_dim = (ct.hparams.n_embd / ct.hparams.n_head) as usize;
         let n_layer = ct.hparams.n_layer as usize;
@@ -97,6 +108,7 @@ impl Model {
             stop_token,
             stop_token_string,
             chat_template: None,
+            rope_scaling,
         };
         let config = Arc::new(config);
         let rope = RopeCache::new(&config, DType::F32, device)?;
@@ -161,6 +173,7 @@ impl Model {
         reader: &mut R,
         device: &Device,
         override_stop_token_string: Option<String>,
+        rope_scaling: Option<RopeScalingConfig>,
     ) -> std::result::Result<Self, LlamaSourceError> {
         let md_get = |s: &str| {
             let value = if s.starts_with('.') {
@@ -239,6 +252,7 @@ impl Model {
             stop_token,
             stop_token_string,
             chat_template,
+            rope_scaling,
         };
         let config = Arc::new(config);
 

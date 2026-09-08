@@ -3,6 +3,8 @@ use crate::{
     IntegerParser, LiteralParser, ParseStatus, Parser, ParserExt, SequenceParser, StringParser,
 };
 
+use super::Either;
+
 /// Data that can be parsed incrementally.
 ///
 /// You can derive this trait for unit values, unit enums or structs or implement it manually for custom types.
@@ -194,5 +196,13 @@ impl<T: Parse> Parse for Option<T> {
         parser
             .map_output(|output| Some(output))
             .or(LiteralParser::new("null").map_output(|_| None))
+    }
+}
+
+impl Parse for bool {
+    fn new_parser() -> impl SendCreateParserState<Output = Self> {
+        LiteralParser::new("true")
+            .otherwise(LiteralParser::new("false"))
+            .map_output(|output| matches!(output, Either::Left(_)))
     }
 }

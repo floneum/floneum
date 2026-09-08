@@ -1,6 +1,6 @@
 [package]
 name = "kalosm-parse-macro"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 description = "A macro to derive kalosm parsing traits"
 license = "MIT/Apache-2.0"
@@ -20,8 +20,8 @@ tokio = { version = "1.28.1", features = ["full"] }
 pretty_assertions = "1.4.0"
 
 [features]
-metal = ["kalosm/metal"]
-cuda = ["kalosm/cuda"]
+metal = []
+cuda = []
 
 [lib]
 proc-macro = true
