@@ -176,6 +176,26 @@ impl Device {
         &self.inner().session
     }
 
+    /// Another device on the same backend, with its own session and graph.
+    ///
+    /// The hardware, its compiled pipelines and its buffer pool are shared;
+    /// the e-graph, the plans cached for it and the tuning done against it
+    /// are not. Values cannot cross between the two.
+    ///
+    /// What a measurement wants. A session accumulates: every value ever
+    /// built stays in its e-graph, and a resolve walks what is there, so a
+    /// benchmark sharing one session with forty others is partly timing
+    /// them. Handing each its own makes a case measure itself.
+    pub fn isolated(&self) -> Result<Self> {
+        let inner = Inner::new(self.session().backend())?;
+        Ok(match self {
+            #[cfg(feature = "cpu")]
+            Self::Cpu(_) => Self::Cpu(Cpu(inner)),
+            #[cfg(feature = "gpu")]
+            Self::Gpu(_) => Self::Gpu(Gpu(inner)),
+        })
+    }
+
     /// The graph values built from this device live in.
     pub fn graph(&self) -> &Graph {
         &self.inner().graph
