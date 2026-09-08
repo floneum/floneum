@@ -419,10 +419,16 @@ impl Launcher {
     /// Upload binding 0. Scalars like the learning rate and sequence length
     /// are uniform words here, so they never enter a kernel's identity.
     pub fn write_uniforms(&self, slot0: &Buf, uniforms: &Uniforms) -> Result<()> {
+        self.write_uniform_bytes(slot0, &uniforms.to_bytes())
+    }
+
+    /// [`Self::write_uniforms`] over words already packed, so a caller that
+    /// keeps the last words to compare against does not pack them twice.
+    pub fn write_uniform_bytes(&self, slot0: &Buf, words: &[u8]) -> Result<()> {
         let gpu = slot0
             .downcast_ref::<GpuBuffer>()
             .ok_or_else(|| Error::Device("binding 0 is not a pooled buffer".into()))?;
-        let mut bytes = uniforms.to_bytes();
+        let mut bytes = words.to_vec();
         if bytes.is_empty() {
             bytes.extend_from_slice(&0u32.to_le_bytes());
         }
