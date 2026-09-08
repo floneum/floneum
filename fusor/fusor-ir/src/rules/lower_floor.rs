@@ -571,6 +571,7 @@ pub fn lower_scatter(b: &mut Builder<'_>, id: Id, node: &Node, f: &Facts<'_>) ->
         base,
         idx,
         upd,
+        run,
         ..
     }) = &node.op
     else {
@@ -588,6 +589,7 @@ pub fn lower_scatter(b: &mut Builder<'_>, id: Id, node: &Node, f: &Facts<'_>) ->
                 alias_operand_of(*upd, &f.operand(2)?.shape.clone()),
             ],
             sched: ScheduleDomain::Point,
+            run: *run,
         })
         .ok()?;
     b.union(id, k).ok()

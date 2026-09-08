@@ -86,6 +86,10 @@ pub enum Launch {
         combine: crate::ir::logical::ScatterCombine,
         ops: Vec<Operand>,
         sched: ScheduleDomain,
+        /// Carried from `Logical::Scatter::run`: the index is the contiguous
+        /// run starting here, so a lane can invert it by subtraction instead
+        /// of searching every update for its own output.
+        run: Option<u32>,
     },
 
     /// A multi-output region: the same rewrite as producer inlining,

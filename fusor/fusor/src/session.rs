@@ -2491,6 +2491,7 @@ fn rebuild_op(op: &Op, children: &[Id], dims: &mut dyn FnMut(Dim) -> Dim) -> Opt
             axis,
             combine,
             unique,
+            run,
             ..
         }) => Op::Logical(Logical::Scatter {
             axis: *axis,
@@ -2499,6 +2500,7 @@ fn rebuild_op(op: &Op, children: &[Id], dims: &mut dyn FnMut(Dim) -> Dim) -> Opt
             idx: child(1)?,
             upd: child(2)?,
             unique: *unique,
+            run: *run,
         }),
         Op::Logical(Logical::Dequant { fmt, layout, .. }) => Op::Logical(Logical::Dequant {
             fmt: *fmt,
