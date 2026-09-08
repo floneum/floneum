@@ -60,21 +60,41 @@ pub(crate) fn lower_kmap(mut ctx: Ctx<'_>, op: &Launch, theta: SchedPoint) -> Re
 
     match tiling.dim {
         None => {
-            let index = ctx.global_index(block, grid);
-            let mask = ctx.b.compare(TileCompareOp::Lt, index.clone(), total);
-            let coords = ctx.coords_from_linear(index.clone(), space)?;
-            let mut args = Vec::with_capacity(ops.len());
-            for operand in ops {
-                args.push(ctx.load_mapped(operand, index.clone(), space_total)?);
+            // `tiled_grid` already divided the dispatch by `tm`, so a thread
+            // owns `tm` elements and writing one would leave the rest of the
+            // output untouched. They are taken a grid apart rather than
+            // consecutively: at every step the threads of a workgroup still
+            // sit on consecutive elements, which is what keeps the loads and
+            // stores coalesced.
+            let lane = ctx.global_index(block, grid);
+            let span = (tm > 1).then(|| ctx.grid_threads(block));
+            for t in 0..tm {
+                let index = match (&span, t) {
+                    (_, 0) => lane.clone(),
+                    (Some(span), _) => {
+                        let t_e = ctx.b.u32(t);
+                        let step = ctx.b.mul(span.clone(), t_e);
+                        ctx.b.add(lane.clone(), step)
+                    }
+                    (None, _) => unreachable!("tm > 1 always carries a span"),
+                };
+                let mask = ctx
+                    .b
+                    .compare(TileCompareOp::Lt, index.clone(), total.clone());
+                let coords = ctx.coords_from_linear(index.clone(), space)?;
+                let mut args = Vec::with_capacity(ops.len());
+                for operand in ops {
+                    args.push(ctx.load_mapped(operand, index.clone(), space_total)?);
+                }
+                let value = ctx.eval_scalar(body, &args, &coords)?;
+                let value = ctx.b.cast(value, out_elem);
+                body_stmts.push(Stmt::Store {
+                    dst: out_view.clone(),
+                    addr: Addr::Linear(index),
+                    value,
+                    mask,
+                });
             }
-            let value = ctx.eval_scalar(body, &args, &coords)?;
-            let value = ctx.b.cast(value, out_elem);
-            body_stmts.push(Stmt::Store {
-                dst: out_view,
-                addr: Addr::Linear(index),
-                value,
-                mask,
-            });
         }
         Some(dim) => {
             let tm = tiling.tm.max(1);

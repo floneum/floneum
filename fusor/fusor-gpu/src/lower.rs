@@ -1235,6 +1235,24 @@ impl<'a> Ctx<'a> {
         self.b.add(base, lane)
     }
 
+    /// How many threads this dispatch launches, as an expression.
+    ///
+    /// The span a grid-stride loop steps by: thread `i` of `n` covers
+    /// `i, i + n, i + 2n, ...`, so consecutive threads stay on consecutive
+    /// elements at every step and the loads keep coalescing. Read from
+    /// `@builtin(num_workgroups)` for the same reason [`Self::global_index`]
+    /// does, so the dispatch extents never get baked into the body.
+    pub(crate) fn grid_threads(&mut self, block: u32) -> TileExpr {
+        use fusor_ir::ir::kernel::WorkgroupAxis;
+        let x = self.b.builtin(Builtin::NumWorkgroups(WorkgroupAxis::X));
+        let y = self.b.builtin(Builtin::NumWorkgroups(WorkgroupAxis::Y));
+        let z = self.b.builtin(Builtin::NumWorkgroups(WorkgroupAxis::Z));
+        let xy = self.b.mul(x, y);
+        let groups = self.b.mul(xy, z);
+        let block_e = self.b.u32(block);
+        self.b.mul(groups, block_e)
+    }
+
     /// The value this launch writes: the launch root when it is bound for
     /// writing, else the first writable binding.
     pub(crate) fn output(&self) -> Result<Id> {

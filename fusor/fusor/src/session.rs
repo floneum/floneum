@@ -2981,19 +2981,55 @@ fn agrees(dtype: Dtype, a: &[u8], b: &[u8]) -> bool {
     if a == b {
         return true;
     }
-    if dtype != Dtype::F32 {
+    // Integers are exact or they are wrong. Floats are compared to the
+    // precision they carry: two members of a class may evaluate the same
+    // expression in a different association or round through a different
+    // intermediate, and for a half-precision result that shows up in the
+    // last bit. Demanding bit equality there reports arithmetic as a
+    // miscompile.
+    let Some(values) = float_elements(dtype, a).zip(float_elements(dtype, b)) else {
         return false;
-    }
-    let f = |s: &[u8]| {
-        s.as_chunks::<4>()
-            .0
-            .iter()
-            .map(|c| f32::from_le_bytes(*c))
-            .collect::<Vec<f32>>()
     };
-    let (x, y) = (f(a), f(b));
+    let (x, y) = values;
+    let tol = match dtype {
+        Dtype::F32 => 1e-3,
+        // Half precision holds about three decimal digits, so the same
+        // relative bound would be inside one ulp.
+        _ => 5e-3,
+    };
     let scale = x.iter().fold(1.0f32, |m, v| m.max(v.abs()));
-    x.iter().zip(&y).all(|(p, q)| (p - q).abs() <= 1e-3 * scale)
+    x.iter().zip(&y).all(|(p, q)| (p - q).abs() <= tol * scale)
+}
+
+/// A float buffer's elements as `f32`, or `None` when the dtype is not one.
+fn float_elements(dtype: Dtype, bytes: &[u8]) -> Option<Vec<f32>> {
+    match dtype {
+        Dtype::F32 => Some(
+            bytes
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|c| f32::from_le_bytes(*c))
+                .collect(),
+        ),
+        Dtype::F16 => Some(
+            bytes
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|c| half::f16::from_le_bytes(*c).to_f32())
+                .collect(),
+        ),
+        Dtype::BF16 => Some(
+            bytes
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|c| half::bf16::from_le_bytes(*c).to_f32())
+                .collect(),
+        ),
+        _ => None,
+    }
 }
 
 /// One element's little-endian bytes, in the splat's own dtype.

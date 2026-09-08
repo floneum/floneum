@@ -17,7 +17,7 @@ use crate::carrier::Carrier;
 use crate::dtype::Dtype;
 use crate::egraph::{Builder, Facts, Id, RuleTag};
 use crate::ir::launch::{
-    AccessPlan, GatherMode, IndexSpace, Launch, Operand, ScatterMode, ScheduleDomain,
+    AccessPlan, GatherMode, IndexSpace, Launch, MapDomain, Operand, ScatterMode, ScheduleDomain,
 };
 use crate::ir::logical::{Label, Logical};
 use crate::ir::{Level, Node, Op, OpTag};
@@ -204,7 +204,14 @@ pub fn lower_map(b: &mut Builder<'_>, id: Id, node: &Node, f: &Facts<'_>) -> Opt
             space: space_of(f),
             body: expr.clone(),
             ops,
-            sched: ScheduleDomain::Point,
+            // The tiling domain belongs on the node as it is minted, not on a
+            // sibling: `fusor_tile::rules` explains why an additive `Map`
+            // domain regresses extraction, so this replaces `Point` rather
+            // than competing with it. Left as `Point` the launch has no
+            // schedule alternatives at all — nothing for the extractor to
+            // choose between and nothing the tuner can race — so every
+            // elementwise kernel ran one output per thread.
+            sched: ScheduleDomain::Map(MapDomain::linear_over(f.caps(), &f.own().shape)),
         })
         .ok()?;
     b.union(id, k).ok()
