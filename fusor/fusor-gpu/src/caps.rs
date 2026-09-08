@@ -118,6 +118,13 @@ pub(crate) fn requested_features(adapter: &wgpu::Adapter) -> wgpu::Features {
     want(wgpu::Features::SUBGROUP);
     want(wgpu::Features::SHADER_F16);
     want(wgpu::Features::PIPELINE_CACHE);
+    // wasm32 never requests timestamps: the tuner's clock reads its query
+    // set back synchronously right after the resolve, and a browser can only
+    // deliver a buffer map from its event loop, so holding the bit would
+    // deadlock the page on the first timed resolve. Without the bit
+    // `timestamp_query_set` is `None` and every consumer takes its
+    // "not timed" path.
+    #[cfg(not(target_arch = "wasm32"))]
     if available.contains(wgpu::Features::TIMESTAMP_QUERY) {
         want(wgpu::Features::TIMESTAMP_QUERY);
         want(wgpu::Features::TIMESTAMP_QUERY_INSIDE_PASSES);

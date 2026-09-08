@@ -190,6 +190,11 @@ pub trait Target: Send + Sync {
 
     fn alloc(&self, bytes: u64, persistence: crate::dtype::Persistence) -> Result<Buf>;
 
+    /// A fresh buffer holding a byte-for-byte copy of `src`, made on the
+    /// device: what a detached value's leaf is built on, with no host round
+    /// trip, so it is the one form a browser can use.
+    fn copy(&self, src: &Buf) -> Result<Buf>;
+
     /// Block until every submitted dispatch has retired. The only host
     /// syncs are this, explicit readback, and the allocator's cap retry.
     fn wait(&self) -> Result<()>;

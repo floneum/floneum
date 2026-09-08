@@ -55,8 +55,12 @@ impl BenchmarkConfig {
 }
 
 impl Default for BenchmarkConfig {
+    /// The iteration count here is only calibration's starting guess (see
+    /// [`time_samples`]); nine rounds is what the reported median rests on,
+    /// which holds the run-to-run spread near ten percent for about eight
+    /// seconds of page time.
     fn default() -> Self {
-        Self::new(2, 3, 7)
+        Self::new(2, 10, 9)
     }
 }
 
@@ -77,17 +81,27 @@ pub struct BenchmarkReport {
     pub detail: String,
 }
 
+/// What one case's timed rounds produced: the rounds themselves and how many
+/// iterations each of them held, which calibration decides rather than the
+/// config (see [`time_samples`]).
+pub(crate) struct TimedRounds {
+    pub(crate) rounds: Vec<Duration>,
+    pub(crate) iterations: usize,
+}
+
 impl BenchmarkReport {
     pub(crate) fn new(
         name: impl Into<String>,
         config: BenchmarkConfig,
-        samples: Vec<Duration>,
+        timed: TimedRounds,
         detail: impl Into<String>,
     ) -> Self {
         let config = config.sanitized();
+        let iterations = timed.iterations.max(1);
+        let samples = timed.rounds;
         let mut sample_mean_ms = samples
             .iter()
-            .map(|elapsed| elapsed.as_secs_f64() * 1000.0 / config.iterations as f64)
+            .map(|elapsed| elapsed.as_secs_f64() * 1000.0 / iterations as f64)
             .collect::<Vec<_>>();
         let total_ms = samples
             .iter()
@@ -99,11 +113,11 @@ impl BenchmarkReport {
         let min_ms = sample_mean_ms.first().copied().unwrap_or(0.0);
         let max_ms = sample_mean_ms.last().copied().unwrap_or(0.0);
         let stddev_ms = stddev(&sample_mean_ms, mean_ms);
-        let total_iterations = config.iterations * config.samples;
+        let total_iterations = iterations * samples.len();
         Self {
             name: name.into(),
             warmups: config.warmups,
-            iterations: config.iterations,
+            iterations,
             samples: config.samples,
             total_iterations,
             sample_mean_ms,
@@ -176,26 +190,89 @@ impl BenchmarkCase {
     }
 }
 
-pub(crate) async fn time_samples<F, Fut>(
+/// Time `samples` rounds of `iterations` computations, each round ending in
+/// one `flush`.
+///
+/// The flush is per round, never per iteration, and that is the whole point.
+/// Retrieving a result costs each library a fixed latency that has nothing to
+/// do with the kernels: burn's is about 35 ms, so a suite that downloaded
+/// every iteration reported that latency for every case and the same number
+/// came back for a 128x128 add as for a 2048x2048 matmul. Amortized over a
+/// round, what is left is the work. `run_once` therefore only has to get an
+/// iteration *started*; `flush` makes the round's results real, and holds
+/// every one of them alive until it does, so neither library can skip the
+/// results nobody asked for.
+/// How long a timed round should take. A browser clamps `performance.now()`
+/// to 100 microseconds, so a round of a few hundred microseconds is only a
+/// handful of ticks and quantization alone moved these cases by 3x between
+/// runs. Twenty milliseconds is two hundred ticks, which puts the clock's
+/// contribution near a half percent.
+const TARGET_ROUND_MS: f64 = 20.0;
+
+/// Ceiling on a calibrated round. A round holds every iteration's output
+/// alive until it flushes, so the count is also how many results sit on the
+/// device at once: at a megabyte an output, a few hundred is already a few
+/// hundred megabytes. The cheapest cases hit this and settle for a shorter
+/// round, which still clears the clock by a wide margin.
+const MAX_ITERATIONS: usize = 256;
+
+/// Time `samples` rounds, each of enough iterations to outrun the clock, and
+/// close every round with one `flush`.
+///
+/// **Rounds, not iterations, are timed.** Retrieving a result costs each
+/// library a fixed latency unrelated to the kernels — burn's is about 35 ms —
+/// so a suite that downloaded every iteration reported that latency for every
+/// case, and a 128x128 add measured the same as a 2048x2048 matmul.
+///
+/// **The iteration count is calibrated, not configured.** `config.iterations`
+/// is the starting guess; one unrecorded round measures the case and the
+/// count is rescaled so a timed round lands near [`TARGET_ROUND_MS`]. Without
+/// it the cheap cases sat under the browser's timer resolution and their
+/// numbers were noise.
+///
+/// `run_once` only has to get an iteration started; `flush` makes the round's
+/// results real and holds every one of them alive until it does, so neither
+/// library can skip the results nobody asked for.
+pub(crate) async fn time_samples<F, Fut, T, G, GFut>(
     config: BenchmarkConfig,
     mut run_once: F,
-) -> BenchmarkResult<Vec<Duration>>
+    mut flush: G,
+) -> BenchmarkResult<TimedRounds>
 where
     F: FnMut() -> Fut,
-    Fut: Future<Output = BenchmarkResult<()>>,
+    Fut: Future<Output = BenchmarkResult<T>>,
+    G: FnMut(Vec<T>) -> GFut,
+    GFut: Future<Output = BenchmarkResult<()>>,
 {
     let config = config.sanitized();
+    let round = async |n: usize, run_once: &mut F, flush: &mut G| -> BenchmarkResult<Duration> {
+        let started = Instant::now();
+        let mut held = Vec::with_capacity(n);
+        for _ in 0..n {
+            held.push(run_once().await?);
+        }
+        flush(held).await?;
+        Ok(started.elapsed())
+    };
+
     for _ in 0..config.warmups {
-        run_once().await?;
+        round(config.iterations, &mut run_once, &mut flush).await?;
     }
 
-    let mut samples = Vec::with_capacity(config.samples);
+    // Calibrate off a round nobody records: whatever the case costs, the
+    // timed rounds should be long enough to measure.
+    let probe = round(config.iterations, &mut run_once, &mut flush).await?;
+    let per_iteration_ms = probe.as_secs_f64() * 1000.0 / config.iterations as f64;
+    let iterations = if per_iteration_ms > 0.0 {
+        ((TARGET_ROUND_MS / per_iteration_ms).ceil() as usize)
+            .clamp(config.iterations, MAX_ITERATIONS)
+    } else {
+        MAX_ITERATIONS
+    };
+
+    let mut rounds = Vec::with_capacity(config.samples);
     for _ in 0..config.samples {
-        let started = Instant::now();
-        for _ in 0..config.iterations {
-            run_once().await?;
-        }
-        samples.push(started.elapsed());
+        rounds.push(round(iterations, &mut run_once, &mut flush).await?);
     }
-    Ok(samples)
+    Ok(TimedRounds { rounds, iterations })
 }

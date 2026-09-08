@@ -28,6 +28,18 @@ use super::{
 /// The largest finite f32 WGSL will parse back identically.
 pub(crate) const WGSL_SAFE_F32_MAX: f32 = 3.40282e38;
 
+/// Whether a finite f32 has to be spelled through its bit pattern.
+///
+/// `±f32::MAX` prints as `3.4028235e38`, which as an exact decimal lies
+/// above the type's maximum; naga's parser rounds it back, but Tint refuses
+/// the module ("value cannot be represented as 'f32'") and the browser then
+/// never runs the kernel. Every smaller magnitude prints within half an ulp
+/// of itself and so within range. `bitcast<f32>(0x7f7fffffu)` is the same
+/// value on every backend.
+fn needs_bit_spelling(v: f32) -> bool {
+    v.is_finite() && v.abs() == f32::MAX
+}
+
 impl Emitter<'_> {
     /// Append a *pure* expression (literal, pointer, argument): naga does not
     /// require these to appear in an `Emit` range.
@@ -715,6 +727,12 @@ impl Emitter<'_> {
         body: &mut Block,
     ) -> Result<Handle<Expression>, EmitError> {
         match expr.kind() {
+            TileExprKind::Literal(TileLiteral::F32(bits))
+                if needs_bit_spelling(f32::from_bits(*bits)) =>
+            {
+                let bits = self.u32_lit(*bits);
+                Ok(self.cast_as(body, bits, ScalarKind::Float, None))
+            }
             TileExprKind::Literal(lit) => Ok(self.append(tile_literal(*lit)?)),
             TileExprKind::CoopZero { .. } => {
                 let ty = self.element_type(expr.element())?;
@@ -1043,7 +1061,15 @@ impl Emitter<'_> {
         value: f64,
     ) -> Option<Handle<Expression>> {
         let lit = match self.exprs[like] {
-            Expression::Literal(Literal::F32(_)) => Literal::F32(value as f32),
+            Expression::Literal(Literal::F32(_)) => {
+                let v = value as f32;
+                // A fold whose result WGSL text cannot spell is left unfolded;
+                // the operation computes it at run time instead.
+                if !v.is_finite() || needs_bit_spelling(v) {
+                    return None;
+                }
+                Literal::F32(v)
+            }
             Expression::Literal(Literal::F16(_)) => Literal::F16(half::f16::from_f64(value)),
             Expression::Literal(Literal::U32(_)) => Literal::U32(value as u32),
             Expression::Literal(Literal::I32(_)) => Literal::I32(value as i32),

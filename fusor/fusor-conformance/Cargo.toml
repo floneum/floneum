@@ -35,3 +35,13 @@ pollster.workspace = true
 [[bin]]
 name = "fusor-conformance"
 path = "src/main.rs"
+
+# The fusor-versus-burn table the browser page shows, on the native device.
+[[example]]
+name = "bench_compare"
+required-features = ["burn-bench"]
+
+[[example]]
+name = "bench_sweep"
+required-features = ["burn-bench"]
+

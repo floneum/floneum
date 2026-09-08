@@ -69,6 +69,33 @@ pub fn wrong_member_count() -> u64 {
     WRONG_MEMBERS.load(Ordering::Relaxed)
 }
 
+/// Whether the tune race sweeps every class member of every launch instead
+/// of only the candidates worth timing.
+///
+/// Starts from `FUSOR_VERIFY_MEMBERS` and is settable from there on, because
+/// the sweep is a per-kernel correctness pass and a suite that reruns a case
+/// at several shapes does not need to pay for it at every one. It is by far
+/// the most expensive thing a resolve can do: one small sampling case races
+/// about 470 candidates under it.
+static VERIFY_MEMBERS: std::sync::OnceLock<std::sync::atomic::AtomicBool> =
+    std::sync::OnceLock::new();
+
+fn verify_members_flag() -> &'static std::sync::atomic::AtomicBool {
+    VERIFY_MEMBERS.get_or_init(|| {
+        std::sync::atomic::AtomicBool::new(std::env::var_os("FUSOR_VERIFY_MEMBERS").is_some())
+    })
+}
+
+/// Whether the member sweep is currently on. See [`set_verify_members`].
+pub fn verify_members() -> bool {
+    verify_members_flag().load(Ordering::Relaxed)
+}
+
+/// Turn the member sweep on or off for the resolves that follow.
+pub fn set_verify_members(on: bool) {
+    verify_members_flag().store(on, Ordering::Relaxed);
+}
+
 /// Proof that the holder owns a graph's `resolve_lock`.
 pub(crate) type ResolveGuard<'a> = parking_lot::MutexGuard<'a, ()>;
 
@@ -221,6 +248,10 @@ impl Backend {
     /// Copy a device buffer back to the host. One of exactly three host
     /// syncs, and the one that is awaited: on WebGPU the copy completes only
     /// when the browser's event loop runs, so it cannot be spun on.
+    fn copy(&self, buf: &Buf) -> Result<Buf> {
+        self.target().copy(buf)
+    }
+
     async fn download(&self, buf: &Buf, bytes: u64) -> Result<Vec<u8>> {
         match self {
             #[cfg(feature = "gpu")]
@@ -427,6 +458,12 @@ fn slot_of(d: Dim) -> Option<usize> {
 }
 
 impl Session {
+    /// The backend this session runs on, for building another session over
+    /// the same device.
+    pub fn backend(&self) -> Backend {
+        self.inner.device.clone()
+    }
+
     /// Create a planner, compiler, and execution session for `device`.
     pub fn new(device: Backend) -> Result<Self> {
         let planner = Planner::shared();
@@ -1415,6 +1452,22 @@ impl Session {
         })
     }
 
+    /// A device-side copy of an already-resolved value's buffer, with the
+    /// layout that buffer carries. Nothing crosses to the host, so this is
+    /// the same call on every platform.
+    pub(crate) fn copy_device_locked(
+        &self,
+        _resolving: &ResolveGuard<'_>,
+        graph: &GraphRef,
+        id: Id,
+    ) -> Result<(Buf, Option<fusor_ir::shape::Layout>)> {
+        let buf = graph
+            .device_buf(id)
+            .ok_or_else(|| Error::Plan(format!("{id} has no device buffer; resolve it first")))?;
+        let copy = self.inner.device.copy(&buf)?;
+        Ok((copy, graph.device_layout(id)))
+    }
+
     /// Bytes of an already-resolved value, blocking. Native only: on wasm a
     /// readback can only be awaited.
     #[cfg(not(target_arch = "wasm32"))]
@@ -1834,7 +1887,7 @@ impl Session {
         // Member verification: race every candidate of every launch so each
         // gets value-checked, but adopt none — a plan that changes under
         // measurement would make suite dispatch counts nondeterministic.
-        let verify_members = std::env::var_os("FUSOR_VERIFY_MEMBERS").is_some();
+        let verify_members = verify_members();
         let min_macs = if verify_members {
             0
         } else {

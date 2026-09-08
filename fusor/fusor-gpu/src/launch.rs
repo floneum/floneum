@@ -870,6 +870,21 @@ impl Launcher {
         }
     }
 
+    /// Queue a device-to-device copy of `bytes` from the start of `src` to
+    /// the start of `dst`. Ordered after every earlier submission, so the
+    /// copy reads what the dispatches that produced `src` wrote.
+    pub fn copy_buffer(&self, src: &Buf, dst: &Buf, bytes: u64) -> Result<()> {
+        self.lost.check()?;
+        let record = CommandRecord::CopyBuffer {
+            src: src.clone(),
+            src_offset: 0,
+            dst: dst.clone(),
+            dst_offset: 0,
+            bytes,
+        };
+        self.encode_command_records(&[record], None, TimingMode::All)
+    }
+
     /// Copy `src` into `staging`, map it, and return the bytes. On `Ok` the
     /// staging buffer is unmapped again; on `Err` its map state is unknown.
     ///

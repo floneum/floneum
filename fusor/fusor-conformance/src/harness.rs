@@ -438,7 +438,20 @@ pub fn fuzz_case(
     body: impl AsyncFn(&Session, &[u64], u32) -> CaseResult + Send + Sync + 'static,
 ) -> Case {
     Case::new(area, name, async move |session: &Session| {
+        // The member sweep races every e-class member of every launch and is
+        // most of what a run costs — hundreds of extra kernel executions for
+        // a case whose own dispatches take microseconds. What it covers is
+        // the case's kernels, and running the same case again at another
+        // shape mostly re-covers the same ones, so one run of each case pays
+        // for it rather than all of them. Which run is fixed per case and
+        // spread across the suite, so shape-dependent members still get
+        // swept somewhere.
+        let sweep = sweeping_members();
+        let sweep_run = case_seed(name, 0) % runs();
         for run in 0..runs() {
+            if sweep {
+                fusor::session::set_verify_members(run == sweep_run);
+            }
             let seed = case_seed(name, run);
             let shape = sample_shape(&mut Rng::new(seed), spec);
             body(session, &shape, seed)
@@ -453,10 +466,25 @@ pub fn fuzz_case(
                             format!("run {run} at shape {shape:?} (seed {seed}): {message}").into()
                         }
                     }
+                })
+                .inspect_err(|_| {
+                    if sweep {
+                        fusor::session::set_verify_members(true);
+                    }
                 })?;
+        }
+        if sweep {
+            fusor::session::set_verify_members(true);
         }
         Ok(())
     })
+}
+
+/// Whether this process was asked to sweep class members at all, read once:
+/// the flag itself is toggled per run, so it cannot be the source of truth.
+fn sweeping_members() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(fusor::session::verify_members)
 }
 
 /// Element count of a fully constant shape. Panics on a symbolic extent: a

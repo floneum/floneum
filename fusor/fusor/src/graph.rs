@@ -665,6 +665,19 @@ impl GraphRef {
         self.state.session.read_bytes_locked(&resolving, self, id)
     }
 
+    /// [`Self::read_back`]'s device-side twin: resolve `id` and return a
+    /// fresh buffer holding a copy of its bytes, with the layout the copied
+    /// buffer carries. The same guard spans the resolve and the copy, for
+    /// the reason `read_back` gives.
+    pub(crate) fn copy_device(&self, id: Id) -> Result<(Buf, Option<fusor_ir::shape::Layout>)> {
+        let tensor = self.tensor(id);
+        let resolving = self.state.resolve_lock.lock();
+        self.state
+            .session
+            .resolve_locked(&resolving, std::slice::from_ref(&tensor))?;
+        self.state.session.copy_device_locked(&resolving, self, id)
+    }
+
     /// [`Self::read_back`], awaited. The graph lock spans the resolve and
     /// the readback plan; the download runs after it, holding its own
     /// handle on the buffer (see `Session::read_plan_locked`).

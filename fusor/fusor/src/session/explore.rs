@@ -35,6 +35,7 @@ use rustc_hash::FxHashMap;
 
 use super::{
     Backend, Session, TUNE_MARGIN, autotune_min_macs, batch_aligns, plan_sparse_diff, plans_align,
+    verify_members,
 };
 use crate::graph::GraphRef;
 
@@ -90,13 +91,6 @@ fn epsilon() -> u64 {
             .and_then(|v| v.parse().ok())
             .unwrap_or(EXPLORE_EPSILON)
     })
-}
-
-/// The member-verification sweep needs a deterministic dispatch stream —
-/// it adopts nothing and counts everything — so the explorer stands down.
-fn verify_members() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("FUSOR_VERIFY_MEMBERS").is_some())
 }
 
 fn tune_log() -> bool {
