@@ -38,6 +38,21 @@ enum Route {
 
 #[component]
 fn App() -> Element {
+    // Route in the fragment, not the path.
+    //
+    // The page is published to GitHub Pages, which has no single-page
+    // fallback: it answers any path the build did not write a file for with
+    // its own 404, so `/benchmarks` and `/benchmarks/<case>` were reachable
+    // by clicking through from the root and by nothing else. Not a link, not
+    // a reload, not the back button after a reload. Keeping the route after
+    // a `#` means every URL asks the host for the one page that exists.
+    #[cfg(target_arch = "wasm32")]
+    use_hook(|| {
+        dioxus::history::provide_history_context(std::rc::Rc::new(
+            dioxus::web::HashHistory::new(true),
+        ))
+    });
+
     rsx! {
         Router::<Route> {}
     }
