@@ -644,15 +644,15 @@ fn contract_rereads(
     let Op::Launch(Launch::Contract { m, n, a, b, .. }) = &graph.node(node).op else {
         return Ok(out);
     };
-    let (bm, bn) = match extraction.theta.get(&root).copied() {
-        Some(SchedPoint::Coop { geom, .. }) => (geom.bm, geom.bn),
-        Some(SchedPoint::Sgemm(p)) => (p.bm, p.bn),
-        // One row of `cols` outputs per workgroup: the whole point of the
-        // family is that it does not tile the reduced side.
-        Some(SchedPoint::Sgemv(p)) => (1, p.cols.max(1)),
-        // A fold tiles neither side.
-        Some(SchedPoint::Fold(_)) => (1, 1),
-        _ => return Ok(out),
+    // The schedule states its own tile; this function does not know the
+    // families. See `SchedPoint::output_tile`.
+    let Some((bm, bn)) = extraction
+        .theta
+        .get(&root)
+        .copied()
+        .and_then(|theta| theta.output_tile())
+    else {
+        return Ok(out);
     };
     let extent = |d: &Dim| d.as_const().unwrap_or(1).max(1);
     let (m, n) = (extent(m), extent(n));
