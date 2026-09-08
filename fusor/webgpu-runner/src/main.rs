@@ -13,7 +13,7 @@ use components::card::{Card, CardContent, CardDescription, CardHeader, CardTitle
 use components::separator::Separator;
 
 const MAX_RENDERED_STEPS: usize = 80;
-const DETAIL_SWEEP_CONFIG: BenchmarkConfig = BenchmarkConfig::new(2, 10, 5);
+const DETAIL_SWEEP_CONFIG: BenchmarkConfig = BenchmarkConfig::new(2, 10, 9);
 
 fn main() {
     // Failures also land in the browser console (see `run_test_suite`),
@@ -38,6 +38,21 @@ enum Route {
 
 #[component]
 fn App() -> Element {
+    // Route in the fragment, not the path.
+    //
+    // The page is published to GitHub Pages, which has no single-page
+    // fallback: it answers any path the build did not write a file for with
+    // its own 404, so `/benchmarks` and `/benchmarks/<case>` were reachable
+    // by clicking through from the root and by nothing else. Not a link, not
+    // a reload, not the back button after a reload. Keeping the route after
+    // a `#` means every URL asks the host for the one page that exists.
+    #[cfg(target_arch = "wasm32")]
+    use_hook(|| {
+        dioxus::history::provide_history_context(std::rc::Rc::new(
+            dioxus::web::HashHistory::new(true),
+        ))
+    });
+
     rsx! {
         Router::<Route> {}
     }

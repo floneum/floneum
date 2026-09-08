@@ -7,6 +7,12 @@ use super::{
     BenchmarkResult,
 };
 
+/// Run each case on its own session over `device`'s backend.
+///
+/// A case measures itself only if it starts from nothing: a session keeps
+/// every value ever built in its e-graph and every plan it has cached, so a
+/// case run after forty others resolves against their leftovers. Sharing one
+/// session made a batched matmul report 8.35 ms that reports 0.27 ms alone.
 pub async fn run_cases(
     device: &Device,
     config: BenchmarkConfig,
@@ -17,14 +23,26 @@ pub async fn run_cases(
     for case in cases {
         let name = case.name().to_string();
         progress(BenchmarkEvent::Started(name.clone()));
-        let report = case
-            .run(device, config)
-            .await
-            .map_err(|err| -> BenchmarkError { format!("{name}: {err}").into() })?;
+        let report = run_isolated(&name, case, device, config).await?;
         progress(BenchmarkEvent::Finished(report.clone()));
         reports.push(report);
     }
     Ok(reports)
+}
+
+/// One case on a session of its own. See [`run_cases`].
+async fn run_isolated(
+    name: &str,
+    case: BenchmarkCase,
+    device: &Device,
+    config: BenchmarkConfig,
+) -> BenchmarkResult<BenchmarkReport> {
+    let own = device
+        .isolated()
+        .map_err(|err| -> BenchmarkError { format!("{name}: {err}").into() })?;
+    case.run(&own, config)
+        .await
+        .map_err(|err| -> BenchmarkError { format!("{name}: {err}").into() })
 }
 
 pub async fn run_case(
@@ -35,7 +53,7 @@ pub async fn run_case(
     let Some(case) = cases().into_iter().find(|case| case.name() == name) else {
         return Err(format!("unknown benchmark case: {name}").into());
     };
-    case.run(device, config).await
+    run_isolated(name, case, device, config).await
 }
 
 macro_rules! registry {
