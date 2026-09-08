@@ -622,7 +622,26 @@ fn contract_rereads(
     root: Id,
 ) -> Result<rustc_hash::FxHashMap<Id, u32>> {
     let mut out = rustc_hash::FxHashMap::default();
-    let Op::Launch(Launch::Contract { m, n, a, b, .. }) = &graph.node(root).op else {
+    // The same value can be realized as a `Contract` or, through the generic
+    // floor, as a plain `Fold`. Both are members of one class, and the fold
+    // has to be priced as the contraction it is computing or it looks free:
+    // a fold over the contraction space reduces each output element on its
+    // own, which is a 1x1 tile and the most reuse a schedule can lose.
+    let node = match &graph.node(root).op {
+        Op::Launch(Launch::Contract { .. }) => root,
+        Op::Launch(Launch::Fold { .. }) => {
+            match graph
+                .members(graph.class_of(root))
+                .into_iter()
+                .find(|m| matches!(&graph.node(*m).op, Op::Launch(Launch::Contract { .. })))
+            {
+                Some(sibling) => sibling,
+                None => return Ok(out),
+            }
+        }
+        _ => return Ok(out),
+    };
+    let Op::Launch(Launch::Contract { m, n, a, b, .. }) = &graph.node(node).op else {
         return Ok(out);
     };
     let (bm, bn) = match extraction.theta.get(&root).copied() {
@@ -631,6 +650,8 @@ fn contract_rereads(
         // One row of `cols` outputs per workgroup: the whole point of the
         // family is that it does not tile the reduced side.
         Some(SchedPoint::Sgemv(p)) => (1, p.cols.max(1)),
+        // A fold tiles neither side.
+        Some(SchedPoint::Fold(_)) => (1, 1),
         _ => return Ok(out),
     };
     let extent = |d: &Dim| d.as_const().unwrap_or(1).max(1);
