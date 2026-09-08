@@ -316,7 +316,11 @@ pub async fn run_sweep(
             suite: "webgpu",
             label: label.clone(),
         });
-        let webgpu = run_webgpu_case(case, device, *size, config).await?;
+        // Each size on a session of its own, for the reason
+        // `registry::run_cases` gives: a shared one carries the earlier
+        // sizes' graphs into this one's measurement.
+        let own = device.isolated()?;
+        let webgpu = run_webgpu_case(case, &own, *size, config).await?;
         progress(BenchmarkSweepEvent::Finished {
             suite: "webgpu",
             label: label.clone(),

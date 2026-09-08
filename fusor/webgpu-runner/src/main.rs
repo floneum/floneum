@@ -13,7 +13,7 @@ use components::card::{Card, CardContent, CardDescription, CardHeader, CardTitle
 use components::separator::Separator;
 
 const MAX_RENDERED_STEPS: usize = 80;
-const DETAIL_SWEEP_CONFIG: BenchmarkConfig = BenchmarkConfig::new(2, 10, 5);
+const DETAIL_SWEEP_CONFIG: BenchmarkConfig = BenchmarkConfig::new(2, 10, 9);
 
 fn main() {
     // Failures also land in the browser console (see `run_test_suite`),

@@ -458,6 +458,12 @@ fn slot_of(d: Dim) -> Option<usize> {
 }
 
 impl Session {
+    /// The backend this session runs on, for building another session over
+    /// the same device.
+    pub fn backend(&self) -> Backend {
+        self.inner.device.clone()
+    }
+
     /// Create a planner, compiler, and execution session for `device`.
     pub fn new(device: Backend) -> Result<Self> {
         let planner = Planner::shared();
