@@ -369,7 +369,7 @@ impl Operand {
                 .iter()
                 .zip(self.layout.strides())
                 .map(|(d, s)| {
-                    Some(crate::shape::AxisGroup::affine(
+                    Some(crate::shape::AxisGroup::affine_const(
                         u32::try_from(d.as_const()?).ok()?,
                         u32::try_from(s.as_const()?).ok()?,
                     ))
@@ -385,12 +385,16 @@ impl Operand {
             let mut below = 1u64;
             for sub in g.sub_axes.iter().rev() {
                 let divisor = div_after.checked_mul(below)?;
+                // The compile-time map is the affine fast path and is built
+                // only from constants; a symbolic sub-axis declines it, and
+                // the caller addresses through binding-0 words instead.
+                let (extent, stride) = sub.as_consts()?;
                 terms.push(AddressTerm {
                     divisor: u32::try_from(divisor).ok()?,
-                    modulus: sub.extent,
-                    stride: sub.stride,
+                    modulus: u32::try_from(extent).ok()?,
+                    stride: u32::try_from(stride).ok()?,
                 });
-                below = below.checked_mul(u64::from(sub.extent))?;
+                below = below.checked_mul(extent)?;
             }
             div_after = div_after.checked_mul(below)?;
         }

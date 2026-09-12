@@ -939,12 +939,9 @@ impl GpuTarget {
                     // here rather than reused.
                     Some((artifact, grid, ph)) => {
                         let grid = match &entry.grid_space {
-                            Some(spec) => crate::lower::grid_from(
-                                &spec.space,
-                                spec.block,
-                                binding,
-                                &self.caps().limits,
-                            )?,
+                            Some(spec) => {
+                                crate::lower::grid_from(spec, binding, &self.caps().limits)?
+                            }
                             None => grid,
                         };
                         Some((artifact, grid, ph))

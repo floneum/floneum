@@ -139,6 +139,7 @@ fn lower_map(caps: &Caps, node: &Node, theta: SchedPoint, cx: &LowerCtx<'_>) -> 
         block,
         body: stmts,
         byte_arena: None,
+        sym_slots: Default::default(),
         name: "cpu_map",
     })
 }
@@ -324,6 +325,7 @@ fn lower_fold(caps: &Caps, node: &Node, theta: SchedPoint, cx: &LowerCtx<'_>) ->
         block,
         body,
         byte_arena: None,
+        sym_slots: Default::default(),
         name: "cpu_fold",
     })
 }
@@ -641,6 +643,7 @@ fn lower_fold_carrier(
         block,
         body,
         byte_arena: None,
+        sym_slots: Default::default(),
         name: "cpu_fold_carrier",
     })
 }

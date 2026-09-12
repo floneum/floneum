@@ -175,7 +175,7 @@ impl ArenaPlanner for SumArenaPlanner {
         Ok(tiles
             .decls
             .iter()
-            .map(|t| (t.layout.element_count() * t.element.byte_size()) as u32)
+            .map(|t| (t.layout.element_count_or_zero() * t.element.byte_size()) as u32)
             .sum())
     }
 

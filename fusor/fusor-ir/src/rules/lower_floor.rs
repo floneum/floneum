@@ -368,16 +368,19 @@ fn contract_operand(
 ) -> Option<Operand> {
     let strides = Layout::row_major_strides(shape);
     // A label repeated within one operand is a diagonal read: its strides add.
-    let stride_of = |l: Label| -> Option<u32> {
-        let mut acc: u64 = 0;
+    // `Dim`, not `u32`: a contraction over a sequence length has to reach the
+    // address map with the length still symbolic. `Dim`'s arithmetic carries
+    // the sum for the diagonal case.
+    let stride_of = |l: Label| -> Option<Dim> {
+        let mut acc = Dim::Const(0);
         for (i, x) in labels.iter().enumerate() {
             if *x == l {
-                acc = acc.checked_add(strides.get(i)?.as_const()?)?;
+                acc = acc + *strides.get(i)?;
             }
         }
-        u32::try_from(acc).ok()
+        Some(acc)
     };
-    let label_extent = |l: Label| -> Option<u32> {
+    let label_extent = |l: Label| -> Option<Dim> {
         let d = spec
             .a
             .iter()
@@ -389,13 +392,12 @@ fn contract_operand(
                     .position(|x| *x == l)
                     .and_then(|i| b_shape.get(i))
             })?;
-        u32::try_from(d.as_const()?).ok()
+        Some(*d)
     };
 
     let mut groups: SmallVec<[AxisGroup; 4]> = SmallVec::new();
     for (axis, l) in spec.out.iter().copied().enumerate() {
-        let extent = u32::try_from(out_shape.get(axis)?.as_const()?).ok()?;
-        groups.push(AxisGroup::affine(extent, stride_of(l)?));
+        groups.push(AxisGroup::affine(*out_shape.get(axis)?, stride_of(l)?));
     }
     let mut subs: SmallVec<[SubAxis; 2]> = SmallVec::new();
     for l in contracted {
@@ -406,8 +408,8 @@ fn contract_operand(
     }
     if subs.is_empty() {
         subs.push(SubAxis {
-            extent: 1,
-            stride: 0,
+            extent: Dim::Const(1),
+            stride: Dim::Const(0),
         });
     }
     groups.push(AxisGroup { sub_axes: subs });
@@ -516,7 +518,7 @@ fn window_map(
 ) -> Option<MultiFlattenMap> {
     let mut groups: SmallVec<[AxisGroup; 4]> = SmallVec::new();
     for (axis, extent) in out_shape.iter().enumerate() {
-        let extent = u32::try_from(extent.as_const()?).ok()?;
+        let extent = *extent;
         // Output axes past the input rank are the appended window offsets,
         // in the order `Logical::Window` pushed them.
         let (src_axis, step) = if axis < in_shape.len() {
@@ -529,11 +531,11 @@ fn window_map(
             let w = specs.get(axis - in_shape.len())?;
             (w.axis as usize, 1)
         };
-        let base = u32::try_from(in_strides.get(src_axis)?.as_const()?).ok()?;
+        let base = *in_strides.get(src_axis)?;
         groups.push(AxisGroup {
             sub_axes: smallvec::smallvec![SubAxis {
                 extent,
-                stride: base.checked_mul(step)?,
+                stride: base * Dim::Const(u64::from(step)),
             }],
         });
     }

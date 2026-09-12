@@ -609,15 +609,21 @@ fn load_in_range(src: &Source, addr: &Addr, env: &BoundEnv) -> bool {
         Source::Quantized(view) => &view.data.layout,
     };
     match addr {
-        Addr::Linear(index) => {
-            max_value(index, env).is_some_and(|max| max < layout.element_count())
-        }
+        Addr::Linear(index) => match (max_value(index, env), layout.element_count()) {
+            (Some(max), Some(count)) => max < count,
+            _ => false,
+        },
         Addr::Rc2 { row, col } => {
             if layout.extents.len() != 2 {
                 return false;
             }
-            max_value(row, env).is_some_and(|max| max < u64::from(layout.extents[0]))
-                && max_value(col, env).is_some_and(|max| max < u64::from(layout.extents[1]))
+            let (Some(rows), Some(cols)) =
+                (layout.extents[0].as_const(), layout.extents[1].as_const())
+            else {
+                return false;
+            };
+            max_value(row, env).is_some_and(|max| max < rows)
+                && max_value(col, env).is_some_and(|max| max < cols)
         }
     }
 }
