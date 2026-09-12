@@ -274,7 +274,7 @@ pub struct GpuTarget {
     /// driver once per dispatch is then four pieces of work to arrive at
     /// bytes that are already there.
     packs: parking_lot::Mutex<lru::LruCache<u128, PackSlot>>,
-    launcher: Launcher,
+    launcher: Arc<Launcher>,
     config: GpuConfig,
 }
 
@@ -312,7 +312,7 @@ fn gpu_target_fields_are_send_sync() {
     assert::<parking_lot::Mutex<lru::LruCache<String, Artifact>>>();
     assert::<parking_lot::Mutex<lru::LruCache<u128, VerifySlot>>>();
     assert::<parking_lot::Mutex<lru::LruCache<u128, PackSlot>>>();
-    assert::<Launcher>();
+    assert::<Arc<Launcher>>();
     assert::<GpuConfig>();
 }
 
@@ -335,7 +335,21 @@ impl GpuTarget {
         let lost = device.lost().clone();
         let pool = BufferPool::new(wgpu_device.clone(), queue.clone(), &config, lost.clone());
         let cache = PlanCache::with_facts(device.facts(), config.cache_dir.clone());
-        let launcher = Launcher::new(wgpu_device, queue, backend, config.clone(), lost);
+        let launcher = Arc::new(Launcher::new(
+            wgpu_device,
+            queue,
+            backend,
+            config.clone(),
+            lost,
+        ));
+        // The pool submits recorded work before an upload can jump ahead of
+        // it on the queue; see `BufferPool::flush`.
+        pool.set_flush({
+            let launcher = Arc::clone(&launcher);
+            Arc::new(move || {
+                let _ = launcher.flush();
+            })
+        });
         Ok(Self {
             device,
             pool,
