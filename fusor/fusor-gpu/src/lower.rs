@@ -862,6 +862,18 @@ pub(crate) struct Ctx<'a> {
     /// `Plan` value -> index into [`Self::buffers`].
     slot_of: FxHashMap<Id, usize>,
     pack: std::sync::Arc<UniformPack>,
+    /// An upper bound every linear index in this body is known to be under,
+    /// when the nest could prove one.
+    ///
+    /// A load is masked because its index might run past the operand, and
+    /// the mask is not free: an unproven index is clamped against
+    /// `arrayLength` and the value wrapped in a `select` (see
+    /// `emit::expr`, `Source::Storage`), three instructions an element on a
+    /// kernel whose whole body is a load, an add and a store. A nest whose
+    /// dispatch covers its space exactly knows no lane is past the end and
+    /// says so here; a load whose operand is at least this long then needs
+    /// no mask at all.
+    proven_index_lt: Option<u64>,
 }
 
 impl<'a> Ctx<'a> {
@@ -934,7 +946,19 @@ impl<'a> Ctx<'a> {
             buffers,
             slot_of,
             pack,
+            proven_index_lt: None,
         })
+    }
+
+    /// Declare that every linear index this body computes is below `bound`.
+    /// See [`Self::proven_index_lt`].
+    pub(crate) fn prove_index_lt(&mut self, bound: u64) {
+        self.proven_index_lt = Some(bound);
+    }
+
+    /// Whether an index into a `count`-element operand is provably in range.
+    fn index_is_proven(&self, count: u64) -> bool {
+        self.proven_index_lt.is_some_and(|b| b <= count)
     }
 
     /// The bound buffer for a plan value.
@@ -1773,7 +1797,14 @@ impl<'a> Ctx<'a> {
             }
             _ => self.b.u32(1),
         };
-        let mask = self.b.compare(TileCompareOp::Lt, index.clone(), bound);
+        // A nest that proved its indices stay inside an operand this long
+        // needs no test: the mask is true and the load issues straight,
+        // without the `arrayLength` clamp and `select` an unproven index
+        // carries. See `Ctx::proven_index_lt`.
+        let mask = match view.buffer.layout.element_count() {
+            count if self.index_is_proven(count) => self.b.bool(true),
+            _ => self.b.compare(TileCompareOp::Lt, index.clone(), bound),
+        };
         let fill = self.zero_of(elem);
         Ok(self
             .b

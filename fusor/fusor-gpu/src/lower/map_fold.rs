@@ -58,6 +58,35 @@ pub(crate) fn lower_kmap(mut ctx: Ctx<'_>, op: &Launch, theta: SchedPoint) -> Re
     let tm = tiling.tm.max(1);
     let grid = tiled_grid(space, block, tm, &ctx.binding, &limits)?;
 
+    // Whether the dispatch covers the space exactly, with no lane past the
+    // end. Then the in-range test every load and store carries is
+    // *provably* true, and saying so costs three instructions per element:
+    // `load_mapped` clamps an unproven index against `arrayLength` and
+    // wraps the value in a `select`, where a constant-true mask loads
+    // straight (see `emit::expr`, `Source::Storage`).
+    //
+    // Only for a fully concrete space. `iterations` is `None` the moment a
+    // dim is symbolic, which is exactly when one body is replayed at
+    // several extents and no single answer holds.
+    let covers_exactly = space.iterations().is_some_and(|n| {
+        let per_group = u64::from(block).saturating_mul(u64::from(tm));
+        let groups = u64::from(grid[0])
+            .saturating_mul(u64::from(grid[1]))
+            .saturating_mul(u64::from(grid[2]));
+        groups.saturating_mul(per_group) == n
+    });
+    if covers_exactly && let Some(n) = space.iterations() {
+        ctx.prove_index_lt(n);
+    }
+    let in_range = |ctx: &mut Ctx<'_>, index: &TileExpr, total: &TileExpr| {
+        if covers_exactly {
+            ctx.b.bool(true)
+        } else {
+            ctx.b
+                .compare(TileCompareOp::Lt, index.clone(), total.clone())
+        }
+    };
+
     match tiling.dim {
         None => {
             // `tiled_grid` already divided the dispatch by `tm`, so a thread
@@ -78,9 +107,7 @@ pub(crate) fn lower_kmap(mut ctx: Ctx<'_>, op: &Launch, theta: SchedPoint) -> Re
                     }
                     (None, _) => unreachable!("tm > 1 always carries a span"),
                 };
-                let mask = ctx
-                    .b
-                    .compare(TileCompareOp::Lt, index.clone(), total.clone());
+                let mask = in_range(&mut ctx, &index, &total);
                 let coords = ctx.coords_from_linear(index.clone(), space)?;
                 let mut args = Vec::with_capacity(ops.len());
                 for operand in ops {

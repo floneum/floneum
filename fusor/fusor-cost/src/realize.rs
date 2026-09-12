@@ -264,6 +264,66 @@ fn coop_padding(graph: &EGraph, member: Id, theta: Option<SchedPoint>) -> Work {
     }
 }
 
+/// Lane slots a fold issues beyond the values it reduces.
+///
+/// A reduction of `k` elements is not `k` units of work whatever the
+/// strategy: a lane group of `L` runs `ceil(k / L)` accumulate steps on all
+/// `L` lanes and then `log2(L)` tree stages on them, so it issues
+/// `L * (ceil(k / L) + log2(L))` slots to reduce `k` values. Only the excess
+/// is charged here; the `k` itself is already in the node's work.
+///
+/// Without this a fold's work did not mention its lane group at all, so every
+/// strategy priced identically and the choice fell to the seed order. On a
+/// 40-element reduction the seeded subgroup collective measured 94.9 us
+/// where a 2-lane group measured 35.5 us, and a 256-lane tree — which the
+/// seed ranked *second* — measured 393 us, eleven times the best.
+///
+/// The waste is real work: the lanes past `k` hold the identity and still run
+/// every stage. It composes with the occupancy term rather than replacing
+/// it, which is what keeps a wide group attractive when there are too few
+/// outputs to fill the device without one.
+fn fold_issue(graph: &EGraph, member: Id, theta: Option<SchedPoint>, caps: &Caps) -> Work {
+    let Op::Launch(Launch::Fold { space, axis, .. }) = &graph.node(member).op else {
+        return Work::default();
+    };
+    let width = caps.subgroup_width().max(1);
+    let lanes = u64::from(match theta {
+        Some(SchedPoint::Fold(s)) => s.lane_group(width),
+        // The floor carries no parameters and both emitters read it the same
+        // way: the subgroup collective where the device has subgroups, the
+        // workgroup-wide tree where it does not.
+        Some(SchedPoint::Point) | None if caps.subgroups.is_some() => width,
+        Some(SchedPoint::Point) | None => caps
+            .limits
+            .max_compute_invocations_per_workgroup
+            .clamp(1, 256),
+        _ => return Work::default(),
+    })
+    .max(1);
+    let axis = *axis as usize;
+    let Some(k) = space
+        .dims
+        .get(axis)
+        .and_then(|d| d.as_const())
+        .filter(|k| *k > 0)
+    else {
+        return Work::default();
+    };
+    let outputs = space
+        .dims
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != axis)
+        .map(|(_, d)| d.as_const().unwrap_or(1).max(1))
+        .fold(1u64, |a, b| a.saturating_mul(b));
+    let stages = u64::from(lanes.max(1).ilog2());
+    let issued = lanes.saturating_mul(k.div_ceil(lanes).saturating_add(stages));
+    Work {
+        macs: issued.saturating_sub(k).saturating_mul(outputs),
+        ..Work::default()
+    }
+}
+
 /// Realize `(sigma, m, theta)` from `roots` and cut it into launches.
 ///
 /// A class with no `sigma` entry is [`Error::Plan`]; so is a selection whose
@@ -988,6 +1048,7 @@ fn build_component(
         let theta_m = extraction.theta.get(m).copied();
         w = w.add(staging_rework(graph, *m, theta_m));
         w = w.add(coop_padding(graph, *m, theta_m));
+        w = w.add(fold_issue(graph, *m, theta_m, caps));
         let materialized = extraction.is_materialized(*m) || roots.contains(m);
         if materialized {
             writes = writes.saturating_add(bytes_of(out));
@@ -1112,12 +1173,23 @@ pub fn fold_footprint(graph: &EGraph, id: Id) -> Option<(u64, u64)> {
 
 /// Whether this device can actually run `id` at `theta`.
 ///
-/// Only the fold clause is stated here: it is the only one whose footprint
-/// depends on a node property the schedule domain was generated before
-/// knowing. `PROMOTE` carries the pre-promotion domain over verbatim, but the
-/// inherited strategies were admitted at one accumulator lane and the
-/// promoted nest holds `lanes` of them.
+/// Two clauses. The fold one is here because its footprint depends on a node
+/// property the schedule domain was generated before knowing: `PROMOTE`
+/// carries the pre-promotion domain over verbatim, but the inherited
+/// strategies were admitted at one accumulator lane and the promoted nest
+/// holds `lanes` of them.
+///
+/// The split-K one is here because no emitter implements it. A split needs
+/// its partials combined by a second launch and both backends build one
+/// kernel per launch, so `lower_coop` refuses outright. The coop domain
+/// offers the splits anyway, which made them selectable: a cost change
+/// elsewhere was enough to make one win, and eight quantized cases stopped
+/// lowering. Selecting a point no emitter can build mints a crash rather
+/// than a slow plan, so it is not legal until something can run it.
 pub fn point_is_legal(graph: &EGraph, id: Id, theta: SchedPoint, caps: &Caps) -> bool {
+    if matches!(theta, SchedPoint::Coop { splits, .. } if splits > 1) {
+        return false;
+    }
     let Some((lanes, acc_bytes)) = fold_footprint(graph, id) else {
         return true;
     };

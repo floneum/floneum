@@ -1895,19 +1895,24 @@ impl Session {
         };
         let log = std::env::var_os("FUSOR_AUTOTUNE_LOG").is_some();
 
-        // Timing a plan re-runs it, and an in-place node makes a re-run
-        // destructive, so an impure plan is never raced. It is still tuned:
-        // the production explorer substitutes one candidate exactly once, in
+        // Timing a plan re-runs it, so a plan holding a launch that does not
+        // survive repetition is never raced. It is still tuned: the
+        // production explorer substitutes one candidate exactly once, in
         // place of the incumbent's own dispatch.
+        //
+        // The question is repetition, not purity — see
+        // `semantics::is_repeatable`. Asking for purity instead ruled out
+        // every plan that pads, concatenates or assigns into a slice, because
+        // all of those are a `Set` scatter, which re-runs to the same bytes.
         {
             let g = graph.state().egraph.lock();
             if base.launches.iter().any(|l| {
                 l.members
                     .iter()
-                    .any(|m| g.semantics().effect(&g.node(*m).op) != Effect::Pure)
+                    .any(|m| !g.semantics().repeatable(&g.node(*m).op))
             }) {
                 if log {
-                    eprintln!("[tune] not raced: the plan has an in-place launch");
+                    eprintln!("[tune] not raced: the plan has a launch that cannot be repeated");
                 }
                 return Ok(base);
             }
