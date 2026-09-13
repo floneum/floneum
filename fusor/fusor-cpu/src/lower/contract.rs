@@ -69,6 +69,7 @@ pub(crate) fn lower(
             block: 1,
             body: Vec::new(),
             byte_arena: None,
+            sym_slots: Default::default(),
             name,
         });
     }
@@ -190,6 +191,7 @@ fn lower_jit(
         block,
         body,
         byte_arena: None,
+        sym_slots: Default::default(),
         name: "cpu_contract_jit",
     })
 }

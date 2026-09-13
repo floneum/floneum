@@ -1895,19 +1895,24 @@ impl Session {
         };
         let log = std::env::var_os("FUSOR_AUTOTUNE_LOG").is_some();
 
-        // Timing a plan re-runs it, and an in-place node makes a re-run
-        // destructive, so an impure plan is never raced. It is still tuned:
-        // the production explorer substitutes one candidate exactly once, in
+        // Timing a plan re-runs it, so a plan holding a launch that does not
+        // survive repetition is never raced. It is still tuned: the
+        // production explorer substitutes one candidate exactly once, in
         // place of the incumbent's own dispatch.
+        //
+        // The question is repetition, not purity — see
+        // `semantics::is_repeatable`. Asking for purity instead ruled out
+        // every plan that pads, concatenates or assigns into a slice, because
+        // all of those are a `Set` scatter, which re-runs to the same bytes.
         {
             let g = graph.state().egraph.lock();
             if base.launches.iter().any(|l| {
                 l.members
                     .iter()
-                    .any(|m| g.semantics().effect(&g.node(*m).op) != Effect::Pure)
+                    .any(|m| !g.semantics().repeatable(&g.node(*m).op))
             }) {
                 if log {
-                    eprintln!("[tune] not raced: the plan has an in-place launch");
+                    eprintln!("[tune] not raced: the plan has a launch that cannot be repeated");
                 }
                 return Ok(base);
             }
@@ -2491,6 +2496,7 @@ fn rebuild_op(op: &Op, children: &[Id], dims: &mut dyn FnMut(Dim) -> Dim) -> Opt
             axis,
             combine,
             unique,
+            run,
             ..
         }) => Op::Logical(Logical::Scatter {
             axis: *axis,
@@ -2499,6 +2505,7 @@ fn rebuild_op(op: &Op, children: &[Id], dims: &mut dyn FnMut(Dim) -> Dim) -> Opt
             idx: child(1)?,
             upd: child(2)?,
             unique: *unique,
+            run: *run,
         }),
         Op::Logical(Logical::Dequant { fmt, layout, .. }) => Op::Logical(Logical::Dequant {
             fmt: *fmt,
@@ -2981,19 +2988,55 @@ fn agrees(dtype: Dtype, a: &[u8], b: &[u8]) -> bool {
     if a == b {
         return true;
     }
-    if dtype != Dtype::F32 {
+    // Integers are exact or they are wrong. Floats are compared to the
+    // precision they carry: two members of a class may evaluate the same
+    // expression in a different association or round through a different
+    // intermediate, and for a half-precision result that shows up in the
+    // last bit. Demanding bit equality there reports arithmetic as a
+    // miscompile.
+    let Some(values) = float_elements(dtype, a).zip(float_elements(dtype, b)) else {
         return false;
-    }
-    let f = |s: &[u8]| {
-        s.as_chunks::<4>()
-            .0
-            .iter()
-            .map(|c| f32::from_le_bytes(*c))
-            .collect::<Vec<f32>>()
     };
-    let (x, y) = (f(a), f(b));
+    let (x, y) = values;
+    let tol = match dtype {
+        Dtype::F32 => 1e-3,
+        // Half precision holds about three decimal digits, so the same
+        // relative bound would be inside one ulp.
+        _ => 5e-3,
+    };
     let scale = x.iter().fold(1.0f32, |m, v| m.max(v.abs()));
-    x.iter().zip(&y).all(|(p, q)| (p - q).abs() <= 1e-3 * scale)
+    x.iter().zip(&y).all(|(p, q)| (p - q).abs() <= tol * scale)
+}
+
+/// A float buffer's elements as `f32`, or `None` when the dtype is not one.
+fn float_elements(dtype: Dtype, bytes: &[u8]) -> Option<Vec<f32>> {
+    match dtype {
+        Dtype::F32 => Some(
+            bytes
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|c| f32::from_le_bytes(*c))
+                .collect(),
+        ),
+        Dtype::F16 => Some(
+            bytes
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|c| half::f16::from_le_bytes(*c).to_f32())
+                .collect(),
+        ),
+        Dtype::BF16 => Some(
+            bytes
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|c| half::bf16::from_le_bytes(*c).to_f32())
+                .collect(),
+        ),
+        _ => None,
+    }
 }
 
 /// One element's little-endian bytes, in the splat's own dtype.

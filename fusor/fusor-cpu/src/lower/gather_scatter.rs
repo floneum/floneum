@@ -178,6 +178,7 @@ fn gather(
         block,
         body,
         byte_arena: None,
+        sym_slots: Default::default(),
         name: "cpu_gather",
     })
 }
@@ -331,6 +332,7 @@ fn scatter(
         block,
         body,
         byte_arena: None,
+        sym_slots: Default::default(),
         name: "cpu_scatter",
     })
 }
