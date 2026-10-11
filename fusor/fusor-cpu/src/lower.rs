@@ -454,6 +454,8 @@ fn resolved_address_map(cx: &LowerCtx<'_>, operand: &Operand) -> Result<AddressM
 pub(crate) enum OperandSrc {
     Buffer(Arc<BufferDecl>),
     Const(TileExpr),
+    /// A `Leaf::Range`: element `i` is `start + i`, no buffer.
+    Range(u32),
     /// A block-quantized operand. Reading element `i` runs the format's
     /// decode program at flat index `i`; nothing materializes the dense
     /// table.
@@ -465,6 +467,7 @@ impl OperandSrc {
         match self {
             Self::Buffer(buffer) => load(b, Arc::clone(buffer), index, mask),
             Self::Const(v) => v.clone(),
+            Self::Range(start) => b.add(b.u32(*start), index),
             Self::Quantized(view) => b.load(
                 Source::Quantized(view.clone()),
                 Addr::Linear(index),
@@ -483,6 +486,9 @@ pub(crate) fn operand_src(
 ) -> Result<OperandSrc> {
     if let Some(splat) = const_splat(cx, src) {
         return Ok(OperandSrc::Const(b.lit(splat_literal(splat))));
+    }
+    if let Some(start) = fusor_tile::build::range_start(cx, src) {
+        return Ok(OperandSrc::Range(start));
     }
     let buffer = binds.of(src)?;
     let facts = cx.graph.facts(src);

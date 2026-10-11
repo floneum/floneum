@@ -658,9 +658,9 @@ fn unselected(graph: &EGraph, id: Id) -> Error {
 
 pub(crate) fn leaf_role(graph: &EGraph, id: Id) -> LeafRole {
     match &graph.node(id).op {
-        Op::Logical(Logical::Leaf(LeafKind::Const { .. } | LeafKind::Uniform { .. })) => {
-            LeafRole::Free
-        }
+        Op::Logical(Logical::Leaf(
+            LeafKind::Const { .. } | LeafKind::Uniform { .. } | LeafKind::Range { .. },
+        )) => LeafRole::Free,
         Op::Logical(Logical::Leaf(_)) => LeafRole::External,
         _ => LeafRole::NotLeaf,
     }

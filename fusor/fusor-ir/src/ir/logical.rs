@@ -123,12 +123,69 @@ pub enum LeafKind {
         sym: SymId,
         dtype: Dtype,
     },
+    /// The rank-1 `U32` index `start .. start + len`, with no buffer: what
+    /// padding, `cat`, `stack`, `repeat` and `slice_assign` scatter at. Known
+    /// to the IR so a scatter can invert it by subtraction instead of
+    /// searching every update for its own output.
+    Range {
+        start: u32,
+        len: u64,
+    },
     Quantized {
         name: BufferId,
         fmt: QFmt,
         layout: QLayout,
         shape: SmallVec<[Dim; 2]>,
     },
+}
+
+impl Logical {
+    /// A gather at a [`LeafKind::Range`] index picks `start .. start + len`
+    /// of the axis in order: the narrow `Restride`, which a consumer folds
+    /// into its operand layout where a gather would stay a kernel. Applied
+    /// by [`EGraph::add`](crate::egraph::EGraph::add), since a rule firing
+    /// later cannot re-offer the consumers that already lowered against the
+    /// gather.
+    pub fn narrowed_range_gather(graph: &crate::egraph::EGraph, op: &Logical) -> Option<Logical> {
+        let Logical::Gather { axis, x, idx } = op else {
+            return None;
+        };
+        let (start, len) = match &graph.node(*idx).op {
+            crate::ir::Op::Logical(Logical::Leaf(LeafKind::Range { start, len })) => (*start, *len),
+            _ => return None,
+        };
+        let shape = &graph.facts(*x).shape;
+        let axis = *axis as usize;
+        let extent = shape.get(axis)?.as_const()?;
+        if u64::from(start) + len > extent {
+            return None;
+        }
+        let specs = (0..shape.len())
+            .map(|j| {
+                if j == axis {
+                    StrideSpec::dim(j as u32, Dim::Const(len))
+                        .with_offset(Dim::Const(u64::from(start)))
+                } else {
+                    StrideSpec::dim(j as u32, shape[j])
+                }
+            })
+            .collect();
+        Some(Logical::Restride {
+            specs,
+            bounds: BoundsProof::Static,
+            x: *x,
+        })
+    }
+}
+
+impl LeafKind {
+    /// The start of a [`LeafKind::Range`] index, if this is one.
+    pub fn range_start(&self) -> Option<u32> {
+        match self {
+            Self::Range { start, .. } => Some(*start),
+            _ => None,
+        }
+    }
 }
 
 /// Stable name of an externally-supplied buffer.

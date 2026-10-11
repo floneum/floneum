@@ -359,7 +359,7 @@ pub(crate) fn matrix_split_for(
 }
 
 pub(crate) use fusor_tile::build::{Kernel, qlayout_of, quantized_words, scalar_element};
-use fusor_tile::build::{const_splat, finite_literal};
+use fusor_tile::build::{const_splat, finite_literal, range_start};
 
 /// Per-kernel lowering state: the buffer table in binding order, the uniform
 /// word layout, and the Kernel builder.
@@ -1043,6 +1043,10 @@ impl<'a> Ctx<'a> {
         // A `Leaf::Const` folds into the kernel and has no binding.
         if let Some(lit) = self.const_operand(operand.src) {
             return Ok(lit);
+        }
+        // A `Leaf::Range` reads as `start + i`, likewise with no binding.
+        if let Some(start) = range_start(self.cx, operand.src) {
+            return Ok(self.b.add(self.b.u32(start), index));
         }
         let index = self.repad_index(operand.src, index)?;
         // A quantized operand runs its decode program at flat index `i`.

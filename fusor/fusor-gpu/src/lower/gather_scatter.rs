@@ -10,6 +10,7 @@ use fusor_ir::ir::launch::{Launch, MapTiling, ScatterGeometry, SchedPoint};
 use fusor_ir::ir::logical::ScatterCombine;
 
 use crate::lower::{Ctx, distribute_workgroups};
+use fusor_tile::build::range_start;
 use fusor_tile::domains::emitted_block;
 
 /// The register-reuse tiling this launch runs at; [`SchedPoint::Point`] is one
@@ -183,6 +184,57 @@ fn total_of(shape: &ScatterGeometry) -> u64 {
     shape.total().max(1)
 }
 
+/// `Scatter{Set}` at a `Range` index: the output at bin `d` is update
+/// `d - start` when that is below the update count, else the base. Unsigned
+/// wrapping covers `d < start`, and no lane searches for its own index.
+fn scatter_run(
+    ctx: Ctx<'_>,
+    shape: &ScatterGeometry,
+    start: u32,
+    base: &fusor_ir::ir::launch::Operand,
+    upd: &fusor_ir::ir::launch::Operand,
+    tiling: MapTiling,
+) -> Result<KernelIr> {
+    let b = &ctx.b;
+    let out = ctx.linear_view(ctx.output()?)?;
+    let out_elem = out.buffer.element;
+    let block = ctx.block(emitted_block(1, ctx.caps));
+    let total = shape.total().max(1);
+    let dest = [shape.outer, shape.bins, shape.inner].map(u64::from);
+    let tile = LaneTile::new(total, tile_stride(&dest, 1, tiling.tm), tiling.tm);
+    let grid = tile.grid(&ctx, block);
+    let bound = b.u32(u32::try_from(total).unwrap_or(u32::MAX));
+    let inner_e = b.u32(shape.inner);
+    let bins_e = b.u32(shape.bins);
+    let row_span = b.u32(shape.bins.saturating_mul(shape.inner).max(1));
+    let updates_e = b.u32(shape.updates);
+    let start_e = b.u32(start);
+    let mut stores = Vec::with_capacity(tiling.tm.max(1) as usize);
+    for flat in tile.offsets(&ctx, ctx.global_index(block)) {
+        let o = b.div(flat.clone(), row_span.clone());
+        let dest = b.rem(b.div(flat.clone(), inner_e.clone()), bins_e.clone());
+        let within = b.rem(flat.clone(), inner_e.clone());
+        let u = b.sub(dest, start_e.clone());
+        let covered = b.lt(u.clone(), updates_e.clone());
+        // The read has to be in bounds whether or not it is used.
+        let u_safe = b.select(covered.clone(), u, b.u32(0));
+        let upd_index = b.add(
+            b.mul(b.add(b.mul(o, updates_e.clone()), u_safe), inner_e.clone()),
+            within,
+        );
+        let v = ctx.load_operand(upd, upd_index)?;
+        let seed = ctx.load_mapped(base, flat.clone(), total)?;
+        let value = b.select(covered, b.cast(v, out_elem), b.cast(seed, out_elem));
+        stores.push(Stmt::Store {
+            dst: out.clone(),
+            addr: Addr::Linear(flat.clone()),
+            value,
+            mask: b.lt(flat, bound.clone()),
+        });
+    }
+    Ok(ctx.finish("scatter_run", grid, block, stores))
+}
+
 /// `out = base` with `out[.., idx[u], ..] (combine)= upd[.., u, ..]`: one lane
 /// per output element, a counted loop over the updates. The output buffer does
 /// not hold the base, so this nest reads it; one writer per element keeps the
@@ -214,6 +266,10 @@ pub(crate) fn lower_kscatter(ctx: Ctx<'_>, op: &Launch, theta: SchedPoint) -> Re
         _ => ScalarElement::F32,
     }
     .element();
+    // A `Range` index inverts by subtraction: no lane searches for itself.
+    if let (Some(start), ScatterCombine::Set) = (range_start(ctx.cx, idx.src), combine) {
+        return scatter_run(ctx, &shape, start, base, upd, tiling);
+    }
     let max_block = ctx.caps.limits.max_compute_invocations_per_workgroup;
     if let Some(row_block) = shape.row_block(max_block) {
         let block = ctx.block(row_block);
