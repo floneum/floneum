@@ -139,8 +139,19 @@ impl Tensor {
         Tensor::emit(graph, Logical::Leaf(LeafKind::Uniform { sym, dtype }))
     }
 
-    /// `[start, end)` with step 1, built host-side and uploaded.
+    /// `[start, end)` with step 1: a `Leaf(Range)` for a `U32` run, else
+    /// built host-side and uploaded.
     pub fn arange(graph: &GraphRef, dtype: Dtype, start: f64, end: f64) -> Result<Tensor> {
+        // A whole `U32` run is a `Leaf(Range)`: nothing to upload, and the
+        // scatter kernels invert it instead of searching.
+        if dtype == Dtype::U32 && start >= 0.0 && start.fract() == 0.0 && start <= end {
+            let len = (end - start).ceil() as u64;
+            if let Ok(s) = u32::try_from(start as u64)
+                && u32::try_from(start as u64 + len.saturating_sub(1)).is_ok()
+            {
+                return Ok(graph.tensor(graph.range_leaf(s, len)?));
+            }
+        }
         Self::arange_step(graph, dtype, start, end, 1.0)
     }
 

@@ -54,7 +54,7 @@ impl Op {
                         | LeafKind::Param { shape, .. }
                         | LeafKind::Const { shape, .. } => dims(shape, visitor),
                         LeafKind::Quantized { shape, .. } => dims(shape, visitor),
-                        LeafKind::Uniform { .. } => {}
+                        LeafKind::Uniform { .. } | LeafKind::Range { .. } => {}
                     }
                     visitor.leaf(leaf);
                 }

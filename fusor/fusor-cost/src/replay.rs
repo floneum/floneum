@@ -184,6 +184,10 @@ fn hash_leaf<H: Hasher>(h: &mut H, kind: &LeafKind) {
             h.write_u32(sym.0);
             dtype.hash(h);
         }
+        LeafKind::Range { start, len } => {
+            h.write_u32(*start);
+            h.write_u64(*len);
+        }
         LeafKind::Quantized {
             fmt, layout, shape, ..
         } => {

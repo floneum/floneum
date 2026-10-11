@@ -76,7 +76,10 @@ impl<T: Element> Tensor<1, T> {
     /// `[start, start + 1, .., end)`.
     #[track_caller]
     pub fn arange(device: &Device, start: impl Into<f64>, end: impl Into<f64>) -> Self {
-        Self::arange_step(device, start, end, 1.0)
+        Self::wrap(
+            "Tensor::arange",
+            Dyn::arange(device.handle(), T::DTYPE, start.into(), end.into()),
+        )
     }
 
     /// `[start, start + step, .., end)`.

@@ -178,6 +178,14 @@ impl EGraph {
     /// Add a node, hash-consing on canonicalized children. Returns the
     /// existing id on a memo hit.
     pub fn add(&mut self, op: Op) -> Result<Id> {
+        // A gather at a `Range` index is spelled as the narrow it is, so no
+        // node ever reads a run through a kernel.
+        let op = match &op {
+            Op::Logical(l) => Logical::narrowed_range_gather(self, l)
+                .map(Op::Logical)
+                .unwrap_or(op),
+            _ => op,
+        };
         let mut children = self.sem.children(&op);
         canonicalize(&op, &mut children);
         let next = Id(self.nodes.len() as u32);

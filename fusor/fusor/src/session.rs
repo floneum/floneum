@@ -1305,7 +1305,7 @@ impl Session {
                     leaves.push((id, input_ix));
                     id
                 }
-                Op::Logical(Logical::Leaf(LeafKind::Const { .. })) => {
+                Op::Logical(Logical::Leaf(LeafKind::Const { .. } | LeafKind::Range { .. })) => {
                     let rebuilt = rebuild_op(op, &[], &mut subst).expect("a leaf rebuilds");
                     g.add(rebuilt)?
                 }
@@ -1789,12 +1789,21 @@ impl Session {
             let g = graph.state().egraph.lock();
             match &g.node(id).op {
                 Op::Logical(Logical::Leaf(
-                    k @ (LeafKind::Const { .. } | LeafKind::Uniform { .. }),
+                    k
+                    @ (LeafKind::Const { .. } | LeafKind::Uniform { .. } | LeafKind::Range { .. }),
                 )) => k.clone(),
                 _ => return Ok(None),
             }
         };
         let facts = graph.facts(id);
+        if let LeafKind::Range { start, len } = leaf {
+            let bytes: Vec<u8> = (0..len)
+                .flat_map(|i| (start + i as u32).to_le_bytes())
+                .collect();
+            let buf = self.inner.device.upload(&bytes, facts.persistence)?;
+            graph.bind_leaf(id, buf.clone(), None);
+            return Ok(Some(buf));
+        }
         let unit = match &leaf {
             LeafKind::Const { value, .. } => splat_bytes(*value),
             LeafKind::Uniform { sym, .. } => splat_bytes(fusor_autograd::tape::splat_of(

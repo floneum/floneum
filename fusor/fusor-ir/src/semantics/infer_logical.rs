@@ -142,6 +142,7 @@ fn infer_leaf(kind: &LeafKind) -> Result<ValueFacts> {
         // A runtime scalar read from the uniform block: rank 0, never baked
         // into a kernel key.
         LeafKind::Uniform { dtype, .. } => ValueFacts::new(*dtype, []),
+        LeafKind::Range { len, .. } => ValueFacts::new(Dtype::U32, [Dim::Const(*len)]),
         LeafKind::Quantized { fmt, shape, .. } => {
             persistent(ValueFacts::new(Dtype::Q(*fmt), shape.iter().copied()))
         }

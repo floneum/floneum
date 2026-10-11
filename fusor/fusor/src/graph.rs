@@ -308,6 +308,12 @@ impl GraphRef {
         id
     }
 
+    /// The `U32` index `start .. start + len` as a `Leaf(Range)`: no upload,
+    /// and a scatter at it inverts the index instead of searching.
+    pub(crate) fn range_leaf(&self, start: u32, len: u64) -> Result<Id> {
+        self.add_logical(Logical::Leaf(LeafKind::Range { start, len }))
+    }
+
     /// A fresh `Leaf::Buffer`: no host bytes and no device buffer yet.
     pub(crate) fn buffer_leaf(&self, dtype: Dtype, shape: &[Dim]) -> Result<Id> {
         self.add_logical(Logical::Leaf(LeafKind::Buffer {

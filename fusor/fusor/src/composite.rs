@@ -76,13 +76,12 @@ pub(crate) fn float_leaf(
     graph.constant_leaf(dtype, &[Dim::Const(values.len() as u64)], bytes)
 }
 
-/// `index_leaf` over the run `start .. start + len`.
+/// The `U32` index run `start .. start + len`, as a `Leaf(Range)`.
 pub(crate) fn index_run(graph: &GraphRef, start: u64, len: u64) -> Result<Id> {
-    let values: Vec<u32> = (0..len)
-        .map(|i| {
-            u32::try_from(start + i)
-                .map_err(|_| Error::Shape(format!("index {} exceeds a u32", start + i)))
-        })
-        .collect::<Result<_>>()?;
-    index_leaf(graph, &values)
+    let end = start + len.saturating_sub(1);
+    let start = u32::try_from(start)
+        .ok()
+        .filter(|_| u32::try_from(end).is_ok())
+        .ok_or_else(|| Error::Shape(format!("index {end} exceeds a u32")))?;
+    graph.range_leaf(start, len)
 }

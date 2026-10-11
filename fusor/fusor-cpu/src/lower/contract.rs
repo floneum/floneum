@@ -68,7 +68,9 @@ fn side(
     side.ops
         .iter()
         .map(|operand| {
-            if fusor_tile::build::const_splat(cx, operand.src).is_some() {
+            if fusor_tile::build::const_splat(cx, operand.src).is_some()
+                || fusor_tile::build::range_start(cx, operand.src).is_some()
+            {
                 return None;
             }
             // A GEMM reads from the buffer start; an offset layout goes to the JIT.

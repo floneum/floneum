@@ -66,7 +66,7 @@ pub fn backward_into(
             && !matches!(
                 &graph.node(*w).op,
                 Op::Logical(Logical::Leaf(
-                    LeafKind::Const { .. } | LeafKind::Uniform { .. }
+                    LeafKind::Const { .. } | LeafKind::Uniform { .. } | LeafKind::Range { .. }
                 ))
             )
         {
@@ -194,8 +194,9 @@ fn why_no_gradient(graph: &EGraph, reach: &[bool], needs: &[bool], w: Val) -> St
                 which is what detach() does and what an unused tensor looks like"
             .into();
     }
-    if let Op::Logical(Logical::Leaf(LeafKind::Const { .. } | LeafKind::Uniform { .. })) =
-        &graph.node(w).op
+    if let Op::Logical(Logical::Leaf(
+        LeafKind::Const { .. } | LeafKind::Uniform { .. } | LeafKind::Range { .. },
+    )) = &graph.node(w).op
     {
         return "it is a constant leaf; only Param and Buffer leaves carry a gradient".into();
     }

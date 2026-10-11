@@ -425,6 +425,7 @@ fn storage_bindings(b: &Builder<'_>, ops: &[Operand]) -> usize {
             Op::Logical(crate::ir::logical::Logical::Leaf(
                 crate::ir::logical::LeafKind::Const { .. }
                     | crate::ir::logical::LeafKind::Uniform { .. }
+                    | crate::ir::logical::LeafKind::Range { .. }
             ))
         ) {
             continue;

@@ -155,6 +155,15 @@ pub fn qlayout_of(cx: &LowerCtx<'_>, value: Id) -> Option<QLayout> {
         })
 }
 
+/// The start of a `Leaf::Range` operand, if it is one: element `i` reads as
+/// `start + i`, so the leaf never needs a binding.
+pub fn range_start(cx: &LowerCtx<'_>, src: Id) -> Option<u32> {
+    match &cx.graph.node(cx.selected(src)).op {
+        Op::Logical(Logical::Leaf(leaf)) => leaf.range_start(),
+        _ => None,
+    }
+}
+
 /// The splat a `Leaf::Const` operand folds to, if it is one.
 pub fn const_splat(cx: &LowerCtx<'_>, src: Id) -> Option<Splat> {
     match &cx.graph.node(cx.selected(src)).op {

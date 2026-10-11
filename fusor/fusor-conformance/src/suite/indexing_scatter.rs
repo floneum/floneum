@@ -9,6 +9,7 @@
 //! cannot tell an explicit zero from a missing gradient. Every index comes
 //! from `fill_indices` over a sampled extent, so it is always in bounds.
 
+use fusor::tensor::Dyn as Tensor;
 use fusor::{Dtype, Session};
 
 use crate::harness::{CaseResult, Cases, FuzzDim, Rng, dims, fill_indices, from_u32};
@@ -78,6 +79,12 @@ pub fn cases() -> Cases {
         "embedding_backward_is_scatter_add",
         EMBED_DUP_SPEC,
         embedding_backward,
+    );
+    cases.fuzz("index_select_at_a_run", TABLE_SPEC, index_select_run_case);
+    cases.fuzz(
+        "index_select_at_a_run_backward",
+        TABLE_SPEC,
+        index_select_run_backward,
     );
     cases.fuzz("gather_last", TABLE_SPEC, gather_last_case);
     cases.fuzz("gather_last_backward", TABLE_SPEC, gather_last_backward);
@@ -266,6 +273,71 @@ async fn embedding_backward(session: &Session, shape: &[u64], seed: u32) -> Case
 /// `gather_last`: one column per row, picked by a rank-1 index as long as the
 /// row count. The row-offset adjustment is the whole point — an
 /// implementation that forgets it reads row 0 every time.
+/// `index_select` at an `arange` run is the narrow `rows[start..start + len]`;
+/// the rewrite to a view must agree with the gather it replaces.
+async fn index_select_run_case(session: &Session, shape: &[u64], seed: u32) -> CaseResult {
+    let (vocab, width) = (shape[0] as usize, shape[1] as usize);
+    let table = Domain::Wide.sample(seed, vocab * width);
+    let mut rng = Rng::new(seed ^ 0x5eed);
+    let len = rng.range(1, shape[0]) as usize;
+    let start = rng.range(0, shape[0] - len as u64) as usize;
+
+    let graph = graph_of(session);
+    let t = upload(graph.handle(), &dims(shape), &table)?;
+    let idx = Tensor::arange(
+        graph.handle(),
+        Dtype::U32,
+        start as f64,
+        (start + len) as f64,
+    )?;
+    let y = t.index_select(0, &idx)?;
+
+    let expected = table[start * width..(start + len) * width].to_vec();
+    expect_values(
+        session,
+        &[len as u64, shape[1]],
+        Dtype::F32,
+        &read(&y).await?,
+        &expected,
+    )
+    .await?;
+    Ok(())
+}
+
+/// Its adjoint is ones on the selected rows and zeros elsewhere, whether it
+/// runs as a gather's scatter-add or a view's masked spread.
+async fn index_select_run_backward(session: &Session, shape: &[u64], seed: u32) -> CaseResult {
+    let (vocab, width) = (shape[0] as usize, shape[1] as usize);
+    let table = Domain::Wide.sample(seed, vocab * width);
+    let mut rng = Rng::new(seed ^ 0x5eed);
+    let len = rng.range(1, shape[0]) as usize;
+    let start = rng.range(0, shape[0] - len as u64) as usize;
+
+    let graph = graph_of(session);
+    let t = upload(graph.handle(), &dims(shape), &table)?;
+    let idx = Tensor::arange(
+        graph.handle(),
+        Dtype::U32,
+        start as f64,
+        (start + len) as f64,
+    )?;
+    let y = t.index_select(0, &idx)?;
+    let grad = gradient_of(&graph, &y, &t).await?;
+
+    let want: Vec<f32> = (0..vocab * width)
+        .map(|n| f32::from((start..start + len).contains(&(n / width))))
+        .collect();
+    crate::compare::approx_or_relative_eq(
+        backend_of(session),
+        &[vocab, width],
+        &want,
+        &grad,
+        1e-5,
+        1e-5,
+    )?;
+    Ok(())
+}
+
 async fn gather_last_case(session: &Session, shape: &[u64], seed: u32) -> CaseResult {
     let (vocab, width) = (shape[0] as usize, shape[1] as usize);
     let table = Domain::Wide.sample(seed, vocab * width);
