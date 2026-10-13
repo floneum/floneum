@@ -105,7 +105,7 @@ struct Preparation {
     arena: u64,
     incumbent: fusor_ir::extract::PlanHash,
     candidate: fusor_ir::extract::PlanHash,
-    uploads: Vec<(Id, Arc<Vec<u8>>)>,
+    uploads: Vec<(Id, Arc<fusor_ir::target::HostBytes>)>,
     job: std::thread::JoinHandle<fusor_ir::Result<Vec<fusor_ir::target::Buf>>>,
 }
 

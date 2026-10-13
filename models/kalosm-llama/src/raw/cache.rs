@@ -21,6 +21,8 @@ pub struct LlamaCache {
     /// Token-step logits for these cache stores. Replay updates input leaves
     /// and write indices without rebuilding the graph.
     pub(crate) decode_graph: Option<Tensor<2>>,
+    #[cfg(feature = "kernel-visualize")]
+    padded_capacities: Vec<Option<u64>>,
     /// The same memo for the embedding-row step an image prompt runs: its
     /// input is a `[1, 1, hidden]` embedding leaf and explicit rope rows,
     /// not a token id. One of the two memos is live at a time; the other
@@ -36,6 +38,17 @@ pub struct LlamaCache {
 impl LlamaCache {
     /// Create a new cache for a model
     pub fn new(config: &LlamaConfig) -> Self {
+        // Starting at one lets reserve_all choose the next power of two for
+        // the actual prompt, including its prefill padding. Growth and ring
+        // windows keep their existing semantics.
+        #[cfg(feature = "kernel-visualize")]
+        let initial_capacity = if std::env::var_os("PROFILE_PROMPT_SIZED_CACHE").is_some() {
+            1
+        } else {
+            INITIAL_CAPACITY
+        };
+        #[cfg(not(feature = "kernel-visualize"))]
+        let initial_capacity = INITIAL_CAPACITY;
         let mut blocks = Vec::with_capacity(config.n_layer);
         for i in 0..config.n_layer {
             let window = match (config.sliding_window_size, config.sliding_window_type) {
@@ -46,7 +59,7 @@ impl LlamaCache {
                 Some(w) => KvCache::windowed(CONCAT_DIMENSION, w as u64),
                 None => KvCache::with_capacity(
                     CONCAT_DIMENSION,
-                    config.context_length.min(INITIAL_CAPACITY) as u64,
+                    config.context_length.min(initial_capacity) as u64,
                 ),
             });
         }
@@ -55,8 +68,23 @@ impl LlamaCache {
             pending_token: None,
             blocks,
             decode_graph: None,
+            #[cfg(feature = "kernel-visualize")]
+            padded_capacities: Vec::new(),
             embed_graph: None,
             rope_position: 0,
+        }
+    }
+
+    #[cfg(feature = "kernel-visualize")]
+    pub(crate) fn refresh_padded_capacity(&mut self) {
+        if std::env::var_os("PROFILE_PADDED_DECODE_ATTENTION").is_none() {
+            return;
+        }
+        let capacities: Vec<_> = self.blocks.iter().map(KvCache::storage_capacity).collect();
+        if capacities != self.padded_capacities {
+            self.decode_graph = None;
+            self.embed_graph = None;
+            self.padded_capacities = capacities;
         }
     }
 

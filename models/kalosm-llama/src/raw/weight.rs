@@ -6,10 +6,13 @@
 //! throughout — and a dense weight contracts in its own dtype with the
 //! activation cast to match, never decoded to a second copy.
 
-use fusor::quantized::{contract_rows, QMatrix};
+use fusor::quantized::{QMatrix, contract_rows};
 use fusor::tensor::Dyn;
 use fusor::{Dim, Dtype, Element, Graph, Result, Tensor};
 use fusor_gguf::RawTensorBytes;
+
+#[cfg(feature = "kernel-visualize")]
+mod profile_backing;
 
 #[derive(Clone)]
 pub(crate) enum Weight {
@@ -35,10 +38,30 @@ impl Weight {
             }
         };
         let shape = [Dim::Const(rows), Dim::Const(cols)];
+        #[cfg(feature = "kernel-visualize")]
+        if matches!(raw.fmt, Dtype::Q(fusor_ir::dtype::QFmt::Q6K))
+            && std::env::var_os("PROFILE_Q6_F32_SCALES").is_some()
+        {
+            let fmt = fusor_ir::dtype::QFmt::Q6K;
+            let layout = fusor_ir::dtype::QLayout::F32Scales;
+            let mut bytes = Vec::new();
+            fusor_gguf::repack::repack(fmt, raw.layout, layout, &raw.bytes, &mut bytes)?;
+            return Ok(Self::Quantized(QMatrix::from_raw_bytes(
+                graph, fmt, layout, shape, &bytes,
+            )?));
+        }
         match raw.fmt {
-            Dtype::Q(fmt) => Ok(Self::Quantized(QMatrix::from_raw_bytes(
-                graph, fmt, raw.layout, shape, &raw.bytes,
-            )?)),
+            Dtype::Q(fmt) => {
+                #[cfg(feature = "kernel-visualize")]
+                if let Some(bytes) = profile_backing::mapped_bytes(raw)? {
+                    return Ok(Self::Quantized(QMatrix::from_shared_bytes(
+                        graph, fmt, raw.layout, shape, bytes,
+                    )?));
+                }
+                Ok(Self::Quantized(QMatrix::from_raw_bytes(
+                    graph, fmt, raw.layout, shape, &raw.bytes,
+                )?))
+            }
             Dtype::F16 | Dtype::F32 | Dtype::BF16 => Ok(Self::Dense(Dyn::from_slice(
                 graph.handle(),
                 raw.fmt,

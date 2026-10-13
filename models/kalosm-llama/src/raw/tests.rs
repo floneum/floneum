@@ -34,6 +34,8 @@ fn tiny_model() -> (Model, Device, LlamaCache) {
                 attention_variant: AttentionVariant::Separate(Box::new(SeparateAttention {
                     attention_wq: weight(16, 16, seed + 1),
                     attention_qkv: None,
+                    #[cfg(feature = "kernel-visualize")]
+                    attention_qk: None,
                     attention_q_norm: None,
                     attention_wk: weight(8, 16, seed + 2),
                     attention_k_norm: None,

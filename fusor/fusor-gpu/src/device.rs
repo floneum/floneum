@@ -99,6 +99,44 @@ async fn request_device(extra: Option<wgpu::Limits>) -> Result<GpuDevice> {
     let features = caps::requested_features(&adapter);
     let adapter_limits = adapter.limits();
     let mut limits = caps::widen_limits(caps::baseline_limits(), extra, &adapter_limits)?;
+    #[cfg(feature = "kernel-observer")]
+    if let Ok(value) = std::env::var("FUSOR_PROFILE_WORKGROUP_THREADS") {
+        let threads = value
+            .parse::<u32>()
+            .map_err(|_| Error::Device("workgroup threads must be an integer".into()))?;
+        if threads < limits.max_compute_invocations_per_workgroup
+            || threads > adapter_limits.max_compute_invocations_per_workgroup
+            || threads > adapter_limits.max_compute_workgroup_size_x
+        {
+            return Err(Error::Device(format!(
+                "requested workgroup threads {threads} exceed adapter limits or reduce the baseline"
+            )));
+        }
+        limits.max_compute_invocations_per_workgroup = threads;
+        limits.max_compute_workgroup_size_x = limits.max_compute_workgroup_size_x.max(threads);
+        eprintln!("PROFILE_DEVICE workgroup_threads={threads}");
+    }
+    #[cfg(feature = "kernel-observer")]
+    if let Ok(value) = std::env::var("FUSOR_PROFILE_WORKGROUP_STORAGE") {
+        let bytes = value.parse::<u32>().map_err(|_| {
+            Error::Device("FUSOR_PROFILE_WORKGROUP_STORAGE must be an integer".into())
+        })?;
+        if bytes < limits.max_compute_workgroup_storage_size
+            || bytes > adapter_limits.max_compute_workgroup_storage_size
+        {
+            return Err(Error::Device(format!(
+                "requested workgroup storage {bytes} must be between {} and adapter maximum {}",
+                limits.max_compute_workgroup_storage_size,
+                adapter_limits.max_compute_workgroup_storage_size
+            )));
+        }
+        eprintln!(
+            "PROFILE_DEVICE workgroup_storage baseline={} requested={bytes} adapter={}",
+            limits.max_compute_workgroup_storage_size,
+            adapter_limits.max_compute_workgroup_storage_size
+        );
+        limits.max_compute_workgroup_storage_size = bytes;
+    }
     // Buffer-size ceilings are capacity, not legality: take the adapter's, since
     // 7B+ models have single weights past the baseline's 256 MiB.
     limits.max_buffer_size = limits.max_buffer_size.max(adapter_limits.max_buffer_size);
