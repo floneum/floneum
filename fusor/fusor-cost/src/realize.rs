@@ -2114,7 +2114,7 @@ pub(crate) fn selectable(graph: &EGraph, class: ClassId, caps: &Caps) -> Vec<Id>
     let pool = narrow(graph.members(class), |m| !is_self_referential(graph, m));
     let pool = narrow(pool, |m| is_runnable(graph, m));
     let pool = narrow(pool, |m| composite_bindings_fit(graph, m, caps));
-    let flags = crate::debug::flags();
+    let flags = crate::debug::for_profile(caps.execution_profile);
     if flags.contract_family.is_none() && flags.contract_small_family.is_none() {
         return pool;
     }
@@ -2253,6 +2253,7 @@ pub(crate) mod tests {
 
     pub(crate) fn caps() -> Caps {
         Caps {
+            execution_profile: Default::default(),
             kind: DeviceKind::Gpu,
             name: "replacement pricing".into(),
             limits: Limits::default(),

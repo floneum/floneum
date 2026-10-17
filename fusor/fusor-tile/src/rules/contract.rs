@@ -278,7 +278,8 @@ fn lower_family(
                 && matches!(fb.dtype, Dtype::Q(fusor_ir::dtype::QFmt::Q4K))
                 && mnk.n.as_const().is_some_and(|n| n >= 16384)
                 && mnk.k.as_const().is_some_and(|k| k >= 4096)
-                && let Some(pin) = &crate::flags::flags().pin_large_q4_sgemv
+                && let Some(pin) =
+                    &crate::flags::for_profile(cx.caps.execution_profile).pin_large_q4_sgemv
             {
                 assert!(
                     pin.len() == 5,
@@ -292,7 +293,8 @@ fn lower_family(
                 && matches!(fb.dtype, Dtype::Q(fusor_ir::dtype::QFmt::Q6K))
                 && mnk.n.as_const().is_some_and(|n| n >= 16384)
                 && mnk.k.as_const().is_some_and(|k| k >= 4096)
-                && let Some(pin) = &crate::flags::flags().pin_large_q6_sgemv
+                && let Some(pin) =
+                    &crate::flags::for_profile(cx.caps.execution_profile).pin_large_q6_sgemv
             {
                 assert!(
                     pin.len() == 5,
@@ -306,7 +308,8 @@ fn lower_family(
                 && mnk.m.as_const().is_some_and(|m| m <= 4)
                 && mnk.k.as_const().is_some_and(|k| k <= 512)
                 && mnk.n != Dim::ONE
-                && let Some(pin) = &crate::flags::flags().pin_small_dense_sgemv
+                && let Some(pin) =
+                    &crate::flags::for_profile(cx.caps.execution_profile).pin_small_dense_sgemv
             {
                 assert!(
                     pin.len() == 5,

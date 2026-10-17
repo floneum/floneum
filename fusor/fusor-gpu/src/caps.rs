@@ -217,6 +217,7 @@ pub(crate) fn build_caps(
     );
     let fork = FORK_METAL && info.backend == wgpu::Backend::Metal;
     Caps {
+        execution_profile: Default::default(),
         kind,
         name: format!("{:?}/{}", info.backend, info.name),
         limits: ir_limits(limits),

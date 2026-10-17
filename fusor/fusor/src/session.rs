@@ -104,6 +104,18 @@ impl Backend {
         Ok(Self::Gpu(Arc::new(GpuTarget::new().await?)))
     }
 
+    /// Request a GPU with per-device execution defaults.
+    #[cfg(feature = "gpu")]
+    pub async fn gpu_with_profile(profile: fusor_ir::execution::ExecutionProfile) -> Result<Self> {
+        Ok(Self::Gpu(Arc::new(
+            GpuTarget::with_config(fusor_gpu::target::GpuConfig {
+                execution_profile: profile,
+                ..Default::default()
+            })
+            .await?,
+        )))
+    }
+
     /// Create a GPU backend and block until adapter initialization completes.
     #[cfg(feature = "gpu")]
     #[cfg(not(target_arch = "wasm32"))]
@@ -503,7 +515,11 @@ impl Session {
         rules.extend_from_slice(target.rules());
         // Diagnostic rule ablation. Only additive alternatives may be removed;
         // every correctness-floor lowering remains available.
-        if let Ok(names) = std::env::var("FUSOR_PROFILE_DISABLE_RULES") {
+        if let Ok(names) = target
+            .caps()
+            .execution_profile
+            .var("FUSOR_PROFILE_DISABLE_RULES")
+        {
             for name in names.split(',').filter(|s| !s.is_empty()) {
                 let rule = rules
                     .iter()
@@ -814,7 +830,7 @@ impl Session {
             let plan = if missed {
                 let mut ex = plan.extraction.clone();
                 let mut next = plan;
-                for _ in 0..flags().forward_passes {
+                for _ in 0..flags_for(self.caps().execution_profile).forward_passes {
                     if !fusor_cost::forward::forward_selected_views(
                         &mut g, &caps, &roots, &next, &mut ex,
                     ) {
@@ -920,8 +936,10 @@ impl Session {
         }
 
         let __t_run = Instant::now();
-        let prepared = std::env::var_os("FUSOR_PROFILE_WARM_RESOLVE")
-            .is_some()
+        let prepared = self
+            .caps()
+            .execution_profile
+            .enabled("FUSOR_PROFILE_WARM_RESOLVE")
             .then(|| graph.prepare_run(&plan))
             .flatten();
         let (launched, executable) = self.run(&graph, &plan, values, true, prepared.as_deref())?;
@@ -2309,11 +2327,22 @@ pub(crate) struct Flags {
 }
 
 pub(crate) fn flags() -> &'static Flags {
+    flags_for(Default::default())
+}
+
+fn flags_for(profile: fusor_ir::execution::ExecutionProfile) -> &'static Flags {
     static FLAGS: std::sync::OnceLock<Flags> = std::sync::OnceLock::new();
-    FLAGS.get_or_init(|| {
+    static INFERENCE: std::sync::OnceLock<Flags> = std::sync::OnceLock::new();
+    let flags = if profile == fusor_ir::execution::ExecutionProfile::LowLatency {
+        &INFERENCE
+    } else {
+        &FLAGS
+    };
+    flags.get_or_init(|| {
         let on = |name: &str| std::env::var_os(name).is_some();
         let num = |name: &str, default: u64| {
-            std::env::var(name)
+            profile
+                .var(name)
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(default)

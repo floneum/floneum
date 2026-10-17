@@ -154,7 +154,6 @@ pub struct SeparateAttention {
     pub attention_wq: Weight,
     /// The row-concatenated `q|k|v` projection, when the three formats agree.
     pub attention_qkv: Option<Weight>,
-    #[cfg(feature = "kernel-visualize")]
     pub attention_qk: Option<Weight>,
     pub attention_q_norm: Option<RmsNorm>,
     pub attention_wk: Weight,
@@ -181,9 +180,12 @@ impl SeparateAttention {
         rope_cache: &RopeImplementation,
         at: RopeAt<'_>,
     ) -> (Tensor<4>, Tensor<4>, Tensor<4>) {
-        #[cfg(feature = "kernel-visualize")]
         if hidden_states.shape()[1] == 1
-            && std::env::var_os("PROFILE_QK_VIEW_ROPE").is_some()
+            && hidden_states
+                .backend()
+                .caps()
+                .execution_profile
+                .enabled("PROFILE_QK_VIEW_ROPE")
             && self.attention_q_norm.is_none()
             && self.attention_k_norm.is_none()
         {
@@ -282,8 +284,12 @@ impl GroupedAttention {
     ) -> (Tensor<4>, Tensor<4>, Tensor<4>) {
         let qkv = self.attention_qkv.mat_mul(x);
 
-        #[cfg(feature = "kernel-visualize")]
-        if x.shape()[1] == 1 && std::env::var_os("PROFILE_QK_VIEW_ROPE").is_some() {
+        if x.shape()[1] == 1
+            && x.backend()
+                .caps()
+                .execution_profile
+                .enabled("PROFILE_QK_VIEW_ROPE")
+        {
             let (q, k) = rope_cache.forward_projected(
                 &qkv,
                 num_heads,
@@ -394,42 +400,41 @@ impl LlamaAttention {
             }
         };
 
-        // A profiling-only specialization of this prompt chunk's exact prefix.
+        // A specialization of this prompt chunk's exact prefix.
         // decode_step rebuilds such graphs when the prefix changes. Single-token
         // decoding retains the symbolic prefix and its replayable graph.
-        #[cfg(feature = "kernel-visualize")]
-        let (key_states, value_states) =
-            if q_len > 1 && std::env::var_os("PROFILE_CONST_PREFILL_KV").is_some() {
-                let n = cache
-                    .as_ref()
-                    .and_then(|c| c.current_len())
-                    .or_else(|| key_states.extent(2).as_const())
-                    .expect("prefill KV length is host-known") as usize;
-                (key_states.narrow(2, 0, n), value_states.narrow(2, 0, n))
-            } else {
-                (key_states, value_states)
-            };
+        let (key_states, value_states) = if q_len > 1
+            && hidden_states
+                .backend()
+                .caps()
+                .execution_profile
+                .enabled("PROFILE_CONST_PREFILL_KV")
+        {
+            let n = cache
+                .as_ref()
+                .and_then(|c| c.current_len())
+                .or_else(|| key_states.extent(2).as_const())
+                .expect("prefill KV length is host-known") as usize;
+            (key_states.narrow(2, 0, n), value_states.narrow(2, 0, n))
+        } else {
+            (key_states, value_states)
+        };
 
         let scale = 1.0 / (head_dim as f32).sqrt();
         let (kind, mask_tensor) = mask;
-        let padded: Option<Tensor<4>> = {
-            #[cfg(feature = "kernel-visualize")]
-            {
-                if q_len == 1
-                    && matches!(kind, MaskKind::None)
-                    && std::env::var_os("PROFILE_PADDED_DECODE_ATTENTION").is_some()
-                {
-                    cache
-                        .as_deref_mut()
-                        .and_then(|c| c.attention_decode_padded(&query_states, Some(scale)))
-                } else {
-                    None
-                }
-            }
-            #[cfg(not(feature = "kernel-visualize"))]
-            {
-                None
-            }
+        let padded = if q_len == 1
+            && matches!(kind, MaskKind::None)
+            && hidden_states
+                .backend()
+                .caps()
+                .execution_profile
+                .enabled("PROFILE_PADDED_DECODE_ATTENTION")
+        {
+            cache
+                .as_deref_mut()
+                .and_then(|c| c.attention_decode_padded(&query_states, Some(scale)))
+        } else {
+            None
         };
         let attn_output = padded.unwrap_or_else(|| {
             query_states.attention_masked(

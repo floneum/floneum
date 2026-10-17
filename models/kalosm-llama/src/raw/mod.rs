@@ -354,12 +354,13 @@ impl Model {
                 let v =
                     Weight::from_raw(&graph, &source.tensor(&format!("{prefix}.attn_v.weight"))?)?;
                 let qkv = Weight::concat_rows(&[&q, &k, &v]);
-                #[cfg(feature = "kernel-visualize")]
-                let qk = if qkv.is_none() && std::env::var_os("PROFILE_QK_PROJECT").is_some() {
-                    Weight::concat_rows(&[&q, &k])
-                } else {
-                    None
-                };
+
+                let qk =
+                    if qkv.is_none() && device.execution_profile().enabled("PROFILE_QK_PROJECT") {
+                        Weight::concat_rows(&[&q, &k])
+                    } else {
+                        None
+                    };
                 let bias_q = source.tensor(&format!("{prefix}.attn_q.bias"));
                 let bias_k = source.tensor(&format!("{prefix}.attn_k.bias"));
                 let bias_v = source.tensor(&format!("{prefix}.attn_v.bias"));
@@ -377,7 +378,6 @@ impl Model {
                 let separate = SeparateAttention {
                     attention_wq: q,
                     attention_qkv: qkv,
-                    #[cfg(feature = "kernel-visualize")]
                     attention_qk: qk,
                     attention_q_norm: q_norm
                         .map(|norm| decode_norm(norm, rms_norm_eps))
@@ -726,29 +726,16 @@ impl Model {
             // A ring overwrite would discard keys still needed by earlier queries.
             1
         } else {
-            #[cfg(feature = "kernel-visualize")]
-            {
-                // Profiling experiment: compare batch widths without changing
-                // the default inference policy or single-token/ring-cache path.
-                static WIDTH: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-                *WIDTH.get_or_init(|| {
-                    let width = std::env::var("PROFILE_PREFILL_WIDTH")
-                        .map(|s| {
-                            s.parse::<usize>()
-                                .expect("PROFILE_PREFILL_WIDTH must be an integer")
-                        })
-                        .unwrap_or(16);
-                    assert!(
-                        width.is_power_of_two() && (16..=256).contains(&width),
-                        "PROFILE_PREFILL_WIDTH must be 16, 32, 64, 128 or 256"
-                    );
-                    width
+            let width = device
+                .execution_profile()
+                .var("PROFILE_PREFILL_WIDTH")
+                .map(|s| {
+                    s.parse::<usize>()
+                        .expect("prefill width must be an integer")
                 })
-            }
-            #[cfg(not(feature = "kernel-visualize"))]
-            {
-                16
-            }
+                .unwrap_or(16);
+            assert!(width.is_power_of_two() && (16..=256).contains(&width));
+            width
         };
         KvCache::reserve_all(&mut cache.blocks, (n.div_ceil(width) * width) as u64)?;
         let mut i = 0;
@@ -823,8 +810,10 @@ impl Model {
         device: &Device,
         cache: &mut LlamaCache,
     ) -> Result<()> {
-        #[cfg(feature = "kernel-visualize")]
-        if std::env::var_os("FUSOR_PROFILE_CACHE_DONATION").is_some() {
+        if device
+            .execution_profile()
+            .enabled("FUSOR_PROFILE_CACHE_DONATION")
+        {
             let values = out
                 .map(|v| v.clone().into_dyn())
                 .into_iter()
@@ -917,12 +906,15 @@ impl Model {
                 .collect::<Vec<_>>(),
         );
 
-        #[cfg(feature = "kernel-visualize")]
-        if width > 1 && std::env::var_os("PROFILE_CONST_PREFILL_KV").is_some() {
+        if width > 1
+            && device
+                .execution_profile()
+                .enabled("PROFILE_CONST_PREFILL_KV")
+        {
             cache.decode_graph = None;
         }
-        #[cfg(feature = "kernel-visualize")]
-        cache.refresh_padded_capacity();
+
+        cache.refresh_padded_capacity(device.execution_profile());
         if let Some(logits) = cache.decode_graph.clone() {
             // Every block or none: a half-advanced cache would silently
             // disagree with the graph about its own length.
@@ -978,8 +970,7 @@ impl Model {
         cos_slot.set_elements(cos);
         sin_slot.set_elements(sin);
 
-        #[cfg(feature = "kernel-visualize")]
-        cache.refresh_padded_capacity();
+        cache.refresh_padded_capacity(device.execution_profile());
         if let Some(logits) = cache.embed_graph.clone() {
             if cache.blocks.iter().all(|block| block.can_replay(1)) {
                 for block in &mut cache.blocks {

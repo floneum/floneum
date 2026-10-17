@@ -5,7 +5,7 @@ action at a time. Run it as a TUI, plain text, or newline-delimited JSON. It nee
 no GPU or driver. The implementation is in the `fusor-visualize` workspace crate.
 
 The repository includes selected measurement evidence. Full local experiment
-archives are excluded; see [report contents](../../../reports/PR-CONTENTS.txt).
+archives are excluded; see [report contents](../../reports/PR-CONTENTS.txt).
 
 For real Llama hotspot attribution, quantized-matrix experiments and full-logit
 A/B validation, see the steady decode investigation (local experiment archive),
@@ -31,9 +31,16 @@ The original **208-token target now passes 2× in both orders**: **2.037× / 2.0
 run medians. These are 62 steady samples per arm on the M2 Max, using the same
 executable and resource policy. All 2,308,608 original-reference logits pass;
 maximum absolute error is 0.0000611, with matching argmaxes and text. This is
-an opt-in measured configuration, with a narrow margin in the reverse order.
-The final runs retain at least 8.645 GiB estimated reclaimable headroom and
-produce no additional swapouts. Quantized weights and F32 arithmetic remain.
+the October 12 opt-in checkpoint, with a narrow margin in the reverse order.
+Those runs retained at least 8.645 GiB estimated reclaimable headroom and
+produced no additional swapouts. Quantized weights and F32 arithmetic remain.
+
+The ordinary Llama builder now selects this inference policy on supported
+Apple GPUs, without a profiling feature or environment preset. See
+[normal chat usage](../../models/kalosm-llama/README.md#fast-chat-defaults) and
+[default-path validation status](../../reports/llama-decode-2x/default-inference.txt).
+The fresh full-model rerun was stopped by the memory guard during reference
+prefill; the timings above are historical, not a new default-path measurement.
 
 Use the verified configuration (local experiment archive)
 and reproduction report (local experiment archive).

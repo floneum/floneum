@@ -28,8 +28,10 @@ pub(super) fn lower(
         .min(ctx.caps.limits.max_compute_workgroup_size[0])
         / (p.subgroups * 32))
         .max(1);
-    let mut splits = crate::flags().q6_splits.min(max_splits);
-    if crate::flags()
+    let mut splits = crate::flags::for_profile(ctx.caps.execution_profile)
+        .q6_splits
+        .min(max_splits);
+    if crate::flags::for_profile(ctx.caps.execution_profile)
         .q6_split_max_n
         .is_some_and(|limit| shape.n.as_const().is_none_or(|n| n > limit as u64))
     {
@@ -170,7 +172,7 @@ pub(super) fn lower(
                 4,
             );
             let packed = b.binary(TileBinaryOp::BitOr, lo, hi, NumericContract::RELAXED);
-            if crate::flags().q6_float_unpack {
+            if crate::flags::for_profile(ctx.caps.execution_profile).q6_float_unpack {
                 let weights = (0..4u32)
                     .map(|byte| {
                         let q = and(shr(packed.clone(), b.u32(byte * 8)), 63);

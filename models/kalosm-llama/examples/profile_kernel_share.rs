@@ -103,7 +103,16 @@ fn main() -> anyhow::Result<()> {
         "wall"
     };
     pollster::block_on(async {
-        let device = Device::gpu().await?;
+        let device = if std::env::var_os("PROFILE_DEFAULT_DEVICE").is_some() {
+            anyhow::ensure!(
+                plan_repeats == 0,
+                "default cache donation forbids immutable plan replay"
+            );
+            Device::gpu_inference().await?
+        } else {
+            Device::gpu().await?
+        };
+        eprintln!("EXECUTION_PROFILE {:?}", device.execution_profile());
         let target = device.backend().gpu_target().expect("GPU device");
         let replay_active = Arc::new(AtomicUsize::new(0));
         if plan_repeats > 0 {

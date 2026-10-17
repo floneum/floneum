@@ -96,7 +96,9 @@ fn through_copy(b: &Builder<'_>, o: &Operand, broadcast_only: bool) -> Option<Op
             continue;
         }
         let out_elems = const_elements(&out_shape);
-        if std::env::var_os("FUSOR_PROFILE_LINEAR_VIEW_FORWARD").is_some()
+        if b.caps()
+            .execution_profile
+            .enabled("FUSOR_PROFILE_LINEAR_VIEW_FORWARD")
             && let Some(layout) = through_linear_view(&o.layout, &out_shape, &src.layout)
         {
             return Some(Operand {
@@ -236,7 +238,10 @@ pub fn forward_views(
     let indexed = matches!(op, Launch::Gather { .. } | Launch::Scatter { .. });
     if indexed
         && (b.caps().kind != crate::device::DeviceKind::Gpu
-            || std::env::var_os("FUSOR_PROFILE_INDEX_VIEW_FORWARD").is_none())
+            || !b
+                .caps()
+                .execution_profile
+                .enabled("FUSOR_PROFILE_INDEX_VIEW_FORWARD"))
     {
         return None;
     }

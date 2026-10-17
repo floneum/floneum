@@ -338,7 +338,12 @@ pub(crate) fn attention_prefix(
     let sym = scale_uniform(graph, resolved_scale(graph, q, scale)?);
     let (qi, ki, vi) = (q.id, k.id, v.id);
     let caps = graph.session().caps();
-    let attention_block = std::env::var("FUSOR_PROFILE_ATTENTION_BLOCK")
+    let attention_block = q
+        .graph
+        .session()
+        .caps()
+        .execution_profile
+        .var("FUSOR_PROFILE_ATTENTION_BLOCK")
         .ok()
         .map(|s| {
             s.parse::<u32>()
@@ -349,7 +354,12 @@ pub(crate) fn attention_prefix(
         matches!(attention_block, 32 | 64 | 128 | 256 | 512),
         "attention block must be a power of two from 32 to 512"
     );
-    let heads_per_group = std::env::var("FUSOR_PROFILE_ATTENTION_HEADS")
+    let heads_per_group = q
+        .graph
+        .session()
+        .caps()
+        .execution_profile
+        .var("FUSOR_PROFILE_ATTENTION_HEADS")
         .ok()
         .map(|s| {
             s.parse::<u32>()
@@ -372,7 +382,11 @@ pub(crate) fn attention_prefix(
             None,
             Some(prefix),
         )?;
-        if std::env::var_os("FUSOR_PROFILE_FUSED_DECODE_ATTENTION").is_some()
+        if q.graph
+            .session()
+            .caps()
+            .execution_profile
+            .enabled("FUSOR_PROFILE_FUSED_DECODE_ATTENTION")
             && caps.kind == fusor_ir::device::DeviceKind::Gpu
             && caps
                 .subgroups
@@ -385,7 +399,12 @@ pub(crate) fn attention_prefix(
             use fusor_ir::shape::Layout;
             let qshape = t.shape_of(qi);
             let kshape = t.shape_of(ki);
-            let requested_chunk = std::env::var("FUSOR_PROFILE_ATTENTION_CHUNK")
+            let requested_chunk = q
+                .graph
+                .session()
+                .caps()
+                .execution_profile
+                .var("FUSOR_PROFILE_ATTENTION_CHUNK")
                 .ok()
                 .and_then(|s| s.parse::<u32>().ok())
                 .filter(|n| *n > 0);
@@ -446,7 +465,12 @@ pub(crate) fn attention_prefix(
                         block: attention_block,
                         heads_per_group,
                         chunk,
-                        key_major: std::env::var_os("FUSOR_PROFILE_ATTENTION_KEY_MAJOR").is_some(),
+                        key_major: q
+                            .graph
+                            .session()
+                            .caps()
+                            .execution_profile
+                            .enabled("FUSOR_PROFILE_ATTENTION_KEY_MAJOR"),
                         scale: ScalarExpr::uniform(sym, fusor_ir::dtype::Dtype::F32),
                         prefix: ScalarExpr::uniform(prefix, fusor_ir::dtype::Dtype::F32),
                         ops,

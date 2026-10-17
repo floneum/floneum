@@ -104,8 +104,14 @@ pub(super) fn lower_merge(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
 }
 
 pub(super) fn lower(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
-    if crate::flags().attention_online
-        && matches!(op, Launch::DecodeAttention { heads_per_group: 1, .. })
+    if crate::flags::for_profile(ctx.caps.execution_profile).attention_online
+        && matches!(
+            op,
+            Launch::DecodeAttention {
+                heads_per_group: 1,
+                ..
+            }
+        )
     {
         return online::lower(ctx, op);
     }

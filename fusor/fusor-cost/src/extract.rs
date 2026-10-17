@@ -315,7 +315,7 @@ impl Search<'_> {
     ) -> Incumbent {
         let graph = self.graph;
         let profiling = std::env::var_os("FUSOR_EXTRACT_PROFILE").is_some();
-        let flags = crate::debug::flags();
+        let flags = crate::debug::for_profile(self.caps.execution_profile);
         let seed_limit = if flags.seed_min_m <= 1
             || at
                 .realized

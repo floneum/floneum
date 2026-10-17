@@ -164,32 +164,33 @@ pub(super) fn lower(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
             value: b.load_local(next_max),
         },
     ]);
-    let (iterations, loop_body) = if crate::flags().attention_exact_partition {
-        // Subgroup s owns s, s + S, ... < length. All of its lanes execute
-        // floor((length + S - 1 - s) / S) iterations, so no per-key guard is
-        // needed. The numerator stays nonnegative even for an empty prefix.
-        // Only subgroup collectives occur inside; the workgroup rendezvous
-        // remains outside the loop, where every subgroup reaches it.
-        (
-            b.div(
-                b.sub(b.add(length.clone(), b.u32(subgroups - 1)), sg.clone()),
-                b.u32(subgroups),
-            ),
-            update,
-        )
-    } else {
-        (
-            b.div(
-                b.add(length.clone(), b.u32(subgroups - 1)),
-                b.u32(subgroups),
-            ),
-            vec![Stmt::If {
-                condition: b.lt(key, length),
-                accept: update,
-                reject: Vec::new(),
-            }],
-        )
-    };
+    let (iterations, loop_body) =
+        if crate::flags::for_profile(ctx.caps.execution_profile).attention_exact_partition {
+            // Subgroup s owns s, s + S, ... < length. All of its lanes execute
+            // floor((length + S - 1 - s) / S) iterations, so no per-key guard is
+            // needed. The numerator stays nonnegative even for an empty prefix.
+            // Only subgroup collectives occur inside; the workgroup rendezvous
+            // remains outside the loop, where every subgroup reaches it.
+            (
+                b.div(
+                    b.sub(b.add(length.clone(), b.u32(subgroups - 1)), sg.clone()),
+                    b.u32(subgroups),
+                ),
+                update,
+            )
+        } else {
+            (
+                b.div(
+                    b.add(length.clone(), b.u32(subgroups - 1)),
+                    b.u32(subgroups),
+                ),
+                vec![Stmt::If {
+                    condition: b.lt(key, length),
+                    accept: update,
+                    reject: Vec::new(),
+                }],
+            )
+        };
     body.push(Stmt::Loop {
         count: Some(iterations),
         index: Some(it),

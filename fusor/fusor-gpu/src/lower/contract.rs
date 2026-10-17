@@ -34,7 +34,7 @@ pub(crate) fn lower_contract(
     let contract = Contract::of(&ctx, op);
     // Which family and which point extraction actually resolved; the answer
     // is not in the graph, it is in `theta`.
-    if crate::flags().dump_contract {
+    if crate::flags::for_profile(ctx.caps.execution_profile).dump_contract {
         let s = contract.as_ref().map(|c| c.shape);
         eprintln!(
             "CONTRACT family={family:?} theta={theta:?} shape={:?}",
@@ -43,7 +43,7 @@ pub(crate) fn lower_contract(
     }
     let contract = contract?;
     if matches!((family, theta), (Family::Sgemv, SchedPoint::Sgemv(_)))
-        && crate::flags().gemv_contiguous_n
+        && crate::flags::for_profile(ctx.caps.execution_profile).gemv_contiguous_n
         && contiguous_n::supported(&contract, ctx.caps.subgroup_width())
     {
         return contiguous_n::lower(ctx, &contract);
@@ -310,7 +310,7 @@ fn lower_coop(ctx: Ctx<'_>, c: &Contract<'_>, geom: CoopGeom, staging: u8) -> Re
     // A fused prologue can cast a wider backing buffer before staging. The
     // matrix operand type is that prologue's result, not the backing dtype.
     let operand_elem = scalar_element(c.a.side.pre.dtype());
-    if crate::flags().dump_contract {
+    if crate::flags::for_profile(ctx.caps.execution_profile).dump_contract {
         eprintln!(
             "COOP_TYPES operand={operand_elem:?} accumulator={acc_elem:?} source={:?}",
             ctx.plan_dtype(c.a.side.primary().src)?
@@ -1356,15 +1356,15 @@ fn lower_sgemv_subgroup_cols(ctx: Ctx<'_>, c: &Contract<'_>, p: SgemvParams) -> 
             "sgemv {p:?} does not tile whole fixed-width subgroups at width {width}"
         )));
     }
-    if crate::flags().q6_group16
+    if crate::flags::for_profile(ctx.caps.execution_profile).q6_group16
         && let Some(q) = packed_q6_group16::source(c, width, p)
     {
-        if crate::flags().q6_coalesced {
+        if crate::flags::for_profile(ctx.caps.execution_profile).q6_coalesced {
             return packed_q6_coalesced::lower(ctx, c, p, &q);
         }
         return packed_q6_group16::lower(ctx, c, p, &q);
     }
-    if crate::flags().gemv_packed_q4
+    if crate::flags::for_profile(ctx.caps.execution_profile).gemv_packed_q4
         && let Some(q) = packed_q4_source(c, width, p)
     {
         return lower_packed_q4(ctx, c, p, &q);
@@ -1407,7 +1407,7 @@ fn lower_sgemv_subgroup_cols(ctx: Ctx<'_>, c: &Contract<'_>, p: SgemvParams) -> 
             (col, ok)
         })
         .collect();
-    let chains = crate::flags::flags().gemv_chains;
+    let chains = crate::flags::for_profile(ctx.caps.execution_profile).gemv_chains;
     let locals: Vec<_> = (0..cps as usize * chains)
         .map(|_| b.local(c.acc.element()))
         .collect();

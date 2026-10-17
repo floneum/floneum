@@ -386,7 +386,11 @@ impl<const R: usize, T: Element> TensorCache<R, T> {
             None => {
                 let t = if added == 1
                     && f.capacity <= 1 << 24
-                    && std::env::var_os("FUSOR_PROFILE_CACHE_INDEX_UNIFORM").is_some()
+                    && graph
+                        .session()
+                        .caps()
+                        .execution_profile
+                        .enabled("FUSOR_PROFILE_CACHE_INDEX_UNIFORM")
                 {
                     let sym = graph.fresh_sym();
                     WriteIndex::Uniform {
@@ -704,7 +708,11 @@ impl<const R: usize, T: Element> KvCache<R, T> {
         }
         if let Some(first) = roots.first() {
             let session = first.graph().session();
-            if std::env::var_os("FUSOR_PROFILE_CACHE_DONATION").is_some() {
+            if session
+                .caps()
+                .execution_profile
+                .enabled("FUSOR_PROFILE_CACHE_DONATION")
+            {
                 session.resolve_cache(&roots, &stores)?;
             } else {
                 session.resolve(&roots)?;

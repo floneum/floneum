@@ -109,6 +109,7 @@ impl GpuBuffer {
 
 /// Recycling buffer pool with a hard memory ceiling.
 pub struct BufferPool {
+    flags: &'static crate::flags::Flags,
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     /// Buckets retain all live buffers so `live_bytes` accounts for every allocation.
@@ -146,10 +147,11 @@ impl BufferPool {
         lost: crate::device::LostFlag,
     ) -> Self {
         let ceiling = config.max_gpu_memory_bytes.unwrap_or_else(default_ceiling);
-        let ceiling = crate::flags()
+        let ceiling = crate::flags::for_profile(config.execution_profile)
             .memory_budget_bytes
             .map_or(ceiling, |limit| ceiling.min(limit));
         Self {
+            flags: crate::flags::for_profile(config.execution_profile),
             device,
             queue,
             free: Mutex::new(FxHashMap::default()),
@@ -255,7 +257,7 @@ impl BufferPool {
 
     /// Upload initial contents, padded to `COPY_BUFFER_ALIGNMENT`.
     pub fn create_buffer_init(&self, data: &[u8], usage: wgpu::BufferUsages) -> Result<Buf> {
-        self.create_buffer_init_impl(data, usage, crate::flags().mapped_upload)
+        self.create_buffer_init_impl(data, usage, self.flags.mapped_upload)
     }
 
     fn create_buffer_init_impl(
@@ -709,6 +711,7 @@ unsafe impl Sync for GpuBuffer {}
 #[allow(dead_code)]
 fn pool_fields_are_send_sync() {
     fn assert<T: Send + Sync>() {}
+    assert::<&'static crate::flags::Flags>();
     assert::<Arc<wgpu::Device>>();
     assert::<Arc<wgpu::Queue>>();
     assert::<Mutex<FxHashMap<PoolKey, Bucket>>>();

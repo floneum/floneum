@@ -281,7 +281,8 @@ pub(crate) fn lower_kscatter(ctx: Ctx<'_>, op: &Launch, theta: SchedPoint) -> Re
     if shape.updates == 1
         && shape.total() > 0
         && shape.total() <= u64::from(u32::MAX - 32768)
-        && let Some(slots) = crate::flags().scatter_single_linear
+        && let Some(slots) =
+            crate::flags::for_profile(ctx.caps.execution_profile).scatter_single_linear
     {
         // A copy with one row update. More than one row can share a block,
         // and each lane handles several adjacent block-wide runs. All reads
@@ -375,7 +376,7 @@ pub(crate) fn lower_kscatter(ctx: Ctx<'_>, op: &Launch, theta: SchedPoint) -> Re
         // A single update needs no index staging or workgroup rendezvous.
         // The row-level condition is uniform, and untouched rows still copy
         // their base into a fresh output: this does not introduce aliasing.
-        if updates == 1 && crate::flags::flags().scatter_single {
+        if updates == 1 && crate::flags::for_profile(ctx.caps.execution_profile).scatter_single {
             let picked = b.cast(
                 load_logical(&ctx, idx, b.u32(0))?,
                 ScalarElement::U32.element(),

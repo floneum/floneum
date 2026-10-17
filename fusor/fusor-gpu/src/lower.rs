@@ -560,7 +560,7 @@ impl<'a> Ctx<'a> {
             pack,
             workgroup: None,
             block_floor: 0,
-            q4_variant: crate::flags().q4_variant,
+            q4_variant: crate::flags::for_profile(caps.execution_profile).q4_variant,
         })
     }
 

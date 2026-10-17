@@ -18,7 +18,9 @@ pub fn forward_selected_views(
     plan: &Plan,
     ex: &mut Extraction,
 ) -> bool {
-    let composite_copies = std::env::var_os("FUSOR_PROFILE_COMPOSITE_VIEW_FORWARD").is_some();
+    let composite_copies = caps
+        .execution_profile
+        .enabled("FUSOR_PROFILE_COMPOSITE_VIEW_FORWARD");
     fn view_copy(graph: &EGraph, id: Id, composites: bool) -> bool {
         is_view_copy(&graph.node(id).op)
             || (composites

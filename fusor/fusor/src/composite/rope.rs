@@ -213,7 +213,9 @@ pub fn rope(
     core_op(graph, move |t| {
         let result = rope_defn(t, xi, ci, si, &ops)?;
         let shape = t.shape_of(xi);
-        if std::env::var_os("FUSOR_PROFILE_FUSED_DECODE_ROPE").is_some()
+        if caps
+            .execution_profile
+            .enabled("FUSOR_PROFILE_FUSED_DECODE_ROPE")
             && caps.kind == fusor_ir::device::DeviceKind::Gpu
             && caps.limits.max_compute_invocations_per_workgroup >= 256
             && caps.limits.max_compute_workgroup_size[0] >= 256

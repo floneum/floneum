@@ -300,12 +300,12 @@ fn f32_logits_from_bytes(bytes: &[u8]) -> Result<std::borrow::Cow<'_, [f32]>, fu
     })
 }
 
-fn top_k_logits_from_full(logits: &[f32], k: usize) -> Vec<Logit> {
-    #[cfg(feature = "kernel-visualize")]
-    let prefilter = std::env::var_os("PROFILE_TOP_K_PREFILTER").is_some();
-    #[cfg(not(feature = "kernel-visualize"))]
-    let prefilter = false;
-    top_k_logits_from_full_impl(logits, k, prefilter)
+fn top_k_logits_from_full(
+    logits: &[f32],
+    k: usize,
+    profile: fusor_ir::execution::ExecutionProfile,
+) -> Vec<Logit> {
+    top_k_logits_from_full_impl(logits, k, profile.enabled("PROFILE_TOP_K_PREFILTER"))
 }
 
 fn top_k_logits_from_full_impl(logits: &[f32], k: usize, prefilter: bool) -> Vec<Logit> {
@@ -594,9 +594,9 @@ impl LlamaModel {
 
         let source = format!("Model ({})", builder.source.model[0]);
         let mut create_progress = ModelLoadingProgress::downloading_progress(source);
-        let model_bytes = builder
+        let model_paths = builder
             .source
-            .model(|progress| handler(create_progress(progress)))
+            .model_paths(|progress| handler(create_progress(progress)))
             .await?;
 
         let override_stop_token_string = builder.source.override_stop_token_string.clone();
@@ -607,15 +607,15 @@ impl LlamaModel {
             let load_model = move || -> Result<(Model, LlamaTokenizer), LlamaSourceError> {
                 let tokenizer = parse_external_tokenizer(tokenizer_source)?;
                 let config = parse_external_config(config_bytes)?;
-                if model_bytes.is_empty() {
+                if model_paths.is_empty() {
                     return Err(LlamaSourceError::InvalidGguf);
                 }
 
-                // Parse every shard from its in-memory bytes.
+                // Retain each mapped shard through its tensor ranges; no full-file
+                // or per-weight heap copy is kept after upload.
                 let mut shards = Vec::new();
-                for bytes in model_bytes {
-                    let gguf =
-                        fusor_gguf::Gguf::from_bytes(bytes).map_err(LlamaSourceError::Device)?;
+                for path in model_paths {
+                    let gguf = fusor_gguf::Gguf::open(path).map_err(LlamaSourceError::Device)?;
                     shards.push(VarBuilder::new(std::sync::Arc::new(gguf)));
                 }
 

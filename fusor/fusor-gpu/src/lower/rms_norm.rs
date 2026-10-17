@@ -55,7 +55,10 @@ pub(super) fn lower(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
         squares = b.fma(b.load_local(x.clone()), b.load_local(x.clone()), squares);
         held.push((col, ok, x));
     }
-    let sum = if std::env::var_os("FUSOR_PROFILE_RMS_SUBGROUP_MERGE").is_some()
+    let sum = if ctx
+        .caps
+        .execution_profile
+        .enabled("FUSOR_PROFILE_RMS_SUBGROUP_MERGE")
         && ctx
             .caps
             .subgroups

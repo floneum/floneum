@@ -190,7 +190,13 @@ impl Tensor {
         bias: Option<&Tensor>,
         eps: f32,
     ) -> Result<Tensor> {
-        if std::env::var_os("FUSOR_PROFILE_RMS_RESIDUAL").is_some() {
+        if self
+            .graph
+            .session()
+            .caps()
+            .execution_profile
+            .enabled("FUSOR_PROFILE_RMS_RESIDUAL")
+        {
             return self.rms_norm_inner(Some(weight), bias, eps, Some(residual));
         }
         let (x, r) = (self.id, residual.id);
@@ -215,7 +221,12 @@ impl Tensor {
         let b = bias.map(|t| t.id);
         let r = residual.map(|t| t.id);
         let caps = self.graph.session().caps();
-        let rms_block = std::env::var("FUSOR_PROFILE_RMS_BLOCK")
+        let rms_block = self
+            .graph
+            .session()
+            .caps()
+            .execution_profile
+            .var("FUSOR_PROFILE_RMS_BLOCK")
             .ok()
             .map(|v| v.parse::<u32>().expect("RMS block must be an integer"))
             .unwrap_or(256);
@@ -233,7 +244,12 @@ impl Tensor {
             };
             let result = layer_norm_defn(t, summed, w, b, sym, false)?;
             let shape = t.shape_of(x);
-            if std::env::var_os("FUSOR_PROFILE_FUSED_RMS_NORM").is_some()
+            if self
+                .graph
+                .session()
+                .caps()
+                .execution_profile
+                .enabled("FUSOR_PROFILE_FUSED_RMS_NORM")
                 && caps.kind == fusor_ir::device::DeviceKind::Gpu
                 && caps.limits.max_compute_invocations_per_workgroup >= rms_block
                 && caps.limits.max_compute_workgroup_size[0] >= rms_block

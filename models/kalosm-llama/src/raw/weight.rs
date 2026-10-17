@@ -6,13 +6,10 @@
 //! throughout — and a dense weight contracts in its own dtype with the
 //! activation cast to match, never decoded to a second copy.
 
-use fusor::quantized::{QMatrix, contract_rows};
+use fusor::quantized::{contract_rows, QMatrix};
 use fusor::tensor::Dyn;
 use fusor::{Dim, Dtype, Element, Graph, Result, Tensor};
 use fusor_gguf::RawTensorBytes;
-
-#[cfg(feature = "kernel-visualize")]
-mod profile_backing;
 
 #[derive(Clone)]
 pub(crate) enum Weight {
@@ -51,17 +48,13 @@ impl Weight {
             )?));
         }
         match raw.fmt {
-            Dtype::Q(fmt) => {
-                #[cfg(feature = "kernel-visualize")]
-                if let Some(bytes) = profile_backing::mapped_bytes(raw)? {
-                    return Ok(Self::Quantized(QMatrix::from_shared_bytes(
-                        graph, fmt, raw.layout, shape, bytes,
-                    )?));
-                }
-                Ok(Self::Quantized(QMatrix::from_raw_bytes(
-                    graph, fmt, raw.layout, shape, &raw.bytes,
-                )?))
-            }
+            Dtype::Q(fmt) => Ok(Self::Quantized(QMatrix::from_shared_bytes(
+                graph,
+                fmt,
+                raw.layout,
+                shape,
+                raw.bytes.shared_host_bytes(),
+            )?)),
             Dtype::F16 | Dtype::F32 | Dtype::BF16 => Ok(Self::Dense(Dyn::from_slice(
                 graph.handle(),
                 raw.fmt,

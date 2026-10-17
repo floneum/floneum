@@ -84,14 +84,25 @@ pub(crate) struct Flags {
 }
 
 pub(crate) fn flags() -> &'static Flags {
+    for_profile(fusor_ir::execution::ExecutionProfile::General)
+}
+
+pub(crate) fn for_profile(profile: fusor_ir::execution::ExecutionProfile) -> &'static Flags {
     static FLAGS: OnceLock<Flags> = OnceLock::new();
-    FLAGS.get_or_init(|| {
-        let on = |name| std::env::var_os(name).is_some();
+    static INFERENCE: OnceLock<Flags> = OnceLock::new();
+    let flags = if profile == fusor_ir::execution::ExecutionProfile::LowLatency {
+        &INFERENCE
+    } else {
+        &FLAGS
+    };
+    flags.get_or_init(|| {
+        let on = |name| profile.enabled(name);
         let path = |name| std::env::var_os(name).map(PathBuf::from);
-        let number = |name| std::env::var(name).ok().and_then(|v| v.parse().ok());
+        let number = |name| profile.var(name).ok().and_then(|v| v.parse().ok());
         Flags {
             gapstep: on("FUSOR_GAPSTEP"),
-            q4_variant: std::env::var("FUSOR_PROFILE_Q4_VARIANT")
+            q4_variant: profile
+                .var("FUSOR_PROFILE_Q4_VARIANT")
                 .ok()
                 .map(|v| {
                     let n = v.parse().expect("Q4 variant must be an integer");
@@ -99,14 +110,15 @@ pub(crate) fn flags() -> &'static Flags {
                     n
                 })
                 .unwrap_or(0),
-            poll_spin_ms: std::env::var("FUSOR_PROFILE_POLL_SPIN_MS").ok().map(|v| {
+            poll_spin_ms: profile.var("FUSOR_PROFILE_POLL_SPIN_MS").ok().map(|v| {
                 let n = v
                     .parse()
                     .expect("FUSOR_PROFILE_POLL_SPIN_MS must be an integer");
                 assert!(n <= 64, "FUSOR_PROFILE_POLL_SPIN_MS must be 0..=64");
                 n
             }),
-            poll_interval_us: std::env::var("FUSOR_PROFILE_POLL_INTERVAL_US")
+            poll_interval_us: profile
+                .var("FUSOR_PROFILE_POLL_INTERVAL_US")
                 .ok()
                 .map(|v| {
                     let n = v.parse().expect("poll interval must be an integer");
@@ -129,14 +141,15 @@ pub(crate) fn flags() -> &'static Flags {
             trace_dispatch: on("FUSOR_TRACE_DISPATCH"),
             cache_stats: on("FUSOR_CACHE_STATS"),
             pass_size: number("FUSOR_PASS_SIZE"),
-            submit_size: std::env::var("FUSOR_PROFILE_SUBMIT_SIZE").ok().map(|v| {
+            submit_size: profile.var("FUSOR_PROFILE_SUBMIT_SIZE").ok().map(|v| {
                 let n = v
                     .parse()
                     .expect("FUSOR_PROFILE_SUBMIT_SIZE must be an integer");
                 assert!(n > 0, "FUSOR_PROFILE_SUBMIT_SIZE must be positive");
                 n
             }),
-            stream_submit_rest: std::env::var("FUSOR_PROFILE_STREAM_SUBMIT_REST")
+            stream_submit_rest: profile
+                .var("FUSOR_PROFILE_STREAM_SUBMIT_REST")
                 .ok()
                 .map(|v| {
                     let n = v.parse().expect("stream submit rest must be an integer");
@@ -148,7 +161,8 @@ pub(crate) fn flags() -> &'static Flags {
                 }),
             no_tile_alias: on("FUSOR_NO_TILE_ALIAS"),
             dump_contract: on("FUSOR_DUMP_CONTRACT"),
-            gemv_chains: std::env::var("FUSOR_PROFILE_GEMV_CHAINS")
+            gemv_chains: profile
+                .var("FUSOR_PROFILE_GEMV_CHAINS")
                 .ok()
                 .map(|v| {
                     let n = v
@@ -164,7 +178,8 @@ pub(crate) fn flags() -> &'static Flags {
             gemv_packed_q4: on("FUSOR_PROFILE_GEMV_PACKED_Q4"),
             q4_half_unpack: on("FUSOR_PROFILE_Q4_HALF_UNPACK"),
             q6_float_unpack: on("FUSOR_PROFILE_Q6_FLOAT_UNPACK"),
-            packed_q4_splits: std::env::var("FUSOR_PROFILE_PACKED_Q4_SPLITS")
+            packed_q4_splits: profile
+                .var("FUSOR_PROFILE_PACKED_Q4_SPLITS")
                 .ok()
                 .map(|s| {
                     let n: u32 = s
@@ -183,7 +198,8 @@ pub(crate) fn flags() -> &'static Flags {
             q6_coalesced: on("FUSOR_PROFILE_Q6_COALESCED"),
             attention_online: on("FUSOR_PROFILE_ATTENTION_ONLINE"),
             attention_exact_partition: on("FUSOR_PROFILE_ATTENTION_EXACT_PARTITION"),
-            q6_splits: std::env::var("FUSOR_PROFILE_Q6_SPLITS")
+            q6_splits: profile
+                .var("FUSOR_PROFILE_Q6_SPLITS")
                 .ok()
                 .map(|s| {
                     let n = s.parse().expect("Q6 splits must be an integer");
@@ -197,16 +213,16 @@ pub(crate) fn flags() -> &'static Flags {
             q6_split_max_n: number("FUSOR_PROFILE_Q6_SPLIT_MAX_N"),
             gemv_contiguous_n: on("FUSOR_PROFILE_GEMV_CONTIGUOUS_N"),
             scatter_single: on("FUSOR_PROFILE_SCATTER_SINGLE"),
-            scatter_single_linear: std::env::var("FUSOR_PROFILE_SCATTER_SINGLE_LINEAR")
-                .ok()
-                .map(|s| {
+            scatter_single_linear: profile.var("FUSOR_PROFILE_SCATTER_SINGLE_LINEAR").ok().map(
+                |s| {
                     let n = s.parse().expect("scatter linear width must be an integer");
                     assert!(
                         matches!(n, 1 | 2 | 4 | 8 | 16),
                         "scatter linear width must be 1,2,4,8,16"
                     );
                     n
-                }),
+                },
+            ),
             inline_map_slab: on("FUSOR_PROFILE_INLINE_MAP_SLAB"),
             time_passes: on("FUSOR_TIME_PASSES"),
             no_debug_groups: on("FUSOR_PROFILE_NO_DEBUG_GROUPS"),
@@ -220,7 +236,8 @@ pub(crate) fn flags() -> &'static Flags {
                 .inspect(|n| assert!(*n > 0, "large-plan threshold must be positive")),
             pool_debug: on("FUSOR_POOL_DEBUG"),
             mapped_upload: on("FUSOR_PROFILE_MAPPED_UPLOAD"),
-            memory_budget_bytes: std::env::var("FUSOR_PROFILE_MEMORY_BUDGET_BYTES")
+            memory_budget_bytes: profile
+                .var("FUSOR_PROFILE_MEMORY_BUDGET_BYTES")
                 .ok()
                 .map(|v| {
                     let bytes = v.parse().expect("memory budget must be an integer");

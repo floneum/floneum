@@ -18,11 +18,17 @@ pub(crate) struct Flags {
     pub pin_large_q6_sgemv: Option<Vec<u32>>,
 }
 
-pub(crate) fn flags() -> &'static Flags {
+pub(crate) fn for_profile(profile: fusor_ir::execution::ExecutionProfile) -> &'static Flags {
     static FLAGS: OnceLock<Flags> = OnceLock::new();
-    FLAGS.get_or_init(|| {
+    static INFERENCE: OnceLock<Flags> = OnceLock::new();
+    let flags = if profile == fusor_ir::execution::ExecutionProfile::LowLatency {
+        &INFERENCE
+    } else {
+        &FLAGS
+    };
+    flags.get_or_init(|| {
         let list = |name| {
-            std::env::var(name).ok().map(|v| {
+            profile.var(name).ok().map(|v| {
                 v.split(',')
                     .filter_map(|x| x.trim().parse().ok())
                     .collect::<Vec<u32>>()
@@ -30,7 +36,8 @@ pub(crate) fn flags() -> &'static Flags {
         };
         Flags {
             pin_coop: list("FUSOR_PIN_COOP"),
-            pin_coop_min_m: std::env::var("FUSOR_PIN_COOP_MIN_M")
+            pin_coop_min_m: profile
+                .var("FUSOR_PIN_COOP_MIN_M")
                 .map(|s| s.parse().expect("FUSOR_PIN_COOP_MIN_M must be an integer"))
                 .unwrap_or(1),
             pin_sgemv: list("FUSOR_PIN_SGEMV"),

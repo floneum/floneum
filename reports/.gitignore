@@ -92,3 +92,24 @@
 !/llama-kernel-inspection/findings.txt
 !/llama-kernel-inspection/report.json
 !/llama-kernel-sweep/interesting-kernels.html
+
+# Default-inference promotion: compact checks and the guarded stop, no tensors.
+!/llama-decode-2x/default-inference/
+!/llama-decode-2x/default-inference.txt
+!/llama-decode-2x/default-inference/blocked-reference-ab-reference.log
+!/llama-decode-2x/default-inference/blocked-reference-memory-summary.json
+!/llama-decode-2x/default-inference/blocked-reference-provenance.json
+!/llama-decode-2x/default-inference/chat-build.log
+!/llama-decode-2x/default-inference/clippy-fusor.log
+!/llama-decode-2x/default-inference/clippy-root.log
+!/llama-decode-2x/default-inference/cpu-check.log
+!/llama-decode-2x/default-inference/default-device-red.log
+!/llama-decode-2x/default-inference/default-device.log
+!/llama-decode-2x/default-inference/default-profile.json
+!/llama-decode-2x/default-inference/gguf.log
+!/llama-decode-2x/default-inference/gpu.log
+!/llama-decode-2x/default-inference/inference-conformance.log
+!/llama-decode-2x/default-inference/ordinary-build.log
+!/llama-decode-2x/default-inference/ordinary-features.txt
+!/llama-decode-2x/default-inference/profile-build.log
+!/llama-decode-2x/default-inference/top-k.log

@@ -62,8 +62,9 @@ pub fn coop_domain(
         schedules: candidate_schedules_for(
             operand,
             cx,
-            m.as_const()
-                .is_some_and(|m| m >= crate::flags::flags().pin_coop_min_m),
+            m.as_const().is_some_and(|m| {
+                m >= crate::flags::for_profile(cx.caps.execution_profile).pin_coop_min_m
+            }),
         ),
     }
 }
@@ -101,7 +102,7 @@ fn generate_schedules(
         .min(caps.limits.max_compute_workgroup_size[0]);
     let max_bytes = caps.limits.max_compute_workgroup_storage_size;
     let stage = stage_element(operand);
-    let pin = crate::flags::flags()
+    let pin = crate::flags::for_profile(cx.caps.execution_profile)
         .pin_coop
         .as_ref()
         .filter(|p| apply_pin && p.len() >= 3);

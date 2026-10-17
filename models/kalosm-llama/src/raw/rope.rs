@@ -70,7 +70,6 @@ pub(crate) struct RopeImplementation {
 impl RopeImplementation {
     /// A joint projection already contains adjacent Q/K heads. Rotate its
     /// prefix directly instead of concatenating two views through scatters.
-    #[cfg(feature = "kernel-visualize")]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn forward_projected(
         &self,

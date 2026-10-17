@@ -159,6 +159,7 @@ impl LlamaModel {
             Ok(prepared) => prepared,
             Err(err) => return Box::pin(async move { Err(err) }),
         };
+        let profile = device.execution_profile();
         let PreparedForwardLogits { logits, len, trace } = prepared;
         Box::pin(async move {
             let download_start = trace.step_start();
@@ -218,7 +219,7 @@ impl LlamaModel {
                 let host_stage = std::env::var_os("PROFILE_HOST_STAGES")
                     .is_some()
                     .then(Instant::now);
-                let result = top_k_logits_from_full(&logits_vec, top_k);
+                let result = top_k_logits_from_full(&logits_vec, top_k, profile);
                 #[cfg(feature = "kernel-visualize")]
                 if let Some(start) = host_stage {
                     eprintln!(

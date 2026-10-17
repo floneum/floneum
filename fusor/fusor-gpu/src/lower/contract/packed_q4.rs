@@ -74,11 +74,13 @@ pub(super) fn lower_packed_q4(
         .min(ctx.caps.limits.max_compute_workgroup_size[0])
         / (p.subgroups * 32))
         .max(1);
-    let mut splits = crate::flags().packed_q4_splits.min(max_splits);
-    if crate::flags()
+    let mut splits = crate::flags::for_profile(ctx.caps.execution_profile)
+        .packed_q4_splits
+        .min(max_splits);
+    if crate::flags::for_profile(ctx.caps.execution_profile)
         .packed_q4_split_max_n
         .is_some_and(|limit| shape.n.as_const().is_none_or(|n| n > limit as u64))
-        || crate::flags()
+        || crate::flags::for_profile(ctx.caps.execution_profile)
             .packed_q4_split_max_k
             .is_some_and(|limit| shape.k.as_const().is_none_or(|k| k > limit as u64))
     {
@@ -244,7 +246,9 @@ pub(super) fn lower_packed_q4(
                     ),
                 );
                 let packed = word(off);
-                if crate::flags().q4_half_unpack || arithmetic == 2 {
+                if crate::flags::for_profile(ctx.caps.execution_profile).q4_half_unpack
+                    || arithmetic == 2
+                {
                     // Encode two integer nibbles as normal half mantissas.
                     // unpack(1 + q/1024) followed by FMA gives exactly q in
                     // F32. Activations and accumulation retain F32 precision.
