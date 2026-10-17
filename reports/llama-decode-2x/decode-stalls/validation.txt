@@ -1,0 +1,115 @@
+growth-general-final
+DECODE_LATENCY token=65 capacity=64->128 ms=5.578 compiles=0 reserve_ms=3.576 reserve_compiles=0
+DECODE_LATENCY token=129 capacity=128->256 ms=4.537 compiles=0 reserve_ms=3.385 reserve_compiles=0
+DECODE_LATENCY token=257 capacity=256->512 ms=4.313 compiles=0 reserve_ms=3.301 reserve_compiles=0
+DECODE_LATENCY median_ms=0.514 worst_boundary_ms=5.578
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 2.23s
+
+general-gradients-final
+   Compiling fusor-gpu v0.1.0 (<worktree>/fusor/fusor-gpu)
+   Compiling fusor v0.1.0 (<worktree>/fusor/fusor)
+   Compiling fusor-conformance v0.1.0 (<worktree>/fusor/fusor-conformance)
+    Finished `test` profile [optimized] target(s) in 36.98s
+     Running tests/contiguous_updates.rs (target/debug/deps/contiguous_updates-f8e8a28dcb3eaf65)
+
+running 3 tests
+test copy_lowering_preserves_compute_roots_and_strided_updates ... ok
+test general_contiguous_updates_use_copy_commands ... ok
+test general_range_updates_preserve_gradients ... pad_axis: Pass
+pad_with_zeros: Pass
+slice_assign: Pass
+cat_dim1: Pass
+repeat: Pass
+resize: Pass
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.88s
+
+
+conformance-final-bounded
+    Finished `test` profile [optimized] target(s) in 0.17s
+     Running tests/inference_defaults.rs (target/debug/deps/inference_defaults-24f984e4a052a02d)
+
+running 1 test
+test inference_profile_preserves_normalization_attention_and_cache_snapshots ... Metal/Apple M2 Max: LowLatency
+rms_norm_decode_rows: Pass
+padded_cache_decode_prefix: Pass
+padded_cache_growth_replay: Pass
+padded_cache_llama_geometry: Pass
+padded_cache_tail_batches: Pass
+fixed_cache_donation_replay_ring: Pass
+fixed_cache_donation_shared_store: Pass
+rope_pair_with_position: Pass
+rope_interleaved_pair_with_position: Pass
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.57s
+
+
+core-clippy-general
+    Checking fusor-gpu v0.1.0 (<worktree>/fusor/fusor-gpu)
+    Checking fusor v0.1.0 (<worktree>/fusor/fusor)
+    Finished `dev` profile [optimized] target(s) in 6.08s
+
+conformance-clippy
+    Checking indexmap v2.14.0
+    Checking naga v29.0.3 (https://github.com/ealmloff/wgpu?rev=24a7d3577213fc147637fe7fb20e0e845a74df8a#24a7d357)
+    Checking wgpu-naga-bridge v29.0.4
+    Checking wgpu-hal v29.0.4
+    Checking wgpu-core-deps-apple v29.0.4
+    Checking wgpu-core v29.0.4
+    Checking wgpu v29.0.4 (https://github.com/ealmloff/wgpu?rev=24a7d3577213fc147637fe7fb20e0e845a74df8a#24a7d357)
+    Checking fusor-gpu v0.1.0 (<worktree>/fusor/fusor-gpu)
+    Checking fusor v0.1.0 (<worktree>/fusor/fusor)
+    Checking fusor-conformance v0.1.0 (<worktree>/fusor/fusor-conformance)
+    Finished `dev` profile [optimized] target(s) in 11.92s
+
+cpu-final
+    Checking fusor-ir v0.1.0 (<worktree>/fusor/fusor-ir)
+    Checking fusor-gguf v0.1.0 (<worktree>/fusor/fusor-gguf)
+    Checking fusor-tile v0.1.0 (<worktree>/fusor/fusor-tile)
+    Checking fusor-cpu v0.1.0 (<worktree>/fusor/fusor-cpu)
+    Checking fusor-cost v0.1.0 (<worktree>/fusor/fusor-cost)
+    Checking fusor-autograd v0.1.0 (<worktree>/fusor/fusor-autograd)
+    Checking fusor v0.1.0 (<worktree>/fusor/fusor)
+warning: unused variable: `host_roots`
+    --> fusor/fusor/src/session.rs:1593:13
+     |
+1593 |         let host_roots = host_start.map(|s| s.elapsed());
+     |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_host_roots`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `host_leaves`
+    --> fusor/fusor/src/session.rs:1626:13
+     |
+1626 |         let host_leaves = host_start.map(|s| s.elapsed());
+     |             ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_host_leaves`
+
+warning: unused variable: `host_donation`
+    --> fusor/fusor/src/session.rs:1636:13
+     |
+1636 |         let host_donation = host_start.map(|s| s.elapsed());
+     |             ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_host_donation`
+
+warning: unused variable: `host_buffers`
+    --> fusor/fusor/src/session.rs:1671:13
+     |
+1671 |         let host_buffers = host_start.map(|s| s.elapsed());
+     |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_host_buffers`
+
+warning: unused variable: `host_requested`
+    --> fusor/fusor/src/session.rs:1692:13
+     |
+1692 |         let host_requested = host_start.map(|s| s.elapsed());
+     |             ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_host_requested`
+
+warning: `fusor` (lib) generated 5 warnings (run `cargo fix --lib -p fusor` to apply 5 suggestions)
+    Checking kalosm-llama v0.4.1 (<worktree>/models/kalosm-llama)
+    Finished `dev` profile [optimized] target(s) in 4.50s
+
+llama-clippy-final
+    Checking fusor-gpu v0.1.0 (<worktree>/fusor/fusor-gpu)
+    Checking fusor v0.1.0 (<worktree>/fusor/fusor)
+    Checking kalosm-llama v0.4.1 (<worktree>/models/kalosm-llama)
+    Finished `dev` profile [optimized] target(s) in 4.84s

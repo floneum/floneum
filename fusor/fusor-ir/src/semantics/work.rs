@@ -287,21 +287,22 @@ pub fn work_l1(op: &Launch, ins: &[ValueFacts], out: &ValueFacts) -> Work {
             let splits = if *chunk == 0 {
                 1
             } else {
-                u64::from(keys.div_ceil(*chunk))
+                keys.as_const().unwrap_or(1).div_ceil(u64::from(*chunk))
             };
             Work {
                 macs: heads
                     .saturating_mul(128)
-                    .saturating_mul(u64::from(*keys))
+                    .saturating_mul(keys.as_const().unwrap_or(1))
                     .saturating_mul(2),
-                transcendentals: heads * u64::from(*keys),
+                transcendentals: heads * keys.as_const().unwrap_or(1),
                 index_ops: 0,
                 // Logical shared-memory requests: scores, softmax, broadcast
                 // probability reads, the two reductions and the PV close.
                 // This is traffic; allocation is priced separately in tile_bytes.
                 wg_bytes: heads
                     .saturating_mul(
-                        u64::from(*keys)
+                        keys.as_const()
+                            .unwrap_or(1)
                             .saturating_mul(36)
                             .saturating_add(6160 * splits),
                     )
@@ -312,12 +313,12 @@ pub fn work_l1(op: &Launch, ins: &[ValueFacts], out: &ValueFacts) -> Work {
             macs: output
                 .iterations()
                 .unwrap_or(0)
-                .saturating_mul(u64::from(*splits))
+                .saturating_mul(splits.as_const().unwrap_or(1))
                 .saturating_mul(2),
             transcendentals: output
                 .iterations()
                 .unwrap_or(0)
-                .saturating_mul(u64::from(*splits)),
+                .saturating_mul(splits.as_const().unwrap_or(1)),
             ..Work::default()
         },
         Launch::DecodeRope { output, .. } => Work {

@@ -598,9 +598,9 @@ fn reserve<'a>(
                 let graph = source.graph();
                 let mut shape = source.shape().to_vec();
                 shape[axis] = Dim::Const(capacity);
-                let store = leaf_buffer_node(graph, source.dtype(), &shape)?;
+                let store = Dyn::zeros(graph, source.dtype(), &shape)?;
                 let kept = source.narrow(axis, 0, state.len as usize)?;
-                let idx = Dyn::arange(graph, Dtype::U32, 0., state.len as f64)?;
+                let idx = graph.tensor(crate::composite::index_run(graph, 0, state.len)?);
                 Some(store.scatter_set(axis, &idx, &kept, true)?)
             }
             _ => None,
@@ -856,8 +856,8 @@ impl<const R: usize, T: Element> KvCache<R, T> {
 
 impl KvCache<4, f32> {
     /// Single-query attention over fixed storage, masking its unused suffix.
-    /// This graph is valid until `storage_capacity()` changes. The ordinary
-    /// symbolic-prefix path remains appropriate for other query shapes.
+    /// Capacity and prefix stay symbolic so the graph survives storage growth.
+    /// The ordinary prefix path remains appropriate for other query shapes.
     pub fn attention_decode_padded(
         &mut self,
         query: &Tensor<4>,
@@ -872,10 +872,7 @@ impl KvCache<4, f32> {
                 .out
                 .as_ref()
                 .or_else(|| f.store.as_ref().map(|(s, _)| s))?;
-            Some(ok(
-                "padded cache storage",
-                root.narrow(2, 0, f.capacity as usize),
-            ))
+            Some(root.clone())
         };
         // Every integer index/count is exact in f32 throughout this range.
         if self.storage_capacity()? > (1 << 24) {

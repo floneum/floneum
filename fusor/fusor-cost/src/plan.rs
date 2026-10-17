@@ -334,9 +334,12 @@ fn classified_symbols_of(graph: &EGraph, realized: &Realized) -> (Vec<SymId>, Ve
     dims.dedup();
     let mut index = 0;
     while index < dims.len() {
-        if let Some(fusor_ir::shape::DimExpr::Add(a, b) | fusor_ir::shape::DimExpr::Mul(a, b)) =
-            dims[index].derived_expr()
-        {
+        if let Some(expr) = dims[index].derived_expr() {
+            use fusor_ir::shape::DimExpr;
+            let (a, b) = match expr {
+                DimExpr::Add(a, b) | DimExpr::Mul(a, b) => (a, b),
+                DimExpr::DivCeil(a, divisor) => (a, Dim::Const(divisor)),
+            };
             for dim in [a, b] {
                 if let Dim::Sym(sym) = dim
                     && !dims.contains(&sym)

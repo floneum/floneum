@@ -1,5 +1,5 @@
-use fusor::cache::KvCache;
 use fusor::Tensor;
+use fusor::cache::KvCache;
 
 use super::LlamaConfig;
 
@@ -18,7 +18,6 @@ pub struct LlamaCache {
     /// Token-step logits for these cache stores. Replay updates input leaves
     /// and write indices without rebuilding the graph.
     pub(crate) decode_graph: Option<Tensor<2>>,
-    padded_capacities: Vec<Option<u64>>,
     /// The same memo for the embedding-row step an image prompt runs: its
     /// input is a `[1, 1, hidden]` embedding leaf and explicit rope rows,
     /// not a token id. One of the two memos is live at a time; the other
@@ -61,25 +60,8 @@ impl LlamaCache {
             pending_token: None,
             blocks,
             decode_graph: None,
-
-            padded_capacities: Vec::new(),
             embed_graph: None,
             rope_position: 0,
-        }
-    }
-
-    pub(crate) fn refresh_padded_capacity(
-        &mut self,
-        profile: fusor_ir::execution::ExecutionProfile,
-    ) {
-        if !profile.enabled("PROFILE_PADDED_DECODE_ATTENTION") {
-            return;
-        }
-        let capacities: Vec<_> = self.blocks.iter().map(KvCache::storage_capacity).collect();
-        if capacities != self.padded_capacities {
-            self.decode_graph = None;
-            self.embed_graph = None;
-            self.padded_capacities = capacities;
         }
     }
 

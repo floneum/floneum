@@ -468,6 +468,7 @@ fn rope_tables(dh: usize, max_len: usize) -> (Vec<f32>, Vec<f32>) {
 pub fn cases() -> Cases {
     let mut cases = Cases::new("attention_rope");
     cases.push("padded_cache_decode_prefix", padded_cache_decode_prefix);
+    cases.push("padded_cache_growth_replay", padded_cache_growth_replay);
     cases.push("padded_cache_llama_geometry", padded_cache_llama_geometry);
     cases.push("padded_cache_tail_batches", padded_cache_tail_batches);
     cases.push("fixed_cache_replay_ring", fixed_cache_replay_ring);
@@ -859,6 +860,80 @@ async fn padded_cache_decode_prefix_width(session: &Session, width: usize) -> Ca
         )
         .await?;
         cache.commit();
+    }
+    Ok(())
+}
+
+/// The same attention graph must retain correct batch/head strides when the
+/// capacity doubles and the number of attention partitions changes.
+async fn padded_cache_growth_replay(session: &Session) -> CaseResult {
+    let graph = graph_of(session);
+    let mut cache = fusor::cache::KvCache::<4>::with_capacity(2, 256);
+    let initial_k = Domain::Wide.sample(1201, 4 * 255 * 128);
+    let initial_v = Domain::Wide.sample(1207, initial_k.len());
+    let mut k_rows: Vec<Vec<f32>> = initial_k.chunks(255 * 128).map(<[f32]>::to_vec).collect();
+    let mut v_rows: Vec<Vec<f32>> = initial_v.chunks(255 * 128).map(<[f32]>::to_vec).collect();
+    let tensor = |shape: &[u64], data: &[f32]| -> Result<fusor::Tensor<4>, CaseError> {
+        Ok(fusor::Tensor::from_dyn(upload(
+            graph.handle(),
+            &dims(shape),
+            data,
+        )?))
+    };
+    cache.append(
+        &tensor(&[2, 2, 255, 128], &initial_k)?,
+        &tensor(&[2, 2, 255, 128], &initial_v)?,
+    );
+    cache.detach();
+    let k_input = tensor(&[2, 2, 1, 128], &[0.; 512])?;
+    let v_input = tensor(&[2, 2, 1, 128], &[0.; 512])?;
+    let q = Domain::Wide.sample(1213, 2 * 4 * 128);
+    let query = tensor(&[2, 4, 1, 128], &q)?;
+    let mut output = None;
+    for step in 0..4u32 {
+        fusor::cache::KvCache::reserve_all(std::slice::from_mut(&mut cache), 1)?;
+        let k = Domain::Wide.sample(1223 + step, 512);
+        let v = Domain::Wide.sample(1231 + step, 512);
+        k_input.set_elements(&k);
+        v_input.set_elements(&v);
+        for row in 0..4 {
+            k_rows[row].extend_from_slice(&k[row * 128..(row + 1) * 128]);
+            v_rows[row].extend_from_slice(&v[row * 128..(row + 1) * 128]);
+        }
+        if step == 0 {
+            cache.append(&k_input, &v_input);
+            output = cache.attention_decode_padded(&query, None);
+        } else {
+            assert!(
+                cache.can_replay(1),
+                "growth must retain the existing append graph"
+            );
+            cache.replay_append(1)?;
+        }
+        let output = output.as_ref().expect("padded attention");
+        fusor::cache::KvCache::resolve_and_commit_all(
+            std::slice::from_mut(&mut cache),
+            &[output.as_dyn().clone()],
+        )?;
+        let d = AttnDims {
+            b: 2,
+            h: 4,
+            heads_kv: 2,
+            lq: 1,
+            lk: 256 + step as usize,
+            dh: 128,
+        };
+        let k: Vec<_> = k_rows.iter().flatten().copied().collect();
+        let v: Vec<_> = v_rows.iter().flatten().copied().collect();
+        let (expected, _) = host_attention(&q, &k, &v, d, d.default_scale(), &|_, _| 0.0);
+        expect_values(
+            session,
+            &d.q_shape(),
+            Dtype::F32,
+            &read(output.as_dyn()).await?,
+            &expected,
+        )
+        .await?;
     }
     Ok(())
 }

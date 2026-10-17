@@ -27,6 +27,7 @@ use crate::launch::{
 use crate::pool::BufferPool;
 use crate::uniforms::UniformPack;
 
+mod transfers;
 mod warm;
 use warm::WarmArtifacts;
 
@@ -652,16 +653,21 @@ impl GpuTarget {
         if !warm_hit {
             let probe_binding =
                 crate::lower::DimBinding::from_pairs(binds.dims.iter().map(|(k, v)| (*k, *v)));
-            for launch_ix in 0..plan.launches.len() {
-                let hit = self.cached_artifact(
-                    plan,
-                    graph,
-                    launch_ix,
-                    binds,
-                    &probe_binding,
-                    &keys,
-                    &pack,
-                )?;
+            let transfers = transfers::Transfers::prepare(plan, graph, binds);
+            for (launch_ix, transfer) in transfers.into_iter().enumerate() {
+                let hit = if let Some(transfer) = transfer {
+                    Some((Artifact::new(transfer), [0; 3], 0))
+                } else {
+                    self.cached_artifact(
+                        plan,
+                        graph,
+                        launch_ix,
+                        binds,
+                        &probe_binding,
+                        &keys,
+                        &pack,
+                    )?
+                };
                 if hit.is_none() {
                     cold.push(launch_ix);
                 }
@@ -836,11 +842,9 @@ impl GpuTarget {
             let (artifact, grid, _) = slot
                 .as_ref()
                 .ok_or_else(|| Error::Device("a launch was never built".into()))?;
-            let gpu = artifact
-                .downcast_ref::<GpuArtifact>()
-                .ok_or_else(|| Error::Device("artifact is not a gpu pipeline".into()))?;
             // This launch's buffers, plan buffers allocated at first use.
             let launch = &plan.launches[launch_ix];
+            let transfer = artifact.downcast_ref::<transfers::Transfers>();
             let mut ordered: Vec<_> = launch.bindings.iter().collect();
             ordered.sort_by_key(|b| b.binding);
             let mut buffers = Vec::with_capacity(ordered.len() + 1);
@@ -852,6 +856,10 @@ impl GpuTarget {
                     continue;
                 }
                 last_binding = Some(b.binding);
+                if transfer.is_some_and(|t| !t.uses_binding(b.binding)) {
+                    buffers.push(uniform_buf.clone());
+                    continue;
+                }
                 if b.arena {
                     let arena = arena_buf.clone().ok_or_else(|| {
                         Error::Plan("launch binds the arena, which the plan never sized".into())
@@ -890,17 +898,22 @@ impl GpuTarget {
                 };
                 buffers.push(buf);
             }
-            crate::launch::trace_binds(gpu.name, *grid, &buffers);
-            let bind_group = self.launcher.bind_group(gpu, &buffers)?;
-            // Drop pool handles now: the bind group holds the device buffers,
-            // and a handle kept longer would pin every intermediate.
+            if let Some(transfer) = artifact.downcast_ref::<transfers::Transfers>() {
+                records.push(transfer.record(&buffers)?);
+            } else {
+                let gpu = artifact
+                    .downcast_ref::<GpuArtifact>()
+                    .ok_or_else(|| Error::Device("artifact is not a gpu pipeline".into()))?;
+                crate::launch::trace_binds(gpu.name, *grid, &buffers);
+                let bind_group = self.launcher.bind_group(gpu, &buffers)?;
+                records.push(CommandRecord::Dispatch {
+                    name: gpu.name,
+                    pipeline: gpu.pipeline.clone(),
+                    bind_group,
+                    grid: *grid,
+                });
+            }
             drop(buffers);
-            records.push(CommandRecord::Dispatch {
-                name: gpu.name,
-                pipeline: gpu.pipeline.clone(),
-                bind_group,
-                grid: *grid,
-            });
             if stream_chunks.is_some_and(|(first, rest)| {
                 records.len() - submitted >= if submitted == 0 { first } else { rest }
             }) {

@@ -27,6 +27,12 @@ profile sizes KV capacity to the prompt and enables exact top-k prefiltering.
 Neither `kernel-visualize` nor a tuning environment is needed. Keep mapped
 model files unchanged while a model is alive.
 
+KV storage grows incrementally. Attention capacity and partition counts stay
+symbolic, so growth reuses the decode graph and compiled shaders. Contiguous
+range writes use Fusor's normal WebGPU copy lowering, which also accelerates
+ordinary padding and slice assignment with `Device::gpu()`; there is no
+cache-specific buffer-copy API.
+
 An explicit `.with_device(Device::gpu().await?)` retains general scheduling;
 use `Device::gpu_inference()` for the automatic inference policy on a supplied
 device. Diagnostic overrides still take precedence, and boolean overrides

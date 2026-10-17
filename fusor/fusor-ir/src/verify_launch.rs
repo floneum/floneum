@@ -105,7 +105,11 @@ pub fn verify_launch(cx: &VerifyCtx<'_>, planner: &dyn ArenaPlanner) -> Result<(
         ..
     } = op
     {
-        let bytes = (u64::from(if *chunk == 0 { *keys } else { *chunk }) * 4
+        let bytes = (if *chunk == 0 {
+            keys.as_const().unwrap_or(u64::MAX / 128)
+        } else {
+            u64::from(*chunk)
+        } * 4
             + u64::from(*block) * 20)
             * u64::from(*heads_per_group);
         if cx.caps.kind != crate::device::DeviceKind::Gpu

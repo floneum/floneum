@@ -113,3 +113,10 @@
 !/llama-decode-2x/default-inference/ordinary-features.txt
 !/llama-decode-2x/default-inference/profile-build.log
 !/llama-decode-2x/default-inference/top-k.log
+
+# General transfer lowering and symbolic cache-growth regression.
+!/llama-decode-2x/decode-stalls.txt
+!/llama-decode-2x/decode-stalls/
+!/llama-decode-2x/decode-stalls/boundaries.json
+!/llama-decode-2x/decode-stalls/validation.txt
+!/llama-decode-2x/decode-stalls/memory-summary.json

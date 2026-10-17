@@ -208,7 +208,6 @@ pub(crate) fn lower_kscatter(ctx: Ctx<'_>, op: &Launch, theta: SchedPoint) -> Re
         return Err(Error::Plan("lower_kscatter on a non-Scatter node".into()));
     };
     let tiling = tiling(theta)?;
-    let shape = ScatterGeometry::of(ops, *axis as usize, |d| ctx.binding.require(d), Error::Plan)?;
     // The operands are `(base, idx, upd)`; the base seeds the accumulator.
     let [base, idx, upd, ..] = ops.as_slice() else {
         return Err(Error::Plan(format!(
@@ -225,10 +224,35 @@ pub(crate) fn lower_kscatter(ctx: Ctx<'_>, op: &Launch, theta: SchedPoint) -> Re
     }
     .element();
     let max_block = ctx.caps.limits.max_compute_invocations_per_workgroup;
-    if shape.updates == 1
+    if idx
+        .layout
+        .shape()
+        .iter()
+        .try_fold(1u64, |n, d| n.checked_mul(d.as_const()?))
+        == Some(1)
+        && let Some(&bins) = base.layout.shape().get(*axis as usize)
+        && let Some(outer) = base.layout.shape()[..*axis as usize]
+            .iter()
+            .try_fold(1u64, |n, d| n.checked_mul(d.as_const()?))
+        && let Some(inner) = base.layout.shape()[*axis as usize + 1..]
+            .iter()
+            .try_fold(1u64, |n, d| n.checked_mul(d.as_const()?))
+        && let Some(elements) = outer.checked_mul(inner).and_then(|n| u32::try_from(n).ok())
+        && let Ok(inner) = u32::try_from(inner)
+        && inner > 0
+        && elements > 0
+        && match bins.as_const() {
+            Some(bins) => u64::from(elements)
+                .checked_mul(bins)
+                .is_some_and(|n| n > 0 && n <= u64::from(u32::MAX)),
+            // WebGPU storage bindings have a u32 byte-size limit, so a
+            // symbolic dense 32-bit cache cannot overflow a u32 element index.
+            None => matches!(
+                out_elem,
+                ElementType::Scalar(ScalarElement::F32 | ScalarElement::U32 | ScalarElement::I32)
+            ),
+        }
         && *combine == ScatterCombine::Set
-        && shape.total() > 0
-        && shape.total() <= u64::from(u32::MAX)
         && ctx.linear_view(base.src).is_ok_and(|v| v == out)
         && ctx
             .cx
@@ -245,7 +269,7 @@ pub(crate) fn lower_kscatter(ctx: Ctx<'_>, op: &Launch, theta: SchedPoint) -> Re
         // later reader. Only the appended row needs a write; the remaining
         // bytes retain their prior values, including the unused cache tail.
         let block = 256.min(max_block);
-        let elements = shape.outer * shape.inner;
+        let bins = ctx.dim_expr(bins)?;
         let grid = distribute_workgroups(
             elements.div_ceil(block),
             ctx.caps.limits.max_compute_workgroups_per_dimension,
@@ -255,18 +279,18 @@ pub(crate) fn lower_kscatter(ctx: Ctx<'_>, op: &Launch, theta: SchedPoint) -> Re
             load_logical(&ctx, idx, b.u32(0))?,
             ScalarElement::U32.element(),
         );
-        let (outer, col) = b.divrem(flat.clone(), b.u32(shape.inner));
+        let (outer, col) = b.divrem(flat.clone(), b.u32(inner));
         let address = b.add(
             b.mul(
-                b.add(b.mul(outer, b.u32(shape.bins)), picked.clone()),
-                b.u32(shape.inner),
+                b.add(b.mul(outer, bins.clone()), picked.clone()),
+                b.u32(inner),
             ),
             col,
         );
         let body = vec![Stmt::If {
             condition: b.and(
                 b.lt(flat.clone(), b.u32(elements)),
-                b.lt(picked, b.u32(shape.bins)),
+                b.lt(picked, bins.clone()),
             ),
             accept: vec![Stmt::Store {
                 dst: out.clone(),
@@ -278,6 +302,7 @@ pub(crate) fn lower_kscatter(ctx: Ctx<'_>, op: &Launch, theta: SchedPoint) -> Re
         }];
         return Ok(ctx.finish("cache_append_exclusive", grid, block, body));
     }
+    let shape = ScatterGeometry::of(ops, *axis as usize, |d| ctx.binding.require(d), Error::Plan)?;
     if shape.updates == 1
         && shape.total() > 0
         && shape.total() <= u64::from(u32::MAX - 32768)

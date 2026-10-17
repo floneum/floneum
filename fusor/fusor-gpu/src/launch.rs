@@ -297,17 +297,42 @@ impl KernelProfile {
     }
 }
 
+/// One checked buffer operation in a transfer launch.
+#[derive(Clone)]
+pub enum BufferTransfer {
+    Copy {
+        src: Buf,
+        dst: Buf,
+        src_offset: u64,
+        dst_offset: u64,
+        bytes: u64,
+    },
+    Clear {
+        dst: Buf,
+        offset: u64,
+        bytes: u64,
+    },
+}
+
 /// One recorded command, in exact plan order.
 #[derive(Clone)]
 pub enum CommandRecord {
+    /// One ordinary tensor launch implemented by buffer copies/clears.
+    Transfers { copies: Vec<BufferTransfer> },
     Dispatch {
         name: &'static str,
         pipeline: Arc<wgpu::ComputePipeline>,
         bind_group: Arc<wgpu::BindGroup>,
         grid: [u32; 3],
     },
-    /// `bytes` from the start of `src` to the start of `dst`.
-    CopyBuffer { src: Buf, dst: Buf, bytes: u64 },
+    /// An aligned byte range copied through the ordinary WebGPU encoder.
+    CopyBuffer {
+        src: Buf,
+        dst: Buf,
+        src_offset: u64,
+        dst_offset: u64,
+        bytes: u64,
+    },
 }
 
 impl CommandRecord {
@@ -316,8 +341,22 @@ impl CommandRecord {
     pub fn copy_bytes(&self) -> Option<u64> {
         match self {
             Self::CopyBuffer { bytes, .. } => Some(*bytes),
+            Self::Transfers { copies } => Some(
+                copies
+                    .iter()
+                    .map(|c| match c {
+                        BufferTransfer::Copy { bytes, .. } => *bytes,
+                        BufferTransfer::Clear { .. } => 0,
+                    })
+                    .sum(),
+            ),
             Self::Dispatch { .. } => None,
         }
+    }
+
+    /// Whether this command owns a compute timestamp slot.
+    pub fn is_live_dispatch(&self) -> bool {
+        matches!(self, Self::Dispatch { grid, .. } if !grid.contains(&0))
     }
 
     /// A dispatch whose grid contains a zero launches nothing and is skipped.
@@ -801,10 +840,50 @@ impl Launcher {
         let mut at = 0usize;
         while at < records.len() {
             match records[at] {
-                CommandRecord::CopyBuffer { src, dst, bytes } => {
+                CommandRecord::Transfers { copies } => {
+                    for copy in copies {
+                        match copy {
+                            BufferTransfer::Copy {
+                                src,
+                                dst,
+                                src_offset,
+                                dst_offset,
+                                bytes,
+                            } => {
+                                let s = GpuBuffer::of(src, "copy source")?;
+                                let d = GpuBuffer::of(dst, "copy destination")?;
+                                encoder.copy_buffer_to_buffer(
+                                    &s.buffer,
+                                    *src_offset,
+                                    &d.buffer,
+                                    *dst_offset,
+                                    *bytes,
+                                );
+                            }
+                            BufferTransfer::Clear { dst, offset, bytes } => {
+                                let d = GpuBuffer::of(dst, "clear destination")?;
+                                encoder.clear_buffer(&d.buffer, *offset, Some(*bytes));
+                            }
+                        }
+                    }
+                    at += 1;
+                }
+                CommandRecord::CopyBuffer {
+                    src,
+                    dst,
+                    src_offset,
+                    dst_offset,
+                    bytes,
+                } => {
                     let s = GpuBuffer::of(src, "copy source")?;
                     let d = GpuBuffer::of(dst, "copy destination")?;
-                    encoder.copy_buffer_to_buffer(&s.buffer, 0, &d.buffer, 0, *bytes);
+                    encoder.copy_buffer_to_buffer(
+                        &s.buffer,
+                        *src_offset,
+                        &d.buffer,
+                        *dst_offset,
+                        *bytes,
+                    );
                     at += 1;
                 }
                 CommandRecord::Dispatch { .. } => {
@@ -1055,6 +1134,8 @@ impl Launcher {
         let record = CommandRecord::CopyBuffer {
             src: src.clone(),
             dst: dst.clone(),
+            src_offset: 0,
+            dst_offset: 0,
             bytes,
         };
         self.encode_command_records(&[record], None, TimingMode::All)
@@ -1308,7 +1389,7 @@ impl Launcher {
         self.poll_wait()?;
         let name = |r: &CommandRecord| match r {
             CommandRecord::Dispatch { name, .. } => *name,
-            CommandRecord::CopyBuffer { .. } => "?",
+            CommandRecord::CopyBuffer { .. } | CommandRecord::Transfers { .. } => "copy",
         };
         match timing.kind {
             TimingKind::Sample => {
@@ -1379,7 +1460,7 @@ impl Launcher {
                 let live: Vec<(usize, &CommandRecord)> = records
                     .iter()
                     .enumerate()
-                    .filter(|(_, r)| !r.is_empty_dispatch())
+                    .filter(|(_, r)| r.is_live_dispatch())
                     .collect();
                 for (j, us) in samples.iter().enumerate() {
                     let ix = start + j;
@@ -1396,14 +1477,14 @@ impl Launcher {
                 }
             }
             TimingKind::All => {
-                let live = records.iter().filter(|r| !r.is_empty_dispatch()).count();
+                let live = records.iter().filter(|r| r.is_live_dispatch()).count();
                 let mut samples = self.read_timestamps(pool, set, live)?.into_iter();
                 // Back to plan order: zero-grid launches own no sample.
                 let per_launch: Vec<f64> = records
                     .iter()
-                    .map(|r| match r.is_empty_dispatch() {
-                        true => 0.0,
-                        false => samples.next().unwrap_or(0.0),
+                    .map(|r| match r.is_live_dispatch() {
+                        false => 0.0,
+                        true => samples.next().unwrap_or(0.0),
                     })
                     .collect();
                 if self.config.trace_gpu_kernels {

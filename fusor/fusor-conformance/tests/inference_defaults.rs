@@ -20,6 +20,7 @@ fn inference_profile_preserves_normalization_attention_and_cache_snapshots() {
     let names = [
         "rms_norm_decode_rows",
         "padded_cache_decode_prefix",
+        "padded_cache_growth_replay",
         "padded_cache_llama_geometry",
         "padded_cache_tail_batches",
         "fixed_cache_donation_replay_ring",

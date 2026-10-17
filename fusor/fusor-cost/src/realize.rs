@@ -842,7 +842,12 @@ pub(crate) fn tile_bytes(
     {
         // Conservative no-alias footprint: score, reduction and PV tiles.
         return u32::try_from(
-            (u64::from(if chunk == 0 { keys } else { chunk }) * 4 + u64::from(block) * 20)
+            (if chunk == 0 {
+                keys.as_const().unwrap_or(u64::MAX / 128)
+            } else {
+                u64::from(chunk)
+            } * 4
+                + u64::from(block) * 20)
                 * u64::from(heads_per_group),
         )
         .map_err(|_| Error::Plan("decode attention scratch overflows u32".into()));
@@ -1539,10 +1544,10 @@ fn build_component<'a>(
                     8 * if *chunk == 0 {
                         1
                     } else {
-                        u64::from(keys.div_ceil(*chunk))
+                        keys.as_const().unwrap_or(1).div_ceil(u64::from(*chunk))
                     }
                 } else {
-                    u64::from(*keys)
+                    keys.as_const().unwrap_or(1)
                 })
             } else {
                 iters

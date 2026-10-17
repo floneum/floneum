@@ -92,30 +92,29 @@ pub fn infer_launch(op: &Launch, ins: &[ValueFacts]) -> Result<ValueFacts> {
             prefix,
             ..
         } => {
-            let dims = output
-                .dims
-                .iter()
-                .map(|d| d.as_const())
-                .collect::<Option<Vec<_>>>()
-                .ok_or_else(|| Error::Shape("decode attention needs fixed extents".into()))?;
+            use crate::shape::Dim;
+            let dims = &output.dims;
             let mut scalar_args = Vec::new();
             scale.collect_args(&mut scalar_args);
             prefix.collect_args(&mut scalar_args);
             let (splits, width) = if *chunk == 0 {
-                (1, 128)
+                (Dim::ONE, Dim::Const(128))
             } else {
-                (u64::from(keys.div_ceil(*chunk)), 130)
+                (keys.div_ceil(u64::from(*chunk)), Dim::Const(130))
             };
+            let b = dims.first().and_then(|d| d.as_const()).unwrap_or(0);
+            let h = dims.get(1).and_then(|d| d.as_const()).unwrap_or(0);
             if dims.len() != 4
-                || dims[0] == 0
-                || dims[1] == 0
+                || b == 0
+                || h == 0
                 || dims[2] != splits
                 || dims[3] != width
                 || *kv_heads == 0
                 || !matches!(*heads_per_group, 1 | 2 | 4)
-                || !dims[1].is_multiple_of(u64::from(*kv_heads))
-                || !(dims[1] / u64::from(*kv_heads)).is_multiple_of(u64::from(*heads_per_group))
-                || *keys == 0
+                || !h.is_multiple_of(u64::from(*kv_heads))
+                || !(h / u64::from(*kv_heads)).is_multiple_of(u64::from(*heads_per_group))
+                || keys.as_const() == Some(0)
+                || (*chunk == 0 && keys.as_const().is_none())
                 || !matches!(*block, 32 | 64 | 128 | 256 | 512)
                 || ins.len() != 3
                 || ops.len() != 3
@@ -125,36 +124,30 @@ pub fn infer_launch(op: &Launch, ins: &[ValueFacts]) -> Result<ValueFacts> {
                 || !scalar_args.is_empty()
                 || scale.reads_index_of()
                 || prefix.reads_index_of()
-                || output.iterations().is_none_or(|n| n > u64::from(u32::MAX))
+                || output.iterations().is_some_and(|n| n > u64::from(u32::MAX))
+                || keys.as_const().is_some_and(|keys| {
+                    b.saturating_mul(u64::from(*kv_heads))
+                        .saturating_mul(keys)
+                        .saturating_mul(128)
+                        > u64::from(u32::MAX)
+                })
             {
                 return Err(Error::Shape(
                     "unsupported decode attention geometry or dtype".into(),
                 ));
             }
-            let q = [dims[0], dims[1], 1, 128];
-            let kv = [dims[0], u64::from(*kv_heads), u64::from(*keys), 128];
-            if kv
-                .iter()
-                .try_fold(1u64, |n, d| n.checked_mul(*d))
-                .is_none_or(|n| n > u64::from(u32::MAX))
-            {
-                return Err(Error::Shape(
-                    "decode attention exceeds u32 addressing".into(),
-                ));
-            }
+            let q = [dims[0], dims[1], Dim::ONE, Dim::Const(128)];
+            let kv = [
+                dims[0],
+                Dim::Const(u64::from(*kv_heads)),
+                *keys,
+                Dim::Const(128),
+            ];
             for (i, expected) in [q.as_slice(), kv.as_slice(), kv.as_slice()]
                 .into_iter()
                 .enumerate()
             {
-                if ops[i]
-                    .layout
-                    .shape()
-                    .iter()
-                    .map(|d| d.as_const())
-                    .collect::<Option<Vec<_>>>()
-                    .as_deref()
-                    != Some(expected)
-                {
+                if ops[i].layout.shape() != expected {
                     return Err(Error::Shape(
                         "decode attention operand layout differs from its geometry".into(),
                     ));
@@ -168,33 +161,30 @@ pub fn infer_launch(op: &Launch, ins: &[ValueFacts]) -> Result<ValueFacts> {
             ops,
             ..
         } => {
+            use crate::shape::Dim;
             let d = output
                 .dims
                 .iter()
                 .map(|d| d.as_const())
                 .collect::<Option<Vec<_>>>()
-                .ok_or_else(|| Error::Shape("attention merge needs fixed extents".into()))?;
+                .ok_or_else(|| Error::Shape("attention merge needs fixed output extents".into()))?;
             if d.len() != 4
                 || d[0] == 0
                 || d[1] == 0
                 || d[2] != 1
                 || d[3] != 128
-                || *splits == 0
+                || splits.as_const() == Some(0)
                 || ops.len() != 1
                 || ins.len() != 1
                 || ins[0].dtype != Dtype::F32
-                || d[0]
-                    .saturating_mul(d[1])
-                    .saturating_mul(u64::from(*splits))
-                    .saturating_mul(130)
-                    > u64::from(u32::MAX)
-                || ops[0]
-                    .layout
-                    .shape()
-                    .iter()
-                    .map(|d| d.as_const())
-                    .collect::<Option<Vec<_>>>()
-                    != Some(vec![d[0], d[1], u64::from(*splits), 130])
+                || splits.as_const().is_some_and(|s| {
+                    d[0].saturating_mul(d[1])
+                        .saturating_mul(s)
+                        .saturating_mul(130)
+                        > u64::from(u32::MAX)
+                })
+                || ops[0].layout.shape()
+                    != [Dim::Const(d[0]), Dim::Const(d[1]), *splits, Dim::Const(130)]
             {
                 return Err(Error::Shape("unsupported attention merge geometry".into()));
             }

@@ -28,11 +28,12 @@ pub(super) fn lower_merge(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
     let group = ctx.linear_workgroup();
     let lane = b.builtin(Builtin::Lane);
     let grid = distribute_workgroups(heads, ctx.caps.limits.max_compute_workgroups_per_dimension);
-    let total = u64::from(heads) * u64::from(*splits) * 130;
+    let total = u64::from(heads) * splits.as_const().unwrap_or(0) * 130;
+    let split_count = ctx.dim_expr(*splits)?;
     let it = b.local(u);
     let base = b.mul(
         b.add(
-            b.mul(group.clone(), b.u32(*splits)),
+            b.mul(group.clone(), split_count.clone()),
             b.load_local(it.clone()),
         ),
         b.u32(130),
@@ -40,7 +41,7 @@ pub(super) fn lower_merge(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
     let load = |offset| ctx.load_mapped(&ops[0], b.add(base.clone(), offset), total);
     let maximum = b.local(f);
     let mut body = vec![Stmt::Loop {
-        count: Some(b.u32(*splits)),
+        count: Some(split_count.clone()),
         index: Some(it.clone()),
         accumulators: vec![Accumulator {
             local: maximum.clone(),
@@ -58,7 +59,7 @@ pub(super) fn lower_merge(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
     let numerator = b.local(f);
     let denominator = b.local(f);
     body.push(Stmt::Loop {
-        count: Some(b.u32(*splits)),
+        count: Some(split_count.clone()),
         index: Some(it),
         accumulators: vec![
             Accumulator {
@@ -139,36 +140,54 @@ pub(super) fn lower(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
     let u = ScalarElement::U32.element();
     let heads = output.dims[1].as_const().unwrap() as u32;
     let batches = output.dims[0].as_const().unwrap() as u32;
-    let capacity = if *chunk == 0 { *keys } else { *chunk };
-    let splits = keys.div_ceil(capacity);
-    let count = batches * heads * splits / heads_per_group;
+    let capacity = if *chunk == 0 {
+        u32::try_from(
+            keys.as_const()
+                .ok_or_else(|| Error::Plan("symbolic attention needs a fixed chunk".into()))?,
+        )
+        .map_err(|_| Error::Plan("attention capacity exceeds u32".into()))?
+    } else {
+        *chunk
+    };
+    let split_dim = keys.div_ceil(u64::from(capacity));
+    let splits = ctx.dim_expr(split_dim)?;
+    let groups_per_split = batches * heads / heads_per_group;
+    let count = b.mul(b.u32(groups_per_split), splits.clone());
     let physical_block = block * heads_per_group;
     let head_slot = if heads_per_group == 1 {
         b.u32(0)
     } else {
         b.div(b.builtin(Builtin::Lane), b.u32(block))
     };
-    let grid = distribute_workgroups(count, ctx.caps.limits.max_compute_workgroups_per_dimension);
+    let grid = super::grid_for(
+        &fusor_ir::ir::launch::IndexSpace::new([
+            fusor_ir::shape::Dim::Const(u64::from(groups_per_split)),
+            split_dim,
+        ]),
+        1,
+        &ctx.binding,
+        &ctx.caps.limits,
+    )?;
     let group = ctx.linear_workgroup();
     let (head_row, split) = if *key_major {
         let (split, head) = b.divrem(group.clone(), b.u32(batches * heads / heads_per_group));
         (head, split)
     } else {
-        b.divrem(group.clone(), b.u32(splits))
+        b.divrem(group.clone(), splits.clone())
     };
     let head_row = if heads_per_group == 1 {
         head_row
     } else {
         b.add(b.mul(head_row, b.u32(heads_per_group)), head_slot.clone())
     };
-    let output_group = b.add(b.mul(head_row.clone(), b.u32(splits)), split.clone());
+    let output_group = b.add(b.mul(head_row.clone(), splits.clone()), split.clone());
     let start = b.mul(split, b.u32(capacity));
     let (batch, head) = b.divrem(head_row.clone(), b.u32(heads));
     let kv_row = b.add(
         b.mul(batch, b.u32(*kv_heads)),
         b.div(head, b.u32(heads / kv_heads)),
     );
-    let kv_base = b.mul(kv_row, b.u32(keys * 128));
+    let kv_base = b.mul(kv_row, b.mul(ctx.dim_expr(*keys)?, b.u32(128)));
     let lane = if heads_per_group == 1 {
         b.builtin(Builtin::Lane)
     } else {
@@ -182,7 +201,7 @@ pub(super) fn lower(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
     };
     let scale = ctx.eval_scalar(scale, &[], &[])?;
     let prefix = ctx.eval_scalar(prefix, &[], &[])?;
-    let prefix = b.min(b.cast(prefix, u), b.u32(*keys));
+    let prefix = b.min(b.cast(prefix, u), ctx.dim_expr(*keys)?);
     let length = b.min(
         b.sub(
             b.binary(
@@ -234,7 +253,7 @@ pub(super) fn lower(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
     );
     let valid = b.lt(key.clone(), length.clone());
     let mut dot = b.f32(0.0);
-    let kv_total = u64::from(batches) * u64::from(*kv_heads) * u64::from(*keys) * 128;
+    let kv_total = u64::from(batches) * u64::from(*kv_heads) * keys.as_const().unwrap_or(0) * 128;
     for (c, q) in q.into_iter().enumerate() {
         let at = b.add(
             kv_base.clone(),
@@ -498,7 +517,7 @@ pub(super) fn lower(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
         });
     }
     let body = vec![Stmt::If {
-        condition: b.lt(group, b.u32(count)),
+        condition: b.lt(group, count),
         accept: body,
         reject: Vec::new(),
     }];

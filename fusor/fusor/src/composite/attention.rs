@@ -120,6 +120,20 @@ fn dim_scalar(dim: Dim) -> Result<ScalarExpr> {
         Dim::Sym(sym) => Ok(match sym.derived_expr() {
             Some(DimExpr::Add(a, b)) => ScalarExpr::bin(BinOp::Add, dim_scalar(a)?, dim_scalar(b)?),
             Some(DimExpr::Mul(a, b)) => ScalarExpr::bin(BinOp::Mul, dim_scalar(a)?, dim_scalar(b)?),
+            Some(DimExpr::DivCeil(a, divisor)) => {
+                let d = dim_scalar(Dim::Const(divisor))?;
+                let n = dim_scalar(a)?;
+                // n / d + (n % d != 0), without overflowing n + d - 1.
+                ScalarExpr::bin(
+                    BinOp::Add,
+                    ScalarExpr::bin(BinOp::Div, n.clone(), d.clone()),
+                    ScalarExpr::cmp(
+                        CmpOp::Ne,
+                        ScalarExpr::bin(BinOp::Rem, n, d),
+                        dim_scalar(Dim::Const(0))?,
+                    ),
+                )
+            }
             None => ScalarExpr::uniform(sym, fusor_ir::dtype::Dtype::U32),
         }),
     }
@@ -413,12 +427,12 @@ pub(crate) fn attention_prefix(
                 && qshape[2].as_const() == Some(1)
                 && qshape[3].as_const() == Some(128)
                 && qshape.iter().all(|d| d.as_const().is_some())
-                && let (Some(keys), Some(kv_heads)) = (kshape[2].as_const(), kshape[1].as_const())
-                && keys > 0
+                && let Some(kv_heads) = kshape[1].as_const()
+                && kshape[2].as_const() != Some(0)
                 && kv_heads > 0
                 && (qshape[1].as_const().unwrap() / kv_heads)
                     .is_multiple_of(u64::from(heads_per_group))
-                && (requested_chunk.map_or(keys, |n| keys.min(u64::from(n))) * 4
+                && (requested_chunk.map_or(kshape[2].as_const().unwrap_or(256), u64::from) * 4
                     + u64::from(attention_block) * 20)
                     * u64::from(heads_per_group)
                     <= u64::from(caps.limits.max_compute_workgroup_storage_size)
@@ -426,7 +440,7 @@ pub(crate) fn attention_prefix(
                     .as_const()
                     .unwrap()
                     .saturating_mul(qshape[1].as_const().unwrap())
-                    .saturating_mul(keys)
+                    .saturating_mul(kshape[2].as_const().unwrap_or(1))
                     .saturating_mul(130)
                     <= u64::from(u32::MAX)
                 && [qi, ki, vi]
@@ -444,16 +458,20 @@ pub(crate) fn attention_prefix(
                         access: AccessPlan::Alias,
                     })
                     .collect();
-                let chunk = requested_chunk
-                    .filter(|n| u64::from(*n) < keys)
-                    .unwrap_or(0);
+                let keys = kshape[2];
+                let chunk = match keys.as_const() {
+                    Some(keys) => requested_chunk
+                        .filter(|n| u64::from(*n) < keys)
+                        .unwrap_or(0),
+                    None => requested_chunk.unwrap_or(256),
+                };
                 let splits = if chunk == 0 {
-                    1
+                    Dim::ONE
                 } else {
                     keys.div_ceil(u64::from(chunk))
                 };
                 let mut shape = qshape.clone();
-                shape[2] = Dim::Const(splits);
+                shape[2] = splits;
                 shape[3] = Dim::Const(if chunk == 0 { 128 } else { 130 });
                 let fused = t
                     .graph_mut()
@@ -461,7 +479,7 @@ pub(crate) fn attention_prefix(
                     .add_launch(Launch::DecodeAttention {
                         output: IndexSpace::new(shape.clone()),
                         kv_heads: kv_heads as u32,
-                        keys: keys as u32,
+                        keys,
                         block: attention_block,
                         heads_per_group,
                         chunk,
@@ -483,7 +501,7 @@ pub(crate) fn attention_prefix(
                         .builder(&caps)
                         .add_launch(Launch::DecodeAttentionMerge {
                             output: IndexSpace::new(qshape),
-                            splits: splits as u32,
+                            splits,
                             ops: vec![Operand {
                                 src: fused,
                                 layout: Layout::contiguous(&shape),

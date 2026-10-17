@@ -20,6 +20,8 @@ use weight::Weight;
 
 mod attention_layer;
 pub mod cache;
+#[cfg(all(test, feature = "gpu", not(target_arch = "wasm32")))]
+mod latency_tests;
 mod rope;
 #[cfg(all(test, feature = "cpu"))]
 mod tests;
@@ -914,7 +916,6 @@ impl Model {
             cache.decode_graph = None;
         }
 
-        cache.refresh_padded_capacity(device.execution_profile());
         if let Some(logits) = cache.decode_graph.clone() {
             // Every block or none: a half-advanced cache would silently
             // disagree with the graph about its own length.
@@ -970,7 +971,6 @@ impl Model {
         cos_slot.set_elements(cos);
         sin_slot.set_elements(sin);
 
-        cache.refresh_padded_capacity(device.execution_profile());
         if let Some(logits) = cache.embed_graph.clone() {
             if cache.blocks.iter().all(|block| block.can_replay(1)) {
                 for block in &mut cache.blocks {

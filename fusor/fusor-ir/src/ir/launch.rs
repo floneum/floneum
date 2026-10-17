@@ -32,13 +32,13 @@ pub enum Launch {
         ops: Vec<Operand>,
         sched: ScheduleDomain,
     },
-    /// Single-query F32 attention over a fixed-capacity KV prefix. This is
+    /// Single-query F32 attention over a symbolic-capacity KV prefix. This is
     /// an optional lowering of the ordinary QK/softmax/PV graph, with the
     /// same output [batch, query heads, 1, head dimension].
     DecodeAttention {
         output: IndexSpace,
         kv_heads: u32,
-        keys: u32,
+        keys: Dim,
         /// Threads per query head, a multiple of the fixed subgroup width.
         block: u32,
         /// Query heads sharing one physical workgroup and one K/V head.
@@ -56,7 +56,7 @@ pub enum Launch {
     /// Stable merge of split decode attention's [numerator[128], max, sum].
     DecodeAttentionMerge {
         output: IndexSpace,
-        splits: u32,
+        splits: Dim,
         ops: Vec<Operand>,
         sched: ScheduleDomain,
     },

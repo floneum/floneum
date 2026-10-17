@@ -75,8 +75,8 @@ fn member(id: Id, plan: &Plan, graph: &EGraph, resolve: &dyn Fn(Dim) -> Option<u
             ..
         } => json!({
             "kind": "decode_attention", "shape": output.dims.iter().map(|d| resolve(*d)).collect::<Vec<_>>(),
-            "kv_heads": kv_heads, "capacity": keys, "valid_prefix": "runtime uniform",
-            "chunk": chunk, "block": block * heads_per_group, "heads_per_group": heads_per_group, "key_major": key_major, "acc": "F32", "workgroup_storage_bound": (u64::from(if *chunk == 0 { *keys } else { *chunk }) * 4 + u64::from(*block) * 20) * u64::from(*heads_per_group),
+            "kv_heads": kv_heads, "capacity": resolve(*keys), "valid_prefix": "runtime uniform",
+            "chunk": chunk, "block": block * heads_per_group, "heads_per_group": heads_per_group, "key_major": key_major, "acc": "F32", "workgroup_storage_bound": (if *chunk == 0 { keys.as_const().unwrap_or(0) } else { u64::from(*chunk) } * 4 + u64::from(*block) * 20) * u64::from(*heads_per_group),
             "operands": ops.iter().map(|o| json!({
                 "shape": o.layout.shape().iter().map(|d| resolve(*d)).collect::<Vec<_>>(),
                 "strides": o.layout.strides().iter().map(|d| resolve(*d)).collect::<Vec<_>>()
@@ -84,7 +84,7 @@ fn member(id: Id, plan: &Plan, graph: &EGraph, resolve: &dyn Fn(Dim) -> Option<u
         }),
         Launch::DecodeAttentionMerge { output, splits, .. } => json!({
             "kind": "decode_attention_merge", "shape": output.dims.iter().map(|d| resolve(*d)).collect::<Vec<_>>(),
-            "splits": splits, "acc": "F32", "workgroup_storage_bound": 0
+            "splits": resolve(*splits), "acc": "F32", "workgroup_storage_bound": 0
         }),
         Launch::Contract {
             m,
