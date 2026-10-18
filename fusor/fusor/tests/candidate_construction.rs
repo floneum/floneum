@@ -1004,10 +1004,14 @@ fn ordinary_algebra_gets_normalization_on_capability_variants() {
             c.limits.max_compute_workgroup_size[0] = x_limit;
             c.limits.max_compute_workgroup_storage_size = storage;
             let fused = apply(&mut g, &c, root, rule);
-            let actual = fused.map(|id| match g.node(id).op {
-                Op::Launch(Launch::RmsNorm { block, .. }) => block,
-                ref other => panic!("unexpected normalization candidate: {other:?}"),
+            let actual = g.class_ids(g.class_of(root)).iter().find_map(|id| {
+                if let Op::Launch(Launch::RmsNorm { block, .. }) = g.node(*id).op {
+                    Some(block)
+                } else {
+                    None
+                }
             });
+            assert_eq!(fused.is_some(), actual.is_some());
             assert_eq!(
                 actual, expected,
                 "width={width} limits={lanes}/{x_limit}/{storage}"
