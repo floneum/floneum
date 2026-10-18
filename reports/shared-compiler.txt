@@ -1,3 +1,39 @@
+Actual-token measurement and isolated attention experiment (2026-10-18)
+======================================================================
+The profiler now observes actual sampled token IDs and timestamps on the
+ordinary chat/completion path. Text buffering no longer defines the count.
+Sampling configuration and arithmetic are unchanged; generation stops at
+exactly warmup plus measured tokens. The final warmup token anchors the first
+measured interval. Every gap, including stalls, remains in the statistics.
+The comparator checks exact token IDs and exposes --minimum-tps 60; chunk-only
+logs cannot satisfy that target. The guarded runner records a token summary
+and rejects a binary that still reports chunks.
+
+Runtime/profiler 6db93671f passes the remote Rust example tests, Clippy,
+formatting and 24 Python checks in CI 39154087720. Matched default-release
+baseline, candidate and isolated expression binaries are still building in
+separate target directories. Baseline runtime is 117c60fbc; candidate compiler
+runtime is unchanged from 287d0592b except for a disabled-by-default token
+trace event. No actual-token full-model performance result exists yet.
+
+The old 287 candidate run was refused before startup when another process
+crossed 1 GiB RSS. A separate, previously unmeasured long-reduction expression
+fixture completes A0/B0 at 150.369/153.482 us (0.979717x); all 12,288 compared
+outputs are bit-identical. A foreign compiler exceeds the overlap limit before
+B1, so the sequence is incomplete and is not retried. This does not establish
+an improvement and the experiment remains outside the PR. Evidence:
+target/stall-validation/shared-order-q6-abba/partial-evidence.json.
+The stronger expression tests also passed CI 39152356463.
+
+An independent attention-capacity candidate, 9d935fe33, raises the existing
+shared rule ceiling to 512 while retaining subgroup, invocation, X-dimension,
+scratch and arithmetic requirements. It is not in the PR. CI 39154868955 is
+running the old-rule regression, construction checks, shared WebGPU tests and
+paired small-fixture builds. Performance has not been measured. All local
+compiler/model jobs owned by this task are stopped. Foreign processes remain
+untouched and canonical memory guards remain unchanged.
+The 60 token/sec / 2x end-to-end goal is still not achieved or established.
+
 Validated shared default and blocked expression measurement (2026-10-18)
 ======================================================================
 PR #465 is updated to runtime 287d0592b72ee23dd69ed5a0b4280149cd0b4f47.
