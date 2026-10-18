@@ -111,15 +111,20 @@ jobs:
         run: |
           cargo nextest run --archive-file fusor-tests.tar.zst --workspace-remap fusor --extract-to fusor \
             --run-ignored only --test-threads 1 -E 'binary(shared_compiler)'
-      - name: Run tests
+      - name: Run root tests
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           FUSOR_CONFORMANCE_REQUIRE_GPU: "1"
-        run: |
-          cargo nextest run --archive-file root-tests.tar.zst --workspace-remap . --extract-to .
-          cargo nextest run --archive-file fusor-tests.tar.zst --workspace-remap fusor --extract-to fusor --extract-overwrite
+        run: cargo nextest run --archive-file root-tests.tar.zst --workspace-remap . --extract-to .
+      - name: Run Fusor tests
+        # An unrelated model download must not suppress compiler/unit coverage.
+        # The root test failure still fails this job.
+        if: ${{ !cancelled() }}
+        env:
+          FUSOR_CONFORMANCE_REQUIRE_GPU: "1"
+        run: cargo nextest run --archive-file fusor-tests.tar.zst --workspace-remap fusor --extract-to fusor --extract-overwrite
 
   conformance:
     needs: build

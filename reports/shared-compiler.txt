@@ -102,6 +102,24 @@ Validation and cleanup after 18208e5f7
   is prepared to reduce linker memory without relaxing resource guards;
   it has not yet produced a benchmark binary or a speedup measurement.
 
+Confirmed at f927525bd
+- All eight shared WebGPU tests pass on macOS (16.203 seconds), Windows
+  WARP (180.459 seconds), and Linux lavapipe (55.724 seconds). This includes
+  all 96 quantized cases and every zero-tolerance dyadic case.
+- Windows and Linux each pass all 166 executed Fusor tests (13 skipped),
+  with the shared ignored tests run explicitly in their preceding step.
+  Windows also passes all 84 executed root tests; Linux passes all 90.
+- macOS's external Odyssey download failure previously prevented the later
+  Fusor unit-test command from running. That command is now a separate step
+  which runs even after a root-test failure; the root failure stays visible.
+- The guarded local thin-LTO build also stopped on compression growth.
+  Release compilation has moved to the isolated diagnostic branch
+  codex/compiler-profile-builds. CI run 39092226768 builds the exact PR base
+  and f927525bd for aarch64-apple-darwin, serially, using the same profiling
+  source and default release settings. Only executable artifacts are built;
+  full-model execution remains local and resource-guarded. Build completion
+  and a matched speed measurement are still pending.
+
 Previous revision 4934d7cda (does not validate the rewrite above)
 ==============================================================
 Shared compiler rewrite (2026-10-17)
