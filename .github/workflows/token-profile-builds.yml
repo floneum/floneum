@@ -53,6 +53,7 @@ jobs:
           set -euo pipefail
           mkdir artifacts
           for arm in candidate baseline expression; do
+            export CARGO_TARGET_DIR="$GITHUB_WORKSPACE/$arm-release-target"
             if [[ "$arm" != candidate ]]; then
               # All three revisions have identical original inference source.
               # Apply only the same trace event and profiler to each runtime.
