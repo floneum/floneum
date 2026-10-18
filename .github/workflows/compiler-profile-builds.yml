@@ -1,0 +1,66 @@
+name: Compiler comparison release binaries
+
+on:
+  push:
+    branches: [codex/compiler-profile-builds]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compiler-profile-builds
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: 1
+      CARGO_INCREMENTAL: 0
+      CARGO_TARGET_DIR: ${{ github.workspace }}/profile-target
+      CANDIDATE_REVISION: f927525bd
+      BASELINE_REVISION: 7a9ead2493b31ef670a35ed0507de1188006329e
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CANDIDATE_REVISION }}
+          path: candidate
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.BASELINE_REVISION }}
+          path: baseline
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build matching default-release profile binaries serially
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir artifacts
+          cp candidate/models/kalosm-llama/examples/profile_forward.rs \
+            baseline/models/kalosm-llama/examples/profile_forward.rs
+          {
+            rustc -Vv
+            uname -m
+            xcrun --show-sdk-version
+            git -C candidate rev-parse HEAD
+            git -C baseline rev-parse HEAD
+            shasum -a 256 candidate/models/kalosm-llama/examples/profile_forward.rs
+            echo 'cargo build --locked -j 1 -p kalosm-llama --example profile_forward --release'
+          } > artifacts/build.txt
+          for revision in candidate baseline; do
+            (
+              cd "$revision"
+              cargo build --locked -j 1 -p kalosm-llama --example profile_forward --release
+            )
+            cp "$CARGO_TARGET_DIR/release/examples/profile_forward" "artifacts/profile-forward-$revision"
+            shasum -a 256 "artifacts/profile-forward-$revision" >> artifacts/build.txt
+          done
+      - name: Package binaries with executable permissions
+        run: tar -czf compiler-profile-binaries.tar.gz -C artifacts .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compiler-profile-binaries-macos
+          path: compiler-profile-binaries.tar.gz
+          retention-days: 3
