@@ -153,6 +153,34 @@ guard.run_guarded([sys.executable, '-c', sys.argv[3], sys.argv[1]],
                 except ProcessLookupError:
                     pass
 
+    def test_signal_during_os_probe_is_not_consumed_as_an_os_error(self):
+        children = []
+        real_popen = subprocess.Popen
+
+        def spawn(*args, **kwargs):
+            child = real_popen(*args, **kwargs)
+            children.append(child)
+            return child
+
+        def sample(_):
+            if self.marker.exists():
+                # OS wait helpers may catch OSError to fall back to another
+                # wait strategy. A termination request must escape that catch.
+                try:
+                    signal.raise_signal(signal.SIGTERM)
+                except OSError:
+                    pass
+            return HEALTHY
+
+        with patch.object(guard, "read_snapshot", side_effect=sample), \
+                patch.object(guard.subprocess, "Popen", side_effect=spawn):
+            with self.assertRaisesRegex(BaseException, "benchmark interrupted by signal"):
+                self.run_child()
+        self.assertEqual(len(children), 1)
+        self.assertIsNotNone(children[0].poll())
+        with guard.single_benchmark(self.lock):
+            pass
+
     def test_cleanup_accepts_permission_error_only_for_absent_group(self):
         child = Mock(pid=123)
         with patch.object(guard.os, "killpg", side_effect=PermissionError), \

@@ -26,6 +26,10 @@ class ResourceLimitError(RuntimeError):
     pass
 
 
+class BenchmarkInterrupted(BaseException):
+    """A termination request, not an OSError that an OS probe may consume."""
+
+
 @dataclass(frozen=True)
 class Snapshot:
     available_bytes: int
@@ -96,7 +100,7 @@ def single_benchmark(path=LOCK_PATH):
 @contextmanager
 def cleanup_on_signals():
     def interrupted(signum, _frame):
-        raise InterruptedError(f"benchmark interrupted by signal {signum}")
+        raise BenchmarkInterrupted(f"benchmark interrupted by signal {signum}")
     previous = {sig: signal.signal(sig, interrupted) for sig in [signal.SIGTERM, signal.SIGHUP]}
     try:
         yield
