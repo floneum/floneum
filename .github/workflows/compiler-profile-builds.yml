@@ -1,4 +1,4 @@
-name: Compiler comparison release binaries
+name: Compiler candidate release binary
 
 on:
   push:
@@ -18,58 +18,38 @@ jobs:
     env:
       CARGO_BUILD_JOBS: 1
       CARGO_INCREMENTAL: 0
-      CARGO_TARGET_DIR: ${{ github.workspace }}/profile-target
-      CANDIDATE_REVISION: f927525bdde3ede996bb29647b377d2ebf10a385
-      BASELINE_REVISION: 7a9ead2493b31ef670a35ed0507de1188006329e
+      CARGO_TARGET_DIR: ${{ github.workspace }}/candidate-target
+      CANDIDATE_REVISION: 10377cfa2b3f7e69f55e6592af940844bfafd2c9
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ env.CANDIDATE_REVISION }}
           path: candidate
           persist-credentials: false
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ env.BASELINE_REVISION }}
-          path: baseline
-          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin
-      - name: Build matching default-release profile binaries serially
+      - name: Build default-release candidate in its own target directory
         shell: bash
         run: |
           set -euo pipefail
           mkdir artifacts
-          cp candidate/models/kalosm-llama/examples/profile_forward.rs \
-            baseline/models/kalosm-llama/examples/profile_forward.rs
           {
             rustc -Vv
             uname -m
             xcrun --show-sdk-version
             git -C candidate rev-parse HEAD
-            git -C baseline rev-parse HEAD
             shasum -a 256 candidate/models/kalosm-llama/examples/profile_forward.rs
             echo 'cargo build --locked -j 1 -p kalosm-llama --example profile_forward --release --target aarch64-apple-darwin'
+            echo 'Reference binaries: CI run 39092226768; base 7a9ead2493b31ef670a35ed0507de1188006329e; prior candidate f927525bdde3ede996bb29647b377d2ebf10a385'
           } > artifacts/build.txt
-          for revision in candidate baseline; do
-            (
-              cd "$revision"
-              cargo build --locked -j 1 -p kalosm-llama --example profile_forward --release --target aarch64-apple-darwin
-            )
-            cp "$CARGO_TARGET_DIR/aarch64-apple-darwin/release/examples/profile_forward" "artifacts/profile-forward-$revision"
-            shasum -a 256 "artifacts/profile-forward-$revision" >> artifacts/build.txt
-          done
-      - name: Build bounded kernel and model attribution probes
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd candidate
-          cargo build --locked -j 1 -p kalosm-llama --example profile_kernel_share --features kernel-visualize --release --target aarch64-apple-darwin
-          cp "$CARGO_TARGET_DIR/aarch64-apple-darwin/release/examples/profile_kernel_share" ../artifacts/profile-kernel-share-candidate
-          cargo build --locked -j 1 --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer --example qmatmul_lab --release --target aarch64-apple-darwin
-          cp "$CARGO_TARGET_DIR/aarch64-apple-darwin/release/examples/qmatmul_lab" ../artifacts/qmatmul-lab-candidate
-          shasum -a 256 ../artifacts/profile-kernel-share-candidate ../artifacts/qmatmul-lab-candidate >> ../artifacts/build.txt
-      - name: Package binaries with executable permissions
+          (
+            cd candidate
+            cargo build --locked -j 1 -p kalosm-llama --example profile_forward --release --target aarch64-apple-darwin
+          )
+          cp "$CARGO_TARGET_DIR/aarch64-apple-darwin/release/examples/profile_forward" artifacts/profile-forward-candidate
+          shasum -a 256 artifacts/profile-forward-candidate >> artifacts/build.txt
+      - name: Package binary with executable permissions
         run: tar -czf compiler-profile-binaries.tar.gz -C artifacts .
       - uses: actions/upload-artifact@v4
         with:
