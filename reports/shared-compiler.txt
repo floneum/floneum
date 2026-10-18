@@ -74,6 +74,34 @@ Cross-platform follow-up at 203b15dec
 - Current model-example compilation passed CI Clippy; release execution and
   a matched full-model speed comparison remain unverified. No 2x claim applies.
 
+Validation and cleanup after 18208e5f7
+- CI now passes the macOS sampling-2 shard and Windows backward-1 shard,
+  confirming the original branch-bound and WARP gradient regressions are fixed.
+  macOS again passes all eight shared WebGPU tests (18.848 seconds). Its root
+  suite passes 96 tests and fails the external Odyssey download test.
+- Windows' preserved numeric diagnostic reports quantized=1.7859497,
+  dense-GPU=1.7875061, scalar-FMA=1.7893316, and f64=1.78739104047.
+  The scalar f32 reference also fails the former result-only tolerance.
+  The floating fixture now permits max(5e-4*(1+abs(reference)),
+  f32::EPSILON*sum(abs(products))). This is an explicit test error budget,
+  not a universal floating-point error bound. The original floating inputs
+  remain covered; a second dyadic fixture requires zero error and checks
+  representability and the sum-of-magnitudes bound against the f64 reference.
+  There are now 96 cases across formats/layouts/shapes/input fixtures.
+  Local execution was pressure-aborted, so the expanded test awaits CI.
+- Removed 249 net lines of nested u32 storage emission and its dedicated
+  test, now unused because every production buffer declaration is flat.
+  Shared quantized-load expansion is unchanged. The contiguous-column
+  contraction now requires an actual fixed subgroup width, rather than
+  accepting an assumed width when subgroups are absent or variable.
+  Workspace/all-target Clippy passes after this cleanup (12.85 seconds).
+- A default release build reached final compilation but stopped at its
+  memory headroom guard after 100.49 seconds (2.222 GiB peak process-group
+  RSS, no additional swapouts). An explicit process-group inventory confirms
+  no owned compiler processes remain. A paired thin-LTO build configuration
+  is prepared to reduce linker memory without relaxing resource guards;
+  it has not yet produced a benchmark binary or a speedup measurement.
+
 Previous revision 4934d7cda (does not validate the rewrite above)
 ==============================================================
 Shared compiler rewrite (2026-10-17)

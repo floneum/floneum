@@ -208,51 +208,56 @@ fn shared_quantized_contractions_match_dequantized_reference() {
             )
             .unwrap();
             for rows in [1, 3] {
-                let values = data(rows * k, 4);
-                let input = Tensor::from_slice(&device, [rows, k], &values);
-                let actual = input.q_mat_mul(&weight).to_vec_f32();
-                let expected: Vec<f64> = (0..rows)
-                    .flat_map(|r| (0..n).map(move |c| (r, c)))
-                    .map(|(r, c)| {
-                        values[r * k..(r + 1) * k]
-                            .iter()
-                            .zip(&dense[c * k..(c + 1) * k])
-                            .map(|(a, b)| f64::from(*a) * f64::from(*b))
-                            .sum()
-                    })
-                    .collect();
-                assert_eq!(actual.len(), expected.len());
-                for (i, (&actual, &expected)) in actual.iter().zip(&expected).enumerate() {
-                    let tolerance = 5e-4 * (1. + expected.abs());
-                    if (f64::from(actual) - expected).abs() > tolerance {
-                        // Keep the failure, but distinguish decode/addressing
-                        // errors from ordinary f32 reduction roundoff on CI's
-                        // adapters without needing another diagnostic build.
-                        let row = i / n;
-                        let col = i % n;
-                        let products = values[row * k..(row + 1) * k]
-                            .iter()
-                            .zip(&dense[col * k..(col + 1) * k]);
-                        let scalar_fma = products
-                            .clone()
-                            .fold(0f32, |sum, (&a, &b)| a.mul_add(b, sum));
-                        let magnitude: f64 = products
-                            .map(|(&a, &b)| (f64::from(a) * f64::from(b)).abs())
-                            .sum();
-                        let quant_kernel = seen.lock().unwrap().last().cloned();
-                        let unpacked = Tensor::from_slice(&device, [n, k], &dense);
-                        let dense_gpu = input.matmul(&unpacked.t()).to_vec_f32();
-                        eprintln!(
-                            "contraction diagnostic: kernel={quant_kernel:?}, \
-                             dense_gpu={}, scalar_fma={scalar_fma}, \
-                             f64={expected}, sum_abs_products={magnitude}, tolerance={tolerance}",
-                            dense_gpu[i],
+                for exact in [false, true] {
+                    // The dyadic case makes products and partial sums exactly
+                    // representable. It detects decode/addressing/algebra bugs
+                    // with zero tolerance, independently of reduction order.
+                    let values = if exact {
+                        (0..rows * k)
+                            .map(|i| ((i % 3) as f32 - 1.) / 128.)
+                            .collect()
+                    } else {
+                        data(rows * k, 4)
+                    };
+                    let input = Tensor::from_slice(&device, [rows, k], &values);
+                    let actual = input.q_mat_mul(&weight).to_vec_f32();
+                    let expected: Vec<(f64, f64)> = (0..rows)
+                        .flat_map(|r| (0..n).map(move |c| (r, c)))
+                        .map(|(r, c)| {
+                            values[r * k..(r + 1) * k]
+                                .iter()
+                                .zip(&dense[c * k..(c + 1) * k])
+                                .map(|(a, b)| f64::from(*a) * f64::from(*b))
+                                .fold((0., 0.), |(sum, magnitude), product| {
+                                    (sum + product, magnitude + product.abs())
+                                })
+                        })
+                        .collect();
+                    assert_eq!(actual.len(), expected.len());
+                    for (i, (&actual, &(expected, magnitude))) in
+                        actual.iter().zip(&expected).enumerate()
+                    {
+                        let tolerance = if exact {
+                            // All fixture products are integer multiples of
+                            // 1/8192, and their total magnitude fits 24 bits.
+                            assert!(magnitude * 8192. <= f64::from(1u32 << 24));
+                            assert_eq!(f64::from(expected as f32), expected);
+                            0.
+                        } else {
+                            // Near cancellation, scale the roundoff allowance
+                            // by the products as well as the final result. A
+                            // result-only check rejects even a scalar f32/FMA
+                            // reference for this fixture. This is a test budget,
+                            // not a universal bound on arbitrary reductions.
+                            (5e-4 * (1. + expected.abs())).max(f64::from(f32::EPSILON) * magnitude)
+                        };
+                        assert!(
+                            actual.is_finite() && (f64::from(actual) - expected).abs() <= tolerance,
+                            "{fmt:?}/{layout:?} M={rows} N={n} K={k}, exact={exact}, \
+                             element {i}: {actual} != {expected}; \
+                             sum_abs_products={magnitude}, tolerance={tolerance}"
                         );
                     }
-                    assert!(
-                        (f64::from(actual) - expected).abs() <= tolerance,
-                        "{fmt:?}/{layout:?} M={rows} N={n} K={k}, element {i}: {actual} != {expected}"
-                    );
                 }
             }
         }

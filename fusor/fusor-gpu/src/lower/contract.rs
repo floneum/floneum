@@ -40,7 +40,7 @@ pub(crate) fn lower_contract(
     let contract = contract?;
     if matches!((family, theta), (Family::Sgemv, SchedPoint::Sgemv(_)))
         && crate::flags::flags().gemv_contiguous_n
-        && contiguous_n::supported(&contract, ctx.caps.subgroup_width())
+        && contiguous_n::supported(&contract, ctx.caps)
     {
         return contiguous_n::lower(ctx, &contract);
     }

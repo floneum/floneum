@@ -3,8 +3,13 @@
 //! The ordinary quantized GEMV layout instead places lanes along K.
 use super::*;
 
-pub(super) fn supported(c: &Contract<'_>, width: u32) -> bool {
-    if width != 32
+pub(super) fn supported(c: &Contract<'_>, caps: &fusor_ir::device::Caps) -> bool {
+    // The body assigns columns using actual subgroup lane/id builtins. An
+    // assumed width is not enough: absent subgroups also have an assumed
+    // width of 32, and a ranged adapter may execute a wider subgroup.
+    if caps
+        .subgroups
+        .is_none_or(|s| !s.is_fixed() || s.assumed() != 32)
         || c.shape.m > 4
         || c.acc != ScalarElement::F32
         || c.shape.n.as_const().is_none_or(|n| n <= 1)
