@@ -3,15 +3,57 @@
 //! not in saturation, which would mint a spelling per reader of every copy.
 
 use crate::nodes::is_view_copy;
+use fusor_ir::Result;
 use fusor_ir::device::Caps;
 use fusor_ir::egraph::{ClassId, EGraph, Id};
 use fusor_ir::extract::{Extraction, Plan};
 use fusor_ir::rules::absorb_view::forward_views;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-/// Rewrite `plan`'s selection into `ex` so no launch reads a non-root view
-/// copy. Returns whether anything changed.
+/// Forward selected copies while keeping a realizable plan. Unions append new
+/// class representatives even when a candidate is rejected, so restore the
+/// incumbent's selection under those representatives before returning it.
 pub fn forward_selected_views(
+    graph: &mut EGraph,
+    caps: &Caps,
+    roots: &[Id],
+    plan: &Plan,
+    replan: &mut dyn FnMut(&EGraph, &mut Extraction) -> Result<Plan>,
+) -> Result<Plan> {
+    let mut next = plan.clone();
+    for _ in 0..plan.launches.len() {
+        let before = graph.len();
+        let mut trial = next.extraction.clone();
+        if forward_selection(graph, caps, roots, &next, &mut trial) {
+            match replan(graph, &mut trial) {
+                Ok(plan) => {
+                    next = plan;
+                    continue;
+                }
+                Err(error) => {
+                    if std::env::var_os("FUSOR_EXTRACT_PROFILE").is_some() {
+                        eprintln!("VIEW_FORWARD_DECLINED {error}");
+                    }
+                }
+            }
+        }
+        if graph.len() != before {
+            let mut incumbent = next.extraction.clone();
+            incumbent.sigma = incumbent
+                .sigma
+                .values()
+                .map(|id| (graph.class_of(*id), *id))
+                .collect();
+            incumbent.m.grow(graph.len());
+            next = replan(graph, &mut incumbent)?;
+        }
+        break;
+    }
+    Ok(next)
+}
+
+/// Rewrite the selected readers into `ex`; the caller validates the trial.
+fn forward_selection(
     graph: &mut EGraph,
     caps: &Caps,
     roots: &[Id],

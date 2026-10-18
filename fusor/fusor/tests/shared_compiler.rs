@@ -442,3 +442,41 @@ fn reductions_keep_view_index_spaces() {
         );
     }
 }
+
+#[test]
+#[ignore = "requires a live WebGPU device"]
+fn softmax_gradients_after_view_forwarding() {
+    for (rows, width) in [(5, 56), (2, 37), (7, 65)] {
+        let device = pollster::block_on(Device::gpu()).unwrap();
+        let values = data(rows * width, 101);
+        let weights = data(rows * width, 103);
+        let input = Tensor::from_slice(&device, [rows, width], &values);
+        let weight = Tensor::from_slice(&device, [rows, width], &weights);
+        let y = input
+            .as_dyn()
+            .softmax_last_dim()
+            .unwrap()
+            .mul(weight.as_dyn())
+            .unwrap();
+        let loss = y.sum_all().unwrap();
+        let grads = device
+            .graph()
+            .backward_with(&loss, std::slice::from_ref(input.as_dyn()))
+            .unwrap();
+        let mut expected = Vec::new();
+        for (x, w) in values.chunks(width).zip(weights.chunks(width)) {
+            let max = x.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            let mut p: Vec<f32> = x.iter().map(|v| (v - max).exp()).collect();
+            let sum: f32 = p.iter().sum();
+            for v in &mut p {
+                *v /= sum;
+            }
+            let dot: f32 = p.iter().zip(w).map(|(p, w)| p * w).sum();
+            expected.extend(p.iter().zip(w).map(|(p, w)| p * (w - dot)));
+        }
+        let gradient = grads.get(input.as_dyn()).unwrap();
+        close(&gradient.to_vec_f32().unwrap(), &expected, 1e-4);
+        gradient.clear_device_buf();
+        close(&gradient.to_vec_f32().unwrap(), &expected, 1e-4);
+    }
+}

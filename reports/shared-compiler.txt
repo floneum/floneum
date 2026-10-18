@@ -17,6 +17,8 @@ Compiler changes
 - Coalesced Q4/Q6 loads are selected from format, layout and subgroup legality.
   Whole-block storage views preserve buffer bytes and checked accesses.
 - Forward affine views and pure map slabs through the ordinary compiler.
+  Forwarding validates each extracted plan, and rekeys the previous selection
+  after rejected graph unions. Replanning preserves the exact rejection cause.
 - Lower contiguous range updates into ordinary WebGPU copy/clear commands.
 - Keep symbolic single-index scatter geometry in uniforms; growth changes the
   dispatch grid without compiling another shader.
@@ -39,10 +41,11 @@ Runtime changes
   artifacts share the normal plan's weak ownership; no alternate plan is needed.
 
 Validation
-- All six ordinary-device WebGPU tests pass with compiler-tests and
-  kernel-observer enabled (7.09 seconds). Cases cover RMS/attention vs host
+- All seven ordinary-device WebGPU tests pass with compiler-tests and
+  kernel-observer enabled (13.88 seconds). Cases cover RMS/attention vs host
   references, copy lowering, concrete/symbolic/expanding view replay, scatter
-  input and retained-view preservation, and view reductions plus gradients.
+  input and retained-view preservation, view reductions plus gradients, and
+  softmax Jacobian-vector products with replay.
 - Q4/Q6 outputs match dequantized references at N=1024/1027, K=4096, and
   one/three input rows. Aligned cases select both coalesced lowerings without
   a preset; odd dimensions may select another legal schedule.
@@ -66,8 +69,8 @@ memory headroom, a 1 GiB process-group RSS cap, no additional swapouts, a 32 MiB
 compressor-growth ceiling, and a 1 GiB runtime disk reserve. Small incremental
 tests may start with that disk reserve plus a 64 MiB linking allowance; larger
 checks require 1.5 GiB at startup. No model was loaded for these checks.
-The final GPU suite peaked at 0.471 GiB process-group RSS, with at least
-14.485 GiB memory headroom and no added swapouts.
+The final GPU suite peaked at 0.387 GiB process-group RSS, with at least
+13.535 GiB memory headroom and no added swapouts.
 
 An expanded fixture initially exceeded its process-group cap while retaining
 multiple matrix graphs. It now releases the graph, device and GPU pool between
@@ -76,11 +79,16 @@ disk below the reserve, builds were refused. They resumed after space recovered;
 only obsolete task-owned executables and check metadata were removed.
 
 CI follow-up
-Cross-platform compilation, Clippy, and WebGPU compilation passed at 6c096f409.
+Cross-platform compilation, Clippy, and WebGPU compilation passed at 4cb376d55.
 The subsequent native conformance results caught a reduction/view addressing
 bug and two gaps in the kernel type verifier (half-word unpack and signed
 shifts). A small verified WebGPU test reproduced the addressing panic before
-its fix; all six verified GPU regressions now pass.
+its fix; all seven verified GPU regressions now pass.
+
+A softmax-backward case additionally exposed a cyclic forwarded selection.
+The compiler now validates that candidate and restores the incumbent using
+its current class identities. The reproducer checks three row geometries and
+replays the resulting gradient; it matches the host Jacobian-vector product.
 
 The visualizer CLI tests now use runtime paths when Nextest relocates an
 archive. The cooperative scratch assertion follows the shared fragment
@@ -99,5 +107,7 @@ Reproduction (from repository root; run GPU checks serially):
 Performance scope
 Historical model presets, measurements, and experiment drivers are no longer
 part of the PR. Their earlier 2x result does not establish throughput for this
-rewrite. A fresh full-model comparison remains unverified. The previously
+rewrite. A fresh full-model comparison remains unverified: the final read-only
+preflight refused 14.96 GiB headroom against its 15.17 GiB requirement. No model
+was started. The previously
 built release chat executable also predates this rewrite.

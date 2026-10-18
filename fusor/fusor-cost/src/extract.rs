@@ -171,8 +171,7 @@ impl LocalSearch {
         let mut trail = Trail::default();
         let plan = self
             .search(graph, roots, cost)
-            .price(ex, cache, &mut trail)
-            .ok_or_else(|| Error::Plan("autotune candidate does not realize".into()))
+            .price_checked(ex, cache, &mut trail)
             .and_then(|(realized, exact)| derive_plan(graph, ex, &realized, cost.facts(), exact));
         if plan.is_err() {
             trail.rollback(ex, 0);
@@ -532,14 +531,22 @@ impl Search<'_> {
         cache: &mut NodeCache,
         trail: &mut Trail,
     ) -> Option<(Realized, Picoseconds)> {
-        let selected = pin_selection(self.graph, self.roots, ex, trail, cache).ok()?;
+        self.price_checked(ex, cache, trail).ok()
+    }
+
+    /// Preserve a rejected rewrite's exact planning error for diagnostics.
+    fn price_checked(
+        &self,
+        ex: &mut Extraction,
+        cache: &mut NodeCache,
+        trail: &mut Trail,
+    ) -> Result<(Realized, Picoseconds)> {
+        let selected = pin_selection(self.graph, self.roots, ex, trail, cache)?;
         seed_theta_trailed(self.graph, ex, &selected.order, self.cost, cache, trail);
         trail.buffers(ex, selected.buffers(self.graph));
-        let realized = selected
-            .realize(self.graph, ex, self.cost, self.arena, cache)
-            .ok()?;
+        let realized = selected.realize(self.graph, ex, self.cost, self.arena, cache)?;
         let c = realize::exact_cost(&realized, ex, self.cost);
-        Some((realized, c))
+        Ok((realized, c))
     }
 
     /// Keep the trial on `trail` on a strict improvement, else undo it and
