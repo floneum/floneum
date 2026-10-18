@@ -1275,6 +1275,48 @@ struct IndexMemo {
     bits: known_bits::Analysis,
 }
 
+/// Only bits through the mask's highest set bit can affect a masked sum.
+/// Drop addends divisible by the next power of two, preserving every lower
+/// bit that might carry into the mask. This also holds when u32 addition wraps.
+fn masked_addends(
+    e: &TileExpr,
+    relevant: u32,
+    memo: &mut IndexMemo,
+    budget: &mut usize,
+) -> TileExpr {
+    let Some(remaining) = budget.checked_sub(1) else {
+        return e.clone();
+    };
+    *budget = remaining;
+    if memo.bits.get(e).zero & relevant == relevant {
+        return TileExpr::new(TileExprKind::Literal(TileLiteral::U32(0)), e.element());
+    }
+    let TileExprKind::Binary {
+        op: TileBinaryOp::Add,
+        left,
+        right,
+        numeric,
+    } = e.kind()
+    else {
+        return e.clone();
+    };
+    let left = masked_addends(left, relevant, memo, budget);
+    let right = masked_addends(right, relevant, memo, budget);
+    match (lit_u32(&left), lit_u32(&right)) {
+        (Some(0), _) => right,
+        (_, Some(0)) => left,
+        _ => TileExpr::new(
+            TileExprKind::Binary {
+                op: TileBinaryOp::Add,
+                left,
+                right,
+                numeric: *numeric,
+            },
+            e.element(),
+        ),
+    }
+}
+
 fn simplify_index_cached(e: &TileExpr, memo: &mut IndexMemo) -> TileExpr {
     if let Some(result) = memo.rewritten.get(e) {
         return result.clone();
@@ -1565,6 +1607,29 @@ fn rewrite_index(e: &TileExpr, memo: &mut IndexMemo) -> TileExpr {
             // The mask lies inside the known-zero low bits.
             if m >> known_zero_low_bits(masked).min(31) == 0 {
                 return lit(0);
+            }
+            if m != 0
+                && matches!(
+                    masked.kind(),
+                    TileExprKind::Binary {
+                        op: TileBinaryOp::Add,
+                        ..
+                    }
+                )
+            {
+                let relevant = u32::MAX >> m.leading_zeros();
+                let reduced = masked_addends(masked, relevant, memo, &mut 64);
+                if reduced != *masked {
+                    return simplify_index_cached(
+                        &with(TileExprKind::Binary {
+                            op: TileBinaryOp::BitAnd,
+                            left: reduced,
+                            right: lit(m),
+                            numeric: *numeric,
+                        }),
+                        memo,
+                    );
+                }
             }
             if let Some((a, c)) = carry_free_add(masked) {
                 let anded = with(TileExprKind::Binary {

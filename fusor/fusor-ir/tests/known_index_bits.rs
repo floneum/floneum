@@ -30,6 +30,8 @@ fn lane() -> TileExpr {
 fn eval(e: &TileExpr, value: u32) -> u32 {
     match e.kind() {
         K::Literal(TileLiteral::U32(n)) => *n,
+        K::Builtin(Builtin::SubgroupId) => value.rotate_left(13),
+        K::Builtin(Builtin::Lane) => value.reverse_bits(),
         K::Builtin(_) => value,
         K::Binary {
             op, left, right, ..
@@ -109,6 +111,68 @@ fn index_simplification_preserves_carries_and_unsigned_wrap() {
                             "shift={shift} mask={mask:x} offset={offset}"
                         );
                     }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn masked_offsets_share_across_aligned_rows_and_loop_steps() {
+    let row = TileExpr::new(
+        K::Builtin(Builtin::SubgroupId),
+        ScalarElement::U32.element(),
+    );
+    let step = TileExpr::new(K::Builtin(Builtin::Lane), ScalarElement::U32.element());
+    let offset = bin(Op::Mul, lane(), lit(8));
+    for mask in [1, 24, 152, 255] {
+        let expected = simplify_index(&bin(Op::BitAnd, offset.clone(), lit(mask)));
+        for column in 0..4 {
+            let address = bin(
+                Op::Add,
+                bin(
+                    Op::Add,
+                    bin(Op::Mul, step.clone(), lit(1024)),
+                    offset.clone(),
+                ),
+                bin(Op::Mul, bin(Op::Add, row.clone(), lit(column)), lit(14336)),
+            );
+            let masked = bin(Op::BitAnd, address, lit(mask));
+            let result = simplify_index(&masked);
+            assert_eq!(result, expected, "column={column} mask={mask}");
+            let mut seed = u32::MAX;
+            for _ in 0..1024 {
+                assert_eq!(eval(&masked, seed), eval(&result, seed));
+                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            }
+        }
+    }
+}
+
+#[test]
+fn masked_sums_keep_lower_bits_that_carry_into_sparse_masks() {
+    let mut seed = u32::MAX;
+    for shift in 0..32 {
+        for mask in [0, 1, 0x80, 0xa4, 255, 0x80000000, 0x80000001, u32::MAX] {
+            for offset in [0, 1, 127, 255, u32::MAX] {
+                let sum = bin(
+                    Op::Add,
+                    bin(
+                        Op::Add,
+                        bin(Op::Shl, lane(), lit(shift)),
+                        bin(Op::BitAnd, lane(), lit(127)),
+                    ),
+                    lit(offset),
+                );
+                let original = bin(Op::BitAnd, sum, lit(mask));
+                let simplified = simplify_index(&original);
+                for _ in 0..128 {
+                    assert_eq!(
+                        eval(&original, seed),
+                        eval(&simplified, seed),
+                        "shift={shift} mask={mask:x} offset={offset} value={seed:x}"
+                    );
+                    seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
                 }
             }
         }

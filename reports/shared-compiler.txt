@@ -1,4 +1,59 @@
-Lazy host-layout alternatives (2026-10-17; CI validation pending)
+Masked-address and benchmark-cleanup follow-up (2026-10-17)
+======================================================================
+A masked address retained aligned loop/row terms that cannot affect any bit
+through the mask's highest set bit. This prevented the compiler from sharing
+the remaining offset across columns. A typed-index simplification regression
+failed before the change; the bounded shared integer transform now removes
+those addends. Lower bits are retained because they can carry into a sparse
+mask. Four differential index tests pass, including unsigned wrap and sparse
+mask counterexamples. No format, model, shape or device names select the rule.
+
+Normal-compiler ABBA, four resident weight copies, 31 x 16 repetitions:
+- Large reduction fixture: 155.171 / 149.837 / 149.302 / 155.133 us, directional
+  speedups 1.0356x / 1.0391x, 12,288 full output values per comparison.
+- Wide output fixture: 200.798 / 198.475 / 198.558 / 200.980 us, directional
+  speedups 1.0117x / 1.0122x, 86,016 full output values per comparison.
+Every compared value is bit-identical. Resident weights stay below 265 MB.
+These kernel results do not establish full-model speed. Logs are under
+shared-masked-index-{q6,q4}-abba in target/stall-validation. All eight shared
+WebGPU regressions pass in 48.37 seconds, with no added swapouts. The local
+all-target Clippy check stopped on its unchanged available-memory guard and
+was not retried; lint validation of this index change remains pending in CI.
+
+The CI cleanup failure was reproducible without Python 3.15 by raising a
+termination signal inside an OS-error fallback. The handler raised
+InterruptedError, which is an OSError and could be consumed by that fallback.
+It now raises a dedicated BaseException so termination reaches the existing
+owned-process cleanup. The new regression goes from timeout to prompt cleanup;
+all 20 Python tool tests pass locally. Resource limits and no-retry behavior
+are unchanged. Remote Python 3.15 verification and release measurement remain
+pending.
+
+Current PR measurement, runtime 73cc14893 (2026-10-17)
+======================================================================
+The isolated default-release artifact from CI run 39102160701 matches its
+source/compiler/profile digests. A completed clean 3-round, 8-warmup/64-chunk
+run produces identical seeded output to d4cc. Excluding only the first round:
+mean 21.9697 ms, p95 22.4783 ms, maximum 22.7992 ms (128 gaps). This is 1.0115x
+versus the earlier 22.2233 ms d4cc run, not a contemporaneous bracketed result.
+Peak process RSS 11.3615 GiB; minimum headroom 10.6647 GiB; no compressor growth
+or added swapouts. The requested 2x model-throughput goal is still unmet.
+Logs: target/stall-validation/compiler-73cc-candidate and
+compiler-73cc-versus-d4cc.json.
+
+A subsequent two-round 512-chunk run was aborted at 37.85 seconds on the
+unchanged compressor-growth guard. Another default_decode process was found
+running outside the benchmark's process group; it was left untouched. One
+round had finished, but this incomplete, contaminated run is excluded from
+performance comparisons and was not retried. The periodic-stall fix remains
+unverified at model level. Log: compiler-73cc-long-decode.
+
+Two captured-shader four-field conversion probes were rejected: normalized
+unpack plus round measured 0.591x and direct unsigned unpack measured 0.886x.
+Both matched every output exactly (147,456 checked values each), but neither
+improved speed. They do not change compiler defaults.
+
+Lazy host-layout alternatives (2026-10-17; release measurement pending)
 ======================================================================
 Graph construction eagerly repacked every eligible immutable weight into a
 retained private host Vec, including unselected alternatives. A regression at
@@ -12,11 +67,20 @@ The original graph memo still reuses the same alternate leaf.
 The tiny regression covers all format metadata, checking no reads while
 constructing alternatives, unchanged conversion bytes on repeated borrows,
 and no retained conversion result between borrows. Generic backing tests also
-cover transformed concatenations and mismatched declared lengths. Validation
-is pending remotely: local compilation was stopped after external memory
-pressure increased compression past the unchanged 32 MiB growth guard. At
-stop, the compiler group used only 0.081 GiB RSS and added no swapouts. The
-local compile was not retried after that pressure stop.
+cover transformed concatenations and mismatched declared lengths. Linux CI
+run 39103036411 passes the IR library tests and the CPU-only graph regression.
+macOS passes 25 facade, 15 cost, 9 IR, 16 tile, 15 candidate-construction,
+and all eight shared WebGPU tests, plus workspace/all-target Clippy. The
+subsequent Python process-cleanup test failed under Python 3.15, preventing
+the release build; its signal-handler correction is recorded below. Local
+compilation was stopped after external memory pressure increased compression
+past the unchanged 32 MiB growth guard. At stop, the compiler group used only
+0.081 GiB RSS and added no swapouts. That compile was not retried locally.
+
+A descriptor-only inventory of the 8B fixture, without loading tensor payloads,
+finds 1,268,662,272 bytes (1.1815 GiB) of eligible alternate host layouts. This
+is the potential retained allocation, not measured RSS savings; a selected
+graph may use a subset. Full-model memory validation of this change is pending.
 
 A separate exact-coefficient algebra experiment was removed: Q6 normal-path
 ABBA ratios 1.0027/1.0122 did not establish a reliable improvement. Full output
@@ -68,7 +132,11 @@ selected-index arm: an unsigned index < 0 cannot select the oversized tiled
 region. The focused regression reproduced bound 79 instead of 63. Range proof
 now excludes provably impossible value arms; eager loads are still checked in
 both arms, including when the condition is provably false. All 16 tile tests
-pass. The full training test requires another CI run; it is not yet a pass.
+pass. At runtime 73cc14893, macOS CI run 39102139801 passes all 183 Fusor
+unit/integration tests and the full training/causal-attention regression
+(231.732 seconds). Its eight shared WebGPU regressions also pass. The root
+suite has 96/97 passes: the Odyssey media download returned HTTP 500. That
+external failure remains visible; the overall job is not reported green.
 
 Validation of these changes: all 15 cost units, 15 candidate-construction
 tests, workspace/all-target Clippy with warnings denied, and all eight shared
