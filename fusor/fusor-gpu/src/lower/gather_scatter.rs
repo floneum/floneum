@@ -226,8 +226,21 @@ pub(crate) fn lower_kscatter(ctx: Ctx<'_>, op: &Launch, theta: SchedPoint) -> Re
     let max_block = ctx.caps.limits.max_compute_invocations_per_workgroup;
     let shape = ScatterGeometry::of(ops, *axis as usize, |d| ctx.binding.require(d), Error::Plan)?;
     let slots = crate::flags::flags().scatter_single_linear.unwrap_or(4);
-    if shape.updates == 1 && shape.total() > 0 && shape.total() <= u64::from(u32::MAX - 32768) {
-        // A copy with one row update. More than one row can share a block,
+    // A consecutive index expression is invertible. Prove its complete range
+    // fits before replacing the update scan with one direct source lookup.
+    let range = fusor_tile::index_range::index_start(ctx.cx, idx)
+        .filter(|start| {
+            start
+                .checked_add(u64::from(shape.updates))
+                .is_some_and(|end| end <= u64::from(shape.bins))
+        })
+        .and_then(|start| u32::try_from(start).ok());
+    if (shape.updates == 1 || range.is_some())
+        && shape.updates > 0
+        && shape.total() > 0
+        && shape.total() <= u64::from(u32::MAX - 32768)
+    {
+        // A copy with a direct row lookup. More than one row can share a block,
         // and each lane handles several adjacent block-wide runs. All reads
         // still come from the immutable base, into a separate output buffer.
         let block = ctx.block(emitted_block(1, ctx.caps));
@@ -236,10 +249,13 @@ pub(crate) fn lower_kscatter(ctx: Ctx<'_>, op: &Launch, theta: SchedPoint) -> Re
             distribute_workgroups(groups, ctx.caps.limits.max_compute_workgroups_per_dimension);
         let origin = b.mul(ctx.linear_workgroup(), b.u32(block * slots));
         let lane = b.builtin(Builtin::Lane);
-        let picked = b.cast(
-            load_logical(&ctx, idx, b.u32(0))?,
-            ScalarElement::U32.element(),
-        );
+        let picked = match range {
+            Some(start) => b.u32(start),
+            None => b.cast(
+                load_logical(&ctx, idx, b.u32(0))?,
+                ScalarElement::U32.element(),
+            ),
+        };
         // Binding values choose only the grid. Symbolic geometry stays in
         // uniforms so growing storage reuses the same shader.
         let dims = base.layout.shape();
@@ -258,14 +274,26 @@ pub(crate) fn lower_kscatter(ctx: Ctx<'_>, op: &Launch, theta: SchedPoint) -> Re
                 dst: acc.clone(),
                 value: b.cast(ctx.load_mapped(base, at, total_of(&shape))?, acc_ty),
             });
-            let upd_index = b.add(b.mul(outer, inner.clone()), col);
+            let (hit, update_row) = match range {
+                Some(start) => {
+                    // Unsigned subtraction makes bins below the origin miss
+                    // as well. The proven end bound excludes wrapped matches.
+                    let offset = b.sub(bin, b.u32(start));
+                    (
+                        b.lt(offset.clone(), b.u32(shape.updates)),
+                        b.add(b.mul(outer, b.u32(shape.updates)), offset),
+                    )
+                }
+                None => (b.eq(picked.clone(), bin), outer),
+            };
+            let upd_index = b.add(b.mul(update_row, inner.clone()), col);
             let value = b.cast(load_logical(&ctx, upd, upd_index)?, acc_ty);
             let value = match combine {
                 ScatterCombine::Add => b.add(b.load_local(acc.clone()), value),
                 ScatterCombine::Set => value,
             };
             body.push(Stmt::If {
-                condition: b.and(live.clone(), b.eq(picked.clone(), bin)),
+                condition: b.and(live.clone(), hit),
                 accept: vec![Stmt::StoreLocal {
                     dst: acc.clone(),
                     value,
@@ -279,7 +307,16 @@ pub(crate) fn lower_kscatter(ctx: Ctx<'_>, op: &Launch, theta: SchedPoint) -> Re
                 mask: live,
             });
         }
-        return Ok(ctx.finish("scatter_single_linear", grid, block, body));
+        return Ok(ctx.finish(
+            if range.is_some() {
+                "scatter_range"
+            } else {
+                "scatter_single_linear"
+            },
+            grid,
+            block,
+            body,
+        ));
     }
     if let Some(row_block) = shape.row_block(max_block) {
         let block = ctx.block(row_block);

@@ -1225,3 +1225,94 @@ fn uniform_index_is_read_without_a_buffer_binding() {
         assert_eq!(output.to_vec_f32().unwrap(), expected);
     }
 }
+
+#[cfg(all(
+    feature = "gpu",
+    feature = "kernel-observer",
+    not(target_arch = "wasm32")
+))]
+#[test]
+#[ignore = "requires a live WebGPU device"]
+fn consecutive_scatter_uses_direct_indices_and_preserves_sources() {
+    use crate::Dtype;
+    use fusor_ir::shape::Dim;
+    let session = Session::new(Backend::gpu_blocking().unwrap()).unwrap();
+    let graph = Graph::new(&session);
+    let h = graph.handle();
+    let names = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured = names.clone();
+    session
+        .device()
+        .gpu_target()
+        .unwrap()
+        .set_plan_observer(Some(Arc::new(move |_, _, _, _, commands| {
+            for command in commands {
+                if let fusor_gpu::launch::CommandRecord::Dispatch { name, .. } = command {
+                    captured.lock().unwrap().push(*name);
+                }
+            }
+        })));
+    for (outer, bins, inner, start, count) in [
+        (2, 7, 3, 0, 2),
+        (3, 9, 5, 3, 4),
+        (2, 7, 3, 4, 3),
+        (1, 5, 7, 2, 1),
+    ] {
+        let dims = |shape: [usize; 3]| shape.map(|d| Dim::Const(d as u64));
+        let original: Vec<f32> = (0..outer * bins * inner).map(|i| i as f32 / 4.).collect();
+        let base = graph
+            .tensor(
+                Dtype::F32,
+                &dims([outer, bins, inner]),
+                bytemuck::cast_slice(&original),
+            )
+            .unwrap();
+        let source = graph
+            .leaf("range-update", &dims([inner, outer, count]), Dtype::F32)
+            .unwrap();
+        let updates = source.permute(&[1, 2, 0]).unwrap();
+        let index = h.tensor(crate::composite::index_run(h, start as u64, count as u64).unwrap());
+        for add in [false, true] {
+            let scatter = if add {
+                base.scatter_add(1, &index, &updates)
+            } else {
+                base.scatter_set(1, &index, &updates, true)
+            }
+            .unwrap();
+            let output = scatter.mul_scalar(0.5).unwrap();
+            for round in 0..3 {
+                let values: Vec<f32> = (0..inner * outer * count)
+                    .map(|i| (i + round * 17) as f32)
+                    .collect();
+                source
+                    .set_bytes(bytemuck::cast_slice(&values).to_vec())
+                    .unwrap();
+                scatter.clear_device_buf();
+                output.clear_device_buf();
+                let mut expected = original.clone();
+                for o in 0..outer {
+                    for u in 0..count {
+                        for i in 0..inner {
+                            let at = (o * bins + start + u) * inner + i;
+                            let value = values[(i * outer + o) * count + u];
+                            expected[at] = if add { expected[at] + value } else { value };
+                        }
+                    }
+                }
+                expected.iter_mut().for_each(|v| *v *= 0.5);
+                assert_eq!(output.to_vec_f32().unwrap(), expected);
+                assert_eq!(base.to_vec_f32().unwrap(), original);
+                assert_eq!(source.to_vec_f32().unwrap(), values);
+            }
+        }
+    }
+    let names = names.lock().unwrap();
+    assert!(
+        names.contains(&"scatter_range"),
+        "direct range lowering was not selected: {names:?}"
+    );
+    assert!(
+        !names.contains(&"scatter_rows"),
+        "consecutive indices still scanned: {names:?}"
+    );
+}

@@ -1,13 +1,14 @@
 //! Compile ordinary affine copies and contiguous Scatter{Set} ranges to WebGPU
 //! transfers. This is part of every GPU resolve, independent of execution policy.
 use super::*;
-use fusor_ir::dtype::{Dtype, Splat};
+use fusor_ir::dtype::Dtype;
 use fusor_ir::extract::BindKind;
 use fusor_ir::ir::Op;
 use fusor_ir::ir::launch::{AccessPlan, Launch, Operand};
 use fusor_ir::ir::logical::{LeafKind, Logical, ScatterCombine};
-use fusor_ir::scalar::{BinOp, ScalarExpr, ScalarKind};
+use fusor_ir::scalar::ScalarKind;
 use fusor_ir::shape::{Dim, Layout};
+use fusor_tile::index_range::index_start;
 
 #[derive(Clone)]
 struct Region {
@@ -27,45 +28,6 @@ fn slot(cx: &LowerCtx<'_>, value: Id) -> Option<u32> {
         .iter()
         .find(|b| cx.graph.class_of(b.value) == class && !b.arena)
         .map(|b| b.binding)
-}
-
-fn range_start(expr: &ScalarExpr) -> Option<u64> {
-    match expr.kind() {
-        ScalarKind::IndexOf(0) => Some(0),
-        ScalarKind::Bin {
-            op: BinOp::Add,
-            a,
-            b,
-        } => {
-            let literal = |e: &ScalarExpr| match e.kind() {
-                ScalarKind::Lit(lit) if matches!(lit.0, Splat::U32(_)) => {
-                    Some(u64::from(lit.0.bits()))
-                }
-                _ => None,
-            };
-            range_start(a)
-                .zip(literal(b))
-                .or_else(|| range_start(b).zip(literal(a)))
-                .and_then(|(a, b)| a.checked_add(b))
-        }
-        _ => None,
-    }
-}
-
-fn index_start(cx: &LowerCtx<'_>, operand: &Operand) -> Option<u64> {
-    if operand.layout.shape().len() != 1
-        || operand.layout.offset() != Dim::Const(0)
-        || operand.layout.strides() != [Dim::ONE]
-        || operand.access != AccessPlan::Alias
-    {
-        return None;
-    }
-
-    match &cx.graph.node(cx.selected(operand.src)).op {
-        Op::Launch(Launch::Map { body, .. }) => range_start(body),
-        Op::Logical(Logical::Map { expr, .. }) => range_start(expr),
-        _ => None,
-    }
 }
 
 fn zero(cx: &LowerCtx<'_>, id: Id) -> bool {

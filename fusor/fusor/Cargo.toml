@@ -76,3 +76,7 @@ serde_json.workspace = true
 sha2 = "0.10"
 wgpu.workspace = true
 naga = { workspace = true, features = ["wgsl-in"] }
+
+[[example]]
+name = "affine_copy_lab"
+required-features = ["gpu", "kernel-observer"]
