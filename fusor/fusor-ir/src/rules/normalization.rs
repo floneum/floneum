@@ -179,9 +179,9 @@ fn recognize(b: &mut Builder<'_>, id: Id, _node: &Node, _f: &Facts<'_>) -> Optio
                 .max_compute_invocations_per_workgroup
                 .min(limits.max_compute_workgroup_size[0])
                 .min(limits.max_compute_workgroup_storage_size / 4)
-                .min(256);
+                .min(512);
             let block = (1 << max.checked_ilog2()?)
-                .min((width.min(256) as u32).next_power_of_two().max(32));
+                .min((width.min(512) as u32).next_power_of_two().max(32));
             if block < 32
                 || width.div_ceil(u64::from(block))
                     > u64::from(crate::ir::launch::MAX_NORMALIZATION_VALUES_PER_LANE)
