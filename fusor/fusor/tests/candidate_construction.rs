@@ -1151,7 +1151,9 @@ fn attention_parallelism_respects_invocation_dimension_and_scratch_limits() {
             (256, 128, 1024, 65536, None),
         ] {
             let mut g = graph();
-            let root = attention_expression(&mut g, width, Dim::Const(17), true);
+            // The rank-four result contains the attention launch directly;
+            // grouped attention adds a shape-restoring map above it.
+            let root = attention_expression(&mut g, width, Dim::Const(17), false);
             let mut c = gpu_caps();
             c.name = "anonymous attention capacity fixture".into();
             c.subgroups = Some(SubgroupWidths {
