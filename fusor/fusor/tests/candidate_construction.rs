@@ -1135,3 +1135,50 @@ fn ordinary_attention_is_recognized_for_multiple_widths_and_subgroups() {
     assert_declines(&mut g, &c, root, rule);
     assert_declines(&mut g, &caps(), root, rule);
 }
+
+#[test]
+fn attention_parallelism_respects_invocation_dimension_and_scratch_limits() {
+    use fusor_ir::ir::launch::Launch;
+    let rule = fusor_ir::rules::attention::FUSE_STREAMING_ATTENTION.apply;
+    for subgroup in [16_u32, 32, 64] {
+        for (width, lanes, x_limit, storage, expected) in [
+            (128, 1024, 1024, 65536, Some(512)),
+            (256, 512, 512, 65536, Some(512)),
+            (128, 256, 1024, 65536, Some(256)),
+            (128, 1024, 128, 65536, Some(128)),
+            (128, 1024, 1024, 130 * 4 * 2, Some(subgroup * 2)),
+            (128, 1024, 1024, 130 * 4 - 1, None),
+            (256, 128, 1024, 65536, None),
+        ] {
+            let mut g = graph();
+            let root = attention_expression(&mut g, width, Dim::Const(17), true);
+            let mut c = gpu_caps();
+            c.name = "anonymous attention capacity fixture".into();
+            c.subgroups = Some(SubgroupWidths {
+                min: subgroup,
+                max: subgroup,
+            });
+            c.limits.max_compute_invocations_per_workgroup = lanes;
+            c.limits.max_compute_workgroup_size[0] = x_limit;
+            c.limits.max_compute_workgroup_storage_size = storage;
+            let fused = apply(&mut g, &c, root, rule);
+            let actual = g.class_ids(g.class_of(root)).iter().find_map(|id| {
+                if let Op::Launch(Launch::DecodeAttention { block, .. }) = g.node(*id).op {
+                    Some(block)
+                } else {
+                    None
+                }
+            });
+            assert_eq!(fused.is_some(), actual.is_some());
+            assert_eq!(
+                actual, expected,
+                "width={width} subgroup={subgroup} limits={lanes}/{x_limit}/{storage}"
+            );
+            if let Some(block) = actual {
+                assert_eq!(block % subgroup, 0);
+                assert!(block <= lanes && block <= x_limit);
+                assert!(u64::from(block / subgroup) * (width + 2) * 4 <= u64::from(storage));
+            }
+        }
+    }
+}
