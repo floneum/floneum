@@ -59,6 +59,16 @@ jobs:
             cp "$CARGO_TARGET_DIR/aarch64-apple-darwin/release/examples/profile_forward" "artifacts/profile-forward-$revision"
             shasum -a 256 "artifacts/profile-forward-$revision" >> artifacts/build.txt
           done
+      - name: Build bounded kernel and model attribution probes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd candidate
+          cargo build --locked -j 1 -p kalosm-llama --example profile_kernel_share --features kernel-visualize --release --target aarch64-apple-darwin
+          cp "$CARGO_TARGET_DIR/aarch64-apple-darwin/release/examples/profile_kernel_share" ../artifacts/profile-kernel-share-candidate
+          cargo build --locked -j 1 --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer --example qmatmul_lab --release --target aarch64-apple-darwin
+          cp "$CARGO_TARGET_DIR/aarch64-apple-darwin/release/examples/qmatmul_lab" ../artifacts/qmatmul-lab-candidate
+          shasum -a 256 ../artifacts/profile-kernel-share-candidate ../artifacts/qmatmul-lab-candidate >> ../artifacts/build.txt
       - name: Package binaries with executable permissions
         run: tar -czf compiler-profile-binaries.tar.gz -C artifacts .
       - uses: actions/upload-artifact@v4
