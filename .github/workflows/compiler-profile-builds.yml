@@ -44,6 +44,7 @@ jobs:
         with:
           ref: ${{ env.CANDIDATE_REVISION }}
           path: candidate
+          fetch-depth: 2
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
