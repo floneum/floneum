@@ -211,17 +211,23 @@ fn shared_quantized_contractions_match_dequantized_reference() {
                 let values = data(rows * k, 4);
                 let input = Tensor::from_slice(&device, [rows, k], &values);
                 let actual = input.q_mat_mul(&weight).to_vec_f32();
-                let expected: Vec<_> = (0..rows)
+                let expected: Vec<f64> = (0..rows)
                     .flat_map(|r| (0..n).map(move |c| (r, c)))
                     .map(|(r, c)| {
                         values[r * k..(r + 1) * k]
                             .iter()
                             .zip(&dense[c * k..(c + 1) * k])
-                            .map(|(a, b)| a * b)
+                            .map(|(a, b)| f64::from(*a) * f64::from(*b))
                             .sum()
                     })
                     .collect();
-                close(&actual, &expected, 5e-4);
+                assert_eq!(actual.len(), expected.len());
+                for (i, (&actual, &expected)) in actual.iter().zip(&expected).enumerate() {
+                    assert!(
+                        (f64::from(actual) - expected).abs() <= 5e-4 * (1. + expected.abs()),
+                        "{fmt:?}/{layout:?} M={rows} N={n} K={k}, element {i}: {actual} != {expected}"
+                    );
+                }
             }
         }
     }
@@ -518,32 +524,5 @@ fn ordinary_dense_contractions_cover_tails_and_replay() {
         close(&y.to_vec_f32(), &reference, 2e-4);
         y.as_dyn().clear_device_buf();
         close(&y.to_vec_f32(), &reference, 2e-4);
-    }
-}
-
-#[cfg(feature = "cpu")]
-#[test]
-fn uniform_index_is_read_without_a_buffer_binding() {
-    use fusor::tensor::Dyn;
-    use fusor::{Dim, Dtype};
-    let device = Device::cpu();
-    let graph = device.graph();
-    let symbol = graph.fresh_sym();
-    let index = Dyn::uniform(graph, Dtype::U32, symbol)
-        .unwrap()
-        .reshape(&[Dim::ONE.into()])
-        .unwrap();
-    let base = Tensor::from_slice(&device, [4], &[1., 2., 3., 4.]);
-    let update = Tensor::from_slice(&device, [1], &[17.]);
-    let output = base
-        .as_dyn()
-        .scatter_set(0, &index, update.as_dyn(), true)
-        .unwrap();
-    for slot in [1, 3, 0] {
-        graph.set_uniform(symbol, slot as f32);
-        output.clear_device_buf();
-        let mut expected = vec![1., 2., 3., 4.];
-        expected[slot] = 17.;
-        assert_eq!(output.to_vec_f32().unwrap(), expected);
     }
 }

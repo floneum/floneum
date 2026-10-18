@@ -13,15 +13,26 @@ The ordinary WebGPU regression suite now includes every QFmt in Native and
 F32Scales layouts, plus dense tails and replay. Linux, macOS and Windows CI
 explicitly run these tests serially, with compiler verification enabled.
 
-Validation so far for this revision: formatting and 11 Python tool tests pass.
-Both shared dot-algebra tests pass, including a red/green regression for
-factoring a common negative offset without adding per-element negations.
-The verified WebGPU suite compiles; six tests pass, including dense contraction
-tails/replay. The memory guard stopped the run during the all-format quantized
-case as system headroom fell. Peak process-group RSS was 0.509 GiB, with no
-added swapouts. The all-format quantized and final gradient cases remain pending.
-No full model or model benchmark was started. No 2x performance claim applies
-to this revision. Cross-platform CI and CPU uniform replay are still pending.
+Validation for this revision
+- Both shared dot-algebra tests pass, including a red/green regression for
+  factoring a common negative offset without per-element negations.
+- All eight verified WebGPU regressions pass across serial guarded runs.
+  The quantized case checks all six formats in both layouts, N=1024/1027,
+  K=4096, and one/three rows (48 cases). It passes in 29.83 seconds.
+- The quantized host reference accumulates in f64. Sequential f32 host
+  accumulation caused a false failure; the tolerance was not increased.
+- Integer uniform scatter indices replay correctly on the CPU without a
+  buffer binding. This regression lives at the internal scalar-binding seam.
+- All-target Fusor workspace Clippy passes with warnings denied, CPU/GPU,
+  kernel-observer and compiler-tests enabled. Formatting and 11 Python tool
+  tests pass. The matrix laboratory accepts every format through metadata.
+
+Resource checks use one compiler/GPU workload at a time. One combined GPU run
+was stopped when other workloads reduced memory headroom. After headroom
+recovered, the pending quantized test peaked at 0.584 GiB process-group RSS,
+retained at least 22.607 GiB headroom, and added no swapouts. No full model or
+model benchmark has been run for this revision; no 2x claim applies yet.
+Cross-platform CI and the earlier Windows device-loss failure remain pending.
 
 Previous revision 4934d7cda (does not validate the rewrite above)
 ==============================================================

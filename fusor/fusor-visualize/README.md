@@ -401,6 +401,11 @@ python3 fusor-visualize/tools/extract_quant_weights.py model.gguf \
   blk.0.ffn_gate.weight blk.0.ffn_up.weight --output gate-up.bin
 ```
 
+`qmatmul_lab M_CSV N K FORMAT ITERATIONS` accepts every supported format
+(`q4_0`, `q5_0`, `q8_0`, `q4k`, `q5k`, `q6k`). Set `LAB_QLAYOUT` to
+`native` or `f32scales`; fixtures and reference checks use the format's block
+metadata. K must be a multiple of that format's block element count.
+
 `qmatmul_lab` reads these bytes through `LAB_WEIGHT_FILE`; CPU checks
 use the original native blocks before any GPU layout conversion.
 

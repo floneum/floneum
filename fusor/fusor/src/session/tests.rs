@@ -1132,3 +1132,30 @@ fn whole_value_broadcast_replays_changed_inputs() {
         }
     }
 }
+
+#[cfg(all(feature = "cpu", not(target_arch = "wasm32")))]
+#[test]
+fn uniform_index_is_read_without_a_buffer_binding() {
+    use crate::tensor::Dyn;
+    use crate::{Device, Dim, Dtype, Tensor};
+    let device = Device::cpu();
+    let graph = device.graph().handle();
+    let symbol = graph.fresh_sym();
+    let index = Dyn::uniform(graph, Dtype::U32, symbol)
+        .unwrap()
+        .reshape(&[Dim::ONE.into()])
+        .unwrap();
+    let base = Tensor::from_slice(&device, [4], &[1., 2., 3., 4.]);
+    let update = Tensor::from_slice(&device, [1], &[17.]);
+    let output = base
+        .as_dyn()
+        .scatter_set(0, &index, update.as_dyn(), true)
+        .unwrap();
+    for slot in [1, 3, 0] {
+        graph.set_uniform(symbol, slot as f32);
+        output.clear_device_buf();
+        let mut expected = vec![1., 2., 3., 4.];
+        expected[slot] = 17.;
+        assert_eq!(output.to_vec_f32().unwrap(), expected);
+    }
+}

@@ -1,10 +1,11 @@
 //! Small repeatable quantized matrix experiment: real extraction and lowering,
 //! CPU numerical checks, cold versus warm timing, full outputs for A/B comparison.
-//! Usage: qmatmul_lab M_CSV N K [q4k|q6k] [ITERATIONS=11]
+//! Usage: qmatmul_lab M_CSV N K [FORMAT=q4k] [ITERATIONS=11]
 //! Batched replay requires FUSOR_AUTOTUNE_MIN_MACS=18446744073709551615,
 //! so speculative tuning submissions cannot contaminate controlled measurements.
 //! Set FUSOR_PROFILE_SUBMIT_SIZE=2147483647 for replay timing without CPU
-//! encoding gaps between submissions. sweep.py supplies this by default.
+//! encoding gaps between submissions. All QFmt formats and both storage layouts
+//! use the same fixture, reference checks, and measurement path.
 use fusor::{Dim, Dtype, device::Device, quantized::QMatrix};
 use fusor_ir::dtype::{QFmt, QLayout};
 use std::io::Write;
@@ -15,23 +16,24 @@ mod paired_geometry;
 
 fn weights(n: usize, k: usize, fmt: QFmt) -> Vec<u8> {
     let size = fmt.block_bytes(QLayout::Native) as usize;
-    let mut bytes = vec![0u8; n * k / 256 * size];
+    let elements = fmt.block_elements() as usize;
+    let fields = fusor_gguf::blocks::block_fields(fmt, QLayout::Native);
+    let mut bytes = vec![0u8; n * k / elements * size];
     for (b, block) in bytes.chunks_exact_mut(size).enumerate() {
         for (i, v) in block.iter_mut().enumerate() {
-            *v = (i.wrapping_mul(37) + b.wrapping_mul(17) + b / (k / 256)) as u8;
+            *v = (i.wrapping_mul(37) + b.wrapping_mul(17) + b / (k / elements)) as u8;
         }
-        match fmt {
-            QFmt::Q4K => {
-                block[0..2].copy_from_slice(&0x2400u16.to_le_bytes()); // 1/64
-                block[2..4].copy_from_slice(&0x2000u16.to_le_bytes()); // 1/128
-            }
-            QFmt::Q6K => {
-                for v in &mut block[192..208] {
-                    *v = (*v % 15).wrapping_sub(7);
+        for (offset, value) in [(Some(fields.scale), 1. / 64.), (fields.min, 1. / 128.)] {
+            if let Some(offset) = offset {
+                let offset = offset as usize;
+                let value: f32 = value;
+                if fields.scale_is_f16 {
+                    block[offset..offset + 2]
+                        .copy_from_slice(&half::f16::from_f32(value).to_le_bytes());
+                } else {
+                    block[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
                 }
-                block[208..210].copy_from_slice(&0x2400u16.to_le_bytes());
             }
-            _ => unreachable!(),
         }
     }
     bytes
@@ -44,16 +46,17 @@ fn validate(w: &[u8], x: &[f32], y: &[f32], m: usize, n: usize, k: usize, fmt: Q
         .map(|i| i * (n - 1) / (n.min(33) - 1).max(1))
         .collect();
     let size = fmt.block_bytes(QLayout::Native) as usize;
+    let elements = fmt.block_elements() as usize;
     let mut max_error = 0f64;
     for col in columns {
         let mut decoded = vec![0f32; k];
-        for j in 0..k / 256 {
-            let off = (col * k / 256 + j) * size;
+        for j in 0..k / elements {
+            let off = (col * k / elements + j) * size;
             fusor_gguf::blocks::cpu_dequantize_block(
                 fmt,
                 QLayout::Native,
                 &w[off..off + size],
-                &mut decoded[j * 256..(j + 1) * 256],
+                &mut decoded[j * elements..(j + 1) * elements],
             );
         }
         for row in 0..m {
@@ -78,17 +81,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let ms: Vec<usize> = args
         .next()
-        .ok_or("usage: qmatmul_lab M_CSV N K [q4k|q6k] [ITERATIONS]")?
+        .ok_or("usage: qmatmul_lab M_CSV N K [FORMAT=q4k] [ITERATIONS]")?
         .split(',')
         .map(str::parse)
         .collect::<Result<_, _>>()?;
     let n: usize = args.next().ok_or("N required")?.parse()?;
     let k: usize = args.next().ok_or("K required")?.parse()?;
-    let fmt = match args.next().as_deref().unwrap_or("q4k") {
-        "q4k" => QFmt::Q4K,
-        "q6k" => QFmt::Q6K,
-        _ => return Err("unsupported format".into()),
-    };
+    let format_name = args.next().unwrap_or_else(|| "q4k".into());
+    let fmt = QFmt::ALL
+        .into_iter()
+        .find(|fmt| format!("{fmt:?}").eq_ignore_ascii_case(&format_name))
+        .ok_or("FORMAT must be one of q4_0, q5_0, q8_0, q4k, q5k, q6k")?;
+    let elements = fmt.block_elements() as usize;
     let iters: usize = args.next().unwrap_or_else(|| "11".into()).parse()?;
     assert!(
         args.next().is_none()
@@ -98,7 +102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             && n <= 131072
             && k > 0
             && k <= 32768
-            && k.is_multiple_of(256)
+            && k.is_multiple_of(elements)
             && (3..=101).contains(&iters)
     );
     let repeats: usize = std::env::var("LAB_BATCH_REPEAT")
@@ -113,7 +117,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|s| s.parse::<u64>().ok())
             != Some(u64::MAX)
     {
-        return Err("LAB_BATCH_REPEAT requires FUSOR_AUTOTUNE_MIN_MACS=18446744073709551615; use sweep.py to set controlled benchmark defaults".into());
+        return Err(
+            "LAB_BATCH_REPEAT requires FUSOR_AUTOTUNE_MIN_MACS=18446744073709551615".into(),
+        );
     }
     let step_control = std::env::var_os("LAB_STEP_CONTROL").is_some();
     assert!(
@@ -124,7 +130,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let bytes = std::fs::read(path)?;
         assert_eq!(
             bytes.len(),
-            n * k / 256 * fmt.block_bytes(QLayout::Native) as usize,
+            n * k / elements * fmt.block_bytes(QLayout::Native) as usize,
             "LAB_WEIGHT_FILE must contain exactly N*K native quantized weights"
         );
         bytes
