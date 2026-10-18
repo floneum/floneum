@@ -1,5 +1,5 @@
-Current revision: generic contraction rewrite (validation pending)
-================================================================
+Current revision: generic contraction rewrite (validation in progress)
+====================================================================
 The format-specific Q4K/Q6K contraction bodies and their runtime tuning state
 have been removed. Quantized loads expand through the existing format table
 into ordinary typed expressions. A bounded shared dot-product transform
@@ -44,6 +44,35 @@ It discards only the configured initial warmup round, never slow samples.
 All 16 Python tool tests pass. Release compilation was stopped twice by the
 memory guard (peak process RSS 0.982/0.856 GiB, no added swapouts); the current
 model example's compilation and full-model timings remain unverified.
+
+Cross-platform follow-up at 203b15dec
+- macOS CI passes all eight shared WebGPU regressions (15.174 seconds),
+  quantized conformance, matmul, core, and normalization/layers. The separate
+  root test suite fails on an archive.org model-download timeout.
+- The sampling case sample_standard_token_is_seed_deterministic fails on
+  macOS, also reproduced locally. Grouped kernels guard each member's local
+  workgroup index, but the load-range verifier ignored that branch bound.
+  The verifier now scopes immutable unsigned bounds to the accepting branch
+  and prevents branch-local proofs leaking to other control-flow paths.
+  It also rejects unguarded subtraction whose unsigned result could wrap.
+- Windows' isolated leaky-ReLU gradient removes a fresh WARP device on its
+  very first dispatch. The captured shader contains float zero/one selects
+  feeding FMA, the pattern identified by the existing WARP regression probe.
+  The shared Kernel builder now canonicalizes predicate-valued selects to
+  casts, in both directions and across scalar types, preserving signed zero.
+  This has no adapter, model, or quantization-format dispatch.
+- Seven tile unit tests pass, including red/green predicate-canonicalization
+  and unsigned-wrap regressions, branch scoping, strict dot arithmetic, and
+  uniformity. Original GPU reproducer reruns were aborted by resource guards
+  before yielding a test result; they are not counted as passes.
+- Windows' shared quantized test reports one cancellation-sensitive mismatch:
+  Q6K/F32Scales, M=3/N=1027/K=4096, output 1059. Its f64 result is 1.78739104,
+  versus 90,334.43 summed absolute products. A scalar f32/FMA reference also
+  exceeds the test tolerance. The failing test now reports a dense WebGPU
+  contraction and scalar FMA reference to distinguish indexing from reduction
+  order; the original input, assertion, and tolerance remain unchanged.
+- Current model-example compilation passed CI Clippy; release execution and
+  a matched full-model speed comparison remain unverified. No 2x claim applies.
 
 Previous revision 4934d7cda (does not validate the rewrite above)
 ==============================================================

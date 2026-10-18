@@ -223,8 +223,34 @@ fn shared_quantized_contractions_match_dequantized_reference() {
                     .collect();
                 assert_eq!(actual.len(), expected.len());
                 for (i, (&actual, &expected)) in actual.iter().zip(&expected).enumerate() {
+                    let tolerance = 5e-4 * (1. + expected.abs());
+                    if (f64::from(actual) - expected).abs() > tolerance {
+                        // Keep the failure, but distinguish decode/addressing
+                        // errors from ordinary f32 reduction roundoff on CI's
+                        // adapters without needing another diagnostic build.
+                        let row = i / n;
+                        let col = i % n;
+                        let products = values[row * k..(row + 1) * k]
+                            .iter()
+                            .zip(&dense[col * k..(col + 1) * k]);
+                        let scalar_fma = products
+                            .clone()
+                            .fold(0f32, |sum, (&a, &b)| a.mul_add(b, sum));
+                        let magnitude: f64 = products
+                            .map(|(&a, &b)| (f64::from(a) * f64::from(b)).abs())
+                            .sum();
+                        let quant_kernel = seen.lock().unwrap().last().cloned();
+                        let unpacked = Tensor::from_slice(&device, [n, k], &dense);
+                        let dense_gpu = input.matmul(&unpacked.t()).to_vec_f32();
+                        eprintln!(
+                            "contraction diagnostic: kernel={quant_kernel:?}, \
+                             dense_gpu={}, scalar_fma={scalar_fma}, \
+                             f64={expected}, sum_abs_products={magnitude}, tolerance={tolerance}",
+                            dense_gpu[i],
+                        );
+                    }
                     assert!(
-                        (f64::from(actual) - expected).abs() <= 5e-4 * (1. + expected.abs()),
+                        (f64::from(actual) - expected).abs() <= tolerance,
                         "{fmt:?}/{layout:?} M={rows} N={n} K={k}, element {i}: {actual} != {expected}"
                     );
                 }

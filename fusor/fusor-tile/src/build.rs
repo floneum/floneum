@@ -428,6 +428,24 @@ impl Kernel {
 
     pub fn select(&self, condition: TileExpr, accept: TileExpr, reject: TileExpr) -> TileExpr {
         let ty = accept.element();
+        // A predicate already carries exactly zero or one. Keep its numeric
+        // conversion explicit instead of rebuilding it with a select. Besides
+        // removing redundant choices, this avoids DXIL JIT device removal when
+        // float zero/one selects feed an FMA (the WARP regression probe).
+        if condition.element() == ScalarElement::Bool.element()
+            && let ElementType::Scalar(scalar) = ty
+            && let (TileExprKind::Literal(a), TileExprKind::Literal(r)) =
+                (accept.kind(), reject.kind())
+        {
+            let zero = reduce_identity(TileReduceOp::Sum, scalar);
+            let one = reduce_identity(TileReduceOp::Product, scalar);
+            if *a == one && *r == zero {
+                return self.cast(condition, ty);
+            }
+            if *a == zero && *r == one {
+                return self.cast(self.eq(condition, self.bool(false)), ty);
+            }
+        }
         self.intern(
             TileExprKind::Select {
                 condition,
@@ -681,5 +699,53 @@ impl FoldLanes {
 
     pub fn lanes(&self) -> usize {
         self.merges.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn numeric_predicate_selections_are_casts_in_both_directions() {
+        let b = Kernel::new();
+        let condition = b.lt(b.builtin(Builtin::Lane), b.u32(7));
+        for scalar in [
+            ScalarElement::F32,
+            ScalarElement::F16,
+            ScalarElement::BF16,
+            ScalarElement::U32,
+            ScalarElement::I32,
+            ScalarElement::Bool,
+        ] {
+            let zero = b.zero(scalar);
+            let one = b.lit(reduce_identity(TileReduceOp::Product, scalar));
+            assert_eq!(
+                b.select(condition.clone(), one.clone(), zero.clone()),
+                b.cast(condition.clone(), scalar.element()),
+            );
+            assert_eq!(
+                b.select(condition.clone(), zero, one),
+                b.cast(b.eq(condition.clone(), b.bool(false)), scalar.element()),
+            );
+        }
+        // A float's negative zero is not a predicate's positive zero.
+        for (zero, one) in [
+            (
+                TileLiteral::F32((-0f32).to_bits()),
+                TileLiteral::F32(1f32.to_bits()),
+            ),
+            (TileLiteral::F16(0x8000), TileLiteral::F16(0x3c00)),
+            (TileLiteral::BF16(0x8000), TileLiteral::BF16(0x3f80)),
+        ] {
+            assert!(matches!(
+                b.select(condition.clone(), b.lit(one), b.lit(zero)).kind(),
+                TileExprKind::Select { .. }
+            ));
+        }
+        assert!(matches!(
+            b.select(condition, b.f32(1.), b.f32(0.1)).kind(),
+            TileExprKind::Select { .. }
+        ));
     }
 }

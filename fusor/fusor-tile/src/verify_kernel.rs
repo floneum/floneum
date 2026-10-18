@@ -495,12 +495,15 @@ fn check_types(ir: &KernelIr) -> Result<()> {
 
 /// Bounds for the range prover: launch geometry, subgroup widths, and loop
 /// index locals in scope with their literal trip counts.
+#[derive(Clone)]
 struct BoundEnv {
     grid: [u32; 3],
     block: u32,
     /// `(min, max)` subgroup width; `None` leaves subgroup builtins unbounded.
     subgroups: Option<(u32, u32)>,
     locals: FxHashMap<usize, u64>,
+    /// Pure unsigned expressions bounded by enclosing branch conditions.
+    expressions: FxHashMap<TileExpr, u64>,
 }
 
 /// Every `Load` is masked or provably in range, using `ProgramId < grid`,
@@ -512,6 +515,7 @@ pub(crate) fn check_loads(ir: &KernelIr, caps: &Caps) -> Result<()> {
         block: ir.block,
         subgroups: caps.subgroups.map(|s| (s.min, s.max)),
         locals: FxHashMap::default(),
+        expressions: FxHashMap::default(),
     };
     let mut seen = FxHashSet::default();
     check_loads_in(&ir.body, &mut env, &mut seen)
@@ -567,8 +571,12 @@ fn check_loads_in(body: &[Stmt], env: &mut BoundEnv, seen: &mut FxHashSet<u64>) 
                 reject,
             } => {
                 check_expr_loads(condition, env, seen)?;
-                check_loads_in(accept, env, seen)?;
-                check_loads_in(reject, env, seen)?;
+                let mut inside = env.clone();
+                assume_true(condition, &mut inside);
+                // A load proved under one branch's bound must be checked again
+                // in the other branch and after the conditional.
+                check_loads_in(accept, &mut inside, &mut seen.clone())?;
+                check_loads_in(reject, env, &mut seen.clone())?;
             }
             other => {
                 let mut result = Ok(());
@@ -582,6 +590,41 @@ fn check_loads_in(body: &[Stmt], env: &mut BoundEnv, seen: &mut FxHashSet<u64>) 
         }
     }
     Ok(())
+}
+
+/// Record only immutable values: a local/storage read or a collective may
+/// change between the condition and a load inside the branch. In particular,
+/// `(linear_workgroup - member_offset) < member_count` bounds grouped kernels
+/// even when the unsigned subtraction would wrap outside that member's range.
+fn assume_true(condition: &TileExpr, env: &mut BoundEnv) {
+    use fusor_ir::ir::kernel::TileCompareOp;
+    match condition.kind() {
+        TileExprKind::Binary {
+            op: TileBinaryOp::LogicalAnd,
+            left,
+            right,
+            ..
+        } => {
+            assume_true(left, env);
+            assume_true(right, env);
+        }
+        TileExprKind::Compare {
+            op: TileCompareOp::Lt,
+            left,
+            right,
+        } if left.element() == ScalarElement::U32.element()
+            && left.mem_reads().is_empty()
+            && !left.scope_dependent() =>
+        {
+            if let Some(bound) = literal_u64(right).and_then(|limit| limit.checked_sub(1)) {
+                env.expressions
+                    .entry(left.clone())
+                    .and_modify(|previous| *previous = (*previous).min(bound))
+                    .or_insert(bound);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn check_expr_loads(expr: &TileExpr, env: &BoundEnv, seen: &mut FxHashSet<u64>) -> Result<()> {
@@ -648,6 +691,9 @@ fn literal_u64(expr: &TileExpr) -> Option<u64> {
 fn max_value(expr: &TileExpr, env: &BoundEnv) -> Option<u64> {
     use fusor_ir::ir::kernel::{Builtin, WorkgroupAxis};
     use fusor_ir::scalar::BinOp;
+    if let Some(bound) = env.expressions.get(expr) {
+        return Some(*bound);
+    }
     match expr.kind() {
         TileExprKind::Literal(TileLiteral::U32(v)) => Some(u64::from(*v)),
         TileExprKind::Literal(TileLiteral::I32(v)) if *v >= 0 => Some(*v as u64),
@@ -694,8 +740,18 @@ fn max_value(expr: &TileExpr, env: &BoundEnv) -> Option<u64> {
         } => match op {
             BinOp::Add => max_value(left, env)?.checked_add(max_value(right, env)?),
             BinOp::Mul => max_value(left, env)?.checked_mul(max_value(right, env)?),
-            // Subtraction only lowers the bound.
-            BinOp::Sub => max_value(left, env),
+            // Unsigned subtraction can wrap. Only use the left-hand bound
+            // when the right is zero or a literal left proves no underflow;
+            // guarded differences are bounded by `expressions` above.
+            BinOp::Sub => {
+                if literal_u64(right) == Some(0) {
+                    max_value(left, env)
+                } else if literal_u64(left)? >= max_value(right, env)? {
+                    literal_u64(left)
+                } else {
+                    None
+                }
+            }
             // A positive literal divides the bound; a dynamic one only lowers it.
             BinOp::Div => match literal_u64(right) {
                 Some(d) if d > 0 => Some(max_value(left, env)? / d),
@@ -1054,6 +1110,91 @@ pub(crate) fn visit_unique(
 mod tests {
     use super::*;
     use fusor_ir::dtype::NumericContract;
+
+    #[test]
+    fn grouped_load_uses_its_branch_bound_without_leaking_it() {
+        use fusor_ir::ir::kernel::{
+            BufferAccess, BufferDecl, Builtin, MemoryLevel, StorageView, TileLayout, WorkgroupAxis,
+        };
+        let b = crate::build::Kernel::new();
+        let layout = TileLayout::contiguous(MemoryLevel::Storage, &[8]);
+        let buffer = Arc::new(BufferDecl {
+            binding: 1,
+            element: ScalarElement::F32.element(),
+            layout: layout.clone(),
+            access: BufferAccess::Read,
+        });
+        let group = b.sub(b.builtin(Builtin::ProgramId(WorkgroupAxis::X)), b.u32(1));
+        let read = b.load(
+            Source::Storage(StorageView {
+                buffer,
+                layout,
+                offset: 0,
+            }),
+            Addr::Linear(b.add(b.mul(group.clone(), b.u32(8)), b.builtin(Builtin::Lane))),
+            b.bool(true),
+            b.f32(0.),
+        );
+        let store = Stmt::StoreLocal {
+            dst: b.local(read.element()),
+            value: read,
+        };
+        let branch = Stmt::If {
+            condition: b.lt(group, b.u32(1)),
+            accept: vec![store.clone()],
+            reject: vec![],
+        };
+        let mut env = BoundEnv {
+            grid: [4, 1, 1],
+            block: 8,
+            subgroups: None,
+            locals: FxHashMap::default(),
+            expressions: FxHashMap::default(),
+        };
+        assert!(
+            check_loads_in(
+                std::slice::from_ref(&branch),
+                &mut env,
+                &mut FxHashSet::default()
+            )
+            .is_ok()
+        );
+        assert!(
+            check_loads_in(
+                &[branch, store.clone()],
+                &mut env,
+                &mut FxHashSet::default()
+            )
+            .is_err()
+        );
+        // With one group, `group_id - 1` wraps to u32::MAX. A small
+        // left-hand bound alone cannot justify the unguarded subtraction.
+        env.grid = [1, 1, 1];
+        assert!(check_loads_in(&[store], &mut env, &mut FxHashSet::default()).is_err());
+    }
+
+    #[test]
+    fn branch_bounds_exclude_mutable_values_and_collectives() {
+        use fusor_ir::ir::kernel::{Builtin, ReduceKind, TileReduceOp};
+        let b = crate::build::Kernel::new();
+        let mut env = BoundEnv {
+            grid: [4, 1, 1],
+            block: 32,
+            subgroups: Some((32, 32)),
+            locals: FxHashMap::default(),
+            expressions: FxHashMap::default(),
+        };
+        let local = b.load_local(b.local(ScalarElement::U32.element()));
+        let collective = b.reduce(
+            TileReduceOp::Sum,
+            ReduceKind::Subgroup,
+            b.builtin(Builtin::Lane),
+        );
+        for value in [local, collective] {
+            assume_true(&b.lt(value, b.u32(8)), &mut env);
+            assert!(env.expressions.is_empty());
+        }
+    }
 
     #[test]
     fn packed_word_operations_infer_their_result_types() {
