@@ -1,3 +1,54 @@
+Range writes, normalization, and rejected splitting (2026-10-18)
+=============================================================
+The last completed clean model comparison remains 21.6738 ms/stream chunk.
+The 60 token/sec / 2x end-to-end goal has not been established.
+
+Runtime e38d453c3 passes CI 39148303974: Linux host checks, macOS shared
+compiler/unit/candidate tests, eight live WebGPU regressions, workspace Clippy,
+formatting and Python tests. The consecutive-scatter regression fails with
+the old lowerer and passes with the candidate. Two computed concatenations
+also match complete CPU references. Hosted GPUs without timestamps validate
+correctness without reporting fabricated times. Release artifact SHA256:
+ff1cce9176011c9bf33561c648748ca0cf55e900dccf4764da30c3768d257075.
+
+Guarded local computed-concatenation timings in ABBA order:
+  batch 1: 38.617 / 29.113 / 27.528 / 42.277 us (1.326x / 1.536x)
+  batch 2: 49.239 / 28.659 / 35.788 / 40.537 us (1.718x / 1.133x)
+All outputs match the CPU reference. These relative microbenchmarks have
+substantial timing spread and do not establish model throughput.
+Evidence: target/stall-validation/shared-range-affine-abba.
+
+The e38 model run times out at 120 seconds after one 64-chunk round:
+38.472 ms mean, 28.105--57.109 ms gaps, and identical generated text.
+No retained steady rounds complete. Process inspection identifies an active
+rendering application sharing the GPU, so this partial contended result cannot
+be compared with the earlier clean baseline. Peak owned RSS is 10.579 GiB;
+minimum available memory is 10.494 GiB. Every resource guard stays enabled.
+The run is not automatically retried. Evidence: compiler-e38-candidate.
+The preceding f3ffe release passes CI 39145126444; its local model run stops
+at the memory guard before a complete timing row and is not retried either.
+
+A shared subgroup-splitting prototype (885a52338) passes CI 39148529521,
+including 16 candidate-construction tests, 141 symbolic matrix executions,
+eight shared GPU regressions, and Clippy. Two-way splitting gives
+1.033x / 1.027x on the long Q6 fixture, but 0.936x / 0.939x on wide Q4 and
+0.986x / 0.816x on the smaller projection. Four-way splitting gives
+0.927x / 0.921x on the long reduction. Full output comparisons pass.
+The prototype remains isolated on its candidate branch; the adopted compiler
+does not include its schedules or changes to the tuning domain.
+
+Normalization can use 512 lanes when granted by the adapter instead of a
+universal 256-lane ceiling. Candidate construction still proves invocation,
+X-dimension, storage, precision and retained-values bounds. It adds no global
+storage. The prototype passes CI 39149383039. Guarded relative ABBA timings
+(with active GPU contention) are:
+  width 4096, rows 1: 8.671 / 7.185 / 6.504 / 8.068 us (1.207x / 1.240x)
+  width 8192, rows 4: 14.959 / 10.077 / 10.942 / 16.288 us (1.484x / 1.489x)
+All tested values match CPU references within the unchanged tolerance;
+maximum absolute error is 0.00000066. This is not a full-model speed claim.
+The normalization change is isolated from the rejected splitting experiment;
+expanded capability and residual-normalization checks accompany it.
+
 Subgroup bounds follow-up (candidate after f3ffe0bce)
 --------------------------------------------------
 The common Kernel builder can expose the adapter-reported subgroup lane upper

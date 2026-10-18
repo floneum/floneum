@@ -60,7 +60,7 @@ fn shared_fusions_and_transfers_match_host_results() {
     target.set_kernel_observer(Some(Arc::new(move |ir, _, _| {
         capture.lock().unwrap().push(ir.name.to_string())
     })));
-    for (rows, width) in [(7, 37), (2, 128), (5, 257)] {
+    for (rows, width) in [(7, 37), (2, 128), (5, 257), (1, 4096), (4, 8192)] {
         let values = data(rows * width, 3);
         let weights = data(width, 5);
         let x = Tensor::from_slice(&device, [rows, width], &values);
@@ -76,6 +76,33 @@ fn shared_fusions_and_transfers_match_host_results() {
             }
         }
         close(&y.to_vec_f32().unwrap(), &expected, 2e-5);
+    }
+    for (rows, width) in [(2, 513), (1, 4096), (2, 8192)] {
+        let values = data(rows * width, 11);
+        let residual = data(rows * width, 19);
+        let weights = data(width, 7);
+        let x = Tensor::from_slice(&device, [rows, width], &values);
+        let r = Tensor::from_slice(&device, [rows, width], &residual);
+        let w = Tensor::from_slice(&device, [width], &weights);
+        let y = x
+            .as_dyn()
+            .add(r.as_dyn())
+            .unwrap()
+            .rms_norm(w.as_dyn(), 1e-5)
+            .unwrap();
+        let mut expected: Vec<f32> = values.iter().zip(&residual).map(|(a, b)| a + b).collect();
+        for row in expected.chunks_mut(width) {
+            let inv = (row.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>() / width as f64
+                + f64::from(1e-5f32))
+            .sqrt()
+            .recip();
+            for (out, &weight) in row.iter_mut().zip(&weights) {
+                *out = (f64::from(*out) * inv * f64::from(weight)) as f32;
+            }
+        }
+        close(&y.to_vec_f32().unwrap(), &expected, 2e-5);
+        assert_eq!(x.to_vec_f32(), values);
+        assert_eq!(r.to_vec_f32(), residual);
     }
     for (batch, heads, kv_heads, keys, width) in [
         (1, 3, 3, 17, 32),
@@ -129,6 +156,10 @@ fn shared_fusions_and_transfers_match_host_results() {
     assert!(
         seen.iter().any(|n| n == "rms_norm"),
         "normalization fusion was not selected: {seen:?}"
+    );
+    assert!(
+        seen.iter().any(|n| n == "rms_norm_residual"),
+        "residual normalization was not fused: {seen:?}"
     );
     if device
         .session()

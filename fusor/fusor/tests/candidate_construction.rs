@@ -978,6 +978,42 @@ fn ordinary_algebra_gets_normalization_on_capability_variants() {
             )));
         }
     }
+    // Wide rows can use more parallel lanes, but never exceed the granted
+    // invocation, X dimension, storage, or per-lane live-value limits.
+    for (width, lanes, x_limit, storage, expected) in [
+        (4096, 1024, 1024, 32768, Some(512)),
+        (8192, 512, 512, 32768, Some(512)),
+        (16384, 512, 512, 32768, Some(512)),
+        (16385, 512, 512, 32768, None),
+        (4096, 256, 1024, 32768, Some(256)),
+        (4096, 1024, 128, 32768, Some(128)),
+        (4096, 1024, 1024, 512, Some(128)),
+        (8193, 256, 256, 32768, None),
+        (37, 1024, 1024, 32768, Some(64)),
+    ] {
+        for subgroup in [
+            None,
+            Some(SubgroupWidths { min: 16, max: 32 }),
+            Some(SubgroupWidths { min: 64, max: 64 }),
+        ] {
+            let mut g = graph();
+            let root = normalization_expression(&mut g, 2, width, 1.0 / width as f32);
+            let mut c = gpu_caps();
+            c.subgroups = subgroup;
+            c.limits.max_compute_invocations_per_workgroup = lanes;
+            c.limits.max_compute_workgroup_size[0] = x_limit;
+            c.limits.max_compute_workgroup_storage_size = storage;
+            let fused = apply(&mut g, &c, root, rule);
+            let actual = fused.map(|id| match g.node(id).op {
+                Op::Launch(Launch::RmsNorm { block, .. }) => block,
+                ref other => panic!("unexpected normalization candidate: {other:?}"),
+            });
+            assert_eq!(
+                actual, expected,
+                "width={width} limits={lanes}/{x_limit}/{storage}"
+            );
+        }
+    }
     let mut g = graph();
     let root = normalization_expression(&mut g, 3, 37, 1.0 / 36.0);
     assert_declines(&mut g, &gpu_caps(), root, rule);

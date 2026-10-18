@@ -1,5 +1,5 @@
-//! Adapter and device acquisition at WebGPU baseline limits, widened only
-//! where a selected kernel proves it needs it, so plan legality is portable.
+//! Adapter and device acquisition. Request supported buffer and workgroup
+//! capacity; compile every schedule against the limits actually granted.
 
 use fusor_ir::Result;
 use fusor_ir::cost::DeviceFacts;
@@ -43,8 +43,8 @@ pub struct GpuDevice {
 }
 
 impl GpuDevice {
-    /// Probe an adapter, request a device at baseline limits widened by
-    /// `extra`, then seed (or load cached) facts.
+    /// Probe an adapter, request its buffer and workgroup capacity plus any
+    /// `extra` limits, then seed (or load cached) facts.
     pub async fn request(extra: Option<wgpu::Limits>) -> Result<Self> {
         request_device(extra).await
     }
@@ -82,8 +82,7 @@ impl GpuDevice {
     }
 }
 
-/// Pick an adapter, request its device at non-adapter limits, and probe
-/// compiler capabilities.
+/// Pick an adapter, request supported capacity, and probe compiler capabilities.
 async fn request_device(extra: Option<wgpu::Limits>) -> Result<GpuDevice> {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     let adapter = instance
