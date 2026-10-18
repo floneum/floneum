@@ -3,13 +3,11 @@
 use std::sync::{Arc, Weak};
 
 use fusor_ir::{egraph::Id, extract::Plan};
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashSet;
 
 pub(crate) struct PreparedRun {
-    owner: Weak<Plan>,
+    pub(crate) owner: Weak<Plan>,
     pub(crate) external: Vec<Id>,
-    pub(crate) last_uses: FxHashMap<Id, usize>,
-    pub(crate) outputs: FxHashMap<Id, usize>,
 }
 
 impl PreparedRun {
@@ -33,26 +31,17 @@ impl PreparedRun {
         }
         let mut seen = FxHashSet::default();
         let mut leaves = Vec::new();
-        let mut last_uses = FxHashMap::default();
-        for (index, launch) in plan.launches.iter().enumerate() {
+        for launch in &plan.launches {
             for binding in &launch.bindings {
                 let id = binding.value;
                 if seen.insert(id) && external(id) {
                     leaves.push(id);
                 }
-                last_uses.insert(id, index);
             }
         }
         Some(Self {
             owner: Arc::downgrade(plan),
             external: leaves,
-            last_uses,
-            outputs: plan
-                .buffers
-                .iter()
-                .enumerate()
-                .map(|(i, b)| (b.value, i))
-                .collect(),
         })
     }
 }
@@ -92,15 +81,13 @@ mod tests {
         });
         let cached = PreparedRun::capture(&plan, |id| id.0 < 3).unwrap();
         assert_eq!(cached.external, [Id(1), Id(2)]);
-        assert_eq!(cached.last_uses[&Id(1)], 1);
-        assert_eq!(cached.last_uses[&Id(2)], 0);
         assert!(cached.matches(&plan));
         assert_eq!(Arc::strong_count(&plan), 1);
         // Same plan hash, but a changed binding must never reuse the indexes.
         Arc::make_mut(&mut plan).launches[1].bindings[0].value = Id(2);
         assert!(!cached.matches(&plan));
         let updated = PreparedRun::capture(&plan, |id| id.0 < 3).unwrap();
-        assert_eq!(updated.last_uses[&Id(2)], 1);
+        assert!(updated.matches(&plan));
         drop(plan);
         assert!(updated.owner.upgrade().is_none());
     }

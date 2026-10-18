@@ -469,16 +469,19 @@ pub fn cases() -> Cases {
     let mut cases = Cases::new("attention_rope");
     cases.push("padded_cache_decode_prefix", padded_cache_decode_prefix);
     cases.push("padded_cache_growth_replay", padded_cache_growth_replay);
-    cases.push("padded_cache_llama_geometry", padded_cache_llama_geometry);
+    cases.push(
+        "cache_attention_grouped_heads",
+        cache_attention_grouped_heads,
+    );
     cases.push("padded_cache_tail_batches", padded_cache_tail_batches);
     cases.push("fixed_cache_replay_ring", fixed_cache_replay_ring);
     cases.push(
-        "fixed_cache_donation_replay_ring",
-        fixed_cache_donation_replay_ring,
+        "fixed_cache_commit_all_replay_ring",
+        fixed_cache_commit_all_replay_ring,
     );
     cases.push(
-        "fixed_cache_donation_shared_store",
-        fixed_cache_donation_shared_store,
+        "fixed_cache_commit_all_shared_store",
+        fixed_cache_commit_all_shared_store,
     );
     cases.push(
         "attention_causal_symbolic_lengths",
@@ -834,9 +837,13 @@ async fn padded_cache_decode_prefix_width(session: &Session, width: usize) -> Ca
             &dims(&[1, 4, 1, width as u64]),
             &q,
         )?);
-        let output = cache
-            .attention_decode_padded(&qt, None)
-            .expect("fixed nonempty cache");
+        let output = fusor::Tensor::<4>::from_dyn(attention(
+            qt.as_dyn(),
+            cache.k().unwrap().as_dyn(),
+            cache.v().unwrap().as_dyn(),
+            MaskKind::None,
+            None,
+        )?);
         let mut roots = vec![output.as_dyn().clone()];
         cache.pending_into(&mut roots);
         session.resolve(&roots)?;
@@ -902,7 +909,13 @@ async fn padded_cache_growth_replay(session: &Session) -> CaseResult {
         }
         if step == 0 {
             cache.append(&k_input, &v_input);
-            output = cache.attention_decode_padded(&query, None);
+            output = Some(fusor::Tensor::<4>::from_dyn(attention(
+                query.as_dyn(),
+                cache.k().unwrap().as_dyn(),
+                cache.v().unwrap().as_dyn(),
+                MaskKind::None,
+                None,
+            )?));
         } else {
             assert!(
                 cache.can_replay(1),
@@ -910,7 +923,8 @@ async fn padded_cache_growth_replay(session: &Session) -> CaseResult {
             );
             cache.replay_append(1)?;
         }
-        let output = output.as_ref().expect("padded attention");
+        let output = output.as_ref().expect("cache attention");
+        output.as_dyn().clear_device_buf();
         fusor::cache::KvCache::resolve_and_commit_all(
             std::slice::from_mut(&mut cache),
             &[output.as_dyn().clone()],
@@ -944,13 +958,13 @@ async fn fixed_cache_replay_ring(session: &Session) -> CaseResult {
     cache_replay_ring(session, false).await
 }
 
-async fn fixed_cache_donation_replay_ring(session: &Session) -> CaseResult {
+async fn fixed_cache_commit_all_replay_ring(session: &Session) -> CaseResult {
     cache_replay_ring(session, true).await
 }
 
 /// A snapshot that actually shares the cache's physical buffer, plus an old
 /// value still read in the update's resolve. Neither may observe later writes.
-async fn fixed_cache_donation_shared_store(session: &Session) -> CaseResult {
+async fn fixed_cache_commit_all_shared_store(session: &Session) -> CaseResult {
     let graph = graph_of(session);
     let mut cache = fusor::cache::KvCache::<3>::windowed(1, 3);
     let input = fusor::Tensor::<3>::from_dyn(upload(graph.handle(), &dims(&[1, 1, 4]), &[0.; 4])?);
@@ -1039,7 +1053,7 @@ async fn fixed_cache_donation_shared_store(session: &Session) -> CaseResult {
     Ok(())
 }
 
-async fn cache_replay_ring(session: &Session, donate: bool) -> CaseResult {
+async fn cache_replay_ring(session: &Session, commit_all: bool) -> CaseResult {
     for ring in [false, true] {
         let graph = graph_of(session);
         let mut cache = if ring {
@@ -1087,7 +1101,7 @@ async fn cache_replay_ring(session: &Session, donate: bool) -> CaseResult {
                 row.resize(count * 2, 0.);
                 row[slot * 2..slot * 2 + 2].copy_from_slice(&data[r * 2..r * 2 + 2]);
             }
-            if donate {
+            if commit_all {
                 fusor::cache::KvCache::resolve_and_commit_all(
                     std::slice::from_mut(&mut cache),
                     &[],
@@ -1172,9 +1186,13 @@ async fn padded_cache_tail_batches(session: &Session) -> CaseResult {
         cache.append(&kt, &vt);
         cache.detach();
         cache.truncate(len as u64)?;
-        let out = cache
-            .attention_decode_padded(&qt, Some(0.17))
-            .expect("fixed cache");
+        let out = fusor::Tensor::<4>::from_dyn(attention(
+            qt.as_dyn(),
+            cache.k().unwrap().as_dyn(),
+            cache.v().unwrap().as_dyn(),
+            MaskKind::None,
+            Some(0.17),
+        )?);
         let (expected, _) = host_attention(&q, &valid_k, &valid_v, d, 0.17, &no_mask);
         expect_values(
             session,
@@ -1188,7 +1206,7 @@ async fn padded_cache_tail_batches(session: &Session) -> CaseResult {
     Ok(())
 }
 
-async fn padded_cache_llama_geometry(session: &Session) -> CaseResult {
+async fn cache_attention_grouped_heads(session: &Session) -> CaseResult {
     let graph = graph_of(session);
     let d = AttnDims {
         b: 1,
@@ -1206,9 +1224,13 @@ async fn padded_cache_llama_geometry(session: &Session) -> CaseResult {
     let vt = fusor::Tensor::<4>::from_dyn(upload(graph.handle(), &dims(&d.kv_shape()), &v)?);
     let mut cache = fusor::cache::KvCache::with_capacity(2, 512);
     cache.append(&kt, &vt);
-    let out = cache
-        .attention_decode_padded(&qt, None)
-        .expect("fixed cache");
+    let out = fusor::Tensor::<4>::from_dyn(attention(
+        qt.as_dyn(),
+        cache.k().unwrap().as_dyn(),
+        cache.v().unwrap().as_dyn(),
+        MaskKind::None,
+        None,
+    )?);
     let mut roots = vec![out.as_dyn().clone()];
     cache.pending_into(&mut roots);
     session.resolve(&roots)?;

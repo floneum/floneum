@@ -1,8 +1,43 @@
 //! Coalesced Q6 payloads: each lane reads one low-bit word and its high-bit
 //! plane, retaining both activations across the output columns it owns.
 use super::*;
-use fusor_ir::dtype::NumericContract;
+use fusor_ir::dtype::{NumericContract, QFmt, QLayout};
 use fusor_ir::ir::kernel::{QuantizedView, TileBinaryOp};
+
+pub(super) fn source(c: &Contract<'_>, width: u32, p: SgemvParams) -> Option<QuantizedView> {
+    if width < 32
+        || !width.is_multiple_of(32)
+        || p.vector != 32
+        || c.acc != ScalarElement::F32
+        || !matches!(c.b.side.pre.kind(), ScalarKind::Arg(0))
+        || !c
+            .shape
+            .k
+            .as_const()?
+            .is_multiple_of(u64::from(256 * (width / 32)))
+    {
+        return None;
+    }
+    let [StagedSource::Mem(Source::Quantized(q))] = &c.b.sources[..] else {
+        return None;
+    };
+    if q.fmt != QFmt::Q6K || q.layout != QLayout::F32Scales {
+        return None;
+    }
+    let [ka, na] = &q.data.layout.indexing.groups[..] else {
+        return None;
+    };
+    let [ks] = &ka.sub_axes[..] else {
+        return None;
+    };
+    let [ns] = &na.sub_axes[..] else {
+        return None;
+    };
+    if ks.stride != 1 || !ns.stride.is_multiple_of(256) {
+        return None;
+    }
+    Some(q.clone())
+}
 
 pub(super) fn lower(
     mut ctx: Ctx<'_>,
@@ -10,9 +45,9 @@ pub(super) fn lower(
     p: SgemvParams,
     q: &QuantizedView,
 ) -> Result<KernelIr> {
-    let blocked_view = (ctx.q4_variant == 3)
-        .then(|| ctx.block_storage_view(&q.data, 53))
-        .flatten();
+    let width = ctx.caps.subgroup_width();
+    let blocks_per_subgroup = width / 32;
+    let blocked_view = ctx.block_storage_view(&q.data, 53);
     let blocked = blocked_view.is_some();
     let weight_view = blocked_view.unwrap_or_else(|| q.data.clone());
     let b = &ctx.b;
@@ -20,18 +55,16 @@ pub(super) fn lower(
     let shape = c.shape;
     let rows = c.rows();
     let cps = p.cols / p.subgroups;
-    let passes = (shape.k.as_const().unwrap() / 256) as u32;
+    let passes = (shape.k.as_const().unwrap() / u64::from(256 * blocks_per_subgroup)) as u32;
     let max_splits = (ctx
         .caps
         .limits
         .max_compute_invocations_per_workgroup
         .min(ctx.caps.limits.max_compute_workgroup_size[0])
-        / (p.subgroups * 32))
+        / (p.subgroups * width))
         .max(1);
-    let mut splits = crate::flags::for_profile(ctx.caps.execution_profile)
-        .q6_splits
-        .min(max_splits);
-    if crate::flags::for_profile(ctx.caps.execution_profile)
+    let mut splits = crate::flags::flags().q6_splits.min(max_splits);
+    if crate::flags::flags()
         .q6_split_max_n
         .is_some_and(|limit| shape.n.as_const().is_none_or(|n| n > limit as u64))
     {
@@ -64,7 +97,11 @@ pub(super) fn lower(
         b.mul(b.load_local(index.clone()), b.u32(splits)),
         split.clone(),
     );
-    let half = b.div(lane.clone(), b.u32(16));
+    let block_k = b.add(
+        b.mul(block_k, b.u32(blocks_per_subgroup)),
+        b.div(lane.clone(), b.u32(32)),
+    );
+    let half = b.div(b.rem(lane.clone(), b.u32(32)), b.u32(16));
     let within = b.rem(lane.clone(), b.u32(16));
     let input_base = b.add(
         b.mul(block_k.clone(), b.u32(256)),
@@ -172,7 +209,7 @@ pub(super) fn lower(
                 4,
             );
             let packed = b.binary(TileBinaryOp::BitOr, lo, hi, NumericContract::RELAXED);
-            if crate::flags::for_profile(ctx.caps.execution_profile).q6_float_unpack {
+            if crate::flags::flags().q6_float_unpack {
                 let weights = (0..4u32)
                     .map(|byte| {
                         let q = and(shr(packed.clone(), b.u32(byte * 8)), 63);
@@ -271,5 +308,5 @@ pub(super) fn lower(
         8 => "sgemv_q6_coalesced_split8",
         _ => "sgemv_q6_coalesced",
     };
-    Ok(ctx.finish(name, grid, physical_subgroups * 32, body))
+    Ok(ctx.finish(name, grid, physical_subgroups * width, body))
 }

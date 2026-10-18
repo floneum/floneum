@@ -224,91 +224,9 @@ pub(crate) fn lower_kscatter(ctx: Ctx<'_>, op: &Launch, theta: SchedPoint) -> Re
     }
     .element();
     let max_block = ctx.caps.limits.max_compute_invocations_per_workgroup;
-    if idx
-        .layout
-        .shape()
-        .iter()
-        .try_fold(1u64, |n, d| n.checked_mul(d.as_const()?))
-        == Some(1)
-        && let Some(&bins) = base.layout.shape().get(*axis as usize)
-        && let Some(outer) = base.layout.shape()[..*axis as usize]
-            .iter()
-            .try_fold(1u64, |n, d| n.checked_mul(d.as_const()?))
-        && let Some(inner) = base.layout.shape()[*axis as usize + 1..]
-            .iter()
-            .try_fold(1u64, |n, d| n.checked_mul(d.as_const()?))
-        && let Some(elements) = outer.checked_mul(inner).and_then(|n| u32::try_from(n).ok())
-        && let Ok(inner) = u32::try_from(inner)
-        && inner > 0
-        && elements > 0
-        && match bins.as_const() {
-            Some(bins) => u64::from(elements)
-                .checked_mul(bins)
-                .is_some_and(|n| n > 0 && n <= u64::from(u32::MAX)),
-            // WebGPU storage bindings have a u32 byte-size limit, so a
-            // symbolic dense 32-bit cache cannot overflow a u32 element index.
-            None => matches!(
-                out_elem,
-                ElementType::Scalar(ScalarElement::F32 | ScalarElement::U32 | ScalarElement::I32)
-            ),
-        }
-        && *combine == ScatterCombine::Set
-        && ctx.linear_view(base.src).is_ok_and(|v| v == out)
-        && ctx
-            .cx
-            .launch
-            .bindings
-            .iter()
-            .filter(|binding| binding.binding == out.buffer.binding)
-            .all(|binding| !binding.arena)
-    {
-        // Sharing an arena binding does not imply sharing a value: different
-        // arena offsets require copying the untouched rows. Only the exact,
-        // non-arena alias created by the cache ownership proof can skip it.
-        // The cache resolve proved that the old store has no other owner or
-        // later reader. Only the appended row needs a write; the remaining
-        // bytes retain their prior values, including the unused cache tail.
-        let block = 256.min(max_block);
-        let bins = ctx.dim_expr(bins)?;
-        let grid = distribute_workgroups(
-            elements.div_ceil(block),
-            ctx.caps.limits.max_compute_workgroups_per_dimension,
-        );
-        let flat = ctx.global_index(block);
-        let picked = b.cast(
-            load_logical(&ctx, idx, b.u32(0))?,
-            ScalarElement::U32.element(),
-        );
-        let (outer, col) = b.divrem(flat.clone(), b.u32(inner));
-        let address = b.add(
-            b.mul(
-                b.add(b.mul(outer, bins.clone()), picked.clone()),
-                b.u32(inner),
-            ),
-            col,
-        );
-        let body = vec![Stmt::If {
-            condition: b.and(
-                b.lt(flat.clone(), b.u32(elements)),
-                b.lt(picked, bins.clone()),
-            ),
-            accept: vec![Stmt::Store {
-                dst: out.clone(),
-                addr: Addr::Linear(address),
-                value: b.cast(load_logical(&ctx, upd, flat)?, out_elem),
-                mask: b.bool(true),
-            }],
-            reject: Vec::new(),
-        }];
-        return Ok(ctx.finish("cache_append_exclusive", grid, block, body));
-    }
     let shape = ScatterGeometry::of(ops, *axis as usize, |d| ctx.binding.require(d), Error::Plan)?;
-    if shape.updates == 1
-        && shape.total() > 0
-        && shape.total() <= u64::from(u32::MAX - 32768)
-        && let Some(slots) =
-            crate::flags::for_profile(ctx.caps.execution_profile).scatter_single_linear
-    {
+    let slots = crate::flags::flags().scatter_single_linear.unwrap_or(4);
+    if shape.updates == 1 && shape.total() > 0 && shape.total() <= u64::from(u32::MAX - 32768) {
         // A copy with one row update. More than one row can share a block,
         // and each lane handles several adjacent block-wide runs. All reads
         // still come from the immutable base, into a separate output buffer.
@@ -322,19 +240,25 @@ pub(crate) fn lower_kscatter(ctx: Ctx<'_>, op: &Launch, theta: SchedPoint) -> Re
             load_logical(&ctx, idx, b.u32(0))?,
             ScalarElement::U32.element(),
         );
+        // Binding values choose only the grid. Symbolic geometry stays in
+        // uniforms so growing storage reuses the same shader.
+        let dims = base.layout.shape();
+        let total = ctx.extent_product(dims)?;
+        let inner = ctx.extent_product(&dims[*axis as usize + 1..])?;
+        let bins = ctx.dim_expr(dims[*axis as usize])?;
         let mut body = Vec::new();
         for slot in 0..slots {
             let flat = b.add(origin.clone(), b.add(lane.clone(), b.u32(slot * block)));
-            let live = b.lt(flat.clone(), b.u32(shape.total() as u32));
-            let at = b.min(flat.clone(), b.u32(shape.total() as u32 - 1));
-            let (row, col) = b.divrem(at.clone(), b.u32(shape.inner));
-            let (outer, bin) = b.divrem(row, b.u32(shape.bins));
+            let live = b.lt(flat.clone(), total.clone());
+            let at = b.min(flat.clone(), b.sub(total.clone(), b.u32(1)));
+            let (row, col) = b.divrem(at.clone(), inner.clone());
+            let (outer, bin) = b.divrem(row, bins.clone());
             let acc = b.local(acc_ty);
             body.push(Stmt::StoreLocal {
                 dst: acc.clone(),
                 value: b.cast(ctx.load_mapped(base, at, total_of(&shape))?, acc_ty),
             });
-            let upd_index = b.add(b.mul(outer, b.u32(shape.inner)), col);
+            let upd_index = b.add(b.mul(outer, inner.clone()), col);
             let value = b.cast(load_logical(&ctx, upd, upd_index)?, acc_ty);
             let value = match combine {
                 ScatterCombine::Add => b.add(b.load_local(acc.clone()), value),
@@ -401,7 +325,7 @@ pub(crate) fn lower_kscatter(ctx: Ctx<'_>, op: &Launch, theta: SchedPoint) -> Re
         // A single update needs no index staging or workgroup rendezvous.
         // The row-level condition is uniform, and untouched rows still copy
         // their base into a fresh output: this does not introduce aliasing.
-        if updates == 1 && crate::flags::for_profile(ctx.caps.execution_profile).scatter_single {
+        if updates == 1 {
             let picked = b.cast(
                 load_logical(&ctx, idx, b.u32(0))?,
                 ScalarElement::U32.element(),

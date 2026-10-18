@@ -9,42 +9,6 @@ use crate::ir::launch::Launch;
 /// Infer the result facts of a Launch node from its operands' facts.
 pub fn infer_launch(op: &Launch, ins: &[ValueFacts]) -> Result<ValueFacts> {
     match op {
-        Launch::DecodeRope {
-            output,
-            head_dim,
-            ops,
-            ..
-        } => {
-            let width = u64::from(*head_dim);
-            let dims = &output.dims;
-            if width == 0
-                || width > 256
-                || !width.is_multiple_of(2)
-                || dims.len() != 4
-                || dims[2] != crate::shape::Dim::ONE
-                || dims[3].as_const() != Some(width)
-                || output
-                    .iterations()
-                    .is_none_or(|n| n == 0 || n > u64::from(u32::MAX))
-                || ops.len() != 4
-                || ins.len() != 4
-                || ins[..3].iter().any(|f| f.dtype != Dtype::F32)
-                || ins[3].dtype != Dtype::U32
-                || ops[0].layout.shape() != dims.as_slice()
-                || ops[1].layout.shape().len() != 2
-                || ops[1].layout.shape() != ops[2].layout.shape()
-                || ops[1].layout.shape()[0]
-                    .as_const()
-                    .is_none_or(|n| n == 0 || n > u64::from(u32::MAX) / (width / 2))
-                || ops[1].layout.shape()[1].as_const() != Some(width / 2)
-                || ops[3].layout.shape() != [crate::shape::Dim::ONE]
-            {
-                return Err(Error::Shape(
-                    "unsupported decode rotary embedding geometry".into(),
-                ));
-            }
-            Ok(ValueFacts::step(Dtype::F32, dims.clone(), ins))
-        }
         Launch::RmsNorm {
             output,
             width,
@@ -56,7 +20,8 @@ pub fn infer_launch(op: &Launch, ins: &[ValueFacts]) -> Result<ValueFacts> {
             let mut args = Vec::new();
             epsilon.collect_args(&mut args);
             if *width == 0
-                || *width > 8192
+                || width.div_ceil((*block).max(1))
+                    > crate::ir::launch::MAX_NORMALIZATION_VALUES_PER_LANE
                 || !matches!(*block, 32 | 64 | 128 | 256 | 512 | 1024)
                 || output.dims.last().and_then(|d| d.as_const()) != Some(u64::from(*width))
                 || output
@@ -85,7 +50,7 @@ pub fn infer_launch(op: &Launch, ins: &[ValueFacts]) -> Result<ValueFacts> {
             kv_heads,
             keys,
             block,
-            heads_per_group,
+            subgroup,
             chunk,
             ops,
             scale,
@@ -94,25 +59,32 @@ pub fn infer_launch(op: &Launch, ins: &[ValueFacts]) -> Result<ValueFacts> {
         } => {
             use crate::shape::Dim;
             let dims = &output.dims;
+            let channels = ops
+                .first()
+                .and_then(|o| o.layout.shape().get(3))
+                .and_then(|d| d.as_const())
+                .unwrap_or(0);
             let mut scalar_args = Vec::new();
             scale.collect_args(&mut scalar_args);
             prefix.collect_args(&mut scalar_args);
             let (splits, width) = if *chunk == 0 {
-                (Dim::ONE, Dim::Const(128))
+                (Dim::ONE, Dim::Const(channels))
             } else {
-                (keys.div_ceil(u64::from(*chunk)), Dim::Const(130))
+                (keys.div_ceil(u64::from(*chunk)), Dim::Const(channels + 2))
             };
             let b = dims.first().and_then(|d| d.as_const()).unwrap_or(0);
             let h = dims.get(1).and_then(|d| d.as_const()).unwrap_or(0);
             if dims.len() != 4
+                || channels == 0
+                || channels > 256
                 || b == 0
                 || h == 0
                 || dims[2] != splits
                 || dims[3] != width
                 || *kv_heads == 0
-                || !matches!(*heads_per_group, 1 | 2 | 4)
+                || !subgroup.is_power_of_two()
+                || !block.is_multiple_of((*subgroup).max(1))
                 || !h.is_multiple_of(u64::from(*kv_heads))
-                || !(h / u64::from(*kv_heads)).is_multiple_of(u64::from(*heads_per_group))
                 || keys.as_const() == Some(0)
                 || (*chunk == 0 && keys.as_const().is_none())
                 || !matches!(*block, 32 | 64 | 128 | 256 | 512)
@@ -120,7 +92,7 @@ pub fn infer_launch(op: &Launch, ins: &[ValueFacts]) -> Result<ValueFacts> {
                 || ops.len() != 3
                 || ins.iter().any(|f| f.dtype != Dtype::F32)
                 || scale.dtype() != Dtype::F32
-                || prefix.dtype() != Dtype::F32
+                || !matches!(prefix.dtype(), Dtype::F32 | Dtype::U32)
                 || !scalar_args.is_empty()
                 || scale.reads_index_of()
                 || prefix.reads_index_of()
@@ -128,7 +100,7 @@ pub fn infer_launch(op: &Launch, ins: &[ValueFacts]) -> Result<ValueFacts> {
                 || keys.as_const().is_some_and(|keys| {
                     b.saturating_mul(u64::from(*kv_heads))
                         .saturating_mul(keys)
-                        .saturating_mul(128)
+                        .saturating_mul(channels)
                         > u64::from(u32::MAX)
                 })
             {
@@ -136,12 +108,12 @@ pub fn infer_launch(op: &Launch, ins: &[ValueFacts]) -> Result<ValueFacts> {
                     "unsupported decode attention geometry or dtype".into(),
                 ));
             }
-            let q = [dims[0], dims[1], Dim::ONE, Dim::Const(128)];
+            let q = [dims[0], dims[1], Dim::ONE, Dim::Const(channels)];
             let kv = [
                 dims[0],
                 Dim::Const(u64::from(*kv_heads)),
                 *keys,
-                Dim::Const(128),
+                Dim::Const(channels),
             ];
             for (i, expected) in [q.as_slice(), kv.as_slice(), kv.as_slice()]
                 .into_iter()
@@ -172,7 +144,8 @@ pub fn infer_launch(op: &Launch, ins: &[ValueFacts]) -> Result<ValueFacts> {
                 || d[0] == 0
                 || d[1] == 0
                 || d[2] != 1
-                || d[3] != 128
+                || d[3] == 0
+                || d[3] > 256
                 || splits.as_const() == Some(0)
                 || ops.len() != 1
                 || ins.len() != 1
@@ -180,11 +153,16 @@ pub fn infer_launch(op: &Launch, ins: &[ValueFacts]) -> Result<ValueFacts> {
                 || splits.as_const().is_some_and(|s| {
                     d[0].saturating_mul(d[1])
                         .saturating_mul(s)
-                        .saturating_mul(130)
+                        .saturating_mul(d[3] + 2)
                         > u64::from(u32::MAX)
                 })
                 || ops[0].layout.shape()
-                    != [Dim::Const(d[0]), Dim::Const(d[1]), *splits, Dim::Const(130)]
+                    != [
+                        Dim::Const(d[0]),
+                        Dim::Const(d[1]),
+                        *splits,
+                        Dim::Const(d[3] + 2),
+                    ]
             {
                 return Err(Error::Shape("unsupported attention merge geometry".into()));
             }

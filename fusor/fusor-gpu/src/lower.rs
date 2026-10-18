@@ -4,7 +4,6 @@
 
 pub(crate) mod contract;
 mod decode_attention;
-mod decode_rope;
 pub(crate) mod gather_scatter;
 pub(crate) mod group;
 pub(crate) mod map_fold;
@@ -521,26 +520,6 @@ impl<'a> Ctx<'a> {
                 fusor_ir::extract::BindKind::Read => BufferAccess::Read,
                 _ => BufferAccess::ReadWrite,
             };
-            // Runtime-verified cache donation gives base and output one
-            // writable binding. Emit one declaration, and map both classes
-            // onto it so wgpu never sees overlapping read/write bindings.
-            if let Some(slot) = buffers
-                .iter()
-                .position(|v| v.binding == plan_binding.binding)
-            {
-                if access != BufferAccess::ReadWrite
-                    || buffers[slot].access != BufferAccess::ReadWrite
-                    || buffers[slot].element != ElementType::Scalar(scalar_element(dtype))
-                    || buffers[slot].layout
-                        != TileLayout::contiguous(MemoryLevel::Storage, &[extent.max(1)])
-                {
-                    return Err(Error::Plan("incompatible shared storage binding".into()));
-                }
-                for member in cx.graph.class_ids(class) {
-                    slot_of.insert(member, slot);
-                }
-                continue;
-            }
             // Keyed by every id in the class (`Union` spine included): an
             // `Operand::src` may name any of them.
             for member in cx.graph.class_ids(class) {
@@ -560,7 +539,7 @@ impl<'a> Ctx<'a> {
             pack,
             workgroup: None,
             block_floor: 0,
-            q4_variant: crate::flags::for_profile(caps.execution_profile).q4_variant,
+            q4_variant: crate::flags::flags().q4_variant,
         })
     }
 
@@ -1286,7 +1265,6 @@ fn lower_launch(ctx: Ctx<'_>, node: &Node, theta: SchedPoint, member: bool) -> R
     match op {
         Launch::DecodeAttention { .. } => decode_attention::lower(ctx, op),
         Launch::DecodeAttentionMerge { .. } => decode_attention::lower_merge(ctx, op),
-        Launch::DecodeRope { .. } => decode_rope::lower(ctx, op),
         Launch::RmsNorm { .. } => rms_norm::lower(ctx, op),
         Launch::Map { .. } => map_fold::lower_kmap(ctx, op, theta),
         Launch::Fold { .. } | Launch::StreamFold { .. } => map_fold::lower_kfold(ctx, op, theta),

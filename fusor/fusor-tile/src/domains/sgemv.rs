@@ -105,7 +105,7 @@ pub fn sgemv_domain(cx: &DomainCtx<'_>) -> SgemvDomain {
     let width = cx.caps.subgroup_width();
 
     // `FUSOR_PIN_SGEMV="vector,subgroups,cols[,parts,gap]"` pins one cell.
-    let pin = crate::flags::for_profile(cx.caps.execution_profile)
+    let pin = crate::flags::flags()
         .pin_sgemv
         .as_ref()
         .and_then(|p| match p.len() {

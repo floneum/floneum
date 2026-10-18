@@ -33,9 +33,9 @@ impl TextCompletionSession for LlamaSession {
 
 impl LlamaSession {
     /// Create a new session
-    pub(crate) fn new(cache: &LlamaConfig, profile: fusor_ir::execution::ExecutionProfile) -> Self {
+    pub(crate) fn new(cache: &LlamaConfig) -> Self {
         Self {
-            cache: Arc::new(RwLock::new(LlamaCache::new(cache, profile))),
+            cache: Arc::new(RwLock::new(LlamaCache::new(cache))),
         }
     }
 }

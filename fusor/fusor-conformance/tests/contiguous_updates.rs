@@ -5,10 +5,8 @@
 #[ignore = "requires a live GPU"]
 fn general_contiguous_updates_use_copy_commands() {
     use fusor::{Device, Tensor};
-    use fusor_ir::execution::ExecutionProfile;
     let _guard = fusor_conformance::harness::gpu_test_guard();
     let device = pollster::block_on(Device::gpu()).unwrap();
-    assert_eq!(device.execution_profile(), ExecutionProfile::General);
     let target = device.backend().gpu_target().unwrap();
     let initial_compiles = target.launcher().pipeline_compiles();
     for width in [3, 7, 16, 33, 65] {
@@ -45,7 +43,7 @@ fn general_contiguous_updates_use_copy_commands() {
     assert_eq!(
         target.launcher().pipeline_compiles() - initial_compiles,
         0,
-        "contiguous updates should use WebGPU copy commands in the General profile"
+        "contiguous updates should use WebGPU copy commands with the ordinary device"
     );
 }
 

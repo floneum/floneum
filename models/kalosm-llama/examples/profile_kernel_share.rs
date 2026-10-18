@@ -16,8 +16,6 @@ use std::{
     },
     time::Instant,
 };
-#[path = "support/paired_model_geometry.rs"]
-mod paired_model_geometry;
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
@@ -65,10 +63,6 @@ fn main() -> anyhow::Result<()> {
         .unwrap_or(0);
     if plan_repeats > 0 {
         anyhow::ensure!(
-            std::env::var_os("FUSOR_PROFILE_CACHE_DONATION").is_none(),
-            "plan replay requires immutable cache inputs; disable cache donation"
-        );
-        anyhow::ensure!(
             (2..=32).contains(&plan_repeats),
             "PROFILE_REPLAY_PLAN must be 2..=32"
         );
@@ -103,16 +97,7 @@ fn main() -> anyhow::Result<()> {
         "wall"
     };
     pollster::block_on(async {
-        let device = if std::env::var_os("PROFILE_DEFAULT_DEVICE").is_some() {
-            anyhow::ensure!(
-                plan_repeats == 0,
-                "default cache donation forbids immutable plan replay"
-            );
-            Device::gpu_inference().await?
-        } else {
-            Device::gpu().await?
-        };
-        eprintln!("EXECUTION_PROFILE {:?}", device.execution_profile());
+        let device = Device::gpu().await?;
         let target = device.backend().gpu_target().expect("GPU device");
         let replay_active = Arc::new(AtomicUsize::new(0));
         if plan_repeats > 0 {
@@ -220,24 +205,6 @@ fn main() -> anyhow::Result<()> {
             .with_device(device.clone())
             .build()
             .await?;
-        if let Ok(cell) = std::env::var("PROFILE_PAIRED_GEOMETRY") {
-            anyhow::ensure!(
-                mode == "wall" && std::env::var_os("PROFILE_METADATA").is_none(),
-                "paired geometry requires clean wall mode"
-            );
-            paired_model_geometry::run(
-                &model,
-                &device,
-                &cell,
-                rounds,
-                decode_steps,
-                prompt_repeats,
-                count.clone(),
-            )
-            .await?;
-            target.set_dispatch_observer(None);
-            return Ok(());
-        }
         for round in 0..=rounds {
             for (name, prompt) in [
                 ("short", "The capital of France is".to_string()),

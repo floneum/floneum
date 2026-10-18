@@ -43,15 +43,6 @@ fn member(id: Id, plan: &Plan, graph: &EGraph, resolve: &dyn Fn(Dim) -> Option<u
         return json!({"kind": format!("{:?}", node.op.tag())});
     };
     let mut out = match op {
-        Launch::DecodeRope {
-            output,
-            head_dim,
-            interleaved,
-            ..
-        } => json!({
-            "kind": "decode_rope", "shape": output.dims.iter().map(|d| resolve(*d)).collect::<Vec<_>>(),
-            "head_dim": head_dim, "interleaved": interleaved, "acc": "F32", "workgroup_storage_bound": 0
-        }),
         Launch::RmsNorm {
             output,
             width,
@@ -69,14 +60,13 @@ fn member(id: Id, plan: &Plan, graph: &EGraph, resolve: &dyn Fn(Dim) -> Option<u
             keys,
             chunk,
             block,
-            heads_per_group,
-            key_major,
+            subgroup,
             ops,
             ..
         } => json!({
             "kind": "decode_attention", "shape": output.dims.iter().map(|d| resolve(*d)).collect::<Vec<_>>(),
             "kv_heads": kv_heads, "capacity": resolve(*keys), "valid_prefix": "runtime uniform",
-            "chunk": chunk, "block": block * heads_per_group, "heads_per_group": heads_per_group, "key_major": key_major, "acc": "F32", "workgroup_storage_bound": (if *chunk == 0 { keys.as_const().unwrap_or(0) } else { u64::from(*chunk) } * 4 + u64::from(*block) * 20) * u64::from(*heads_per_group),
+            "chunk": chunk, "block": block, "subgroup": subgroup, "acc": "F32", "workgroup_storage_bound": u64::from(*block / *subgroup) * (ops[0].layout.shape()[3].as_const().unwrap_or(0) + 2) * 4,
             "operands": ops.iter().map(|o| json!({
                 "shape": o.layout.shape().iter().map(|d| resolve(*d)).collect::<Vec<_>>(),
                 "strides": o.layout.strides().iter().map(|d| resolve(*d)).collect::<Vec<_>>()

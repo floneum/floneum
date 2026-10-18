@@ -1,17 +1,12 @@
 #!/usr/bin/env python3
-"""Capture every model logit without GPU timestamp instrumentation, under the resource guard."""
+"""Compare saved model logits and phase identities without loading a model or using a GPU."""
 import argparse
 import array
-import hashlib
 import json
 import math
-import os
 from pathlib import Path
 import sys
 
-from benchmark_guard import run_guarded
-
-ROOT = Path(__file__).resolve().parents[3]
 
 
 def phase_rows(path):
@@ -49,63 +44,34 @@ def compare_vector(left, right):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("model", type=Path)
-    parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("reference", type=Path, help="directory of numbered .f32 vectors")
+    parser.add_argument("candidate", type=Path, help="directory of numbered .f32 vectors")
+    parser.add_argument("--reference-log", type=Path, required=True)
+    parser.add_argument("--candidate-log", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--reference", type=Path, default=ROOT/"reports/llama-decode-2x/baseline")
-    parser.add_argument("--binary", type=Path, default=ROOT/"target/debug/examples/profile_kernel_share")
-    parser.add_argument("--rounds", type=int, default=1)
-    parser.add_argument("--steps", type=int, default=8)
     args = parser.parse_args()
-    if not (1 <= args.rounds <= 10 and 2 <= args.steps <= 64):
-        parser.error("rounds must be 1..10 and steps 2..64")
-    reference = args.reference.resolve()
-    ref_rows = phase_rows(reference/"ab-reference.log")
-    by_identity = {identity(row): (index, row) for index, row in enumerate(ref_rows)}
-    if len(by_identity) != len(ref_rows):
-        raise ValueError("duplicate reference phases")
-    expected = [("long", r, "prefill" if step == 0 else "decode", step)
-                for r in range(args.rounds+1) for step in range(args.steps+1)]
-    if not set(expected).issubset(by_identity):
-        parser.error("reference does not cover requested phases")
-    config = json.loads(args.config.read_text())
-    if any(k.startswith(("FUSOR_TIME_", "PROFILE_REPLAY_", "PROFILE_METADATA", "FUSOR_GAPSTEP",
-                         "FUSOR_RESOLVE_", "PROFILE_LOGITS_")) for k in config):
-        parser.error("correctness capture must not contain timing/metadata instrumentation")
-    out = args.output.resolve()
-    out.mkdir(parents=True, exist_ok=False)
-    binary = args.binary.resolve()
-    command = [str(binary), str(args.model.resolve()), str(args.rounds), str(args.steps)]
-    env = {k:v for k,v in os.environ.items() if not k.startswith(("FUSOR_", "PROFILE_", "LAB_"))}
-    env.update(config)
-    env.update(PROFILE_PROMPT="long", PROFILE_PROMPT_REPEATS="8", PROFILE_LOGITS_DIR=str(out/"logits"),
-               FUSOR_EXPLORE_EPS="0")
-    with binary.open("rb") as source:
-        sha = hashlib.file_digest(source, "sha256").hexdigest()
-    (out/"provenance.json").write_text(json.dumps(dict(command=command, binary_sha256=sha,
-        reference=str(reference), environment={k:v for k,v in env.items() if k.startswith(("FUSOR_", "PROFILE_"))}), indent=2)+"\n")
-    with (out/"model.jsonl").open("w") as stdout, (out/"model.log").open("w") as stderr:
-        run_guarded(command, cwd=ROOT, env=env, stdout=stdout, stderr=stderr,
-                    model_bytes=args.model.stat().st_size, timeout=600, report_path=out/"resources.jsonl",
-                    poll_seconds=.1, record_child_rss=True)
-    rows = phase_rows(out/"model.log")
-    if [identity(row) for row in rows] != expected:
+    ref_rows, rows = phase_rows(args.reference_log), phase_rows(args.candidate_log)
+    if not rows or [identity(row) for row in rows] != [identity(row) for row in ref_rows]:
         raise ValueError("missing or reordered model phases")
-    if len(list((out/"logits").glob("*.f32"))) != len(rows):
-        raise ValueError("missing or extra logit vectors")
+    if len({identity(row) for row in rows}) != len(rows):
+        raise ValueError("duplicate model phases")
+    expected = {f"{i:05}.f32" for i in range(len(rows))}
+    for directory in [args.reference, args.candidate]:
+        if {p.name for p in directory.glob("*.f32")} != expected:
+            raise ValueError(f"missing or extra logit vectors: {directory}")
     checks = []
-    for index, row in enumerate(rows):
-        ref_index, ref = by_identity[identity(row)]
+    for index, (ref, row) in enumerate(zip(ref_rows, rows)):
         if row["prompt_tokens"] != ref["prompt_tokens"] or row["warmup"] != ref["warmup"]:
             raise ValueError("prompt or warmup identity differs")
-        check = compare_vector(reference/"reference-logits"/f"{ref_index:05}.f32", out/"logits"/f"{index:05}.f32")
+        check = compare_vector(args.reference/f"{index:05}.f32", args.candidate/f"{index:05}.f32")
         check.update(phase=identity(row), text_equal=row["text"] == ref["text"])
         checks.append(check)
     result = dict(checks=checks, values=sum(c["values"] for c in checks),
                   max_abs=max(c["max_abs"] for c in checks), max_rms=max(c["rms"] for c in checks),
                   passed=all(c["passed"] and c["text_equal"] for c in checks),
-                  note="Correctness only; no performance claim from logit-capture timings.")
-    (out/"result.json").write_text(json.dumps(result, indent=2)+"\n")
+                  note="Saved-output correctness comparison only; no performance claim.")
+    with args.output.open("x") as output:
+        output.write(json.dumps(result, indent=2)+"\n")
     print(json.dumps({k:v for k,v in result.items() if k != "checks"}, indent=2))
     if not result["passed"]:
         raise SystemExit("model numerical or generated-text regression")

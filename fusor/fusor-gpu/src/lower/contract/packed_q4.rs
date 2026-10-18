@@ -1,4 +1,4 @@
-//! Packed Q4_K dot-product probe. Four lanes cover each 32-value scale group;
+//! Coalesced Q4_K dot products. Four lanes cover each 32-value scale group;
 //! eight lanes cover a block. Masks retain each nibble's position in its word,
 //! with exact powers of two applied to the shared activations instead.
 use super::*;
@@ -10,13 +10,16 @@ pub(super) fn packed_q4_source(
     width: u32,
     p: SgemvParams,
 ) -> Option<QuantizedView> {
-    if c.shape.m != 1
-        || c.shape.batch != 1
-        || width != 32
+    if width < 8
+        || !width.is_multiple_of(8)
         || p.vector != 32
         || c.acc != ScalarElement::F32
         || !matches!(c.b.side.pre.kind(), ScalarKind::Arg(0))
-        || !c.shape.k.as_const()?.is_multiple_of(1024)
+        || !c
+            .shape
+            .k
+            .as_const()?
+            .is_multiple_of(u64::from(256 * (width / 8)))
     {
         return None;
     }
@@ -48,39 +51,32 @@ pub(super) fn lower_packed_q4(
     p: SgemvParams,
     q: &QuantizedView,
 ) -> Result<KernelIr> {
-    let blocked_view = (ctx.q4_variant == 3)
-        .then(|| ctx.block_storage_view(&q.data, 36))
-        .flatten();
+    let width = ctx.caps.subgroup_width();
+    let blocked_view = ctx.block_storage_view(&q.data, 36);
     let blocked = blocked_view.is_some();
     let weight_view = blocked_view.unwrap_or_else(|| q.data.clone());
     let b = &ctx.b;
     let f32_ty = ScalarElement::F32.element();
     let shape = c.shape;
-    let arithmetic = if shape.n.as_const().is_some_and(|n| n >= 16384) {
-        ctx.q4_variant
-    } else {
-        0
-    };
+    let arithmetic = ctx.q4_variant;
     let rows = c.rows();
     let cps = p.cols / p.subgroups;
     let lanes_per_block = 8;
     let values_per_group = 64 / lanes_per_block;
-    let blocks_per_subgroup = 32 / lanes_per_block;
+    let blocks_per_subgroup = width / lanes_per_block;
     let passes = (shape.k.as_const().unwrap() / u64::from(256 * blocks_per_subgroup)) as u32;
     let max_splits = (ctx
         .caps
         .limits
         .max_compute_invocations_per_workgroup
         .min(ctx.caps.limits.max_compute_workgroup_size[0])
-        / (p.subgroups * 32))
+        / (p.subgroups * width))
         .max(1);
-    let mut splits = crate::flags::for_profile(ctx.caps.execution_profile)
-        .packed_q4_splits
-        .min(max_splits);
-    if crate::flags::for_profile(ctx.caps.execution_profile)
+    let mut splits = crate::flags::flags().packed_q4_splits.min(max_splits);
+    if crate::flags::flags()
         .packed_q4_split_max_n
         .is_some_and(|limit| shape.n.as_const().is_none_or(|n| n > limit as u64))
-        || crate::flags::for_profile(ctx.caps.execution_profile)
+        || crate::flags::flags()
             .packed_q4_split_max_k
             .is_some_and(|limit| shape.k.as_const().is_none_or(|k| k > limit as u64))
     {
@@ -246,9 +242,7 @@ pub(super) fn lower_packed_q4(
                     ),
                 );
                 let packed = word(off);
-                if crate::flags::for_profile(ctx.caps.execution_profile).q4_half_unpack
-                    || arithmetic == 2
-                {
+                if crate::flags::flags().q4_half_unpack || arithmetic == 2 {
                     // Encode two integer nibbles as normal half mantissas.
                     // unpack(1 + q/1024) followed by FMA gives exactly q in
                     // F32. Activations and accumulation retain F32 precision.
@@ -415,7 +409,7 @@ pub(super) fn lower_packed_q4(
             "sgemv_packed_q4"
         },
         grid,
-        physical_subgroups * 32,
+        physical_subgroups * width,
         body,
     ))
 }

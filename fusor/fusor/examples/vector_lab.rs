@@ -45,11 +45,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let target = probe.backend().gpu_target().unwrap();
         let launcher = target.launcher();
         let count = commands.iter().filter(|c| !c.is_empty_dispatch()).count();
-        let per_submit = fusor_gpu::launch::dispatches_per_submit(
-            count * repeats,
-            launcher.backend(),
-            launcher.config().execution_profile,
-        );
+        let per_submit =
+            fusor_gpu::launch::dispatches_per_submit(count * repeats, launcher.backend());
         assert!(
             count > 0 && per_submit >= count * repeats,
             "use FUSOR_PROFILE_SUBMIT_SIZE=2147483647 to avoid host gaps"

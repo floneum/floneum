@@ -55,16 +55,10 @@ pub(super) fn lower(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
         squares = b.fma(b.load_local(x.clone()), b.load_local(x.clone()), squares);
         held.push((col, ok, x));
     }
-    let sum = if ctx
-        .caps
-        .execution_profile
-        .enabled("FUSOR_PROFILE_RMS_SUBGROUP_MERGE")
-        && ctx
-            .caps
-            .subgroups
-            .is_some_and(|s| s.is_fixed() && s.assumed() == 32)
-        && block.is_multiple_of(32)
-        && block <= 1024
+    let subgroup_width = ctx.caps.subgroup_width();
+    let sum = if ctx.caps.subgroups.is_some_and(|s| s.is_fixed())
+        && block.is_multiple_of(subgroup_width)
+        && block / subgroup_width <= subgroup_width
     {
         let subgroup_lane = b.builtin(Builtin::SubgroupLane);
         let subgroup = b.builtin(Builtin::SubgroupId);
@@ -73,13 +67,13 @@ pub(super) fn lower(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
             dst: partial.clone(),
             value: b.reduce(TileReduceOp::Sum, ReduceKind::Subgroup, squares),
         });
-        if block == 32 {
+        if block == subgroup_width {
             b.load_local(partial)
         } else {
             // This scratch is fresh and used once, so only the publication
             // barrier is needed. Each subgroup reads the partials across its
             // lanes, then broadcasts their collective sum to all its lanes.
-            let scratch = b.tile("rms_subgroup_partials", f, &[block / 32]);
+            let scratch = b.tile("rms_subgroup_partials", f, &[block / subgroup_width]);
             body.push(Stmt::If {
                 condition: b.eq(subgroup_lane.clone(), b.u32(0)),
                 accept: vec![Stmt::StoreTile {
@@ -96,7 +90,7 @@ pub(super) fn lower(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
                 value: b.f32(0.),
             });
             body.push(Stmt::If {
-                condition: b.lt(subgroup_lane.clone(), b.u32(block / 32)),
+                condition: b.lt(subgroup_lane.clone(), b.u32(block / subgroup_width)),
                 accept: vec![Stmt::StoreLocal {
                     dst: lane_partial.clone(),
                     value: b.load_tile(scratch, subgroup_lane),

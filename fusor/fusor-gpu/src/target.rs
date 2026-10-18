@@ -34,8 +34,6 @@ use warm::WarmArtifacts;
 /// Runtime policy.
 #[derive(Clone, Debug)]
 pub struct GpuConfig {
-    /// Requested inference policy; unsupported adapters use General.
-    pub execution_profile: fusor_ir::execution::ExecutionProfile,
     /// Override the platform memory ceiling.
     pub max_gpu_memory_bytes: Option<u64>,
     /// Pre-fill fresh allocations with `0xCD` so a zero-init assumption fails
@@ -52,7 +50,6 @@ pub struct GpuConfig {
 impl Default for GpuConfig {
     fn default() -> Self {
         Self {
-            execution_profile: Default::default(),
             max_gpu_memory_bytes: None,
             poison_allocations: false,
             max_in_flight_submits: 8,
@@ -271,14 +268,12 @@ impl GpuTarget {
     }
 
     pub async fn with_config(config: GpuConfig) -> Result<Self> {
-        let device =
-            Arc::new(GpuDevice::request_with_profile(None, config.execution_profile).await?);
+        let device = Arc::new(GpuDevice::request(None).await?);
         Self::from_device(device, config)
     }
 
     /// Build over an already-requested device.
-    pub fn from_device(device: Arc<GpuDevice>, mut config: GpuConfig) -> Result<Self> {
-        config.execution_profile = device.caps().execution_profile;
+    pub fn from_device(device: Arc<GpuDevice>, config: GpuConfig) -> Result<Self> {
         let wgpu_device = Arc::new(device.device().clone());
         let queue = Arc::new(device.queue().clone());
         let backend = device.adapter().get_info().backend;
@@ -368,9 +363,7 @@ impl GpuTarget {
         launches: &[usize],
         uploads: Vec<Arc<fusor_ir::target::HostBytes>>,
     ) -> Result<Option<std::thread::JoinHandle<Result<Vec<Buf>>>>> {
-        if crate::flags::for_profile(self.config.execution_profile).no_pipeline_share
-            || launches.is_empty()
-        {
+        if crate::flags::flags().no_pipeline_share || launches.is_empty() {
             return Ok(None);
         }
         let pack = Arc::new(UniformPack::new(plan));
@@ -498,7 +491,7 @@ impl GpuTarget {
     }
 
     fn q4_variant(&self) -> u8 {
-        let selected = crate::flags::for_profile(self.config.execution_profile).q4_variant;
+        let selected = crate::flags::flags().q4_variant;
         #[cfg(feature = "kernel-observer")]
         let selected = match self
             .q4_variant_override
@@ -517,19 +510,14 @@ impl GpuTarget {
         // resolve; `p1`/`probe`/`build`/`bind`/`enc`/`tail`/`tot` = phases;
         // `cold` = probe misses; `lowus`/`compus` = cohort-summed lower/compile
         // us; `chunkwait`/`pollus` = host blocked on the GPU.
-        let flags = crate::flags::for_profile(self.config.execution_profile);
+        let flags = crate::flags::flags();
         let gap = flags.gapstep;
         if gap {
             let prev = LAST_EXIT.lock().replace(start);
             let outside = prev.map(|p| start.duration_since(p).as_secs_f64() * 1e3);
             eprint!("GAPSTEP outside={:.2} ", outside.unwrap_or(0.0));
         }
-        let bundle_enabled = self
-            .config
-            .execution_profile
-            .enabled("FUSOR_PROFILE_WARM_ARTIFACTS")
-            && plan.launches.len() <= 512
-            && !flags.verify_artifact_cache;
+        let bundle_enabled = plan.launches.len() <= 512 && !flags.verify_artifact_cache;
         // Layouts depend on symbol order, not their current values. Always
         // refill binding 0; the snapshot contains no tensor or uniform bytes.
         let pack = bundle_enabled
@@ -796,15 +784,15 @@ impl GpuTarget {
         let __t_p2 = start.elapsed();
         let total = built.len();
         let focus = self.launcher.take_tuning_focus();
-        // Opt-in preparation/submission overlap. Keep each resolve within the
+        // Preparation/submission overlap for every plan. Keep each resolve within the
         // configured in-flight window and retain records for timing/observers.
-        let stream_size = self
-            .config
-            .execution_profile
-            .var("FUSOR_PROFILE_STREAM_SUBMIT")
+        let stream_size = std::env::var("FUSOR_PROFILE_STREAM_SUBMIT")
             .ok()
             .map(|v| v.parse::<usize>().expect("stream size must be an integer"))
-            .inspect(|n| assert!(*n > 0, "stream size must be positive"));
+            .inspect(|n| assert!(*n > 0, "stream size must be positive"))
+            .or_else(|| {
+                (total > 1).then_some(total.div_ceil(crate::launch::inflight_chunks(total)))
+            });
         let stream_rest = flags.stream_submit_rest;
         #[cfg(feature = "kernel-observer")]
         let stream_rest = match self
@@ -823,7 +811,7 @@ impl GpuTarget {
                 total,
                 first,
                 stream_rest,
-                crate::launch::inflight_chunks(total, self.config.execution_profile),
+                crate::launch::inflight_chunks(total),
             )
         });
         let live: Vec<bool> = built
@@ -1063,7 +1051,7 @@ impl GpuTarget {
         let Some((artifact, grid, cached_ph)) = cached else {
             return Ok(None);
         };
-        if !crate::flags::for_profile(self.config.execution_profile).verify_artifact_cache {
+        if !crate::flags::flags().verify_artifact_cache {
             return Ok(Some((artifact, grid, cached_ph)));
         }
         // Verification mode: relower and compare identity + grid.
@@ -1083,9 +1071,7 @@ impl GpuTarget {
                 "[artifact-cache] MISMATCH launch {launch_ix} name {}: body {ph} grid {:?} cached ({cached_ph}, {grid:?})",
                 ir.name, ir.grid,
             );
-            if let Some(dir) =
-                &crate::flags::for_profile(self.config.execution_profile).mismatch_dump
-            {
+            if let Some(dir) = &crate::flags::flags().mismatch_dump {
                 static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
                 let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 if n < 40 {
@@ -1103,19 +1089,14 @@ impl GpuTarget {
     /// with the body's [`pipeline_hash`] slot held.
     fn compile_body(&self, ir: &KernelIr, ph: u128) -> Result<Artifact> {
         let _g = Stopwatch::start(&COMPILE_US);
-        let share = !crate::flags::for_profile(self.config.execution_profile).no_pipeline_share;
+        let share = !crate::flags::flags().no_pipeline_share;
         let emitted = crate::emit::emit(ir, self.caps()).map_err(Error::from)?;
         let text = wgsl_text(&emitted)?;
-        if let Some(dir) = &crate::flags::for_profile(self.config.execution_profile).wgsl_dump {
+        if let Some(dir) = &crate::flags::flags().wgsl_dump {
             let _ = std::fs::create_dir_all(dir);
             let _ = std::fs::write(dir.join(format!("{}_{:016x}.wgsl", ir.name, ph)), &text);
         }
-        let source_key = format!(
-            "{}\n{}\n{}",
-            ir.block,
-            zero_workgroup_memory(ir.name, self.config.execution_profile),
-            text
-        );
+        let source_key = format!("{}\n{}", ir.block, text);
         let hit = if share {
             self.pipelines_by_source.lock().get(&source_key).cloned()
         } else {
@@ -1192,7 +1173,7 @@ impl GpuTarget {
     /// The compiled pipeline for one body, claimed single-flight. With `wait`
     /// a slot another worker holds is waited on; otherwise `None`.
     fn pipeline(&self, ir: &KernelIr, ph: u128, wait: bool) -> Result<Option<Artifact>> {
-        if crate::flags::for_profile(self.config.execution_profile).no_pipeline_share {
+        if crate::flags::flags().no_pipeline_share {
             return self.compile_body(ir, ph).map(Some);
         }
         let slot: PipelineSlot = {
@@ -1334,7 +1315,7 @@ impl GpuTarget {
             )
         };
         self.launcher.note_pipeline_compile();
-        let trace = crate::flags::for_profile(self.config.execution_profile).trace_dispatch;
+        let trace = crate::flags::flags().trace_dispatch;
         if trace {
             eprintln!("[compile] start {name} bindings={}", entries.len());
         }
@@ -1344,10 +1325,7 @@ impl GpuTarget {
             module: &module,
             entry_point: Some("main"),
             compilation_options: wgpu::PipelineCompilationOptions {
-                zero_initialize_workgroup_memory: zero_workgroup_memory(
-                    name,
-                    self.config.execution_profile,
-                ),
+                zero_initialize_workgroup_memory: true,
                 ..Default::default()
             },
             cache: None,
@@ -1366,30 +1344,6 @@ impl GpuTarget {
             block,
         }))
     }
-}
-
-/// These lowerings write each shared slot before its first read: RMS's
-/// subgroup leaders publish all reduction partials; attention initializes
-/// every live score and PV partial; split GEMV publishes every subgroup's
-/// partial, including masked tail columns. Other kernels retain WebGPU's
-/// initialization, including arbitrary composed slabs.
-fn zero_workgroup_memory(name: &str, profile: fusor_ir::execution::ExecutionProfile) -> bool {
-    !(crate::flags::for_profile(profile).skip_initialized_workgroup_zero
-        && matches!(
-            name,
-            "rms_norm"
-                | "rms_norm_residual"
-                | "decode_attention"
-                | "decode_attention_partial"
-                | "decode_attention_gqa"
-                | "decode_attention_gqa_partial"
-                | "decode_attention_online"
-                | "decode_attention_online_partial"
-                | "sgemv_packed_q4_split"
-                | "sgemv_q6_coalesced_split2"
-                | "sgemv_q6_coalesced_split4"
-                | "sgemv_q6_coalesced_split8"
-        ))
 }
 
 impl Target for GpuTarget {
@@ -1450,7 +1404,7 @@ impl GpuTarget {
     fn cache_stats(&self) {
         use std::sync::atomic::{AtomicU64, Ordering};
         static N: AtomicU64 = AtomicU64::new(0);
-        if !crate::flags::for_profile(self.config.execution_profile).cache_stats {
+        if !crate::flags::flags().cache_stats {
             return;
         }
         let n = N.fetch_add(1, Ordering::Relaxed);

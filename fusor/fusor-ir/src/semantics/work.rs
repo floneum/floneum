@@ -279,34 +279,29 @@ pub fn work_l1(op: &Launch, ins: &[ValueFacts], out: &ValueFacts) -> Work {
         Launch::DecodeAttention {
             output,
             keys,
-            chunk,
+            block,
+            subgroup,
+            ops,
             ..
         } => {
             let heads =
-                output.dims[0].as_const().unwrap_or(0) * output.dims[1].as_const().unwrap_or(0);
-            let splits = if *chunk == 0 {
-                1
-            } else {
-                keys.as_const().unwrap_or(1).div_ceil(u64::from(*chunk))
-            };
+                output.dims[0].as_const().unwrap_or(1) * output.dims[1].as_const().unwrap_or(1);
+            let width = ops[0].layout.shape()[3].as_const().unwrap_or(1);
+            let keys = keys.as_const().unwrap_or(1);
             Work {
                 macs: heads
-                    .saturating_mul(128)
-                    .saturating_mul(keys.as_const().unwrap_or(1))
+                    .saturating_mul(width)
+                    .saturating_mul(keys)
                     .saturating_mul(2),
-                transcendentals: heads * keys.as_const().unwrap_or(1),
-                index_ops: 0,
-                // Logical shared-memory requests: scores, softmax, broadcast
-                // probability reads, the two reductions and the PV close.
-                // This is traffic; allocation is priced separately in tile_bytes.
+                transcendentals: heads.saturating_mul(keys).saturating_mul(2),
+                // One publication and merge of per-subgroup statistics; no
+                // score matrix or probability vector is written to memory.
                 wg_bytes: heads
-                    .saturating_mul(
-                        keys.as_const()
-                            .unwrap_or(1)
-                            .saturating_mul(36)
-                            .saturating_add(6160 * splits),
-                    )
-                    .saturating_mul(4),
+                    .saturating_mul(width + 2)
+                    .saturating_mul(output.dims[2].as_const().unwrap_or(1))
+                    .saturating_mul(u64::from(*block / (*subgroup).max(1)))
+                    .saturating_mul(8),
+                ..Work::default()
             }
         }
         Launch::DecodeAttentionMerge { output, splits, .. } => Work {
@@ -319,10 +314,6 @@ pub fn work_l1(op: &Launch, ins: &[ValueFacts], out: &ValueFacts) -> Work {
                 .iterations()
                 .unwrap_or(0)
                 .saturating_mul(splits.as_const().unwrap_or(1)),
-            ..Work::default()
-        },
-        Launch::DecodeRope { output, .. } => Work {
-            macs: output.iterations().unwrap_or(0).saturating_mul(2),
             ..Work::default()
         },
         Launch::RmsNorm {

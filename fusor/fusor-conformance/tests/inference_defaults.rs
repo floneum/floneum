@@ -1,30 +1,25 @@
-//! Exercise production inference defaults without diagnostic optimization flags.
+//! Exercise the shared compiler path without diagnostic optimization flags.
 #![cfg(not(target_arch = "wasm32"))]
 
 #[test]
 #[ignore = "requires a live GPU; run explicitly with --ignored"]
-fn inference_profile_preserves_normalization_attention_and_cache_snapshots() {
+fn ordinary_device_preserves_normalization_attention_and_cache_snapshots() {
     use fusor::{Session, session::Backend};
     use fusor_conformance::{harness, suite};
-    use fusor_ir::execution::ExecutionProfile;
 
     let _guard = harness::gpu_test_guard();
-    let backend = pollster::block_on(Backend::gpu_with_profile(ExecutionProfile::LowLatency))
-        .expect("GPU required for inference-profile regression");
+    let backend =
+        pollster::block_on(Backend::gpu()).expect("GPU required for shared-compiler regression");
     let session = Session::new(backend).unwrap();
-    eprintln!(
-        "{}: {:?}",
-        session.caps().name,
-        session.caps().execution_profile
-    );
+    eprintln!("{}: {:?}", session.caps().name, session.caps().kind);
     let names = [
         "rms_norm_decode_rows",
         "padded_cache_decode_prefix",
         "padded_cache_growth_replay",
-        "padded_cache_llama_geometry",
+        "cache_attention_grouped_heads",
         "padded_cache_tail_batches",
-        "fixed_cache_donation_replay_ring",
-        "fixed_cache_donation_shared_store",
+        "fixed_cache_commit_all_replay_ring",
+        "fixed_cache_commit_all_shared_store",
         "rope_pair_with_position",
         "rope_interleaved_pair_with_position",
     ];

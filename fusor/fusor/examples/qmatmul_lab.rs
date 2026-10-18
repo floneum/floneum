@@ -321,7 +321,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .count();
             if std::env::var_os("LAB_PLAN").is_some() {
                 let submissions = (dispatches * repeats).div_ceil(
-                    fusor_gpu::launch::dispatches_per_submit(dispatches * repeats, launcher.backend(), launcher.config().execution_profile),
+                    fusor_gpu::launch::dispatches_per_submit(dispatches * repeats, launcher.backend()),
                 );
                 eprintln!("LAB_REPLAY submissions={submissions} encode_us={encode_us:.3} gpu_span_us={:.3}", us * repeats as f64);
             }

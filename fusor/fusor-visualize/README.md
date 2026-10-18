@@ -7,58 +7,16 @@ no GPU or driver. The implementation is in the `fusor-visualize` workspace crate
 The repository includes selected measurement evidence. Full local experiment
 archives are excluded; see [report contents](../../reports/PR-CONTENTS.txt).
 
-For real Llama hotspot attribution, quantized-matrix experiments and full-logit
-A/B validation, see the steady decode investigation (local experiment archive),
-the prefill/latency investigation (local experiment archive)
-and the original 2x investigation (local experiment archive).
-Its `profile_kernel_share` example joins actual dispatches to semantic shapes,
-layouts and GPU timestamps, including operations the virtual interpreter cannot
-execute. The report includes reproduction commands and distinguishes prompt GPU
-speedup from fresh-session latency and steady decode.
-The decode report includes explicit GPU and wall speedup assertions. An earlier
-normal WebGPU build passed **3.19× and 3.09×** at 4008-token context in ABBA
-order: baseline medians 71.42/71.49 ms per token, candidate 22.39/23.12 ms,
-60 steady samples per arm. The same executable runs both configurations;
-timestamps, metadata and logit writes are disabled for these timings. This
-build separately passes all 2,308,608 long-context logits (maximum absolute
-difference 0.000471) and the cache-capacity transition at short context.
-See `webgpu-rms-paired-wall-4008/result.json` (local experiment archive).
-Reproduction uses `webgpu-rms-4k-config.json` and `webgpu-rms-profile` under
-`reports/llama-decode-2x/`.
+The shared compiler recognizes normalization and streaming attention from ordinary
+algebra, forwards views, and lowers contiguous copies through WebGPU. Quantized
+load selection depends on the format, layout, subgroup width, and device limits.
+No model-specific execution profile or adapter-name preset is required.
+See [shared compiler validation](../../reports/shared-compiler.txt).
 
-The original **208-token target now passes 2× in both orders**: **2.037× / 2.004×**
-(32.632/32.042 → 16.020/15.990 ms/token), or **2.020×** using the median of
-run medians. These are 62 steady samples per arm on the M2 Max, using the same
-executable and resource policy. All 2,308,608 original-reference logits pass;
-maximum absolute error is 0.0000611, with matching argmaxes and text. This is
-the October 12 opt-in checkpoint, with a narrow margin in the reverse order.
-Those runs retained at least 8.645 GiB estimated reclaimable headroom and
-produced no additional swapouts. Quantized weights and F32 arithmetic remain.
-
-The ordinary Llama builder now selects this inference policy on supported
-Apple GPUs, without a profiling feature or environment preset. See
-[normal chat usage](../../models/kalosm-llama/README.md#fast-chat-defaults) and
-[default-path validation status](../../reports/llama-decode-2x/default-inference.txt).
-The fresh full-model rerun was stopped by the memory guard during reference
-prefill; the timings above are historical, not a new default-path measurement.
-
-Use the verified configuration (local experiment archive)
-and reproduction report (local experiment archive).
-Exact timing evidence (local experiment archive)
-and full-logit checks (local experiment archive)
-are separate. The configuration includes a 32 ms active WebGPU polling window,
-which trades CPU activity for lower completion latency. See
-the investigation history (local experiment archive).
-Historical native Metal and indirect-command results are excluded from accepted
-speedup claims; those experiments are archived and are not build inputs.
-The cache ownership and residual-normalization experiments are
-recorded in `reports/llama-decode-2x/continuation-findings.txt`; a faster GPU span
-alone does not establish a faster token. Cache donation has passed all model
-logits and shared-buffer snapshot tests; combined with residual normalization
-it modestly improves on the earlier 1.60× prompt-sized cache checkpoint.
-`reports/llama-decode-2x/wall_ab.py` excludes timestamps, metadata, and logit
-writes and checks equal prompts, phases, executable identity, and generated text.
-The earlier `packed-candidate.json` and `retained-*` reports are historical.
+The `profile_kernel_share` model example joins actual dispatches to semantic
+shapes, layouts, and GPU timestamps. Earlier model performance reports describe
+historical experimental checkpoints; their speedup numbers do not establish
+performance of the shared compiler rewrite.
 
 ```sh
 cd fusor
@@ -460,66 +418,17 @@ python3 fusor-visualize/tools/extract_quant_weights.py model.gguf \
 `qmatmul_lab` reads these bytes through `LAB_WEIGHT_FILE`; CPU checks
 use the original native blocks before any GPU layout conversion.
 
-`reports/llama-decode-2x/paired_wall.py` wraps the clean full-model harness in
-ABBA order and requires the speed target in both orders. It verifies the same
-executable, configurations, prompt, phases, and generated text across all four
-sequential processes. Background GPU workloads can still affect timings.
-Full-logit correctness is checked separately.
+`tools/benchmark_guard.py` bounds experiment startup and monitors memory,
+compression, swap, disk space, and timeout. A per-user lock prevents overlapping
+guarded runs across worktrees. It terminates and reaps only its own process group
+on failure, and never retries a resource abort automatically. Direct binary
+launches are not guarded. Do not run a build or another GPU experiment alongside
+a model measurement.
 
-The full-model launchers `wall_ab.py`, `probe.py`, and `model_ab.py` now use
-`tools/benchmark_guard.py`. The guard holds a shared, per-user lock until its
-child has exited, refusing overlapping guarded runs even across worktrees.
-Before spawning, it requires at least 12 GiB of estimated reclaimable memory
-(or twice the model size plus 6 GiB, whichever is larger), 8 GiB of disk space,
-and at most 2 GiB in the compressor. From process startup it polls every 0.5 s
-and aborts if memory headroom falls below 6 GiB, disk space below 4 GiB,
-compression grows by 512 MiB, or swapouts grow by 64 MiB. Monitor errors,
-interruptions, and timeouts also abort; it terminates only its own process
-group, reaps the child, records the failure, and never automatically retries.
-
-These are conservative pressure safeguards, not an OS-enforced GPU allocation
-quota. Direct binary launches and historical microbenchmark scripts are not
-covered. Use the guarded full-model launchers for future model measurements;
-do not run a build or another GPU experiment alongside them. Resource logs sit
-beside each run's output. Monitoring adds host activity, so future comparisons
-must use the same guard for both arms. The first guarded width-32 comparison
-measured 31.853 versus 18.636 ms/token (1.709×), with no swap growth, but later
-correctness runs still hit pressure limits. Mapped GPU uploads alone did not
-remove the retained private host weight copies.
-
-The current bounded configuration uses one compiler thread, 64-token prefill
-chunks, a small cooperative tile, mapped initial uploads, and a 7 GiB GPU pool.
-`PROFILE_MMAP_WEIGHTS=/absolute/path/model.gguf` retains read-only source views
-after checking metadata and every byte against the loaded tensors. The file
-must remain unchanged while the model is alive. Concatenated quantized matrices
-retain host segments and materialize only one upload/repack at a time. The
-208-token prompt, F32 activations and accumulation, and original quantized
-weights are unchanged. Both timing arms must use the same resource settings.
-
-The full two-session check in
-`segmented-host/logits` (local experiment archive)
-passes all 2,308,608 logits (maximum absolute difference 0.0000639), with at
-least 10.69 GiB estimated reclaimable memory, no compression growth, and no
-swap growth. `tools/check_model_logits.py` checks every output without GPU
-timestamp instrumentation. This establishes correctness and bounded execution
-for that historical run, not a new speed result. At that checkpoint the short-context
-2× goal remained open. A corrected ABBA comparison with that
-resource policy measured 32.314/32.217 versus 18.808/19.158 ms/token
-(1.718×/1.682×). See `segmented-host/scoped-original-wall`.
-
-The extra prefill limits now use
-`FUSOR_PROFILE_LARGE_PLAN_MIN_DISPATCHES=4096`, independently of normal pass
-chunking. The earlier threshold of 1024 also throttled the original
-1270-dispatch decode baseline; its apparent 2.4–2.7× result is excluded.
-The wall harness rejects comparisons whose decode phases cross the prefill
-resource threshold. Use `baseline-scoped.json` and `retained-scoped.json`.
-
-Kernel microbenchmarks must also match the model’s shader options, including
-`FUSOR_PROFILE_SKIP_INITIALIZED_WORKGROUP_ZERO`. With matching options, the
-previous Q6 float-unpack micro gain shrinks to 1.7–2.0%; actual model Q6 down
-and vocabulary timings remain essentially unchanged. The retained configuration
-excludes that experiment. Shared backing and segmented concatenations pass
-focused CPU/WebGPU tests, and all 14 Python tool checks pass.
+Earlier full-model configurations and measurements remain historical evidence.
+They used experimental model hooks and execution presets that this PR removes;
+they are not commands for reproducing the current compiler's behavior.
+`tools/check_model_logits.py` can still compare saved output vectors offline.
 
 Read-only preflight and lightweight regression checks (neither loads a model):
 
@@ -535,17 +444,5 @@ compiled WebGPU plan. It alternates ABBA/BAAB, verifies three changing full
 output vectors, and limits resident weights to 512 MiB. `--dependent` inserts
 an identical checked WGSL output-to-input dependency guard after each GEMV;
 its timings include the guard and still do not represent model throughput.
-A/A control is within 0.2%. Four Q4 columns per subgroup improves this microprobe
-about 4.6%, but the separate model ABBA comparison is flat (0.997× / 1.008×).
-
-`tools/paired_model_geometry.py` uses one loaded model and two small KV histories,
-alternating the execution order of matching tokens. It never replays stateful
-plans. The schedule override rejects changes to graph extraction, launch order,
-buffers, symbols, and illegal schedules. Full-logit mode checks both histories
-against the original reference. It passed 4,617,216 values, but a three-round
-control exceeded the compressor-growth guard. The tool now allows only one
-warmup and one measured round, at most 32 steps. That capped A/A control passes
-(0.99993× / 1.00332×), with no compressor or swap growth. The earlier aborted
-timing remains invalid. The harness also supports bounded polling and submission
-policy comparisons without loading a second model.
-All probes use `benchmark_guard.py`; a resource abort is not retried automatically.
+These are kernel measurements, not full-model throughput claims. All probes use
+`benchmark_guard.py`; a resource abort is not retried automatically.

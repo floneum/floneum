@@ -9,7 +9,6 @@ use fusor_ir::shape::Dim;
 
 fn caps() -> Caps {
     Caps {
-        execution_profile: Default::default(),
         kind: DeviceKind::Cpu,
         name: "candidate construction test".into(),
         limits: Limits {
@@ -840,4 +839,175 @@ fn symbolic_map_fusion_preserves_the_producer_address() {
             );
         }
     }
+}
+
+/// Build normalization through scalar algebra, without calling an RMS helper.
+fn normalization_expression(g: &mut EGraph, rows: u64, width: u64, mean_scale: f32) -> Id {
+    use fusor_autograd::tape::{GraphTape, TapeExt};
+    use fusor_ir::autograd::Tape;
+    use fusor_ir::scalar::{BinOp, ScalarExpr, UnOp};
+    let x = leaf(g, 0, &consts([rows, width]));
+    let w = leaf(g, 1, &consts([width]));
+    let mut t = GraphTape::new(g);
+    let square = t.binary(BinOp::Mul, x, x).unwrap();
+    let sum = t.fold_binop(BinOp::Add, 1, Dtype::F32, square).unwrap();
+    let mean = t.mul_scalar(sum, mean_scale).unwrap();
+    let eps = ScalarExpr::lit(fusor_ir::dtype::Splat::F32(1e-5));
+    let inv = t
+        .map(
+            ScalarExpr::un(
+                UnOp::InverseSqrt,
+                ScalarExpr::bin(BinOp::Add, ScalarExpr::arg(0, Dtype::F32), eps),
+            ),
+            &[mean],
+        )
+        .unwrap();
+    let inv = t.broadcast_axis(inv, 1, Dim::Const(width)).unwrap();
+    let y = t.binary(BinOp::Mul, x, inv).unwrap();
+    let w = t.broadcast_to(w, &consts([rows, width])).unwrap();
+    t.binary(BinOp::Mul, y, w).unwrap()
+}
+
+#[test]
+fn ordinary_algebra_gets_normalization_on_capability_variants() {
+    use fusor_ir::ir::launch::Launch;
+    let rule = fusor_ir::rules::normalization::FUSE_ROW_NORMALIZATION.apply;
+    for subgroup in [None, Some(16), Some(32), Some(64)] {
+        for (rows, width) in [(7, 37), (2, 128), (5, 257), (3, 768)] {
+            let mut g = graph();
+            let root = normalization_expression(&mut g, rows, width, 1.0 / width as f32);
+            let mut c = gpu_caps();
+            c.name = "anonymous capability fixture".into();
+            c.subgroups = subgroup.map(|n| SubgroupWidths { min: n, max: n });
+            c.limits.max_compute_invocations_per_workgroup = 128;
+            c.limits.max_compute_workgroup_size[0] = 128;
+            assert!(
+                apply(&mut g, &c, root, rule).is_some(),
+                "{subgroup:?}, {rows}x{width}"
+            );
+            assert!(g.class_ids(g.class_of(root)).iter().any(|id| matches!(
+                g.node(*id).op,
+                Op::Launch(Launch::RmsNorm {
+                    block: 32 | 64 | 128,
+                    ..
+                })
+            )));
+        }
+    }
+    let mut g = graph();
+    let root = normalization_expression(&mut g, 3, 37, 1.0 / 36.0);
+    assert_declines(&mut g, &gpu_caps(), root, rule);
+    let mut g = graph();
+    let root = normalization_expression(&mut g, 3, 37, 1.0 / 37.0);
+    assert_declines(&mut g, &caps(), root, rule);
+}
+
+fn attention_expression(g: &mut EGraph, width: u64, keys: Dim, grouped: bool) -> Id {
+    use fusor_autograd::tape::{GraphTape, TapeExt};
+    use fusor_ir::autograd::Tape;
+    use fusor_ir::scalar::{BinOp, UnOp};
+    let qs = if grouped {
+        vec![
+            Dim::Const(2),
+            Dim::Const(3),
+            Dim::Const(2),
+            Dim::ONE,
+            Dim::Const(width),
+        ]
+    } else {
+        consts([2, 3, 1, width]).to_vec()
+    };
+    let q = leaf(g, 0, &qs);
+    let k = leaf(
+        g,
+        1,
+        &[Dim::Const(2), Dim::Const(3), keys, Dim::Const(width)],
+    );
+    let v = leaf(
+        g,
+        2,
+        &[Dim::Const(2), Dim::Const(3), keys, Dim::Const(width)],
+    );
+    let labels = |x: &[u8]| x.iter().copied().map(Label).collect();
+    let qlabels = if grouped {
+        vec![0, 1, 5, 2, 4]
+    } else {
+        vec![0, 1, 2, 4]
+    };
+    let slabels = if grouped {
+        vec![0, 1, 5, 2, 3]
+    } else {
+        vec![0, 1, 2, 3]
+    };
+    let mut t = GraphTape::new(g);
+    let s = t
+        .contract(
+            q,
+            k,
+            EinSpec {
+                a: labels(&qlabels),
+                b: labels(&[0, 1, 3, 4]),
+                out: labels(&slabels),
+            },
+            Dtype::F32,
+        )
+        .unwrap();
+    let s = t.mul_scalar(s, 1.0 / (width as f32).sqrt()).unwrap();
+    let axis = (qs.len() - 1) as u32;
+    let max = t.fold_binop(BinOp::Max, axis, Dtype::F32, s).unwrap();
+    let max = t.broadcast_axis(max, axis, keys).unwrap();
+    let centered = t.binary(BinOp::Sub, s, max).unwrap();
+    let exp = t.unary(UnOp::Exp, centered).unwrap();
+    let sum = t.fold_binop(BinOp::Add, axis, Dtype::F32, exp).unwrap();
+    let sum = t.broadcast_axis(sum, axis, keys).unwrap();
+    let prob = t.binary(BinOp::Div, exp, sum).unwrap();
+    t.contract(
+        prob,
+        v,
+        EinSpec {
+            a: labels(&slabels),
+            b: labels(&[0, 1, 3, 4]),
+            out: labels(&qlabels),
+        },
+        Dtype::F32,
+    )
+    .unwrap()
+}
+
+#[test]
+fn ordinary_attention_is_recognized_for_multiple_widths_and_subgroups() {
+    let rule = fusor_ir::rules::attention::FUSE_STREAMING_ATTENTION.apply;
+    for subgroup in [16, 32, 64] {
+        for width in [32, 64, 96, 128, 256] {
+            if width % subgroup != 0 {
+                continue;
+            }
+            for grouped in [false, true] {
+                for keys in [
+                    Dim::Const(17),
+                    Dim::Const(513),
+                    Dim::Sym(fusor_ir::shape::SymId(77)),
+                ] {
+                    let mut g = graph();
+                    let root = attention_expression(&mut g, width, keys, grouped);
+                    let mut c = gpu_caps();
+                    c.name = "anonymous capability fixture".into();
+                    c.subgroups = Some(SubgroupWidths {
+                        min: subgroup as u32,
+                        max: subgroup as u32,
+                    });
+                    assert!(
+                        apply(&mut g, &c, root, rule).is_some(),
+                        "width={width} subgroup={subgroup} grouped={grouped} keys={keys:?}"
+                    );
+                }
+            }
+        }
+    }
+    let mut g = graph();
+    let root = attention_expression(&mut g, 128, Dim::Const(17), false);
+    let mut c = gpu_caps();
+    c.subgroups = None;
+    assert_declines(&mut g, &c, root, rule);
+    assert_declines(&mut g, &caps(), root, rule);
 }

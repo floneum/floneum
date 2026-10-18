@@ -1,5 +1,5 @@
 //! Independent subgroup online softmax/PV, followed by one workgroup merge.
-//! Each subgroup publishes all 130 partial values before the sole barrier.
+//! Each subgroup publishes all channel and statistic values before the sole barrier.
 //! Empty key partitions publish zero numerator/denominator and a finite floor.
 use super::*;
 
@@ -10,7 +10,6 @@ pub(super) fn lower(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
         keys,
         block,
         chunk,
-        key_major,
         scale,
         prefix,
         ops,
@@ -20,7 +19,9 @@ pub(super) fn lower(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
         return Err(Error::Plan("expected online decode attention".into()));
     };
     let b = &ctx.b;
-    let (block, subgroups) = (*block, *block / 32);
+    let subgroup = ctx.caps.subgroup_width();
+    let width = ops[0].layout.shape()[3].as_const().unwrap() as u32;
+    let (block, subgroups) = (*block, *block / subgroup);
     let f = ScalarElement::F32.element();
     let u = ScalarElement::U32.element();
     let heads = output.dims[1].as_const().unwrap() as u32;
@@ -48,12 +49,7 @@ pub(super) fn lower(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
         &ctx.caps.limits,
     )?;
     let group = ctx.linear_workgroup();
-    let (head, split) = if *key_major {
-        let (split, head) = b.divrem(group.clone(), b.u32(batches * heads));
-        (head, split)
-    } else {
-        b.divrem(group.clone(), splits.clone())
-    };
+    let (head, split) = b.divrem(group.clone(), splits.clone());
     let output_group = b.add(b.mul(head.clone(), splits.clone()), split.clone());
     let start = b.mul(split, b.u32(capacity));
     let (batch, head_in_batch) = b.divrem(head.clone(), b.u32(heads));
@@ -61,7 +57,7 @@ pub(super) fn lower(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
         b.mul(batch, b.u32(*kv_heads)),
         b.div(head_in_batch, b.u32(heads / kv_heads)),
     );
-    let kv_base = b.mul(kv_row, b.mul(ctx.dim_expr(*keys)?, b.u32(128)));
+    let kv_base = b.mul(kv_row, b.mul(ctx.dim_expr(*keys)?, b.u32(width)));
     let sg = b.builtin(Builtin::SubgroupId);
     let lane = b.builtin(Builtin::SubgroupLane);
     let scale = ctx.eval_scalar(scale, &[], &[])?;
@@ -75,19 +71,23 @@ pub(super) fn lower(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
         b.sub(maximum(prefix, start.clone()), start.clone()),
         b.u32(capacity),
     );
-    let partials = b.tile("online_attention_partials", f, &[subgroups * 130]);
+    let partials = b.tile("online_attention_partials", f, &[subgroups * (width + 2)]);
     let mut body = Vec::new();
     let mut query = Vec::new();
     let mut numerators = Vec::new();
-    for channel in 0..4 {
+    for channel in 0..width / subgroup {
         let q = b.local(f);
         let index = b.add(
-            b.mul(head.clone(), b.u32(128)),
-            b.add(lane.clone(), b.u32(channel * 32)),
+            b.mul(head.clone(), b.u32(width)),
+            b.add(lane.clone(), b.u32(channel * subgroup)),
         );
         body.push(Stmt::StoreLocal {
             dst: q.clone(),
-            value: ctx.load_mapped(&ops[0], index, u64::from(batches) * u64::from(heads) * 128)?,
+            value: ctx.load_mapped(
+                &ops[0],
+                index,
+                u64::from(batches) * u64::from(heads) * u64::from(width),
+            )?,
         });
         query.push(b.load_local(q));
         let numerator = b.local(f);
@@ -112,13 +112,14 @@ pub(super) fn lower(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
         b.mul(b.load_local(it.clone()), b.u32(subgroups)),
         sg.clone(),
     );
-    let kv_total = u64::from(batches) * u64::from(*kv_heads) * keys.as_const().unwrap_or(0) * 128;
+    let kv_total =
+        u64::from(batches) * u64::from(*kv_heads) * keys.as_const().unwrap_or(0) * u64::from(width);
     let index = |channel| {
         b.add(
             kv_base.clone(),
             b.add(
-                b.mul(b.add(start.clone(), key.clone()), b.u32(128)),
-                b.add(lane.clone(), b.u32(channel * 32)),
+                b.mul(b.add(start.clone(), key.clone()), b.u32(width)),
+                b.add(lane.clone(), b.u32(channel * subgroup)),
             ),
         )
     };
@@ -185,46 +186,25 @@ pub(super) fn lower(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
             value: b.load_local(next_max),
         },
     ]);
-    let (iterations, loop_body) =
-        if crate::flags::for_profile(ctx.caps.execution_profile).attention_exact_partition {
-            // Subgroup s owns s, s + S, ... < length. All of its lanes execute
-            // floor((length + S - 1 - s) / S) iterations, so no per-key guard is
-            // needed. The numerator stays nonnegative even for an empty prefix.
-            // Only subgroup collectives occur inside; the workgroup rendezvous
-            // remains outside the loop, where every subgroup reaches it.
-            (
-                b.div(
-                    b.sub(b.add(length.clone(), b.u32(subgroups - 1)), sg.clone()),
-                    b.u32(subgroups),
-                ),
-                update,
-            )
-        } else {
-            (
-                b.div(
-                    b.add(length.clone(), b.u32(subgroups - 1)),
-                    b.u32(subgroups),
-                ),
-                vec![Stmt::If {
-                    condition: b.lt(key, length),
-                    accept: update,
-                    reject: Vec::new(),
-                }],
-            )
-        };
+    // Each subgroup has a uniform trip count; no workgroup barrier occurs
+    // until all independent partitions have completed.
+    let iterations = b.div(
+        b.sub(b.add(length, b.u32(subgroups - 1)), sg.clone()),
+        b.u32(subgroups),
+    );
     body.push(Stmt::Loop {
         count: Some(iterations),
         index: Some(it),
         accumulators: Vec::new(),
-        body: loop_body,
+        body: update,
     });
-    let partial_base = b.mul(sg.clone(), b.u32(130));
+    let partial_base = b.mul(sg.clone(), b.u32(width + 2));
     for (channel, numerator) in numerators.into_iter().enumerate() {
         body.push(Stmt::StoreTile {
             dst: partials.clone(),
             index: b.add(
                 partial_base.clone(),
-                b.add(lane.clone(), b.u32(channel as u32 * 32)),
+                b.add(lane.clone(), b.u32(channel as u32 * subgroup)),
             ),
             value: b.load_local(numerator),
         });
@@ -234,21 +214,21 @@ pub(super) fn lower(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
         accept: vec![
             Stmt::StoreTile {
                 dst: partials.clone(),
-                index: b.add(partial_base.clone(), b.u32(128)),
+                index: b.add(partial_base.clone(), b.u32(width)),
                 value: b.load_local(running_max),
             },
             Stmt::StoreTile {
                 dst: partials.clone(),
-                index: b.add(partial_base, b.u32(129)),
+                index: b.add(partial_base, b.u32(width + 1)),
                 value: b.load_local(running_sum),
             },
         ],
         reject: Vec::new(),
     });
     body.push(Stmt::Barrier);
-    let load = |part, at| b.load_tile(partials.clone(), b.add(b.u32(part * 130), at));
+    let load = |part, at| b.load_tile(partials.clone(), b.add(b.u32(part * (width + 2)), at));
     let max_value = (0..subgroups)
-        .map(|i| load(i, b.u32(128)))
+        .map(|i| load(i, b.u32(width)))
         .reduce(maximum)
         .unwrap();
     let max = b.local(f);
@@ -268,22 +248,25 @@ pub(super) fn lower(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
         let weight = b.local(f);
         merge.push(Stmt::StoreLocal {
             dst: weight.clone(),
-            value: exp(b.sub(load(i, b.u32(128)), b.load_local(max.clone()))),
+            value: exp(b.sub(load(i, b.u32(width)), b.load_local(max.clone()))),
         });
         merge.push(Stmt::StoreLocal {
             dst: denominator.clone(),
             value: b.fma(
                 b.load_local(weight.clone()),
-                load(i, b.u32(129)),
+                load(i, b.u32(width + 1)),
                 b.load_local(denominator.clone()),
             ),
         });
         factors.push(b.load_local(weight));
     }
     let out = ctx.linear_view(ctx.output()?)?;
-    let output_base = b.mul(output_group, b.u32(if *chunk == 0 { 128 } else { 130 }));
-    for channel in 0..4 {
-        let offset = b.add(lane.clone(), b.u32(channel * 32));
+    let output_base = b.mul(
+        output_group,
+        b.u32(if *chunk == 0 { width } else { width + 2 }),
+    );
+    for channel in 0..width / subgroup {
+        let offset = b.add(lane.clone(), b.u32(channel * subgroup));
         let mut value = b.f32(0.);
         for (i, weight) in factors.iter().enumerate() {
             value = b.fma(weight.clone(), load(i as u32, offset.clone()), value);
@@ -304,13 +287,13 @@ pub(super) fn lower(ctx: Ctx<'_>, op: &Launch) -> Result<KernelIr> {
             accept: vec![
                 Stmt::Store {
                     dst: out.clone(),
-                    addr: Addr::Linear(b.add(output_base.clone(), b.u32(128))),
+                    addr: Addr::Linear(b.add(output_base.clone(), b.u32(width))),
                     value: b.load_local(max),
                     mask: b.bool(true),
                 },
                 Stmt::Store {
                     dst: out,
-                    addr: Addr::Linear(b.add(output_base, b.u32(129))),
+                    addr: Addr::Linear(b.add(output_base, b.u32(width + 1))),
                     value: b.load_local(denominator),
                     mask: b.bool(true),
                 },

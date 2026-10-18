@@ -42,22 +42,12 @@ pub(crate) struct Flags {
 }
 
 pub(crate) fn flags() -> &'static Flags {
-    for_profile(fusor_ir::execution::ExecutionProfile::General)
-}
-
-pub(crate) fn for_profile(profile: fusor_ir::execution::ExecutionProfile) -> &'static Flags {
     static FLAGS: OnceLock<Flags> = OnceLock::new();
-    static INFERENCE: OnceLock<Flags> = OnceLock::new();
-    let flags = if profile == fusor_ir::execution::ExecutionProfile::LowLatency {
-        &INFERENCE
-    } else {
-        &FLAGS
-    };
-    flags.get_or_init(|| {
-        let set = |name| profile.enabled(name);
-        let class = |name| profile.var(name).ok().and_then(|v| v.parse().ok());
+    FLAGS.get_or_init(|| {
+        let set = |name| std::env::var_os(name).is_some();
+        let class = |name| std::env::var(name).ok().and_then(|v| v.parse().ok());
         let family = |name| {
-            profile.var(name).ok().map(|s| match s.as_str() {
+            std::env::var(name).ok().map(|s| match s.as_str() {
                 "coop" => Family::Coop,
                 "sgemm" => Family::Sgemm,
                 "sgemv" => Family::Sgemv,
@@ -77,32 +67,28 @@ pub(crate) fn for_profile(profile: fusor_ir::execution::ExecutionProfile) -> &'s
             no_seed_floor: set("FUSOR_NO_SEED_FLOOR"),
             contract_family: family("FUSOR_PIN_CONTRACT_FAMILY"),
             contract_small_family: family("FUSOR_PIN_CONTRACT_SMALL_FAMILY"),
-            contract_min_m: profile
-                .var("FUSOR_PIN_CONTRACT_MIN_M")
+            contract_min_m: std::env::var("FUSOR_PIN_CONTRACT_MIN_M")
                 .ok()
                 .map(|s| {
                     s.parse()
                         .expect("FUSOR_PIN_CONTRACT_MIN_M must be an integer")
                 })
                 .unwrap_or(1),
-            seed_candidates: profile
-                .var("FUSOR_PROFILE_SEED_CANDIDATES")
+            seed_candidates: std::env::var("FUSOR_PROFILE_SEED_CANDIDATES")
                 .ok()
                 .map(|s| {
                     s.parse()
                         .expect("FUSOR_PROFILE_SEED_CANDIDATES must be an integer")
                 })
                 .unwrap_or(usize::MAX),
-            seed_min_m: profile
-                .var("FUSOR_PROFILE_SEED_MIN_M")
+            seed_min_m: std::env::var("FUSOR_PROFILE_SEED_MIN_M")
                 .ok()
                 .map(|s| {
                     s.parse()
                         .expect("FUSOR_PROFILE_SEED_MIN_M must be an integer")
                 })
                 .unwrap_or(1),
-            seed_small_candidates: profile
-                .var("FUSOR_PROFILE_SEED_SMALL_CANDIDATES")
+            seed_small_candidates: std::env::var("FUSOR_PROFILE_SEED_SMALL_CANDIDATES")
                 .ok()
                 .map(|s| {
                     s.parse()
@@ -110,8 +96,7 @@ pub(crate) fn for_profile(profile: fusor_ir::execution::ExecutionProfile) -> &'s
                 })
                 .unwrap_or(usize::MAX),
             seed_gathers: set("FUSOR_PROFILE_SEED_GATHERS"),
-            no_wavefront_min_m: profile
-                .var("FUSOR_PROFILE_NO_WAVEFRONT_MIN_M")
+            no_wavefront_min_m: std::env::var("FUSOR_PROFILE_NO_WAVEFRONT_MIN_M")
                 .ok()
                 .map(|s| {
                     s.parse()

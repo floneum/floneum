@@ -832,25 +832,10 @@ pub(crate) fn tile_bytes(
     if let Op::Launch(Launch::RmsNorm { block, .. }) = graph.node(id).op {
         return Ok(block * 4);
     }
-    if let Op::Launch(Launch::DecodeAttention {
-        keys,
-        chunk,
-        block,
-        heads_per_group,
-        ..
-    }) = graph.node(id).op
-    {
-        // Conservative no-alias footprint: score, reduction and PV tiles.
-        return u32::try_from(
-            (if chunk == 0 {
-                keys.as_const().unwrap_or(u64::MAX / 128)
-            } else {
-                u64::from(chunk)
-            } * 4
-                + u64::from(block) * 20)
-                * u64::from(heads_per_group),
-        )
-        .map_err(|_| Error::Plan("decode attention scratch overflows u32".into()));
+    if let Op::Launch(Launch::DecodeAttention { block, ref ops, .. }) = graph.node(id).op {
+        let width = ops[0].layout.shape()[3].as_const().unwrap_or(0);
+        return u32::try_from(u64::from(block / caps.subgroup_width().max(1)) * (width + 2) * 4)
+            .map_err(|_| Error::Plan("attention scratch overflows u32".into()));
     }
     let scratch = fold_scratch_elements(graph, id, theta, caps);
     let tiles = tiles_for(theta, scalar_element(graph.facts(id).dtype), scratch);
@@ -1535,20 +1520,23 @@ fn build_component<'a>(
                 output,
                 keys,
                 chunk,
+                ops,
                 ..
             }) = op
             {
                 let heads =
                     output.dims[0].as_const().unwrap_or(0) * output.dims[1].as_const().unwrap_or(0);
-                heads.saturating_mul(128).saturating_mul(if slot == 0 {
-                    8 * if *chunk == 0 {
-                        1
+                heads
+                    .saturating_mul(ops[0].layout.shape()[3].as_const().unwrap_or(0))
+                    .saturating_mul(if slot == 0 {
+                        8 * if *chunk == 0 {
+                            1
+                        } else {
+                            keys.as_const().unwrap_or(1).div_ceil(u64::from(*chunk))
+                        }
                     } else {
-                        keys.as_const().unwrap_or(1).div_ceil(u64::from(*chunk))
-                    }
-                } else {
-                    keys.as_const().unwrap_or(1)
-                })
+                        keys.as_const().unwrap_or(1)
+                    })
             } else {
                 iters
             };
@@ -1806,10 +1794,6 @@ fn member_geometry(graph: &EGraph, extraction: &Extraction, m: Id, caps: &Caps) 
         _ => None,
     };
     match launch {
-        Some(Launch::DecodeRope { output, .. }) => Geometry {
-            block: 256,
-            workgroups: output.iterations().unwrap_or(0).div_ceil(256),
-        },
         Some(Launch::RmsNorm {
             output,
             width,
@@ -1820,20 +1804,16 @@ fn member_geometry(graph: &EGraph, extraction: &Extraction, m: Id, caps: &Caps) 
             workgroups: output.iterations().unwrap_or(0) / u64::from(*width).max(1),
         },
         Some(Launch::DecodeAttentionMerge { output, .. }) => Geometry {
-            block: 128,
-            workgroups: output.iterations().unwrap_or(128) / 128,
+            block: output.dims[3].as_const().unwrap_or(1) as u32,
+            workgroups: output.dims[0].as_const().unwrap_or(1)
+                * output.dims[1].as_const().unwrap_or(1),
         },
-        Some(Launch::DecodeAttention {
-            output,
-            chunk,
-            block,
-            heads_per_group,
-            ..
-        }) => Geometry {
-            block: *block * *heads_per_group,
-            workgroups: output.iterations().unwrap_or(128)
-                / if *chunk == 0 { 128 } else { 130 }
-                / u64::from(*heads_per_group),
+        Some(Launch::DecodeAttention { output, block, .. }) => Geometry {
+            block: *block,
+            workgroups: output.dims[..3]
+                .iter()
+                .map(|d| d.as_const().unwrap_or(1))
+                .product(),
         },
         Some(Launch::Slab { slabs, members, .. }) => Geometry {
             block: slab_block_of(graph, *slabs, members, caps),
@@ -2119,7 +2099,7 @@ pub(crate) fn selectable(graph: &EGraph, class: ClassId, caps: &Caps) -> Vec<Id>
     let pool = narrow(graph.members(class), |m| !is_self_referential(graph, m));
     let pool = narrow(pool, |m| is_runnable(graph, m));
     let pool = narrow(pool, |m| composite_bindings_fit(graph, m, caps));
-    let flags = crate::debug::for_profile(caps.execution_profile);
+    let flags = crate::debug::flags();
     if flags.contract_family.is_none() && flags.contract_small_family.is_none() {
         return pool;
     }
@@ -2258,7 +2238,6 @@ pub(crate) mod tests {
 
     pub(crate) fn caps() -> Caps {
         Caps {
-            execution_profile: Default::default(),
             kind: DeviceKind::Gpu,
             name: "replacement pricing".into(),
             limits: Limits::default(),

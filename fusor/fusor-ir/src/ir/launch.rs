@@ -10,18 +10,14 @@ use crate::shape::{Dim, Dims, Layout, MultiFlattenMap, SlidingWindow};
 use smallvec::SmallVec;
 use std::sync::Arc;
 
+/// Bound retained row values per lane so normalization does not create an
+/// unbounded straight-line shader or register footprint.
+pub const MAX_NORMALIZATION_VALUES_PER_LANE: u32 = 32;
+
 /// The Launch op family.
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Launch {
-    /// Single-position F32 rotary embedding, reading tables directly.
-    DecodeRope {
-        output: IndexSpace,
-        head_dim: u32,
-        interleaved: bool,
-        ops: Vec<Operand>,
-        sched: ScheduleDomain,
-    },
     /// F32 row-wise RMS normalization: input, learned scale, and an optional
     /// same-shaped residual added before the square-sum reduction.
     RmsNorm {
@@ -32,7 +28,7 @@ pub enum Launch {
         ops: Vec<Operand>,
         sched: ScheduleDomain,
     },
-    /// Single-query F32 attention over a symbolic-capacity KV prefix. This is
+    /// Single-query F32 attention over a symbolic key extent. This is
     /// an optional lowering of the ordinary QK/softmax/PV graph, with the
     /// same output [batch, query heads, 1, head dimension].
     DecodeAttention {
@@ -41,19 +37,17 @@ pub enum Launch {
         keys: Dim,
         /// Threads per query head, a multiple of the fixed subgroup width.
         block: u32,
-        /// Query heads sharing one physical workgroup and one K/V head.
-        heads_per_group: u32,
-        /// Zero emits final attention. Otherwise emit [B,H,ceil(keys/chunk),130]
-        /// with 128 unnormalized PV values, the local max, and exponential sum.
+        /// Fixed subgroup width used by this schedule.
+        subgroup: u32,
+        /// Zero emits final attention. Otherwise emit [B,H,ceil(keys/chunk),D+2]
+        /// with D unnormalized PV values, the local max, and exponential sum.
         chunk: u32,
-        /// Visit query heads for one key range together, exposing GQA reuse.
-        key_major: bool,
         scale: ScalarExpr,
         prefix: ScalarExpr,
         ops: Vec<Operand>,
         sched: ScheduleDomain,
     },
-    /// Stable merge of split decode attention's [numerator[128], max, sum].
+    /// Stable merge of split attention's [numerator[D], max, sum].
     DecodeAttentionMerge {
         output: IndexSpace,
         splits: Dim,
@@ -324,7 +318,6 @@ impl Launch {
 
     pub const fn tag(&self) -> OpTag {
         match self {
-            Self::DecodeRope { .. } => OpTag::LaunchDecodeRope,
             Self::RmsNorm { .. } => OpTag::LaunchRmsNorm,
             Self::DecodeAttention { .. } => OpTag::LaunchDecodeAttention,
             Self::DecodeAttentionMerge { .. } => OpTag::LaunchDecodeAttentionMerge,
@@ -366,8 +359,7 @@ impl Launch {
     /// two sides.
     fn operand_lists(&self) -> [&[Operand]; 2] {
         match self {
-            Self::DecodeRope { ops, .. }
-            | Self::RmsNorm { ops, .. }
+            Self::RmsNorm { ops, .. }
             | Self::DecodeAttention { ops, .. }
             | Self::DecodeAttentionMerge { ops, .. }
             | Self::Map { ops, .. }
@@ -407,8 +399,7 @@ impl Launch {
     /// side then its B side.
     pub fn operands_mut(&mut self) -> impl Iterator<Item = &mut Operand> {
         let [a, b]: [&mut [Operand]; 2] = match self {
-            Self::DecodeRope { ops, .. }
-            | Self::RmsNorm { ops, .. }
+            Self::RmsNorm { ops, .. }
             | Self::DecodeAttention { ops, .. }
             | Self::DecodeAttentionMerge { ops, .. }
             | Self::Map { ops, .. }
@@ -424,8 +415,7 @@ impl Launch {
     /// This node's enumerable schedule space.
     pub fn schedule(&self) -> Option<&ScheduleDomain> {
         match self {
-            Self::DecodeRope { sched, .. }
-            | Self::RmsNorm { sched, .. }
+            Self::RmsNorm { sched, .. }
             | Self::DecodeAttention { sched, .. }
             | Self::DecodeAttentionMerge { sched, .. }
             | Self::Map { sched, .. }

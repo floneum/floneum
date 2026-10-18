@@ -120,3 +120,5 @@
 !/llama-decode-2x/decode-stalls/boundaries.json
 !/llama-decode-2x/decode-stalls/validation.txt
 !/llama-decode-2x/decode-stalls/memory-summary.json
+
+!/shared-compiler.txt

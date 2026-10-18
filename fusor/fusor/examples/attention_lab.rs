@@ -77,9 +77,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     cache.append(&Tensor::<4>::from_dyn(k), &Tensor::<4>::from_dyn(v));
     cache.detach();
     cache.truncate(prefix as u64)?;
-    let y = cache
-        .attention_decode_padded(&Tensor::<4>::from_dyn(q.clone()), None)
-        .ok_or("fixed cache unavailable")?;
+    let y = Tensor::<4>::from_dyn(fusor::composite::attention(
+        &q,
+        cache.k().unwrap().as_dyn(),
+        cache.v().unwrap().as_dyn(),
+        fusor_ir::ir::launch::MaskKind::None,
+        None,
+    )?);
     let target = dev.backend().gpu_target().unwrap();
     if std::env::var_os("LAB_PLAN").is_some() {
         target.set_kernel_observer(Some(Arc::new(|ir, _, _| {

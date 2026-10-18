@@ -128,9 +128,7 @@ pub(crate) fn lower_kslab(ctx: Ctx<'_>, op: &Launch, theta: SchedPoint) -> Resul
     let Some(last) = members.last().copied() else {
         return Err(Error::Plan("a Slab has no members".into()));
     };
-    if crate::flags::for_profile(ctx.caps.execution_profile).inline_map_slab
-        && let Some(kernel) = inline_map_chain(&ctx, members)?
-    {
+    if let Some(kernel) = inline_map_chain(&ctx, members)? {
         return Ok(ctx.finish("kmap_inline_slab", kernel.grid, kernel.block, kernel.body));
     }
     let stage = |m| match &ctx.cx.graph.node(m).op {

@@ -83,12 +83,11 @@ def main():
         if not all(k.startswith("FUSOR_") and isinstance(v, str) for k,v in switches.items()):
             p.error("configuration must contain FUSOR_ string switches only")
         env = dict(clean, FUSOR_PIN_CONTRACT_FAMILY="sgemv", FUSOR_PIN_SGEMV="32,2,4,4,32",
-                   FUSOR_PROFILE_GEMV_PACKED_Q4="1", FUSOR_PROFILE_Q6_GROUP16="1",
-                   FUSOR_PROFILE_Q6_COALESCED="1", FUSOR_PROFILE_DISABLE_RULES="SPLIT_K")
+                   FUSOR_PROFILE_DISABLE_RULES="SPLIT_K")
         env.update(switches)
         env.update(FUSOR_EXPLORE_EPS="0", FUSOR_AUTOTUNE_MIN_MACS=str(2**64-1), FUSOR_COMPILE_THREADS="1",
                    FUSOR_DUMP_CONTRACT="1",
-                   FUSOR_PROFILE_MAPPED_UPLOAD="1", FUSOR_PROFILE_MEMORY_BUDGET_BYTES=str(3*1024**3),
+                   FUSOR_PROFILE_MEMORY_BUDGET_BYTES=str(3*1024**3),
                    FUSOR_PROFILE_SUBMIT_SIZE=str(2**31-1), LAB_BATCH_REPEAT=str(args.repeats),
                    LAB_WEIGHT_COPIES=str(args.copies), LAB_PLAN="1", LAB_FRACTIONAL_INPUT="1",
                    LAB_QLAYOUT="native" if args.format == "q4k" else "f32scales",

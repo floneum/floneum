@@ -1,14 +1,8 @@
-This directory publishes selected tools, summaries, and verification evidence
-for the kernel visualizer and WebGPU Llama decode improvements.
+Start with shared-compiler.txt for the scope and validation of the current PR.
 
-Start with llama-decode-2x/decode-stalls.txt for the follow-up general Fusor
-copy lowering and symbolic cache-growth fix.
-
-See llama-decode-2x/default-inference.txt for the default-path change
-and its current validation status. Historical opt-in measurements are in
-llama-decode-2x/verified-short-decode.txt. Exact final timing samples,
-configuration/binary provenance, full-logit comparison summaries, and resource
-samples are under llama-decode-2x/webgpu-memory-bounded/prepared-combined/.
+The llama-* subdirectories retain historical investigation evidence. Those
+measurements used earlier experimental checkpoints and presets that have
+since been removed. They do not establish current default-path throughput.
 
 The complete 3.4 GiB local experiment archive is not part of the PR. Historical
 findings refer to local artifacts that may not be published here. Model files,
@@ -16,6 +10,6 @@ executables, raw .f32 reference/candidate vectors, generated shader dumps, and
 rejected native-backend prototypes are excluded. Source and compact validation
 results are retained; the excluded experiments are not build dependencies.
 
-The correctness tool accepts --reference for a separately captured baseline.
-Raw reference vectors must be generated locally before checking a fresh clone;
-see the capture recipe in llama-decode-2x/verified-short-decode.txt.
+The correctness tool now compares saved vector directories with explicit
+reference/candidate phase logs. It loads no model. Historical capture recipes
+refer to removed experimental hooks and are not current reproduction commands.

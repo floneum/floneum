@@ -16,7 +16,6 @@ rule!(
     heads = [
         OpTag::LaunchContract,
         OpTag::LaunchDecodeAttention,
-        OpTag::LaunchDecodeRope,
         OpTag::LaunchRmsNorm
     ],
     tag = RuleTag::Additive,
@@ -96,11 +95,7 @@ fn through_copy(b: &Builder<'_>, o: &Operand, broadcast_only: bool) -> Option<Op
             continue;
         }
         let out_elems = const_elements(&out_shape);
-        if b.caps()
-            .execution_profile
-            .enabled("FUSOR_PROFILE_LINEAR_VIEW_FORWARD")
-            && let Some(layout) = through_linear_view(&o.layout, &out_shape, &src.layout)
-        {
+        if let Some(layout) = through_linear_view(&o.layout, &out_shape, &src.layout) {
             return Some(Operand {
                 src: src.src,
                 layout,
@@ -236,13 +231,7 @@ pub fn forward_views(
     let mut changed = false;
     let mut rewritten = op.clone();
     let indexed = matches!(op, Launch::Gather { .. } | Launch::Scatter { .. });
-    if indexed
-        && (b.caps().kind != crate::device::DeviceKind::Gpu
-            || !b
-                .caps()
-                .execution_profile
-                .enabled("FUSOR_PROFILE_INDEX_VIEW_FORWARD"))
-    {
+    if indexed && b.caps().kind != crate::device::DeviceKind::Gpu {
         return None;
     }
     let skip_base = matches!(op, Launch::Scatter { .. });
@@ -251,7 +240,6 @@ pub fn forward_views(
         | Launch::Fold { .. }
         | Launch::Contract { .. }
         | Launch::DecodeAttention { .. }
-        | Launch::DecodeRope { .. }
         | Launch::RmsNorm { .. }
         | Launch::Gather { .. }
         | Launch::Scatter { .. } => {

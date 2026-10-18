@@ -53,10 +53,6 @@ pub(crate) struct LeafStore {
     /// readback that assumed contiguity would hand back the first row plus
     /// padding.
     pub(crate) device: FxHashMap<Id, (Buf, Option<Arc<fusor_ir::shape::Layout>>)>,
-    /// Cache stores a resolve-and-commit call may consume. The caller holds
-    /// resolve_lock; ordinary tensor resolves and tuning never donate inputs.
-    pub(crate) donations: Vec<Id>,
-    pub(crate) donation_plans: Vec<crate::cache::donation::Variant>,
     prepared_runs: Vec<Arc<crate::session::prepared::PreparedRun>>,
 }
 

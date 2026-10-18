@@ -25,11 +25,8 @@ pub const METAL_SUBMIT_CHUNK: usize = 256;
 /// transients without draining the queue mid-plan.
 pub const METAL_INFLIGHT_CHUNKS: usize = 2;
 
-pub(crate) fn inflight_chunks(
-    total: usize,
-    profile: fusor_ir::execution::ExecutionProfile,
-) -> usize {
-    let flags = crate::flags::for_profile(profile);
+pub(crate) fn inflight_chunks(total: usize) -> usize {
+    let flags = crate::flags::flags();
     let normal = flags
         .inflight_chunks
         .unwrap_or(METAL_INFLIGHT_CHUNKS)
@@ -132,8 +129,8 @@ pub(crate) fn lru_retain<K: std::hash::Hash + Eq + Clone, V>(
 
 /// Dispatches packed into one compute pass: chunked past the threshold,
 /// never one pass per dispatch (a Metal pass boundary costs a small kernel).
-pub fn dispatches_per_pass(total: usize, profile: fusor_ir::execution::ExecutionProfile) -> usize {
-    if let Some(n) = crate::flags::for_profile(profile).pass_size {
+pub fn dispatches_per_pass(total: usize) -> usize {
+    if let Some(n) = crate::flags::flags().pass_size {
         return n;
     }
     if total >= PASS_CHUNK_THRESHOLD {
@@ -144,24 +141,16 @@ pub fn dispatches_per_pass(total: usize, profile: fusor_ir::execution::Execution
 }
 
 /// Dispatches per submit: Metal bounds in-flight memory on giant graphs.
-pub fn dispatches_per_submit(
-    total: usize,
-    backend: wgpu::Backend,
-    profile: fusor_ir::execution::ExecutionProfile,
-) -> usize {
+pub fn dispatches_per_submit(total: usize, backend: wgpu::Backend) -> usize {
     if total
-        >= crate::flags::for_profile(profile)
+        >= crate::flags::flags()
             .large_plan_min_dispatches
             .unwrap_or(PASS_CHUNK_THRESHOLD)
-        && let Some(n) = crate::flags::for_profile(profile).large_plan_submit_size
+        && let Some(n) = crate::flags::flags().large_plan_submit_size
     {
-        return n.min(
-            crate::flags::for_profile(profile)
-                .submit_size
-                .unwrap_or(usize::MAX),
-        );
+        return n.min(crate::flags::flags().submit_size.unwrap_or(usize::MAX));
     }
-    if let Some(n) = crate::flags::for_profile(profile).submit_size {
+    if let Some(n) = crate::flags::flags().submit_size {
         return n;
     }
     if backend == wgpu::Backend::Metal && total >= PASS_CHUNK_THRESHOLD {
@@ -714,11 +703,11 @@ impl Launcher {
             == total;
         // `FUSOR_TRACE_DISPATCH`: one dispatch per submit, each waited on, to
         // attribute an asynchronous device loss to a kernel.
-        let trace = crate::flags::for_profile(self.config.execution_profile).trace_dispatch;
+        let trace = crate::flags::flags().trace_dispatch;
         let per_submit = if trace {
             1
         } else {
-            dispatches_per_submit(total, self.backend, self.config.execution_profile)
+            dispatches_per_submit(total, self.backend)
         };
 
         let mut dispatch_ix = first_dispatch;
@@ -768,7 +757,7 @@ impl Launcher {
                 dispatches_in_chunk = 0;
                 submits += 1;
                 pending.push_back(submitted);
-                if pending.len() > inflight_chunks(total, self.config.execution_profile)
+                if pending.len() > inflight_chunks(total)
                     && let Some(oldest) = pending.pop_front()
                 {
                     let _w = Stopwatch::start(&CHUNK_WAIT_US);
@@ -828,7 +817,7 @@ impl Launcher {
         {
             1
         } else {
-            dispatches_per_pass(total, self.config.execution_profile)
+            dispatches_per_pass(total)
         };
         let mut encoder = self
             .device
@@ -948,8 +937,7 @@ impl Launcher {
                         else {
                             unreachable!("the run is all dispatches");
                         };
-                        if !crate::flags::for_profile(self.config.execution_profile).no_debug_groups
-                        {
+                        if !crate::flags::flags().no_debug_groups {
                             pass.push_debug_group(name);
                         }
                         let in_pass_slot = timestamps
@@ -968,8 +956,7 @@ impl Launcher {
                         {
                             pass.write_timestamp(set, q + 1);
                         }
-                        if !crate::flags::for_profile(self.config.execution_profile).no_debug_groups
-                        {
+                        if !crate::flags::flags().no_debug_groups {
                             pass.pop_debug_group();
                         }
                         dispatch_ix += 1;
@@ -1063,7 +1050,7 @@ impl Launcher {
     fn poll_wait_inner(&self) -> Result<()> {
         self.poll_waits.fetch_add(1, Ordering::Relaxed);
         let _w = Stopwatch::start(&POLL_WAIT_US);
-        let spin = crate::flags::for_profile(self.config.execution_profile)
+        let spin = crate::flags::flags()
             .poll_spin_ms
             .map(Duration::from_millis)
             .unwrap_or(POLL_SPIN);
@@ -1073,7 +1060,7 @@ impl Launcher {
             milliseconds => Duration::from_millis(milliseconds),
         };
         let deadline = Instant::now() + spin;
-        let interval = crate::flags::for_profile(self.config.execution_profile).poll_interval_us;
+        let interval = crate::flags::flags().poll_interval_us;
         #[cfg(feature = "kernel-observer")]
         let interval = match self.poll_interval_override_us.load(Ordering::Relaxed) {
             u64::MAX => interval,
@@ -1145,7 +1132,7 @@ impl Launcher {
     /// wgpu's lives across the `await` (a held `BufferSlice` overflows callers'
     /// `Send` checks), so the map is two sync halves around [`MapDone`].
     async fn readback_into(&self, src: &Buf, staging: &Buf, bytes: u64) -> Result<Vec<u8>> {
-        let trace = crate::flags::for_profile(self.config.execution_profile).trace_dispatch;
+        let trace = crate::flags::flags().trace_dispatch;
         let state = |what: &str| {
             if trace {
                 let src_size = src.downcast_ref::<GpuBuffer>().map_or(0, |b| b.size);
@@ -1303,7 +1290,7 @@ impl Launcher {
     ) -> TimingPlan {
         // Focus is restated in live-dispatch indices, sorted and deduped for
         // the binary-searched slot map.
-        let flags = crate::flags::for_profile(self.config.execution_profile);
+        let flags = crate::flags::flags();
         let sampled =
             focus.as_ref().is_none_or(Vec::is_empty) && flags.time_sample_stride.is_some();
         let mut focus = focus.unwrap_or_default();

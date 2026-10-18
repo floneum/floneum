@@ -1,0 +1,87 @@
+Shared compiler rewrite (2026-10-17)
+
+Scope
+The complete PR uses the ordinary Fusor tensor/compiler path.
+There is no ExecutionProfile, gpu_inference constructor, Apple adapter preset,
+model-specific schedule pin, or alternate Llama decode implementation.
+The only model-source change is adopting the shared immutable GGUF byte storage
+interface; graph construction, sampling, and device selection match main.
+
+Compiler changes
+- Recognize normalization from Map/Fold/View algebra. Retain the logical graph
+  for differentiation and price the fused launch during normal extraction.
+- Recognize single-query attention from QK, stable softmax, and PV contractions,
+  including grouped heads and prefix masks. Width comes from the operands;
+  fixed subgroup width and resource limits determine legality. Unsupported
+  cases retain the existing algebraic implementation.
+- Coalesced Q4/Q6 loads are selected from format, layout and subgroup legality.
+  Whole-block storage views preserve buffer bytes and checked accesses.
+- Forward affine views and pure map slabs through the ordinary compiler.
+- Lower contiguous range updates into ordinary WebGPU copy/clear commands.
+- Keep symbolic single-index scatter geometry in uniforms; growth changes the
+  dispatch grid without compiling another shader.
+- Keep full-size views in the producer's replay plan. Only partial views
+  materialize their base separately, avoiding stale reshaped intermediates.
+
+Runtime changes
+- Bounded prepared-plan/artifact caches apply to normal resolves.
+- One compiler worker by default avoids retaining a cohort of lowered kernels.
+- Submission overlaps preparation within the existing in-flight resource bound.
+- Production replay keeps its incumbent by default. Explicit online tuning is
+  still available, but no longer substitutes an alternative every 16 resolves.
+- Cache-only donation and its alias-specific lowering have been removed.
+  Ordinary scatter preserves its input and retained views. Prepared GPU
+  artifacts share the normal plan's weak ownership; no alternate plan is needed.
+
+Validation
+- Core compiler/runtime cargo check passed (fusor, fusor-gpu, fusor-ir,
+  fusor-cost, libraries/tests, kernel-observer feature).
+- Two compiler construction tests passed: ordinary normalization across four
+  shapes with absent/16/32/64-wide subgroups, and ordinary attention across
+  five channel widths, grouped heads, concrete and symbolic key extents.
+  Unsupported CPU/no-subgroup attention and incorrect normalization decline.
+- Ordinary-device WebGPU checks passed for RMS/attention vs host results,
+  zero-shader copy lowering, concrete full-size view replay, and scatter
+  input/retained-view preservation. Symbolic grouped-attention cache replay
+  crosses 256 keys, grows storage to 512 slots, and remains correct through
+  260 keys with zero additional shader compilations.
+- Q4/Q6 numerical checks passed against dequantized matrix references at
+  N=1024 and N=1027, K=4096, with one and three activation rows. The aligned
+  run observed both coalesced lowerings without a preset. The odd-size run
+  selected a different valid Q4 schedule and failed an over-specific kernel
+  name assertion; the values matched. The fixture now includes both sizes.
+- 14 Python tool tests pass after removing obsolete preset/model hooks.
+- Formatting and diff whitespace checks pass.
+
+Remaining local verification
+The expanded fixture exceeded its 1 GiB process-group cap while retaining
+multiple matrix graphs, with no added swapouts. It now releases the device,
+graph and GPU pool between matrix cases. That revised fixture and the extended
+symbolic-view readback test still need a completed run. The previous symbolic
+view fixture stopped at an unsupported direct symbolic readback; it now resolves
+the symbolic result and reads a concrete view.
+
+The final visualizer suite, workspace clippy, and model/example compatibility
+check remain pending. Other work reduced free disk space below the retained
+1 GiB runtime reserve. Further builds were refused after task-owned obsolete
+executables and check metadata were removed. No model was loaded for this work.
+
+Checks used one compiler job and one GPU process, at least 12 GiB starting
+memory headroom, a 1 GiB process-group RSS cap, no additional swapouts, a 32 MiB
+compressor-growth ceiling, and a 1 GiB runtime disk reserve. Small incremental
+tests may start with that disk reserve plus a 64 MiB linking allowance; larger
+checks require 1.5 GiB at startup. Resource aborts are not successful tests.
+The earlier main GPU regression peaked at 0.528 GiB process-group RSS.
+
+Reproduction (from repository root; run GPU checks serially):
+  cargo test --manifest-path fusor/Cargo.toml -p fusor --no-default-features \
+    --features kernel-observer --test candidate_construction ordinary_
+  cargo test --manifest-path fusor/Cargo.toml -p fusor --no-default-features \
+    --features kernel-observer --test shared_compiler -- --ignored --test-threads=1
+
+
+Historical measurements
+All reports under llama-decode-2x and llama-8x describe earlier experimental
+checkpoints. In particular, the October 12 2.020x result used a preset which is
+now removed. It is not a throughput claim for this compiler rewrite.
+The previously built release chat executable also predates this rewrite.

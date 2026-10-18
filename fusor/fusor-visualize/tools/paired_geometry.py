@@ -41,18 +41,16 @@ def main():
     weight_bytes = a.n * a.k // 256 * (144 if a.format == 'q4k' else 212) * a.copies
     if weight_bytes > 512*1024**2:
         p.error('resident weights exceed 512 MiB')
-    if a.q4_variant is not None and ((a.q4_variant != 3 and (a.format != 'q4k' or a.n < 16384)) or a.baseline_cell != a.candidate_cell):
-        p.error('Q4 variant requires N >=16384, q4k and identical schedule cells')
+    if a.q4_variant is not None and (a.format != 'q4k' or a.baseline_cell != a.candidate_cell):
+        p.error('Q4 variant requires q4k and identical schedule cells')
     a.output.mkdir(parents=True, exist_ok=False)
     binary = ROOT / 'fusor/target/debug/examples/qmatmul_lab'
     env = {k:v for k,v in os.environ.items() if not k.startswith(('FUSOR_', 'PROFILE_', 'LAB_'))}
     switches = dict(
         FUSOR_PIN_CONTRACT_FAMILY='sgemv', FUSOR_PIN_SGEMV=a.baseline_cell,
-        FUSOR_PROFILE_GEMV_PACKED_Q4='1', FUSOR_PROFILE_Q4_HALF_UNPACK='1',
-        FUSOR_PROFILE_Q6_GROUP16='1', FUSOR_PROFILE_Q6_COALESCED='1',
+        FUSOR_PROFILE_Q4_HALF_UNPACK='1',
         FUSOR_PROFILE_DISABLE_RULES='SPLIT_K', FUSOR_COMPILE_THREADS='1',
-        FUSOR_PROFILE_WORKGROUP_THREADS='1024', FUSOR_PROFILE_SKIP_INITIALIZED_WORKGROUP_ZERO='1',
-        FUSOR_PROFILE_NO_DEBUG_GROUPS='1', FUSOR_PROFILE_MAPPED_UPLOAD='1',
+        FUSOR_PROFILE_NO_DEBUG_GROUPS='1',
         FUSOR_PROFILE_MEMORY_BUDGET_BYTES=str(3*1024**3), FUSOR_PROFILE_SUBMIT_SIZE=str(2**31-1),
         FUSOR_AUTOTUNE_MIN_MACS=str(2**64-1), FUSOR_EXPLORE_EPS='0',
         FUSOR_PROFILE_PACKED_Q4_SPLITS=str(a.splits), FUSOR_PROFILE_Q6_SPLITS=str(a.splits),

@@ -59,41 +59,26 @@ pub fn coop_domain(
     }
 
     CoopDomain {
-        schedules: candidate_schedules_for(
-            operand,
-            cx,
-            m.as_const().is_some_and(|m| {
-                m >= crate::flags::for_profile(cx.caps.execution_profile).pin_coop_min_m
-            }),
-        ),
+        schedules: candidate_schedules_for(operand, cx),
     }
 }
 
 /// Geometry and staging depend only on the device and staged element type.
 static GEOM_MEMO: crate::domains::DomainMemo<
-    (Caps, ScalarElement, usize, bool),
+    (Caps, ScalarElement, usize),
     SmallVec<[CoopSchedule; 16]>,
 > = crate::domains::DomainMemo::new();
 
-fn candidate_schedules_for(
-    operand: Dtype,
-    cx: &DomainCtx<'_>,
-    apply_pin: bool,
-) -> SmallVec<[CoopSchedule; 16]> {
+fn candidate_schedules_for(operand: Dtype, cx: &DomainCtx<'_>) -> SmallVec<[CoopSchedule; 16]> {
     let key = (
         cx.caps.clone(),
         stage_element(operand),
         crate::domains::planner_id(cx.planner),
-        apply_pin,
     );
-    GEOM_MEMO.get_or_insert(&key, || generate_schedules(operand, cx, apply_pin))
+    GEOM_MEMO.get_or_insert(&key, || generate_schedules(operand, cx))
 }
 
-fn generate_schedules(
-    operand: Dtype,
-    cx: &DomainCtx<'_>,
-    apply_pin: bool,
-) -> SmallVec<[CoopSchedule; 16]> {
+fn generate_schedules(operand: Dtype, cx: &DomainCtx<'_>) -> SmallVec<[CoopSchedule; 16]> {
     let caps = cx.caps;
     let width = caps.subgroup_width();
     let max_lanes = caps
@@ -102,10 +87,10 @@ fn generate_schedules(
         .min(caps.limits.max_compute_workgroup_size[0]);
     let max_bytes = caps.limits.max_compute_workgroup_storage_size;
     let stage = stage_element(operand);
-    let pin = crate::flags::for_profile(cx.caps.execution_profile)
+    let pin = crate::flags::flags()
         .pin_coop
         .as_ref()
-        .filter(|p| apply_pin && p.len() >= 3);
+        .filter(|p| p.len() >= 3);
     let mut out = SmallVec::new();
     for bm in BM_CHOICES {
         for bn in BN_CHOICES {
@@ -124,11 +109,6 @@ fn generate_schedules(
                             })
                         {
                             for staging in [1, 2] {
-                                if pin.is_some_and(|p| {
-                                    p.get(5).is_some_and(|depth| *depth != u32::from(staging))
-                                }) {
-                                    continue;
-                                }
                                 if cx
                                     .planner
                                     .workgroup_bytes(&coop_tiles(geom, stage, staging), caps)

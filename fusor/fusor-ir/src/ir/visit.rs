@@ -114,10 +114,6 @@ fn launch(op: &mut Launch, visitor: &mut impl VisitMut, generated: Option<usize>
             visitor.dim(splits);
             operands(ops, visitor);
         }
-        Launch::DecodeRope { output, ops, .. } => {
-            dims(&mut output.dims, visitor);
-            operands(ops, visitor);
-        }
         Launch::Map {
             space, body, ops, ..
         } => {

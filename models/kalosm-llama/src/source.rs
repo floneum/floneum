@@ -220,15 +220,15 @@ impl LlamaSource {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) async fn model_paths(
+    pub(crate) async fn model(
         &self,
         mut progress: impl FnMut(FileLoadingProgress),
-    ) -> Result<Vec<std::path::PathBuf>, LlamaSourceError> {
-        let mut paths = Vec::new();
+    ) -> Result<Vec<Vec<u8>>, LlamaSourceError> {
+        let mut model_bytes = Vec::new();
         for file in &self.model {
-            paths.push(self.cache.get(file, &mut progress).await?);
+            model_bytes.push(self.cache.get_bytes(file, &mut progress).await?);
         }
-        Ok(paths)
+        Ok(model_bytes)
     }
 
     #[cfg(target_arch = "wasm32")]

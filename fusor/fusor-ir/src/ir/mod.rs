@@ -96,7 +96,6 @@ pub enum OpTag {
     LaunchSlab,
     LaunchDecodeAttention,
     LaunchDecodeAttentionMerge,
-    LaunchDecodeRope,
     LaunchRmsNorm,
     LaunchGroup,
     // structural

@@ -35,18 +35,6 @@ impl Weight {
             }
         };
         let shape = [Dim::Const(rows), Dim::Const(cols)];
-        #[cfg(feature = "kernel-visualize")]
-        if matches!(raw.fmt, Dtype::Q(fusor_ir::dtype::QFmt::Q6K))
-            && std::env::var_os("PROFILE_Q6_F32_SCALES").is_some()
-        {
-            let fmt = fusor_ir::dtype::QFmt::Q6K;
-            let layout = fusor_ir::dtype::QLayout::F32Scales;
-            let mut bytes = Vec::new();
-            fusor_gguf::repack::repack(fmt, raw.layout, layout, &raw.bytes, &mut bytes)?;
-            return Ok(Self::Quantized(QMatrix::from_raw_bytes(
-                graph, fmt, layout, shape, &bytes,
-            )?));
-        }
         match raw.fmt {
             Dtype::Q(fmt) => Ok(Self::Quantized(QMatrix::from_shared_bytes(
                 graph,
