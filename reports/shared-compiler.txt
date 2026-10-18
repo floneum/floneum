@@ -1,3 +1,31 @@
+Lazy host-layout alternatives (2026-10-17; CI validation pending)
+======================================================================
+Graph construction eagerly repacked every eligible immutable weight into a
+retained private host Vec, including unselected alternatives. A regression at
+the real graph seam failed because constructing an alternative read the source
+bytes. The shared HostBytes backing now supports deterministic transformed
+views: retain the source plus a conversion recipe, materialize only during a
+borrow/upload, and release temporary bytes afterward. Existing block metadata
+controls layout eligibility; there are no model, device or format-name cases.
+The original graph memo still reuses the same alternate leaf.
+
+The tiny regression covers all format metadata, checking no reads while
+constructing alternatives, unchanged conversion bytes on repeated borrows,
+and no retained conversion result between borrows. Generic backing tests also
+cover transformed concatenations and mismatched declared lengths. Validation
+is pending remotely: local compilation was stopped after external memory
+pressure increased compression past the unchanged 32 MiB growth guard. At
+stop, the compiler group used only 0.081 GiB RSS and added no swapouts. The
+local compile was not retried after that pressure stop.
+
+A separate exact-coefficient algebra experiment was removed: Q6 normal-path
+ABBA ratios 1.0027/1.0122 did not establish a reliable improvement. Full output
+vectors passed, max difference 0.0007324. A smaller register window was also
+rejected after failing the unchanged paired-output tolerance. Neither changes
+production defaults. The ABBA tool now accepts separate compiler binaries,
+records each digest, and validates the shared GEMV family without requiring
+obsolete format-specific kernel names. All 19 Python tool tests pass.
+
 Cache-growth and search follow-up (2026-10-17; model validation pending)
 ======================================================================
 A clean 512-chunk, two-round decode reproduced the periodic hitch at exactly

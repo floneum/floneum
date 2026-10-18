@@ -422,8 +422,18 @@ impl GraphRef {
             let Some(bytes) = self.leaf_bytes_shared(src) else {
                 return Ok(None);
             };
-            let mut repacked = Vec::new();
-            bytes.with_slice(|bytes| {
+            let stride = fmt.block_bytes(QLayout::Native) as usize;
+            if !bytes.len().is_multiple_of(stride) {
+                return Err(Error::Shape(format!(
+                    "{} bytes is not a whole number of {fmt:?}/Native blocks ({stride} bytes each)",
+                    bytes.len()
+                )));
+            }
+            let len = (bytes.len() / stride)
+                .checked_mul(fmt.block_bytes(QLayout::F32Scales) as usize)
+                .ok_or_else(|| Error::Shape("repacked host extent overflows usize".into()))?;
+            let repacked = fusor_ir::target::HostBytes::transformed(bytes, len, move |bytes| {
+                let mut repacked = Vec::with_capacity(len);
                 fusor_gguf::repack::repack(
                     fmt,
                     QLayout::Native,
@@ -431,13 +441,15 @@ impl GraphRef {
                     bytes,
                     &mut repacked,
                 )
-            })?;
+                .expect("immutable source has a validated whole-block extent");
+                repacked
+            });
             let shape = [shape[0], shape[1]];
-            Ok(Some(self.quantized_leaf(
+            Ok(Some(self.quantized_leaf_shared(
                 fmt,
                 QLayout::F32Scales,
                 shape,
-                repacked,
+                Arc::new(repacked),
             )?))
         };
         let out = mint()?;

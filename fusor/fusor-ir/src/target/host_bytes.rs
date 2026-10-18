@@ -3,10 +3,16 @@ use std::{fmt, ops::Range, sync::Arc};
 
 use crate::{Error, Result};
 
+type ByteTransform = dyn Fn(&[u8]) -> Vec<u8> + Send + Sync;
+
 enum Backing {
     Owned(Vec<u8>),
     Shared(Arc<dyn AsRef<[u8]> + Send + Sync>),
     Segments(Vec<Arc<HostBytes>>),
+    Transformed {
+        source: Arc<HostBytes>,
+        transform: Box<ByteTransform>,
+    },
 }
 
 /// Stable host bytes for an external leaf. Sharing a file-backed range avoids
@@ -17,6 +23,25 @@ pub struct HostBytes {
 }
 
 impl HostBytes {
+    /// Retain an immutable recipe instead of a second host allocation. The
+    /// transform runs only inside a borrow and must deterministically return
+    /// exactly `len` bytes from its immutable source.
+    /// Its temporary output is released when the borrow ends; repeated uploads
+    /// may recompute it. This is useful for alternate layouts of large leaves.
+    pub fn transformed(
+        source: Arc<Self>,
+        len: usize,
+        transform: impl Fn(&[u8]) -> Vec<u8> + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            backing: Backing::Transformed {
+                source,
+                transform: Box::new(transform),
+            },
+            range: 0..len,
+        }
+    }
+
     /// The owner must keep its bytes unchanged for this view's lifetime.
     pub fn shared<T: AsRef<[u8]> + Send + Sync + 'static>(
         owner: Arc<T>,
@@ -63,6 +88,15 @@ impl HostBytes {
                 }
                 return f(&bytes);
             }
+            Backing::Transformed { source, transform } => {
+                let transformed = source.with_slice(transform.as_ref());
+                assert_eq!(
+                    transformed.len(),
+                    self.len(),
+                    "host transform output length differs from its declared length"
+                );
+                return f(&transformed);
+            }
         };
         f(&bytes[self.range.clone()])
     }
@@ -78,6 +112,7 @@ impl HostBytes {
                     part.append_to(out);
                 }
             }
+            Backing::Transformed { .. } => self.with_slice(|bytes| out.extend_from_slice(bytes)),
         }
     }
 }
@@ -103,6 +138,34 @@ impl fmt::Debug for HostBytes {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transformed_segments_materialize_only_for_the_borrow() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let calls = Arc::new(AtomicUsize::new(0));
+        let count = calls.clone();
+        let source = Arc::new(HostBytes::from(vec![3, 4]));
+        let transformed = Arc::new(HostBytes::transformed(source, 2, move |bytes| {
+            count.fetch_add(1, Ordering::Relaxed);
+            vec![bytes[1] + 1, bytes[0] + 1]
+        }));
+        let joined = HostBytes::concat(vec![transformed.clone(), transformed]).unwrap();
+        assert_eq!(joined.len(), 4);
+        assert_eq!(calls.load(Ordering::Relaxed), 0);
+        for borrow in 1..=2 {
+            joined.with_slice(|bytes| assert_eq!(bytes, [5, 4, 5, 4]));
+            assert_eq!(calls.load(Ordering::Relaxed), 2 * borrow);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "host transform output length differs")]
+    fn transformed_length_is_checked_before_exposing_bytes() {
+        let source = Arc::new(HostBytes::from(vec![1]));
+        HostBytes::transformed(source, 2, |bytes| bytes.to_vec()).with_slice(|_| {
+            panic!("invalid bytes reached the borrower");
+        });
+    }
 
     #[test]
     fn shared_range_keeps_owner_alive_without_copying() {

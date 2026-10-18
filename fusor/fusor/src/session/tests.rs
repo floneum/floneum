@@ -46,6 +46,72 @@ fn run_f32(session: &Session, h: &GraphRef, plan: &Plan, out: &Tensor) -> Vec<f3
 
 #[test]
 #[cfg(all(feature = "cpu", not(target_arch = "wasm32")))]
+fn layout_alternatives_materialize_only_when_borrowed() {
+    use fusor_ir::dtype::{QFmt, QLayout};
+    use fusor_ir::target::HostBytes;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct Counted {
+        bytes: Vec<u8>,
+        reads: AtomicUsize,
+    }
+    impl AsRef<[u8]> for Counted {
+        fn as_ref(&self) -> &[u8] {
+            self.reads.fetch_add(1, Ordering::Relaxed);
+            &self.bytes
+        }
+    }
+    let session = Session::new(test_backend()).unwrap();
+    let graph = Graph::new(&session);
+    let h = graph.handle();
+    for fmt in QFmt::ALL {
+        let owner = Arc::new(Counted {
+            bytes: (0..2 * fmt.block_bytes(QLayout::Native) as usize)
+                .map(|i| (i * 17) as u8)
+                .collect(),
+            reads: AtomicUsize::new(0),
+        });
+        let source = Arc::new(HostBytes::shared(owner.clone(), 0..owner.bytes.len()).unwrap());
+        let leaf = h
+            .quantized_leaf_shared(
+                fmt,
+                QLayout::Native,
+                [Dim::Const(2), Dim::Const(fmt.block_elements() as u64)],
+                source,
+            )
+            .unwrap();
+        let reads = owner.reads.load(Ordering::Relaxed);
+        let alternative = h.repacked_leaf_of(leaf).unwrap();
+        assert_eq!(
+            owner.reads.load(Ordering::Relaxed),
+            reads,
+            "building a layout alternative read {fmt:?} weights"
+        );
+        if fmt.block_bytes(QLayout::Native).is_multiple_of(4) {
+            assert!(alternative.is_none());
+            continue;
+        }
+        let alternative = alternative.unwrap();
+        assert_eq!(h.repacked_leaf_of(leaf).unwrap(), Some(alternative));
+        let bytes = h.leaf_bytes_shared(alternative).unwrap();
+        let mut expected = Vec::new();
+        fusor_gguf::repack::repack(
+            fmt,
+            QLayout::Native,
+            QLayout::F32Scales,
+            &owner.bytes,
+            &mut expected,
+        )
+        .unwrap();
+        assert_eq!(bytes.len(), expected.len());
+        for borrow in 1..=2 {
+            bytes.with_slice(|actual| assert_eq!(actual, expected));
+            assert_eq!(owner.reads.load(Ordering::Relaxed), reads + borrow);
+        }
+    }
+}
+
+#[test]
+#[cfg(all(feature = "cpu", not(target_arch = "wasm32")))]
 fn streamed_reductions_execute_without_the_producer_buffer() {
     use fusor_ir::ir::launch::Launch;
 

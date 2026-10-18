@@ -45,6 +45,8 @@ def main():
     p.add_argument("--candidate", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--binary", type=Path, default=ROOT / "fusor/target/debug/examples/qmatmul_lab")
+    p.add_argument("--baseline-binary", type=Path, help="baseline compiler build; defaults to --binary")
+    p.add_argument("--candidate-binary", type=Path, help="candidate compiler build; defaults to --binary")
     p.add_argument("--n", type=int, required=True)
     p.add_argument("--k", type=int, required=True)
     p.add_argument("--format", choices=["q4k", "q6k"], default="q4k")
@@ -71,14 +73,18 @@ def main():
             weight_source = dict(path=str(source_path), sha256=hashlib.file_digest(source, "sha256").hexdigest())
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
-    binary = args.binary.resolve()
-    with binary.open("rb") as source:
-        sha = hashlib.file_digest(source, "sha256").hexdigest()
-    command = [str(binary), "1", str(args.n), str(args.k), args.format, str(args.iterations)]
+    binaries = {}
+    for arm, path in [("A", args.baseline_binary), ("B", args.candidate_binary)]:
+        binary = (path or args.binary).resolve(strict=True)
+        with binary.open("rb") as source:
+            sha = hashlib.file_digest(source, "sha256").hexdigest()
+        binaries[arm] = (binary, sha)
     clean = {k:v for k,v in os.environ.items() if not k.startswith(("FUSOR_", "PROFILE_", "LAB_"))}
     results, provenance = {}, {}
     for label, config in [("A0", args.baseline), ("B0", args.candidate),
                           ("B1", args.candidate), ("A1", args.baseline)]:
+        binary, sha = binaries[label[0]]
+        command = [str(binary), "1", str(args.n), str(args.k), args.format, str(args.iterations)]
         switches = json.loads(config.read_text())
         if not all(k.startswith("FUSOR_") and isinstance(v, str) for k,v in switches.items()):
             p.error("configuration must contain FUSOR_ string switches only")
@@ -113,8 +119,7 @@ def main():
             r"theta=Sgemv\(SgemvParams \{ vector: (\d+), subgroups: (\d+), cols: (\d+), parts: (\d+), gap: (\d+) \}\)", log)}
         expected = tuple(map(int, env["FUSOR_PIN_SGEMV"].split(",")))
         kernels = sorted(set(re.findall(r"^LAB_COMMAND dispatch=(\S+)", log, re.M)))
-        prefix = "sgemv_packed_q4" if args.format == "q4k" else "sgemv_q6_coalesced"
-        if cells != {expected} or not kernels or not all(k.startswith(prefix) for k in kernels):
+        if cells != {expected} or not kernels or not all(k == "sgemv" or k.startswith("sgemv_") for k in kernels):
             raise ValueError(f"unexpected schedule/kernels: {cells}, {kernels}")
         results[label] = dict(gpu_us=gpu_us, row=row, kernels=kernels, cell=expected)
         print(label, rows[0], flush=True)
