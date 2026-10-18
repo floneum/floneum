@@ -12,7 +12,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  host:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CARGO_BUILD_JOBS: 1
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 572e16227fca0e93c708535738e086b7d1064320
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify deferred host backing without a GPU
+        run: |
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor-ir --lib
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features cpu --lib layout_alternatives_materialize_only_when_borrowed
   release:
+    needs: host
     runs-on: macos-latest
     timeout-minutes: 60
     env:
