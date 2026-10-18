@@ -735,60 +735,68 @@ mod tests {
     fn independent_expression_operands_release_long_trees_first() {
         let target = crate::target::GpuTarget::new_blocking().expect("WebGPU adapter");
         for numeric in [NumericContract::STRICT, NumericContract::RELAXED] {
-            let b = Kernel::new();
-            let ty = ScalarElement::F32.element();
-            let locals: Vec<_> = (0..6).map(|_| b.local(ty)).collect();
-            let values = [0.5, 0.25, 1.25, -0.25, 2.0, -0.125];
-            let mut body: Vec<_> = locals
-                .iter()
-                .zip(values)
-                .map(|(dst, value)| Stmt::StoreLocal {
-                    dst: dst.clone(),
-                    value: b.f32(value),
-                })
-                .collect();
-            let read = |i: usize| b.load_local(locals[i].clone());
-            let add = |a, c| b.binary(TileBinaryOp::Add, a, c, numeric);
-            let mul = |a, c| b.binary(TileBinaryOp::Mul, a, c, numeric);
-            let result = add(
-                mul(read(0), read(1)),
-                mul(add(read(2), read(3)), add(read(4), read(5))),
-            );
-            let output = buffer(1, ScalarElement::U32.element(), 1, BufferAccess::ReadWrite);
-            body.push(Stmt::Store {
-                dst: output.clone(),
-                addr: Addr::Linear(b.u32(0)),
-                value: b.bitcast(result, ScalarElement::U32.element()),
-                mask: b.bool(true),
-            });
-            let ir = KernelIr {
-                buffers: vec![
-                    buffer(0, ScalarElement::U32.element(), 1, BufferAccess::Read).buffer,
-                    output.buffer,
-                ],
-                grid: [1, 1, 1],
-                block: 1,
-                body,
-                byte_arena: None,
-                name: "expression_schedule",
-            };
-            let emitted = emit(&ir, target.caps()).unwrap();
-            let f = &emitted.module.entry_points[0].function;
-            let first_read = f.expressions.iter().find_map(|(_, expression)| {
-                if let naga::Expression::Load { pointer } = expression
-                    && let naga::Expression::LocalVariable(local) = f.expressions[*pointer]
-                {
-                    Some(local.index())
-                } else {
-                    None
-                }
-            });
-            assert_eq!(
-                first_read,
-                Some(2),
-                "short operands stay live across the larger tree"
-            );
-            assert_eq!(run(&target, &ir, Uniforms::default()), [2.0f32.to_bits()]);
+            for (op, expected) in [
+                (TileBinaryOp::Add, 2.125f32),
+                (TileBinaryOp::Sub, -1.875f32),
+                (TileBinaryOp::Div, 0.0625f32),
+            ] {
+                let b = Kernel::new();
+                let ty = ScalarElement::F32.element();
+                let locals: Vec<_> = (0..6).map(|_| b.local(ty)).collect();
+                let values = [0.5, 0.25, 1.25, -0.25, 2.0, 0.0];
+                let mut body: Vec<_> = locals
+                    .iter()
+                    .zip(values)
+                    .map(|(dst, value)| Stmt::StoreLocal {
+                        dst: dst.clone(),
+                        value: b.f32(value),
+                    })
+                    .collect();
+                let read = |i: usize| b.load_local(locals[i].clone());
+                let add = |a, c| b.binary(TileBinaryOp::Add, a, c, numeric);
+                let mul = |a, c| b.binary(TileBinaryOp::Mul, a, c, numeric);
+                let result = b.binary(
+                    op,
+                    mul(read(0), read(1)),
+                    mul(add(read(2), read(3)), add(read(4), read(5))),
+                    numeric,
+                );
+                let output = buffer(1, ScalarElement::U32.element(), 1, BufferAccess::ReadWrite);
+                body.push(Stmt::Store {
+                    dst: output.clone(),
+                    addr: Addr::Linear(b.u32(0)),
+                    value: b.bitcast(result, ScalarElement::U32.element()),
+                    mask: b.bool(true),
+                });
+                let ir = KernelIr {
+                    buffers: vec![
+                        buffer(0, ScalarElement::U32.element(), 1, BufferAccess::Read).buffer,
+                        output.buffer,
+                    ],
+                    grid: [1, 1, 1],
+                    block: 1,
+                    body,
+                    byte_arena: None,
+                    name: "expression_schedule",
+                };
+                let emitted = emit(&ir, target.caps()).unwrap();
+                let f = &emitted.module.entry_points[0].function;
+                let first_read = f.expressions.iter().find_map(|(_, expression)| {
+                    if let naga::Expression::Load { pointer } = expression
+                        && let naga::Expression::LocalVariable(local) = f.expressions[*pointer]
+                    {
+                        Some(local.index())
+                    } else {
+                        None
+                    }
+                });
+                assert_eq!(
+                    first_read,
+                    Some(2),
+                    "short operands stay live across the larger tree"
+                );
+                assert_eq!(run(&target, &ir, Uniforms::default()), [expected.to_bits()]);
+            }
         }
     }
 
