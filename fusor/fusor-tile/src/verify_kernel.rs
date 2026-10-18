@@ -748,6 +748,26 @@ fn max_value(expr: &TileExpr, env: &BoundEnv) -> Option<u64> {
             // Bound the selected value under its predicate. This does not
             // license loads in either arm: select operands evaluate eagerly,
             // and check_expr_loads still visits them with the original env.
+            if let TileExprKind::Compare {
+                op: fusor_ir::ir::kernel::TileCompareOp::Lt,
+                left,
+                right,
+            } = condition.kind()
+                && left.element() == ScalarElement::U32.element()
+            {
+                if min_value(left, env)
+                    .zip(max_value(right, env))
+                    .is_some_and(|(l, r)| l >= r)
+                {
+                    return max_value(reject, env);
+                }
+                if max_value(left, env)
+                    .zip(min_value(right, env))
+                    .is_some_and(|(l, r)| l < r)
+                {
+                    return max_value(accept, env);
+                }
+            }
             let mut inside = env.clone();
             assume_true(condition, &mut inside);
             let mut outside = env.clone();
@@ -1287,6 +1307,36 @@ mod tests {
     }
 
     #[test]
+    fn selected_tile_index_excludes_an_impossible_region() {
+        use fusor_ir::ir::kernel::{Builtin, WorkgroupAxis};
+        let b = crate::build::Kernel::new();
+        let env = BoundEnv {
+            grid: [20, 1, 1],
+            block: 128,
+            subgroups: None,
+            locals: FxHashMap::default(),
+            expressions: FxHashMap::default(),
+        };
+        let group = b.builtin(Builtin::ProgramId(WorkgroupAxis::X));
+        // No complete 5x5 tile fits in a 4x5 grid. Only the tail executes,
+        // but the unused tiled formula can produce row 4.
+        let tiled = b.add(
+            b.mul(b.div(group.clone(), b.u32(25)), b.u32(5)),
+            b.rem(b.rem(group.clone(), b.u32(25)), b.u32(5)),
+        );
+        let tail = b.rem(group.clone(), b.u32(4));
+        let selected = b.select(b.lt(group, b.u32(0)), tiled, tail);
+        let row = b.add(
+            b.mul(selected, b.u32(16)),
+            b.div(b.builtin(Builtin::Lane), b.u32(8)),
+        );
+        assert_eq!(max_value(&row, &env), Some(63));
+        let group = b.builtin(Builtin::ProgramId(WorkgroupAxis::X));
+        let selected = b.select(b.lt(group.clone(), b.u32(20)), group, b.u32(u32::MAX));
+        assert_eq!(max_value(&selected, &env), Some(19));
+    }
+
+    #[test]
     fn select_predicate_cannot_license_an_eager_load() {
         use fusor_ir::ir::kernel::{
             BufferAccess, BufferDecl, Builtin, MemoryLevel, StorageView, TileLayout, WorkgroupAxis,
@@ -1317,8 +1367,10 @@ mod tests {
             b.bool(true),
             b.f32(0.),
         );
-        let selected = b.select(b.lt(index, b.u32(8)), read, b.f32(0.));
-        assert!(check_expr_loads(&selected, &env, &mut FxHashSet::default()).is_err());
+        for limit in [0, 8] {
+            let selected = b.select(b.lt(index.clone(), b.u32(limit)), read.clone(), b.f32(0.));
+            assert!(check_expr_loads(&selected, &env, &mut FxHashSet::default()).is_err());
+        }
     }
 
     #[test]

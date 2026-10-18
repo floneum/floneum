@@ -203,7 +203,7 @@ fn bounded_saturation_offers_map_fusion_to_every_block() {
     use fusor_ir::scalar::{ScalarExpr, UnOp};
 
     let caps = gpu_caps();
-    let (_, mut graph) = planner_graph();
+    let (planner, mut graph) = planner_graph();
     let mut x = leaf(&mut graph, 0, &consts([1, 1024]));
     let mut outputs = Vec::new();
     for layer in 0..32 {
@@ -257,6 +257,19 @@ fn bounded_saturation_offers_map_fusion_to_every_block() {
         fused.iter().all(|v| *v),
         "fusion offered by block: {fused:?}; {report:?}"
     );
+    // Check the selected plan too. Contractions may split their reduction,
+    // but each block should need at most one separate pointwise dispatch.
+    use fusor_ir::extract::{ExtractBudget, Extractor};
+    let cost = fusor_cost::Roofline::new(fusor_cost::facts::seed_facts(&caps));
+    let plan = fusor_cost::LocalSearch::new(planner, caps)
+        .extract(&graph, &[x], &cost, ExtractBudget::default())
+        .unwrap();
+    let maps = plan
+        .launches
+        .iter()
+        .filter(|launch| matches!(graph.node(launch.root).op, Op::Launch(Launch::Map { .. })))
+        .count();
+    assert!(maps <= 32, "{maps} pointwise launches for 32 blocks");
 }
 
 #[test]

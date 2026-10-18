@@ -1101,7 +1101,7 @@ fn whole_value_broadcast_replays_changed_inputs() {
             Dim::Const(3)
         };
         let input = graph
-            .leaf("input", &[Dim::ONE, columns], Dtype::F32)
+            .leaf("input", &[Dim::ONE, columns], crate::Dtype::F32)
             .unwrap();
         let output = input
             .mul_scalar(3.)

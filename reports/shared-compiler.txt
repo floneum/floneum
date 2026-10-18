@@ -1,3 +1,72 @@
+Cache-growth and search follow-up (2026-10-17; model validation pending)
+======================================================================
+A clean 512-chunk, two-round decode reproduced the periodic hitch at exactly
+measured chunk 448 in both rounds: 69.418 and 79.718 ms. This aligns with the
+512-slot cache boundary; the run added no swapouts or compressor growth,
+retained >=9.365 GiB headroom and peaked at 11.537 GiB process-group RSS.
+The correlation does not by itself attribute the entire model stall.
+Logs: target/stall-validation/compiler-d4cc-long-decode.
+
+The new cache_growth_lab uses ordinary KvCache append/reserve/resolve with no
+model weights. Its 32-pair, 8-head, 512-slot, 128-wide case retains 128 MiB and
+allocates 256 MiB on growth. It verifies every one of 33,554,432 values after
+migration. The actual execution uses 512 WebGPU buffer copies, zero compute
+dispatches, and zero new pipeline compilations. GPU completion takes 3.5-5 ms;
+host planning dominates in this unoptimized-host diagnostic.
+
+The local-search descent rebuilt the complete DAG to reject one-launch
+schedule/selection trials even when all inputs were unchanged. It now shares
+the seed selection's replacement-cost screen. That screen still prices the
+complete launch sequence, retaining shared traffic and nonlinear cost totals;
+composites and changed inputs still require full reconstruction. Search budgets
+and candidate order are unchanged. A 32-branch regression goes from 64 full
+reconstructions to zero with the exact same selected plan hash and cost.
+
+On the small growth probe, prior/candidate/prior completed in 103.473 / 69.066 /
+99.289 ms (unoptimized host). Migration extraction fell from 75.429 to 40.804 ms;
+search fell from 43.310 to 9.513 ms, avoiding 93 full reconstructions. Every
+value passes in all runs; no added swapouts, <=0.556 GiB process-group RSS.
+These are host-planning microbenchmarks, not a model throughput claim.
+Logs: shared-cache-growth-stages, shared-cache-growth-screen-after, and
+shared-cache-growth-screen-prior-after under target/stall-validation.
+
+A subsequent instrumented full-model attribution run stopped at the unchanged
+2 GiB compressor ceiling after 7.61 seconds. It produced no decode result and
+was not retried. It is excluded from performance comparisons. Local work then
+continued only with small probes and compiler tests.
+
+CI at d4cc passed 180/181 Fusor tests but training exposed an impossible
+selected-index arm: an unsigned index < 0 cannot select the oversized tiled
+region. The focused regression reproduced bound 79 instead of 63. Range proof
+now excludes provably impossible value arms; eager loads are still checked in
+both arms, including when the condition is provably false. All 16 tile tests
+pass. The full training test requires another CI run; it is not yet a pass.
+
+Validation of these changes: all 15 cost units, 15 candidate-construction
+tests, workspace/all-target Clippy with warnings denied, and all eight shared
+WebGPU regressions pass (47.64 seconds, peak 0.501 GiB RSS, no new swapouts). The
+saturation regression now also checks the selected plan has at most one
+separate map per block. The ordinary facade test's feature-dependent Dtype
+import is corrected; its 23 library tests passed before this search change.
+
+Latest clean full-model measurement, runtime d4cc3c58b
+======================================================================
+Isolated default-release build 39100620525, three rounds of 8 warmup + 64
+measured chunks, identical seeded output versus a fresh 10377cfa2 run:
+
+                      Prior 10377      Candidate d4cc     Ratio
+mean chunk gap        22.5129 ms       22.2233 ms          1.0130x
+p95                   23.0993 ms       22.8499 ms          1.0109x
+maximum               23.5473 ms       26.0193 ms          0.9050x
+
+Candidate ran before prior; this is not bracketed. Only the first round is
+excluded, all 128 remaining gaps are retained. Candidate added 64 KiB of
+swapouts and no compressor growth; this is a delta, not the cumulative macOS
+swapout counter. The new search screen is not in these binaries. The requested
+2x end-to-end goal remains unmet.
+Logs: compiler-d4cc-candidate, compiler-d4cc-prior-after, and
+compiler-d4cc-versus-prior.json under target/stall-validation.
+
 Compiler follow-up d4cc3c58b (2026-10-17; measurement pending)
 ================================================================
 The ordinary saturation driver offered every rule to an early node before
@@ -28,7 +97,7 @@ limit and produced no timing. It was not retried. No claim about polling or
 full-model speed of d4cc3c58b follows from these experiments. An isolated
 release build runs in CI 39100620525; no heavy local release build is used.
 
-Latest default-path measurement (2026-10-17; goal not achieved)
+Previous default-path measurement (2026-10-17; goal not achieved)
 ================================================================
 Runtime 10377cfa2 now has a completed full-model measurement from isolated
 default-release CI build 39097786222. Source/profile/compiler/architecture and
