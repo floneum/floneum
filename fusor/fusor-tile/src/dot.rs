@@ -84,43 +84,43 @@ fn expand(e: &TileExpr, budget: usize) -> Option<Vec<Term>> {
         right,
         numeric,
     } = e.kind()
+        && numeric.reassoc
+        && e.element() == ScalarElement::F32.element()
     {
-        if numeric.reassoc && e.element() == ScalarElement::F32.element() {
-            match op {
-                Op::Add | Op::Sub => {
-                    let mut a = expand(left, budget)?;
-                    let mut c = expand(right, budget.checked_sub(a.len())?)?;
-                    if *op == Op::Sub {
-                        for t in &mut c {
-                            t.negative = !t.negative;
-                        }
+        match op {
+            Op::Add | Op::Sub => {
+                let mut a = expand(left, budget)?;
+                let mut c = expand(right, budget.checked_sub(a.len())?)?;
+                if *op == Op::Sub {
+                    for t in &mut c {
+                        t.negative = !t.negative;
                     }
-                    a.extend(c);
-                    return Some(a);
                 }
-                Op::Mul => {
-                    let a = expand(left, budget)?;
-                    let c = expand(right, budget)?;
-                    if a.len().checked_mul(c.len())? > budget {
-                        return None;
-                    }
-                    return Some(
-                        a.iter()
-                            .flat_map(|a| {
-                                c.iter().map(move |c| {
-                                    let mut factors = a.factors.clone();
-                                    factors.extend(c.factors.iter().cloned());
-                                    Term {
-                                        negative: a.negative != c.negative,
-                                        factors,
-                                    }
-                                })
-                            })
-                            .collect(),
-                    );
-                }
-                _ => {}
+                a.extend(c);
+                return Some(a);
             }
+            Op::Mul => {
+                let a = expand(left, budget)?;
+                let c = expand(right, budget)?;
+                if a.len().checked_mul(c.len())? > budget {
+                    return None;
+                }
+                return Some(
+                    a.iter()
+                        .flat_map(|a| {
+                            c.iter().map(move |c| {
+                                let mut factors = a.factors.clone();
+                                factors.extend(c.factors.iter().cloned());
+                                Term {
+                                    negative: a.negative != c.negative,
+                                    factors,
+                                }
+                            })
+                        })
+                        .collect(),
+                );
+            }
+            _ => {}
         }
     }
     Some(vec![Term {

@@ -6,6 +6,8 @@ into ordinary typed expressions. A bounded shared dot-product transform
 extracts common factors when reassociation is permitted and the expression
 DAG becomes smaller. Both single-column and subgroup-column SGEMV use it.
 The visualizer and GPU emitter use the same load-expansion interface.
+CPU operand loading also handles uniform leaves without requiring tensor
+bindings; an integer-index replay regression covers the missing path.
 
 The ordinary WebGPU regression suite now includes every QFmt in Native and
 F32Scales layouts, plus dense tails and replay. Linux, macOS and Windows CI
