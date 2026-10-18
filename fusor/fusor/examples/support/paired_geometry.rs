@@ -265,9 +265,15 @@ fn compare(a: &[u8], b: &[u8]) -> (usize, f32) {
     assert_eq!(a.len(), b.len(), "paired output lengths differ");
     assert!(a.len().is_multiple_of(4));
     let mut max_error = 0f32;
-    for (index, (u, v)) in a.chunks_exact(4).zip(b.chunks_exact(4)).enumerate() {
-        let u = f32::from_le_bytes(u.try_into().unwrap());
-        let v = f32::from_le_bytes(v.try_into().unwrap());
+    for (index, (u, v)) in a
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(b.as_chunks::<4>().0.iter())
+        .enumerate()
+    {
+        let u = f32::from_le_bytes(*u);
+        let v = f32::from_le_bytes(*v);
         let error = (u - v).abs();
         assert!(
             u.is_finite() && v.is_finite() && error <= 0.001 + 0.0001 * u.abs().max(v.abs()),

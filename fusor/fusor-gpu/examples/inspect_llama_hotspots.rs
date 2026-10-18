@@ -258,10 +258,10 @@ fn main() -> Result<()> {
             }
             for (i, (&want, got)) in expected_arena
                 .iter()
-                .zip(actual.chunks_exact(4))
+                .zip(actual.as_chunks::<4>().0.iter())
                 .enumerate()
             {
-                let got = f32::from_le_bytes(got.try_into().unwrap());
+                let got = f32::from_le_bytes(*got);
                 if !got.is_finite() || (got - want).abs() > 1e-5 * (1.0 + want.abs()) {
                     return Err(format!(
                         "{} seed {seed} element {i}: got {got}, expected {want}",

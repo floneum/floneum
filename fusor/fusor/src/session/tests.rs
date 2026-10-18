@@ -38,7 +38,7 @@ fn replan_with(
 fn run_f32(session: &Session, h: &GraphRef, plan: &Plan, out: &Tensor) -> Vec<f32> {
     let resolving = h.state().resolve_lock.lock();
     session
-        .run(h, plan, std::slice::from_ref(out), false, None)
+        .run(h, plan, std::slice::from_ref(out), None)
         .unwrap();
     let bytes = session.read_bytes_locked(&resolving, h, out.id).unwrap();
     bytemuck::cast_slice::<u8, f32>(&bytes).to_vec()
@@ -565,7 +565,7 @@ fn symbolic_contractions_reuse_pipelines_across_tile_boundaries() {
                     assert_eq!(h.device_buf(b.id).unwrap().addr(), buffers[1].addr());
                 }
             }
-            session.run(h, &plan, std::slice::from_ref(&out), false, None).unwrap_or_else(|error| {
+            session.run(h, &plan, std::slice::from_ref(&out), None).unwrap_or_else(|error| {
                 panic!("{family:?} varying_k={varying_k} columns={columns} kv_cache={kv_cache} length={len}: {error}")
             });
             let bytes = session.read_bytes_locked(&resolving, h, out.id).unwrap();

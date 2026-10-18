@@ -131,7 +131,7 @@ fn main() -> Result<()> {
     let blocks = n * k / 256;
     let mut original = vec![0u8; blocks * 210];
     let mut rng = 0x872b_912du32;
-    for block in original.chunks_exact_mut(210) {
+    for block in original.as_chunks_mut::<210>().0 {
         for byte in block.iter_mut() {
             rng ^= rng << 13;
             rng ^= rng >> 17;
@@ -149,7 +149,7 @@ fn main() -> Result<()> {
             return Err("weight binding exceeds adapter limit".into());
         }
         let mut packed = vec![0u8; words * 4];
-        for (block, src) in original.chunks_exact(210).enumerate() {
+        for (block, src) in original.as_chunks::<210>().0.iter().enumerate() {
             for word in 0..53 {
                 let bytes = if word == 52 {
                     half::f16::from_bits(u16::from_le_bytes(src[208..210].try_into()?))

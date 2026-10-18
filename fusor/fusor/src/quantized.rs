@@ -163,12 +163,12 @@ impl QMatrix {
                 )));
             }
         };
-        Self::from_raw_bytes(
+        Self::from_shared_bytes(
             graph,
             fmt,
             raw.layout,
             [Dim::Const(rows), Dim::Const(cols)],
-            &raw.bytes,
+            raw.bytes.shared_host_bytes(),
         )
     }
 

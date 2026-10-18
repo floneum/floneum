@@ -77,7 +77,7 @@ pub(super) fn expected(
         .into_iter()
         .map(|col| {
             let mut sum = 0.;
-            for (bk, values) in x.chunks_exact(256).enumerate() {
+            for (bk, values) in x.as_chunks::<256>().0.iter().enumerate() {
                 let at = (col * k / 256 + bk) * size;
                 fusor_gguf::blocks::cpu_dequantize_block(
                     fmt,
@@ -97,8 +97,10 @@ pub(super) fn expected(
 }
 pub(super) fn check(bytes: &[u8], reference: &[(usize, f64)], n: usize) -> Result<Vec<f32>> {
     let values: Vec<_> = bytes
-        .chunks_exact(4)
-        .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| f32::from_le_bytes(*b))
         .collect();
     if let Some(i) = values[..n].iter().position(|v| !v.is_finite()) {
         return Err(format!("nonfinite or unwritten output at column {i}").into());

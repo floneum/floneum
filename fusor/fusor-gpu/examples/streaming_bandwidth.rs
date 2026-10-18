@@ -187,8 +187,8 @@ fn main() -> Result<()> {
                         .sum()
                 })
                 .collect();
-            for (i, b) in data.chunks_exact(4).enumerate() {
-                let got = f32::from_le_bytes(b.try_into()?);
+            for (i, b) in data.as_chunks::<4>().0.iter().enumerate() {
+                let got = f32::from_le_bytes(*b);
                 if got != expected[i % 8] {
                     return Err(format!(
                         "{name} seed={seed} output={i}: {got} != {}",

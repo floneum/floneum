@@ -24,6 +24,9 @@ Compiler changes
   materialize their base separately, avoiding stale reshaped intermediates.
 
 Runtime changes
+- Generic QMatrix and dense-layer GGUF loaders share immutable host bytes,
+  as does the model loader. Concatenation retains segments without copying
+  every weight into another full host allocation.
 - Bounded prepared-plan/artifact caches apply to normal resolves.
 - One compiler worker by default avoids retaining a cohort of lowered kernels.
 - Submission overlaps preparation within the existing in-flight resource bound.
@@ -40,44 +43,44 @@ Validation
   shapes with absent/16/32/64-wide subgroups, and ordinary attention across
   five channel widths, grouped heads, concrete and symbolic key extents.
   Unsupported CPU/no-subgroup attention and incorrect normalization decline.
-- Ordinary-device WebGPU checks passed for RMS/attention vs host results,
-  zero-shader copy lowering, concrete full-size view replay, and scatter
-  input/retained-view preservation. Symbolic grouped-attention cache replay
-  crosses 256 keys, grows storage to 512 slots, and remains correct through
-  260 keys with zero additional shader compilations.
-- Q4/Q6 numerical checks passed against dequantized matrix references at
-  N=1024 and N=1027, K=4096, with one and three activation rows. The aligned
-  run observed both coalesced lowerings without a preset. The odd-size run
-  selected a different valid Q4 schedule and failed an over-specific kernel
-  name assertion; the values matched. The fixture now includes both sizes.
-- 14 Python tool tests pass after removing obsolete preset/model hooks.
-- Formatting and diff whitespace checks pass.
+- Five ordinary-device WebGPU tests passed in 17.90 seconds: RMS/attention
+  vs host results, zero-shader copy lowering, concrete and symbolic full-size
+  view replay, scatter input/retained-view preservation, and Q4/Q6 results
+  against dequantized references at N=1024/1027, K=4096, one/three input rows.
+  The aligned cases observe both coalesced lowerings without a preset; odd
+  dimensions may select another legal schedule and still match every value.
+- Symbolic grouped attention crosses 256 keys, grows storage to 512 slots,
+  and remains correct through 260 keys with zero extra shader compilations.
+- All 29 visualizer Rust tests and 14 Python tool tests pass.
+- Formatting and diff whitespace checks pass. CI formatting also passed.
 
-Remaining local verification
-The expanded fixture exceeded its 1 GiB process-group cap while retaining
-multiple matrix graphs, with no added swapouts. It now releases the device,
-graph and GPU pool between matrix cases. That revised fixture and the extended
-symbolic-view readback test still need a completed run. The previous symbolic
-view fixture stopped at an unsupported direct symbolic readback; it now resolves
-the symbolic result and reads a concrete view.
-
-The final visualizer suite, workspace clippy, and model/example compatibility
-check remain pending. Other work reduced free disk space below the retained
-1 GiB runtime reserve. Further builds were refused after task-owned obsolete
-executables and check metadata were removed. No model was loaded for this work.
-
+Resource validation
 Checks used one compiler job and one GPU process, at least 12 GiB starting
 memory headroom, a 1 GiB process-group RSS cap, no additional swapouts, a 32 MiB
 compressor-growth ceiling, and a 1 GiB runtime disk reserve. Small incremental
 tests may start with that disk reserve plus a 64 MiB linking allowance; larger
-checks require 1.5 GiB at startup. Resource aborts are not successful tests.
-The earlier main GPU regression peaked at 0.528 GiB process-group RSS.
+checks require 1.5 GiB at startup. No model was loaded for these checks.
+The final GPU suite peaked at 0.500 GiB process-group RSS, with at least
+16.174 GiB memory headroom and no added swapouts.
+
+An expanded fixture initially exceeded its process-group cap while retaining
+multiple matrix graphs. It now releases the graph, device and GPU pool between
+cases and completes inside the same cap. When another workload reduced free
+disk below the reserve, builds were refused. They resumed after space recovered;
+only obsolete task-owned executables and check metadata were removed.
+
+Remaining verification
+Workspace clippy and model/example compatibility checks are in progress. CI's
+newer Clippy found fixed-size chunk-iterator lints in diagnostic examples; those
+have been converted to array chunks. The WebGPU CI build passed. Native CI builds identified two test helpers
+using the removed donation argument; those calls are updated. Native reruns
+are required for the follow-up commit.
 
 Reproduction (from repository root; run GPU checks serially):
-  cargo test --manifest-path fusor/Cargo.toml -p fusor --no-default-features \
-    --features kernel-observer --test candidate_construction ordinary_
-  cargo test --manifest-path fusor/Cargo.toml -p fusor --no-default-features \
-    --features kernel-observer --test shared_compiler -- --ignored --test-threads=1
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test --manifest-path fusor/Cargo.toml -p fusor --no-default-features \
+    --features kernel-observer --config profile.dev.opt-level=0 --config profile.dev.debug=0 --test candidate_construction ordinary_
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test --manifest-path fusor/Cargo.toml -p fusor --no-default-features \
+    --features kernel-observer --config profile.dev.opt-level=0 --config profile.dev.debug=0 --test shared_compiler -- --ignored --test-threads=1
 
 
 Historical measurements

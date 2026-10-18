@@ -370,7 +370,7 @@ fn main() -> Result<()> {
     // Deterministic, nonperiodic coefficients; varying exactly representable
     // half scales ensure every metadata bit participates in CPU validation.
     let mut rng = 0x6197_3521u32;
-    for block in original.chunks_exact_mut(144) {
+    for block in original.as_chunks_mut::<144>().0 {
         for byte in block.iter_mut() {
             rng ^= rng << 13;
             rng ^= rng >> 17;
@@ -515,7 +515,7 @@ fn main(@builtin(global_invocation_id) id:vec3<u32>) {{
                 return Err("expanded scales require block input mode".into());
             }
             interleaved = Vec::with_capacity(original.len() / 144 * 148);
-            for block in original.chunks_exact(144) {
+            for block in original.as_chunks::<144>().0 {
                 let (scales, offsets) =
                     fusor_gguf::blocks::unpack_k4_scales_offsets(block[4..16].try_into()?);
                 interleaved.extend_from_slice(&block[..4]);
@@ -529,7 +529,7 @@ fn main(@builtin(global_invocation_id) id:vec3<u32>) {{
                 return Err("prescaled probe requires block input mode".into());
             }
             interleaved = Vec::with_capacity(original.len() / 144 * 192);
-            for block in original.chunks_exact(144) {
+            for block in original.as_chunks::<144>().0 {
                 let d = half::f16::from_le_bytes(block[..2].try_into()?).to_f32();
                 let dmin = half::f16::from_le_bytes(block[2..4].try_into()?).to_f32();
                 let (scales, offsets) =
