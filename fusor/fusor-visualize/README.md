@@ -445,9 +445,10 @@ diagnostic and must be followed by a default-path model measurement.
 
 ### Compare default decode latency
 
-`profile_forward` reports every measured stream-chunk gap, p50/p95/worst
-latency, and generated text. Text chunks are not guaranteed to be individual
-token IDs. Sampling is seeded (`KALOSM_PROFILE_LLAMA_SEED`, default 0); model,
+`profile_forward` observes actual sampled tokens through a dedicated tracing
+target. It reports every token gap, p50/p95/worst latency, token IDs and generated
+text. UTF-8 text buffering does not affect the token count. Sampling is seeded
+(`KALOSM_PROFILE_LLAMA_SEED`, default 0); model,
 prompt, sampler, warmup, and round settings are recorded in the log. Incomplete
 samples fail instead of producing a successful throughput result.
 
@@ -467,14 +468,19 @@ python3 fusor/fusor-visualize/tools/profile_decode.py --binary /path/to/profile_
   --model /path/to/model.gguf --output /path/to/new-measurement-directory
 ```
 
-Use `--chunks` for a longer stall/growth investigation, keeping the same value
-in every arm. It defaults to 64 chunks, eight warmup chunks, and three rounds.
+Use `--tokens` for a longer stall/growth investigation, keeping the same value
+in every arm. It defaults to 64 tokens, eight warmup tokens, and three rounds.
+The token sampler stops at exactly warmup plus measured tokens. The first
+measured interval starts at the final warmup token, excluding prefill.
 Add `--minimum-speedup 2` to `compare_decode.py` to make the throughput goal an
 explicit failing check. A bracketed comparison must reach the target against
-both baseline runs.
+both baseline runs. Add `--minimum-tps 60` to require 60 actual tokens/sec.
+Older chunk logs remain comparable to each other but cannot satisfy a token
+throughput target. Build both revisions with the same example and token trace
+event; otherwise the observer rejects the missing or incomplete sample.
 
 The comparison excludes the first round from both logs, retains every slow
-sample, and refuses mismatched settings, generated text, warmup boundaries,
+sample, and refuses mismatched settings, generated token IDs, text, warmup boundaries,
 or incomplete logs. It reports elapsed-time, p95, and worst-gap ratios for
 matched output. This is a wall-time comparison, not a GPU-kernel estimate.
 

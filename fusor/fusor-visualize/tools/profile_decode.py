@@ -24,14 +24,15 @@ def main():
     p.add_argument('--binary', type=Path, required=True)
     p.add_argument('--model', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
-    p.add_argument('--chunks', type=int, default=64)
+    p.add_argument('--tokens', type=int, default=64,
+                   help='actual generated tokens per round; use a token-observing profile_forward build')
     p.add_argument('--warmup', type=int, default=8)
     p.add_argument('--rounds', type=int, default=3)
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--prompt', default=PROMPT)
     p.add_argument('--timeout', type=int, default=900)
     a = p.parse_args()
-    if not (1 <= a.chunks <= 2048 and 0 <= a.warmup <= 256 and 2 <= a.rounds <= 10
+    if not (1 <= a.tokens <= 512 and 1 <= a.warmup <= 512 and 2 <= a.rounds <= 10
             and 0 <= a.seed < 2**64 and 1 <= a.timeout <= 3600):
         p.error('invalid bounded measurement settings')
     binary, model = a.binary.resolve(strict=True), a.model.resolve(strict=True)
@@ -43,7 +44,7 @@ def main():
     settings = dict(KALOSM_PROFILE_LLAMA_LOCAL_PATH=str(model),
                     KALOSM_PROFILE_LLAMA_CHAT='1',
                     KALOSM_PROFILE_LLAMA_WARMUP=str(a.warmup),
-                    KALOSM_PROFILE_LLAMA_TOKENS=str(a.chunks),
+                    KALOSM_PROFILE_LLAMA_TOKENS=str(a.tokens),
                     KALOSM_PROFILE_LLAMA_REPEATS=str(a.rounds),
                     KALOSM_PROFILE_LLAMA_SEED=str(a.seed),
                     KALOSM_PROFILE_LLAMA_PROMPT=a.prompt)

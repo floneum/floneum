@@ -84,3 +84,57 @@ class DecodeComparison(unittest.TestCase):
         self.assertEqual(bad.returncode, 1)
         self.assertIn('1.500x speedup < 2.000x target', bad.stderr)
         self.assertEqual(json.loads(bad.stdout)['elapsed_speedup_min'], 1.5)
+
+    def write_tokens(self, path, gaps, token_ids=None):
+        self.write(path, gaps)
+        rows = path.read_text().replace('chunks=3', 'tokens=3').replace(
+            'warmup_bytes=2', 'warmup=1')
+        ids = token_ids if token_ids is not None else [10, 20, 30, 40]
+        rows = rows.replace('llama_forward_output ',
+                            'llama_forward_token_ids ' + json.dumps(ids) + '\nllama_forward_output ')
+        path.write_text(rows)
+
+    def test_actual_tokens_have_throughput_and_keep_slow_samples(self):
+        self.write_tokens(self.base, [20, 20, 20])
+        self.write_tokens(self.candidate, [10, 10, 30])
+        result = compare(self.base, self.candidate)
+        self.assertEqual(result['candidate']['tokens_per_second'], 60)
+        self.assertEqual(result['candidate']['tokens'], 3)
+        self.assertEqual(result['candidate']['slowest_tokens'][0],
+                         dict(round=1, token=2, ms=30))
+
+    def test_refuses_different_token_ids_despite_identical_text(self):
+        self.write_tokens(self.base, [20, 20, 20])
+        self.write_tokens(self.candidate, [10, 10, 10], [10, 20, 31, 40])
+        with self.assertRaisesRegex(ValueError, 'differs'):
+            compare(self.base, self.candidate)
+
+    def test_refuses_missing_partial_and_invalid_token_ids(self):
+        self.write_tokens(self.base, [20, 20, 20])
+        for ids in [[10, 20, 30], [10, 20, 30, -1], [10, 20, 30, 2**32],
+                    [10, 20, 30, True]]:
+            self.write_tokens(self.candidate, [10, 10, 10], ids)
+            with self.assertRaisesRegex(ValueError, 'token'):
+                compare(self.base, self.candidate)
+        self.write_tokens(self.candidate, [10, 10, 10])
+        self.candidate.write_text('\n'.join(line for line in self.candidate.read_text().splitlines()
+                                             if not line.startswith('llama_forward_token_ids ')))
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            compare(self.base, self.candidate)
+
+    def test_tps_target_cannot_use_text_chunks(self):
+        command = [sys.executable, str(Path(__file__).with_name('compare_decode.py')),
+                   str(self.base), str(self.candidate), '--minimum-tps', '60']
+        self.write(self.base, [20, 20, 20])
+        self.write(self.candidate, [1, 1, 1])
+        chunks = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(chunks.returncode, 1)
+        self.assertIn('requires actual token', chunks.stderr)
+        self.write_tokens(self.base, [20, 20, 20])
+        self.write_tokens(self.candidate, [16, 16, 16])
+        passed = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(passed.returncode, 0, passed.stderr)
+        self.write_tokens(self.candidate, [16, 16, 19])
+        failed = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(failed.returncode, 1)
+        self.assertIn('58.824 tokens/sec < 60.000', failed.stderr)
