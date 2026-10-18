@@ -6,6 +6,7 @@
 
 pub(crate) mod coop;
 pub(crate) mod expr;
+mod order;
 pub(crate) mod quantized;
 pub(crate) mod reduce;
 pub(crate) mod stmt;
@@ -425,6 +426,7 @@ pub(crate) struct Emitter<'a> {
     /// Hash-consed expression memo. Each entry carries the [`Self::mem_epoch`]
     /// it was created at; a memory read hits only while its spaces are unchanged.
     pub(crate) memo: FxHashMap<TileExpr, (naga::Handle<naga::Expression>, MemStamp)>,
+    pub(crate) expression_order: order::ExpressionOrder,
     /// Write counter per memory space (storage, tile, local). Monotonic and not
     /// part of [`expr::Scope`]: a nested store must invalidate enclosing reads.
     pub(crate) mem_epoch: MemStamp,
@@ -491,6 +493,7 @@ impl<'a> Emitter<'a> {
             scratch: FxHashMap::default(),
             forced_names: Vec::new(),
             memo: FxHashMap::default(),
+            expression_order: order::ExpressionOrder::default(),
             mem_epoch: MemStamp::default(),
             coop_acc: FxHashMap::default(),
             workgroup_invocations,

@@ -789,8 +789,7 @@ impl Emitter<'_> {
                         "dot requires a floating-point vector".into(),
                     ));
                 }
-                let l = self.expr(left, body)?;
-                let r = self.expr(right, body)?;
+                let [l, r] = self.ordered_operands(body, [left, right])?;
                 Ok(self.math(body, MathFunction::Dot, &[l, r]))
             }
             TileExprKind::Reduce { op, kind, value } => {
@@ -896,16 +895,13 @@ impl Emitter<'_> {
                 } = mul.kind()
                     && inner.contract
                 {
-                    let a = self.expr(a, body)?;
-                    let b = self.expr(b, body)?;
-                    let c = self.expr(other, body)?;
+                    let [a, b, c] = self.ordered_operands(body, [a, b, other])?;
                     return Ok(self.math(body, MathFunction::Fma, &[a, b, c]));
                 }
             }
         }
 
-        let l = self.expr(left, body)?;
-        let r = self.expr(right, body)?;
+        let [l, r] = self.ordered_operands(body, [left, right])?;
 
         // Reassociation permits identity elimination and literal folding.
         // Under `reassoc: false` the operation is emitted literally.
@@ -922,6 +918,19 @@ impl Emitter<'_> {
                 self.math(body, fun, &[l, r])
             }
         })
+    }
+
+    fn ordered_operands<const N: usize>(
+        &mut self,
+        body: &mut Block,
+        operands: [&TileExpr; N],
+    ) -> Result<[Handle<Expression>; N], EmitError> {
+        let order = self.expression_order.operands(operands);
+        let mut handles = [None; N];
+        for i in order {
+            handles[i] = Some(self.expr(operands[i], body)?);
+        }
+        Ok(handles.map(|h| h.expect("every operand is emitted once")))
     }
 
     /// `x*1`, `x+0`, `x-0`, `x/1` and literal-literal arithmetic, permitted
