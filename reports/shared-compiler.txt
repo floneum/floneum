@@ -1,3 +1,21 @@
+Subgroup bounds follow-up (candidate after f3ffe0bce)
+--------------------------------------------------
+The common Kernel builder can expose the adapter-reported subgroup lane upper
+bound to existing integer algebra. It emits an identity mask, including ranged
+and non-power-of-two reported maxima; no fixed lane width or quantization format
+is assumed. Unknown or invalid limits retain the original expression.
+
+17 fusor-tile unit tests passed, including variable-width identity and index
+simplification checks. The guarded actual-compiler ABBA Q6 down-projection
+fixture measured 1.01466x and 1.01566x; all 3 x 12,288 output values were identical.
+The Q4 wide-projection fixture was unchanged (0.99424x / 1.00343x).
+Results: shared-subgroup-bounds-production-q6 and -q4 in target/stall-validation.
+These are GPU microbenchmarks, not an end-to-end throughput claim.
+
+Wider columns are not a universal win: after early accumulator stores, columns
+8 improved the Q4 wide fixture 1.04010x / 1.04410x, but the same geometry on Q6
+down regressed to 0.99175x / 0.99351x. No blanket schedule default was changed.
+
 Accumulator scheduling and current dispatch attribution (2026-10-18)
 ======================================================================
 The 60 token/sec request corresponds to 16.667 ms/token. The existing text-stream

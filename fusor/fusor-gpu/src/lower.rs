@@ -491,7 +491,7 @@ impl<'a> Ctx<'a> {
         Ok(Self {
             caps,
             cx,
-            b: Kernel::new(),
+            b: Kernel::with_subgroup_widths(caps.subgroups),
             binding,
             buffers,
             slot_of,

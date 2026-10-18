@@ -167,11 +167,25 @@ pub fn const_splat(cx: &LowerCtx<'_>, src: Id) -> Option<Splat> {
 #[derive(Default)]
 pub struct Kernel {
     memo: RefCell<FxHashMap<u64, SmallVec<[TileExpr; 2]>>>,
+    subgroup_lane_mask: Option<u32>,
 }
 
 impl Kernel {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Expose the adapter's subgroup-lane bound to ordinary index algebra.
+    /// The mask is an identity for every admitted lane, including devices
+    /// whose subgroup width varies. Unknown widths retain the unbounded term.
+    pub fn with_subgroup_widths(widths: Option<fusor_ir::device::SubgroupWidths>) -> Self {
+        Self {
+            subgroup_lane_mask: widths
+                .filter(|w| w.min > 0 && w.min <= w.max)
+                .and_then(|w| w.max.checked_next_power_of_two())
+                .map(|n| n - 1),
+            ..Self::default()
+        }
     }
 
     fn intern(&self, kind: TileExprKind, ty: ElementType) -> TileExpr {
@@ -281,7 +295,19 @@ impl Kernel {
     }
 
     pub fn builtin(&self, b: Builtin) -> TileExpr {
-        self.intern(TileExprKind::Builtin(b), ScalarElement::U32.element())
+        let value = self.intern(TileExprKind::Builtin(b), ScalarElement::U32.element());
+        if b == Builtin::SubgroupLane
+            && let Some(mask) = self.subgroup_lane_mask
+        {
+            self.binary(
+                TileBinaryOp::BitAnd,
+                value,
+                self.u32(mask),
+                NumericContract::RELAXED,
+            )
+        } else {
+            value
+        }
     }
 
     pub fn load_local(&self, local: Local) -> TileExpr {
@@ -705,6 +731,57 @@ impl FoldLanes {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn subgroup_bounds_feed_index_simplification_without_changing_lanes() {
+        use fusor_ir::device::SubgroupWidths;
+        use fusor_ir::ir::kernel::simplify_index;
+        for (min, max) in [
+            (4, 4),
+            (8, 8),
+            (16, 32),
+            (32, 32),
+            (32, 48),
+            (32, 64),
+            (64, 128),
+        ] {
+            let b = Kernel::with_subgroup_widths(Some(SubgroupWidths { min, max }));
+            let lane = b.builtin(Builtin::SubgroupLane);
+            let TileExprKind::Binary {
+                op: TileBinaryOp::BitAnd,
+                left,
+                right,
+                ..
+            } = lane.kind()
+            else {
+                panic!("missing subgroup bound");
+            };
+            assert!(matches!(
+                left.kind(),
+                TileExprKind::Builtin(Builtin::SubgroupLane)
+            ));
+            let TileExprKind::Literal(TileLiteral::U32(mask)) = right.kind() else {
+                panic!("lane mask")
+            };
+            for value in 0..max {
+                assert_eq!(value & mask, value);
+            }
+            assert_eq!(
+                simplify_index(&b.div(lane, b.u32(max.next_power_of_two()))),
+                b.u32(0)
+            );
+            // A subgroup bound must not constrain the whole workgroup's lane.
+            assert!(matches!(
+                b.builtin(Builtin::Lane).kind(),
+                TileExprKind::Builtin(Builtin::Lane)
+            ));
+        }
+        let b = Kernel::with_subgroup_widths(None);
+        assert!(matches!(
+            b.builtin(Builtin::SubgroupLane).kind(),
+            TileExprKind::Builtin(Builtin::SubgroupLane)
+        ));
+    }
 
     #[test]
     fn numeric_predicate_selections_are_casts_in_both_directions() {
