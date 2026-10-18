@@ -32,8 +32,8 @@ def read_log(path):
             if not records or 'gaps_ms' in records[-1]:
                 raise ValueError('unexpected latency row')
             gaps = json.loads(line.split(' ', 1)[1])
-            if len(gaps) != records[-1][records[-1]['unit']] or not all(
-                isinstance(x, (int, float)) and math.isfinite(x) and x > 0 for x in gaps
+            if not isinstance(gaps, list) or len(gaps) != records[-1][records[-1]['unit']] or not all(
+                type(x) in (int, float) and math.isfinite(x) and x > 0 for x in gaps
             ):
                 raise ValueError('invalid latency sample')
             records[-1]['gaps_ms'] = gaps

@@ -47,7 +47,7 @@ class DecodeComparison(unittest.TestCase):
         self.write(self.candidate, [10, 10, 50], rounds=1)
         with self.assertRaisesRegex(ValueError, 'rounds'):
             compare(self.base, self.candidate)
-        for gaps in [[10, 10], [10, 0, 10], [10, float('nan'), 10]]:
+        for gaps in [[10, 10], [10, 0, 10], [10, float('nan'), 10], [10, True, 10], 10]:
             self.write(self.candidate, gaps)
             with self.assertRaisesRegex(ValueError, 'latency'):
                 compare(self.base, self.candidate)

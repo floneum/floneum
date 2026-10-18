@@ -13,6 +13,7 @@ from pathlib import Path
 import subprocess
 
 from benchmark_guard import run_guarded
+from compare_decode import read_log, summarize
 
 ROOT = Path(__file__).resolve().parents[3]
 PROMPT = ('Write a detailed numbered list of 100 practical Rust performance tips. '
@@ -63,6 +64,16 @@ def main():
                              report_path=a.output / 'resources.jsonl',
                              poll_seconds=.1, record_child_rss=True)
     result.check_returncode()
+    _, records = read_log(a.output / 'decode.log')
+    if len(records) != a.rounds or any(
+        row['unit'] != 'tokens' or row['tokens'] != a.tokens or row['warmup'] != a.warmup
+        for row in records
+    ):
+        raise ValueError('profiler must report the requested actual-token counts and boundaries')
+    summary = dict(metric='actual-token decode latency', excluded_warmup_rounds=1,
+                   **summarize(records[1:], first_round=1))
+    (a.output / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
+    print(json.dumps(summary, indent=2))
     print(a.output / 'decode.log')
 
 
