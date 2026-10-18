@@ -1,0 +1,49 @@
+name: Shared subgroup compiler checks
+on:
+  push:
+    branches: [codex/subgroup-profile-builds]
+permissions:
+  contents: read
+concurrency:
+  group: subgroup-profile-builds
+  cancel-in-progress: true
+jobs:
+  compiler:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      CARGO_BUILD_JOBS: 1
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_OPT_LEVEL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+      FUSOR_CONFORMANCE_REQUIRE_GPU: '1'
+      FUSOR_COMPILE_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 885a523385ed30c411d2a5be35d2bcb9552c66b5
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check construction and live symbolic reduction tails
+        run: |
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer,compiler-tests --test candidate_construction -- --test-threads=1
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer,compiler-tests --lib symbolic_contractions_reuse_pipelines_across_tile_boundaries -- --test-threads=1 --nocapture
+      - name: Build the small WebGPU comparison fixture
+        run: |
+          cargo build --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer --example qmatmul_lab
+          mkdir artifacts
+          cp fusor/target/debug/examples/qmatmul_lab artifacts/qmatmul-lab-split-candidate
+          git rev-parse HEAD > artifacts/revision.txt
+          shasum -a 256 artifacts/qmatmul-lab-split-candidate > artifacts/sha256.txt
+          tar -czf subgroup-fixture.tar.gz -C artifacts .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: subgroup-fixture-macos
+          path: subgroup-fixture.tar.gz
+          retention-days: 3
+      - name: Run common compiler checks
+        run: |
+          cargo fmt --manifest-path fusor/Cargo.toml --all -- --check
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor-ir -p fusor-tile -p fusor-cost --lib
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer,compiler-tests --test shared_compiler -- --ignored --test-threads=1
+          cargo clippy --locked --manifest-path fusor/Cargo.toml --workspace --all-targets --features fusor/kernel-observer,fusor/compiler-tests -- -D warnings
