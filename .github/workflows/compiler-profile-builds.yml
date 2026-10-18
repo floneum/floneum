@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: e3634f5033f12dbf2edb88f371590719e06aa66f
+          ref: 117c60fbc03f79ef43f8630fbcf061900b11c7ed
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - name: Verify deferred host backing without a GPU
@@ -38,7 +38,7 @@ jobs:
       CARGO_BUILD_JOBS: 1
       CARGO_INCREMENTAL: 0
       CARGO_TARGET_DIR: ${{ github.workspace }}/candidate-target
-      CANDIDATE_REVISION: e3634f5033f12dbf2edb88f371590719e06aa66f
+      CANDIDATE_REVISION: 117c60fbc03f79ef43f8630fbcf061900b11c7ed
     steps:
       - uses: actions/checkout@v6
         with:
