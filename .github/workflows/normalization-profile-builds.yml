@@ -1,0 +1,49 @@
+name: Shared normalization compiler checks
+on:
+  push:
+    branches: [codex/normalization-profile-builds]
+permissions:
+  contents: read
+concurrency:
+  group: normalization-profile-builds
+  cancel-in-progress: true
+jobs:
+  compiler:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      CARGO_BUILD_JOBS: 1
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_OPT_LEVEL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+      FUSOR_CONFORMANCE_REQUIRE_GPU: '1'
+      FUSOR_COMPILE_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 8453800cc866cd43e03ecb53ba7f7dd0b745c257
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check construction and live symbolic reduction tails
+        run: |
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer,compiler-tests --test candidate_construction -- --test-threads=1
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer,compiler-tests --lib symbolic_contractions_reuse_pipelines_across_tile_boundaries -- --test-threads=1 --nocapture
+      - name: Build the small WebGPU comparison fixture
+        run: |
+          cargo build --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer --example vector_lab
+          mkdir artifacts
+          cp fusor/target/debug/examples/vector_lab artifacts/vector-lab-normalization-candidate
+          git rev-parse HEAD > artifacts/revision.txt
+          shasum -a 256 artifacts/vector-lab-normalization-candidate > artifacts/sha256.txt
+          tar -czf normalization-fixture.tar.gz -C artifacts .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: normalization-fixture-macos
+          path: normalization-fixture.tar.gz
+          retention-days: 3
+      - name: Run common compiler checks
+        run: |
+          cargo fmt --manifest-path fusor/Cargo.toml --all -- --check
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor-ir -p fusor-tile -p fusor-cost --lib
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer,compiler-tests --test shared_compiler -- --ignored --test-threads=1
+          cargo clippy --locked --manifest-path fusor/Cargo.toml --workspace --all-targets --features fusor/kernel-observer,fusor/compiler-tests -- -D warnings
