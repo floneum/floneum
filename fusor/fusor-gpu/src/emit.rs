@@ -426,7 +426,7 @@ pub(crate) struct Emitter<'a> {
     /// Hash-consed expression memo. Each entry carries the [`Self::mem_epoch`]
     /// it was created at; a memory read hits only while its spaces are unchanged.
     pub(crate) memo: FxHashMap<TileExpr, (naga::Handle<naga::Expression>, MemStamp)>,
-    pub(crate) expression_order: order::ExpressionOrder,
+    expression_order: order::ExpressionOrder,
     /// Write counter per memory space (storage, tile, local). Monotonic and not
     /// part of [`expr::Scope`]: a nested store must invalidate enclosing reads.
     pub(crate) mem_epoch: MemStamp,
