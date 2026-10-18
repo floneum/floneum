@@ -455,3 +455,15 @@ The comparison excludes the first round from both logs, retains every slow
 sample, and refuses mismatched settings, generated text, warmup boundaries,
 or incomplete logs. It reports elapsed-time, p95, and worst-gap ratios for
 matched output. This is a wall-time comparison, not a GPU-kernel estimate.
+
+To expose changing background load, run baseline, candidate, then baseline
+again, serially under the resource guard:
+
+```sh
+python3 fusor/fusor-visualize/tools/compare_decode.py baseline-before.log candidate.log \
+  --baseline-after baseline-after.log
+```
+
+All three runs must have matching settings and output. This reports baseline
+drift and the smaller speedup against the two baselines for each metric. It
+does not select the slower baseline or discard latency spikes.

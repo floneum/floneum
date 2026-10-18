@@ -120,6 +120,21 @@ Confirmed at f927525bd
   full-model execution remains local and resource-guarded. Build completion
   and a matched speed measurement are still pending.
 
+Release artifacts and measurement readiness
+- CI run 39092226768 successfully built both default-release arm64 executables
+  with rustc 1.99.1. The downloaded hashes, full source revisions, architecture,
+  and profiling-source digest match its manifest. The binaries are available
+  locally under target/stall-validation/paired-release-ci. Later PR changes
+  affect only CI, reports, and comparison tools; runtime source is f927525bd.
+- The comparison tool also supports baseline/candidate/baseline runs. It
+  exposes baseline drift and reports the smaller improvement against the two
+  baselines, while checking every run's settings/output and keeping all slow
+  samples. All 18 Python tests pass, including the second-baseline checks.
+- No full-model benchmark has started. Following artifact verification,
+  memory headroom dropped from 18 GiB to 8.3 GiB, then 2.5 GiB with a
+  4.6 GiB compressor. Model admission was refused; no local compiler or model
+  process was left running. The performance goal remains unverified.
+
 Previous revision 4934d7cda (does not validate the rewrite above)
 ==============================================================
 Shared compiler rewrite (2026-10-17)

@@ -71,13 +71,38 @@ def compare(baseline, candidate, warmup_rounds=1):
                 p95_speedup=a['p95_ms']/b['p95_ms'], max_speedup=a['max_ms']/b['max_ms'])
 
 
+def compare_bracketed(before, candidate, after, warmup_rounds=1):
+    """Compare a candidate with baseline runs on both sides; expose drift.
+
+    Report the smaller improvement for each metric, never the more favorable
+    baseline or an average that could hide changing background load. This does
+    not by itself establish that the GPU was idle during all three runs.
+    """
+    first = compare(before, candidate, warmup_rounds)
+    last = compare(after, candidate, warmup_rounds)
+    durations = [run['baseline']['total_ms'] for run in [first, last]]
+    return dict(metric=first['metric'],
+                baseline_elapsed_ratio=max(durations)/min(durations),
+                elapsed_speedup_min=min(first['elapsed_speedup'], last['elapsed_speedup']),
+                p95_speedup_min=min(first['p95_speedup'], last['p95_speedup']),
+                max_speedup_min=min(first['max_speedup'], last['max_speedup']),
+                before=first, after=last)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('baseline', type=Path)
     parser.add_argument('candidate', type=Path)
+    parser.add_argument('--baseline-after', type=Path,
+                        help='baseline rerun after the candidate; reports drift and conservative ratios')
     parser.add_argument('--warmup-rounds', type=int, default=1)
     args = parser.parse_args()
     try:
-        print(json.dumps(compare(args.baseline, args.candidate, args.warmup_rounds), indent=2))
+        if args.baseline_after is None:
+            result = compare(args.baseline, args.candidate, args.warmup_rounds)
+        else:
+            result = compare_bracketed(args.baseline, args.candidate,
+                                       args.baseline_after, args.warmup_rounds)
+        print(json.dumps(result, indent=2))
     except (ValueError, KeyError, OSError) as error:
         parser.exit(1, f'REFUSED: {error}\n')

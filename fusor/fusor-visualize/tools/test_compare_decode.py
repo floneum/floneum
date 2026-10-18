@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from compare_decode import compare
+from compare_decode import compare, compare_bracketed
 
 
 class DecodeComparison(unittest.TestCase):
@@ -46,3 +46,21 @@ class DecodeComparison(unittest.TestCase):
             self.write(self.candidate, gaps)
             with self.assertRaisesRegex(ValueError, 'latency'):
                 compare(self.base, self.candidate)
+
+    def test_bracketed_run_uses_the_faster_baseline(self):
+        after = Path(self.temp.name) / 'after.log'
+        self.write(self.base, [40, 40, 40])
+        self.write(self.candidate, [10, 10, 10])
+        self.write(after, [20, 20, 20])
+        result = compare_bracketed(self.base, self.candidate, after)
+        self.assertEqual(result['elapsed_speedup_min'], 2)
+        self.assertEqual(result['p95_speedup_min'], 2)
+        self.assertEqual(result['baseline_elapsed_ratio'], 2)
+
+    def test_bracketed_run_checks_the_second_baseline_output(self):
+        after = Path(self.temp.name) / 'after.log'
+        self.write(self.base, [40, 40, 40])
+        self.write(self.candidate, [10, 10, 10])
+        self.write(after, [20, 20, 20], output='different text')
+        with self.assertRaisesRegex(ValueError, 'differs'):
+            compare_bracketed(self.base, self.candidate, after)
