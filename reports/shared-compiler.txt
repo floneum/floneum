@@ -1,4 +1,40 @@
-Current performance investigation (2026-10-17; goal not achieved)
+Latest default-path measurement (2026-10-17; goal not achieved)
+================================================================
+Runtime 10377cfa2 now has a completed full-model measurement from isolated
+default-release CI build 39097786222. Source/profile/compiler/architecture and
+binary digests match the recorded provenance. The candidate ran before a fresh
+f927525bd measurement, with identical seeded output and settings. Excluding
+only the first warmup round and retaining all 128 remaining gaps:
+
+                      Prior shared     Current shared      Ratio
+mean chunk gap        27.4354 ms       22.8954 ms          1.1983x
+p95                   30.2624 ms       26.3524 ms          1.1484x
+maximum               31.6542 ms       27.4888 ms          1.1515x
+
+Logs/provenance: target/stall-validation/compiler10377-candidate and
+compiler10377-prior-after. This is not a bracketed comparison. Neither run
+added swapouts. A fresh original-base run was stopped during loading when
+compression exceeded the unchanged guard; it produced no timing and was not
+retried. The earlier original-base comparison below remains historical.
+No 2x end-to-end claim is established by these results.
+
+Adjacent scalar-read widening was investigated and rejected. Checked shader
+prototypes gained 19-21%, but normal compiler ABBA tests did not reproduce that
+gain: first version Q4 ratios 0.971/0.966; explicit shared vector reads and
+constant components Q4 1.021/1.001, Q6 0.938/1.010. All compared vectors passed.
+The production experiment was removed; its source and binaries remain in the
+ignored target/stall-validation/rejected-wide-reads archive. This distinction
+between checked prototypes and the normal pipeline prevents shipping a
+microbenchmark-only improvement as a default optimization.
+
+CI exposed a separate grouped training-kernel range-proof failure. A focused
+regression reproduced an incorrect upper bound of 1055 for an index bounded
+by 1023. The verifier now bounds a selected value under its accepted predicate,
+without applying that predicate to eagerly evaluated loads or other scopes.
+Both the positive regression and an unsafe-eager-load rejection pass; all 15
+tile tests pass. The original training test still needs a complete rerun.
+
+Previous performance investigation
 ================================================================
 Default-release binaries from CI run 39092226768 now have a completed local
 full-model comparison. Candidate runtime f927525bd versus PR base 7a9ead249,

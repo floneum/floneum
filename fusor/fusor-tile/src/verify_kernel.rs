@@ -698,8 +698,17 @@ fn max_value(expr: &TileExpr, env: &BoundEnv) -> Option<u64> {
         TileExprKind::Literal(TileLiteral::U32(v)) => Some(u64::from(*v)),
         TileExprKind::Literal(TileLiteral::I32(v)) if *v >= 0 => Some(*v as u64),
         TileExprKind::Cast { value, .. } => max_value(value, env),
-        TileExprKind::Select { accept, reject, .. } => {
-            Some(max_value(accept, env)?.max(max_value(reject, env)?))
+        TileExprKind::Select {
+            condition,
+            accept,
+            reject,
+        } => {
+            // Bound the selected value under its predicate. This does not
+            // license loads in either arm: select operands evaluate eagerly,
+            // and check_expr_loads still visits them with the original env.
+            let mut inside = env.clone();
+            assume_true(condition, &mut inside);
+            Some(max_value(accept, &inside)?.max(max_value(reject, env)?))
         }
         // `LocalInvocationIndex`, bounded by the block.
         TileExprKind::Builtin(Builtin::Lane) => Some(u64::from(env.block.max(1)) - 1),
@@ -1194,6 +1203,69 @@ mod tests {
             assume_true(&b.lt(value, b.u32(8)), &mut env);
             assert!(env.expressions.is_empty());
         }
+    }
+
+    #[test]
+    fn selected_tile_index_has_a_branch_local_upper_bound() {
+        use fusor_ir::ir::kernel::{Builtin, WorkgroupAxis};
+        let b = crate::build::Kernel::new();
+        let env = BoundEnv {
+            grid: [376, 1, 1],
+            block: 128,
+            subgroups: None,
+            locals: FxHashMap::default(),
+            expressions: FxHashMap::default(),
+        };
+        let group = b.builtin(Builtin::ProgramId(WorkgroupAxis::X));
+        let tiled = b.add(
+            b.mul(b.div(group.clone(), b.u32(36)), b.u32(6)),
+            b.rem(b.rem(group.clone(), b.u32(36)), b.u32(6)),
+        );
+        let tail = b.add(b.u32(60), b.rem(b.sub(group.clone(), b.u32(360)), b.u32(4)));
+        let selected = b.select(b.lt(group, b.u32(360)), tiled.clone(), tail);
+        let row = b.add(
+            b.mul(selected, b.u32(16)),
+            b.div(b.builtin(Builtin::Lane), b.u32(8)),
+        );
+        assert_eq!(max_value(&row, &env), Some(1023));
+        // The accepted arm's bound cannot escape to another expression.
+        assert_eq!(max_value(&tiled, &env), Some(65));
+        assert!(env.expressions.is_empty());
+    }
+
+    #[test]
+    fn select_predicate_cannot_license_an_eager_load() {
+        use fusor_ir::ir::kernel::{
+            BufferAccess, BufferDecl, Builtin, MemoryLevel, StorageView, TileLayout, WorkgroupAxis,
+        };
+        let b = crate::build::Kernel::new();
+        let env = BoundEnv {
+            grid: [16, 1, 1],
+            block: 1,
+            subgroups: None,
+            locals: FxHashMap::default(),
+            expressions: FxHashMap::default(),
+        };
+        let layout = TileLayout::contiguous(MemoryLevel::Storage, &[8]);
+        let buffer = Arc::new(BufferDecl {
+            binding: 1,
+            element: ScalarElement::F32.element(),
+            layout: layout.clone(),
+            access: BufferAccess::Read,
+        });
+        let index = b.builtin(Builtin::ProgramId(WorkgroupAxis::X));
+        let read = b.load(
+            Source::Storage(StorageView {
+                buffer,
+                layout,
+                offset: 0,
+            }),
+            Addr::Linear(index.clone()),
+            b.bool(true),
+            b.f32(0.),
+        );
+        let selected = b.select(b.lt(index, b.u32(8)), read, b.f32(0.));
+        assert!(check_expr_loads(&selected, &env, &mut FxHashSet::default()).is_err());
     }
 
     #[test]
