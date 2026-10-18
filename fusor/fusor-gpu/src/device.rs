@@ -99,6 +99,10 @@ async fn request_device(extra: Option<wgpu::Limits>) -> Result<GpuDevice> {
     let features = caps::requested_features(&adapter);
     let adapter_limits = adapter.limits();
     let mut limits = caps::widen_limits(caps::baseline_limits(), extra, &adapter_limits)?;
+    // Compile against the workgroup limits granted by this adapter.
+    limits.max_compute_invocations_per_workgroup =
+        adapter_limits.max_compute_invocations_per_workgroup;
+    limits.max_compute_workgroup_size_x = adapter_limits.max_compute_workgroup_size_x;
     // Buffer-size ceilings are capacity, not legality: take the adapter's, since
     // 7B+ models have single weights past the baseline's 256 MiB.
     limits.max_buffer_size = limits.max_buffer_size.max(adapter_limits.max_buffer_size);
