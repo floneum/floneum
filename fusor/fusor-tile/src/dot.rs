@@ -4,6 +4,8 @@ use crate::build::Kernel;
 use fusor_ir::dtype::NumericContract;
 use fusor_ir::ir::kernel::{ScalarElement, TileBinaryOp as Op, TileExpr, TileExprKind as K};
 
+mod fields;
+
 /// Accumulate products, extracting factors shared across the unrolled window.
 /// Strict arithmetic keeps its original left-to-right evaluation. Expansion is
 /// bounded; an oversized or non-f32 window keeps the original expression too.
@@ -42,7 +44,7 @@ pub fn accumulate(
     let candidate = b.binary(
         Op::Add,
         initial.clone(),
-        factor(b, terms, numeric, 0),
+        factor(b, terms.clone(), numeric, 0),
         numeric,
     );
     let original = original();
@@ -58,11 +60,30 @@ pub fn accumulate(
         let mut seen = rustc_hash::FxHashSet::default();
         visit(expr, &mut seen);
         seen.iter()
-            .filter(|e| matches!(e.kind(), K::Binary { .. } | K::Unary { .. }))
+            .filter(|e| matches!(e.kind(), K::Binary { .. } | K::Unary { .. } | K::Dot { .. }))
             .count()
     }
     if work(&candidate) < work(&original) {
-        candidate
+        if fields::pack_casts(b, &mut terms, numeric) {
+            let mut expanded = Vec::new();
+            for term in terms {
+                let value = term
+                    .factors
+                    .into_iter()
+                    .reduce(|a, c| b.binary(Op::Mul, a, c, numeric))
+                    .unwrap_or_else(|| b.f32(1.));
+                let Some(mut parts) = expand(&value, 128 - expanded.len()) else {
+                    return candidate;
+                };
+                for part in &mut parts {
+                    part.negative ^= term.negative;
+                }
+                expanded.extend(parts);
+            }
+            b.binary(Op::Add, initial, factor(b, expanded, numeric, 0), numeric)
+        } else {
+            candidate
+        }
     } else {
         original
     }
@@ -193,6 +214,34 @@ fn factor(b: &Kernel, terms: Vec<Term>, numeric: NumericContract, depth: usize) 
             )
         };
     }
+    // Keep short independent products explicit as vectors for backend dot
+    // lowering. A dot may contract its multiply/adds, so require both freedoms.
+    if numeric.contract
+        && terms.len() >= 2
+        && terms.iter().all(|t| !t.negative && t.factors.len() == 2)
+    {
+        return terms
+            .chunks(4)
+            .map(|chunk| {
+                if chunk.len() == 1 {
+                    return b.binary(
+                        Op::Mul,
+                        chunk[0].factors[0].clone(),
+                        chunk[0].factors[1].clone(),
+                        numeric,
+                    );
+                }
+                let vector = |i: usize| {
+                    b.vector(
+                        ScalarElement::F32,
+                        chunk.iter().map(|t| t.factors[i].clone()).collect(),
+                    )
+                };
+                b.dot(vector(0), vector(1))
+            })
+            .reduce(|a, c| b.binary(Op::Add, a, c, numeric))
+            .unwrap();
+    }
     terms
         .into_iter()
         .map(|term| {
@@ -229,6 +278,17 @@ mod tests {
                     Op::Mul => a * b,
                     _ => panic!("unexpected op"),
                 }
+            }
+            K::Dot { left, right } => {
+                let (K::Vec { parts: a, .. }, K::Vec { parts: c, .. }) =
+                    (left.kind(), right.kind())
+                else {
+                    panic!("vector dot");
+                };
+                a.iter()
+                    .zip(c)
+                    .map(|(a, c)| eval(a, values) * eval(c, values))
+                    .sum()
             }
             _ => panic!("unexpected expression"),
         }
@@ -290,5 +350,30 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn relaxed_products_form_short_vector_dots() {
+        fusor_ir::ir::kernel::reset_decl_ids();
+        let b = Kernel::new();
+        let locals: Vec<_> = (0..14)
+            .map(|_| b.load_local(b.local(ScalarElement::F32.element())))
+            .collect();
+        let pairs: Vec<_> = locals[..7]
+            .iter()
+            .cloned()
+            .zip(locals[7..].iter().cloned())
+            .collect();
+        let after = accumulate(&b, b.f32(0.), &pairs, NumericContract::RELAXED);
+        fn dots(e: &TileExpr) -> usize {
+            let mut n = usize::from(matches!(e.kind(), K::Dot { .. }));
+            e.kind().visit_children(&mut |c| n += dots(c));
+            n
+        }
+        assert_eq!(dots(&after), 2);
+        let strict = accumulate(&b, b.f32(0.), &pairs, NumericContract::STRICT);
+        assert_eq!(dots(&strict), 0);
+        let values: Vec<_> = (0..14).map(|i| (i as f32 - 6.) / 8.).collect();
+        assert_eq!(eval(&after, &values), eval(&strict, &values));
     }
 }

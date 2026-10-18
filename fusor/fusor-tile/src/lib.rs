@@ -10,6 +10,7 @@ pub mod build;
 pub mod domains;
 pub mod dot;
 mod flags;
+pub mod lane_window;
 mod liveness;
 pub mod planner;
 pub mod rules;

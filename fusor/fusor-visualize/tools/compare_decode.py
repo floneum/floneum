@@ -96,7 +96,13 @@ if __name__ == '__main__':
     parser.add_argument('--baseline-after', type=Path,
                         help='baseline rerun after the candidate; reports drift and conservative ratios')
     parser.add_argument('--warmup-rounds', type=int, default=1)
+    parser.add_argument('--minimum-speedup', type=float,
+                        help='fail unless elapsed speedup reaches this target against every baseline')
     args = parser.parse_args()
+    if args.minimum_speedup is not None and not (
+        math.isfinite(args.minimum_speedup) and args.minimum_speedup > 0
+    ):
+        parser.error('--minimum-speedup must be finite and positive')
     try:
         if args.baseline_after is None:
             result = compare(args.baseline, args.candidate, args.warmup_rounds)
@@ -104,5 +110,9 @@ if __name__ == '__main__':
             result = compare_bracketed(args.baseline, args.candidate,
                                        args.baseline_after, args.warmup_rounds)
         print(json.dumps(result, indent=2))
+        if args.minimum_speedup is not None:
+            measured = result.get('elapsed_speedup_min', result.get('elapsed_speedup'))
+            if measured < args.minimum_speedup:
+                parser.exit(1, f'FAIL: {measured:.3f}x speedup < {args.minimum_speedup:.3f}x target\n')
     except (ValueError, KeyError, OSError) as error:
         parser.exit(1, f'REFUSED: {error}\n')

@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 import tempfile
+import subprocess
+import sys
 import unittest
 from compare_decode import compare, compare_bracketed
 
@@ -64,3 +66,18 @@ class DecodeComparison(unittest.TestCase):
         self.write(after, [20, 20, 20], output='different text')
         with self.assertRaisesRegex(ValueError, 'differs'):
             compare_bracketed(self.base, self.candidate, after)
+
+    def test_cli_target_checks_every_baseline(self):
+        after = Path(self.temp.name) / 'after.log'
+        self.write(self.base, [40, 40, 40])
+        self.write(self.candidate, [10, 10, 10])
+        self.write(after, [15, 15, 15])
+        command = [sys.executable, str(Path(__file__).with_name('compare_decode.py')),
+                   str(self.base), str(self.candidate), '--minimum-speedup', '2']
+        good = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(good.returncode, 0, good.stderr)
+        bad = subprocess.run(command + ['--baseline-after', str(after)],
+                             capture_output=True, text=True)
+        self.assertEqual(bad.returncode, 1)
+        self.assertIn('1.500x speedup < 2.000x target', bad.stderr)
+        self.assertEqual(json.loads(bad.stdout)['elapsed_speedup_min'], 1.5)

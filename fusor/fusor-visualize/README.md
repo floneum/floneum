@@ -435,6 +435,14 @@ its timings include the guard and still do not represent model throughput.
 These are kernel measurements, not full-model throughput claims. All probes use
 `benchmark_guard.py`; a resource abort is not retried automatically.
 
+`--binary` selects the fixture executable and `--dump-wgsl` captures its shaders.
+To compare compiler transformations without separate-process timing drift, pass
+`--baseline-wgsl` and `--candidate-wgsl` from captures of the same fixture and
+schedule. Both modules compile through checked WebGPU with the live fixture's
+explicit binding layout; identical buffers and ABBA/BAAB order are retained.
+This mode deliberately retains runtime checks in both shaders. It is a kernel
+diagnostic and must be followed by a default-path model measurement.
+
 ### Compare default decode latency
 
 `profile_forward` reports every measured stream-chunk gap, p50/p95/worst
@@ -450,6 +458,20 @@ process separately under the resource guard, and capture stdout. Compare with:
 ```sh
 python3 fusor/fusor-visualize/tools/compare_decode.py baseline.log candidate.log
 ```
+
+The guarded runner records binary provenance, strips inherited tuning switches,
+and measures one binary at a time with the ordinary device/compiler defaults:
+
+```sh
+python3 fusor/fusor-visualize/tools/profile_decode.py --binary /path/to/profile_forward \
+  --model /path/to/model.gguf --output /path/to/new-measurement-directory
+```
+
+Use `--chunks` for a longer stall/growth investigation, keeping the same value
+in every arm. It defaults to 64 chunks, eight warmup chunks, and three rounds.
+Add `--minimum-speedup 2` to `compare_decode.py` to make the throughput goal an
+explicit failing check. A bracketed comparison must reach the target against
+both baseline runs.
 
 The comparison excludes the first round from both logs, retains every slow
 sample, and refuses mismatched settings, generated text, warmup boundaries,

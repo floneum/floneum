@@ -39,6 +39,7 @@ pub fn install(device: &Device, repeats: usize, sink: ReplaySample) {
                 .max_compute_invocations_per_workgroup
     );
     let dependent = std::env::var_os("LAB_COMPARE_DEPENDENT").is_some();
+    let shaders = ShaderPair::from_env().map(Arc::new);
     let owner = Arc::new(OnceLock::<Weak<PlanObserver>>::new());
     let restore = owner.clone();
     let probe = device.clone();
@@ -97,6 +98,7 @@ pub fn install(device: &Device, repeats: usize, sink: ReplaySample) {
                 .any(|l| plan.extraction.theta[&l.root] != SchedPoint::Sgemv(candidate));
             let nested_probe = probe.clone();
             let nested_sink = sink.clone();
+            let shaders = shaders.clone();
             let guards =
                 dependent.then(|| dependency_guards(target, &input_buffers, &output_buffers));
             target.set_plan_observer(Some(Arc::new(move |_, _, _, identities, candidate_commands| {
@@ -107,7 +109,14 @@ pub fn install(device: &Device, repeats: usize, sink: ReplaySample) {
             if iteration == 0 {
                 eprintln!("GEOMETRY_VARIANTS baseline={base_identities:?} candidate={identities:?}");
             }
-            let lists = [&baseline_commands[..], candidate_commands];
+            let replacements = shaders.as_ref().map(|shaders| {
+                assert!(!changed, "captured shader comparison requires the same schedule");
+                shaders.commands(target, &baseline_commands)
+            });
+            let lists = match &replacements {
+                Some(commands) => [&commands[0][..], &commands[1][..]],
+                None => [&baseline_commands[..], candidate_commands],
+            };
             for commands in lists {
                 assert!(commands.iter().all(|c| matches!(c, CommandRecord::Dispatch { name, .. }
                     if name.starts_with("sgemv"))),
@@ -178,6 +187,116 @@ pub fn install(device: &Device, repeats: usize, sink: ReplaySample) {
         "one observer owner"
     );
     target.set_plan_observer(Some(observer));
+}
+
+type ShaderPipelines = (Arc<wgpu::ComputePipeline>, [Arc<wgpu::ComputePipeline>; 2]);
+
+/// Captured compiler shaders share the normal fixture's explicit bindings.
+/// Only pipelines are cached; command lists and their buffers stay in resolve.
+struct ShaderPair {
+    modules: [naga::Module; 2],
+    pipelines: Mutex<Option<ShaderPipelines>>,
+}
+
+impl ShaderPair {
+    fn from_env() -> Option<Self> {
+        let paths = [
+            std::env::var_os("LAB_BASELINE_WGSL"),
+            std::env::var_os("LAB_CANDIDATE_WGSL"),
+        ];
+        if paths.iter().all(Option::is_none) {
+            return None;
+        }
+        let modules = paths.map(|path| {
+            let source = std::fs::read_to_string(path.expect("both shader paths are required"))
+                .expect("captured shader");
+            naga::front::wgsl::parse_str(&source).expect("captured WGSL parses")
+        });
+        assert!(
+            modules.iter().all(|m| m.entry_points.len() == 1
+                && m.entry_points[0].stage == naga::ShaderStage::Compute)
+        );
+        assert_eq!(
+            modules[0].entry_points[0].workgroup_size, modules[1].entry_points[0].workgroup_size,
+            "captured comparison must preserve geometry"
+        );
+        Some(Self {
+            modules,
+            pipelines: Mutex::new(None),
+        })
+    }
+
+    fn commands(
+        &self,
+        target: &fusor_gpu::GpuTarget,
+        commands: &[CommandRecord],
+    ) -> [Vec<CommandRecord>; 2] {
+        let CommandRecord::Dispatch {
+            pipeline: original, ..
+        } = &commands[0]
+        else {
+            panic!("pure contraction expected")
+        };
+        let mut cache = self.pipelines.lock().unwrap();
+        let (owner, pipelines) = cache.get_or_insert_with(|| {
+            let device = target.device().device();
+            let binding_layout = original.get_bind_group_layout(0);
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("captured compiler comparison"),
+                bind_group_layouts: &[Some(&binding_layout)],
+                immediate_size: 0,
+            });
+            let pipelines = std::array::from_fn(|arm| {
+                let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some("captured compiler shader"),
+                    source: wgpu::ShaderSource::Naga(std::borrow::Cow::Owned(
+                        self.modules[arm].clone(),
+                    )),
+                });
+                Arc::new(
+                    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                        label: Some("captured compiler shader"),
+                        layout: Some(&layout),
+                        module: &module,
+                        entry_point: Some("main"),
+                        compilation_options: Default::default(),
+                        cache: None,
+                    }),
+                )
+            });
+            (original.clone(), pipelines)
+        });
+        assert!(
+            Arc::ptr_eq(owner, original),
+            "captured comparison requires one immutable kernel geometry"
+        );
+        std::array::from_fn(|arm| {
+            commands
+                .iter()
+                .map(|command| {
+                    let CommandRecord::Dispatch {
+                        name,
+                        pipeline,
+                        bind_group,
+                        grid,
+                    } = command
+                    else {
+                        panic!("pure contraction expected")
+                    };
+                    assert!(
+                        Arc::ptr_eq(pipeline, original),
+                        "one compiled fixture kernel"
+                    );
+                    CommandRecord::Dispatch {
+                        name,
+                        pipeline: pipelines[arm].clone(),
+                        bind_group: bind_group.clone(),
+                        grid: *grid,
+                    }
+                })
+                .collect()
+        })
+    }
 }
 
 /// Force a dependent activation access after each GEMV. Valid finite results

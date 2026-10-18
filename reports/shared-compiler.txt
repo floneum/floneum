@@ -1,4 +1,82 @@
-Current revision: generic contraction rewrite (validation in progress)
+Current performance investigation (2026-10-17; goal not achieved)
+================================================================
+Default-release binaries from CI run 39092226768 now have a completed local
+full-model comparison. Candidate runtime f927525bd versus PR base 7a9ead249,
+identical profile source/settings/seed/output, 3 rounds of 8 warmup + 64 measured
+stream chunks. The first round is excluded from both; all 128 remaining gaps
+are retained. Candidate ran before baseline; this is not a bracketed result.
+
+                      Base             Candidate          Ratio
+mean chunk gap        32.7295 ms       27.9179 ms          1.1723x
+p95                   42.9830 ms       31.3590 ms          1.3707x
+maximum               61.6587 ms       33.7685 ms          1.8259x
+
+The target check fails: 1.172x < 2.000x. Historical 16 ms/2x results used a
+different implementation/configuration and do not validate this shared rewrite.
+Logs: target/stall-validation/shared-candidate-preliminary.log and
+target/stall-validation/shared-baseline-before.log. A subsequent candidate run
+was stopped on additional swapouts before yielding measurements; it is excluded.
+Diagnostics resumed only after available memory recovered and swapouts stopped.
+
+Warm-resolve attribution finds 634 launches, about 23.8 ms GPU work and 1.3 ms
+CPU preparation/submission, with zero cold shader compilations. Per-dispatch
+timestamps identify gate/up (8.78 ms), down (5.23 ms), and square projections
+(2.48 ms) as the largest costs. Timestamp instrumentation affects absolute times;
+the clean stream-gap comparison above is the end-to-end performance result.
+
+Compiler experiments in this iteration, not yet full-model validated:
+- Track known zero/one bits through unsigned index arithmetic, preserving wrap.
+  The new differential test also found an existing overflow error in distributing
+  right shifts/power-of-two division over an addition; the correction masks the
+  distributed result to the original result width.
+- Pair small integer-to-float field conversions using exact standard half-word
+  unpack operations. Integer values are represented exactly; accumulation stays
+  f32. Recognition uses typed expressions, not format/model/device dispatch.
+- Captured shaders can now alternate ABBA/BAAB within one WebGPU process with
+  identical bindings and runtime checks in both arms. This removes the substantial
+  timing drift seen between separate-process kernel probes.
+- Q4K 1x28672x4096 fixture: 345.21 -> 294.63 us, median paired 1.1683x,
+  both timing directions 1.168x, all 516,096 compared values bit-identical.
+- Q6K 1x4096x14336 fixture: 217.77 -> 222.46 us, median paired 0.9844x,
+  both directions 0.9844x, all 73,728 compared values bit-identical. No gain is
+  claimed for this case; it does not activate the paired conversion transform.
+- A bounded expression-driven lane-window search is being evaluated separately.
+  Single-index coverage tests pass across 4/8/16/32/64-lane subgroups and all
+  admitted exchanges. No model result or default throughput claim applies yet.
+
+Follow-up experiments (still kernel measurements, not a full-model result):
+- Lane-window selection reduces the first fixture's dynamic selections from 16
+  to zero while retaining the same 16 storage reads. Paired checked shaders
+  measure 1.1995x, both directions about 1.20x. Maximum absolute difference is
+  0.0000916. All eight GPU regressions pass after this change (176.18 s), with
+  0.472 GiB peak process-group RSS, >=17.54 GiB headroom, and no extra swapouts.
+- Short vector dots alone do not improve that fixture (0.992x / 0.980x).
+  Factoring exact conversion biases with vector dots gives 1.2006x versus the
+  original shader, without an established gain beyond lane selection alone.
+- Conversion pairing now covers compositions of unsigned bit fields, with
+  explicit ten-bit value bounds and compatible lane assignments. Exact tests
+  cover independent source words, different field widths, and all legal offsets.
+- The second fixture now measures 1.101x in the checked shader pair (directional
+  ratios 1.123x and 1.053x). A separate ABBA comparison through the normal compiler
+  path confirms 1.1241x / 1.1258x: A0=285.539, B0=254.006, B1=263.658,
+  A1=296.825 us. Full changing-output vectors pass; maximum difference 0.001221.
+  Normal-path logs: target/stall-validation/composed-q6-production-abba.
+- A smaller 8-value window is rejected (paired ratio 0.493x). No schedule pin
+  from these diagnostic probes is adopted into production defaults.
+- Thirteen compiler unit tests pass, including red/green vector-dot and composed
+  field cases, strict arithmetic, lane coverage, and rejecting extra loads.
+  Full GPU validation of the final composed-field combination is in progress.
+
+Before the lane-window experiment, all eight ordinary-device WebGPU tests pass
+locally (186.35 s with unoptimized host code), including all 96 quantized cases,
+exact dyadic outputs, dense tails, attention growth, retained scatter inputs,
+and view/gradient replay. No extra swapouts occurred during this suite.
+The guarded profile_decode.py runner and compare_decode.py --minimum-speedup
+make the default-path end-to-end target reproducible without tuning switches.
+
+Earlier validation history (superseded performance status below)
+==============================================================
+Generic contraction rewrite
 ====================================================================
 The format-specific Q4K/Q6K contraction bodies and their runtime tuning state
 have been removed. Quantized loads expand through the existing format table

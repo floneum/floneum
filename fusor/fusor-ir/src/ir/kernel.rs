@@ -10,6 +10,8 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
+mod known_bits;
+
 // ---------------------------------------------------------------------------
 // Element types
 // ---------------------------------------------------------------------------
@@ -1264,22 +1266,25 @@ fn carry_free_add(e: &TileExpr) -> Option<(TileExpr, u32)> {
 /// carry, shifts, masks and power-of-two div/rem distribute over it. Makes
 /// consecutive window elements' addresses structurally equal so loads share.
 pub fn simplify_index(e: &TileExpr) -> TileExpr {
-    simplify_index_cached(e, &mut rustc_hash::FxHashMap::default())
+    simplify_index_cached(e, &mut IndexMemo::default())
 }
 
-fn simplify_index_cached(
-    e: &TileExpr,
-    memo: &mut rustc_hash::FxHashMap<TileExpr, TileExpr>,
-) -> TileExpr {
-    if let Some(result) = memo.get(e) {
+#[derive(Default)]
+struct IndexMemo {
+    rewritten: rustc_hash::FxHashMap<TileExpr, TileExpr>,
+    bits: known_bits::Analysis,
+}
+
+fn simplify_index_cached(e: &TileExpr, memo: &mut IndexMemo) -> TileExpr {
+    if let Some(result) = memo.rewritten.get(e) {
         return result.clone();
     }
     let result = rewrite_index(e, memo);
-    memo.insert(e.clone(), result.clone());
+    memo.rewritten.insert(e.clone(), result.clone());
     result
 }
 
-fn rewrite_index(e: &TileExpr, memo: &mut rustc_hash::FxHashMap<TileExpr, TileExpr>) -> TileExpr {
+fn rewrite_index(e: &TileExpr, memo: &mut IndexMemo) -> TileExpr {
     let rebuilt = match e.kind() {
         TileExprKind::Binary {
             op,
@@ -1415,6 +1420,36 @@ fn rewrite_index(e: &TileExpr, memo: &mut rustc_hash::FxHashMap<TileExpr, TileEx
 
     let u32_e = ElementType::Scalar(ScalarElement::U32);
     let lit = |v: u32| TileExpr::new(TileExprKind::Literal(TileLiteral::U32(v)), u32_e);
+    match rebuilt.kind() {
+        TileExprKind::Compare { op, left, right } => {
+            if let Some(value) = memo.bits.compare(*op, left, right) {
+                return TileExpr::new(
+                    TileExprKind::Literal(TileLiteral::Bool(value)),
+                    ScalarElement::Bool.element(),
+                );
+            }
+        }
+        TileExprKind::Select {
+            condition,
+            accept,
+            reject,
+        } => {
+            if let TileExprKind::Literal(TileLiteral::Bool(value)) = condition.kind() {
+                return if *value {
+                    accept.clone()
+                } else {
+                    reject.clone()
+                };
+            }
+        }
+        _ => {}
+    }
+    if rebuilt.element() == u32_e {
+        let bits = memo.bits.get(&rebuilt);
+        if bits.zero | bits.one == u32::MAX {
+            return lit(bits.one);
+        }
+    }
     let TileExprKind::Binary {
         op,
         left,
@@ -1494,13 +1529,26 @@ fn rewrite_index(e: &TileExpr, memo: &mut rustc_hash::FxHashMap<TileExpr, TileEx
                 let s = s.min(31);
                 let cap = (1u128 << s) - 1;
                 if low_max(&a, s) + (u128::from(c) & cap) <= cap {
+                    let wraps = low_max(&a, 32) + u128::from(c) > u128::from(u32::MAX);
                     let shifted = with(TileExprKind::Binary {
                         op: TileBinaryOp::Shr,
                         left: a,
                         right: lit(s),
                         numeric: *numeric,
                     });
-                    return simplify_index_cached(&add(shifted, c >> s), memo);
+                    let sum = add(shifted, c >> s);
+                    // Addition wraps at 32 bits before the original shift.
+                    let sum = if wraps {
+                        with(TileExprKind::Binary {
+                            op: TileBinaryOp::BitAnd,
+                            left: sum,
+                            right: lit(u32::MAX >> s),
+                            numeric: *numeric,
+                        })
+                    } else {
+                        sum
+                    };
+                    return simplify_index_cached(&sum, memo);
                 }
             }
         }
@@ -1510,6 +1558,10 @@ fn rewrite_index(e: &TileExpr, memo: &mut rustc_hash::FxHashMap<TileExpr, TileEx
                 (_, Some(m)) => (right, m),
                 _ => return rebuilt,
             };
+            let bits = memo.bits.get(masked);
+            if !bits.zero & !m == 0 {
+                return masked.clone();
+            }
             // The mask lies inside the known-zero low bits.
             if m >> known_zero_low_bits(masked).min(31) == 0 {
                 return lit(0);
@@ -1538,6 +1590,18 @@ fn rewrite_index(e: &TileExpr, memo: &mut rustc_hash::FxHashMap<TileExpr, TileEx
                     return simplify_index_cached(&add(anded, c & m), memo);
                 }
             }
+            let reduced = m & !bits.zero;
+            if reduced != m {
+                return simplify_index_cached(
+                    &with(TileExprKind::Binary {
+                        op: TileBinaryOp::BitAnd,
+                        left: masked.clone(),
+                        right: lit(reduced),
+                        numeric: *numeric,
+                    }),
+                    memo,
+                );
+            }
         }
         TileBinaryOp::Div => {
             if let (Some((a, c)), Some(d)) = (carry_free_add(left), lit_u32(right)) {
@@ -1558,13 +1622,25 @@ fn rewrite_index(e: &TileExpr, memo: &mut rustc_hash::FxHashMap<TileExpr, TileEx
             {
                 let s = d.trailing_zeros();
                 if low_max(&a, s) + u128::from(c % d) < u128::from(d) {
+                    let wraps = low_max(&a, 32) + u128::from(c) > u128::from(u32::MAX);
                     let divided = with(TileExprKind::Binary {
                         op: TileBinaryOp::Div,
                         left: a,
                         right: lit(d),
                         numeric: *numeric,
                     });
-                    return simplify_index_cached(&add(divided, c / d), memo);
+                    let sum = add(divided, c / d);
+                    let sum = if wraps {
+                        with(TileExprKind::Binary {
+                            op: TileBinaryOp::BitAnd,
+                            left: sum,
+                            right: lit(u32::MAX / d),
+                            numeric: *numeric,
+                        })
+                    } else {
+                        sum
+                    };
+                    return simplify_index_cached(&sum, memo);
                 }
             }
         }

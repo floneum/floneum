@@ -1416,15 +1416,36 @@ fn lower_sgemv_subgroup_cols(ctx: Ctx<'_>, c: &Contract<'_>, p: SgemvParams) -> 
         // `width * vector` consecutive k so packed-word loads hash-cons.
         let split = !contiguous && parts > 1;
         let lane_base = match split {
-            false => b.add(step, b.mul(sg_lane.clone(), b.u32(vector))),
+            false => b.add(step.clone(), b.mul(sg_lane.clone(), b.u32(vector))),
             true => {
                 let (block_idx, within) = b.divrem(sg_lane.clone(), b.u32(p.gap / run));
                 let local = b.add(
                     b.mul(block_idx, b.u32(p.gap * parts)),
                     b.mul(within, b.u32(run)),
                 );
-                b.add(step, local)
+                b.add(step.clone(), local)
             }
+        };
+
+        let numeric = ctx.cx.graph.facts(ctx.cx.launch.root).numeric;
+        let window = if split && !masked && col_exact && numeric.reassoc {
+            if let Some(original) =
+                fusor_tile::lane_window::Window::new(width, vector, parts, p.gap)
+            {
+                fusor_tile::lane_window::choose(original, |window, v| {
+                    let k = b.add(step.clone(), window.index(b, sg_lane.clone(), v));
+                    let active = b.bool(true);
+                    let av = c.a.value(&ctx, &row, &k, &active, &batch, c.acc)?;
+                    let b_row = b.add(b_row_base.clone(), k);
+                    let bv =
+                        c.b.value(&ctx, &b_row, &cols_of_subgroup[0].0, &active, &batch, c.acc)?;
+                    Ok(vec![av, bv])
+                })?
+            } else {
+                None
+            }
+        } else {
+            None
         };
 
         // The pass's activation window, shared by every column this subgroup owns;
@@ -1436,7 +1457,10 @@ fn lower_sgemv_subgroup_cols(ctx: Ctx<'_>, c: &Contract<'_>, p: SgemvParams) -> 
             } else {
                 v
             };
-            let k = b.add(lane_base.clone(), b.u32(off));
+            let k = match &window {
+                Some(window) => b.add(step.clone(), window.index(b, sg_lane.clone(), v)),
+                None => b.add(lane_base.clone(), b.u32(off)),
+            };
             let mask = match masked {
                 true => b.lt(k.clone(), ctx.dim_expr(shape.k)?),
                 false => b.bool(true),
