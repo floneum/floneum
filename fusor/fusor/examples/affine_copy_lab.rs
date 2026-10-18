@@ -33,7 +33,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         assert!(fusor_gpu::launch::dispatches_per_submit(commands.len()*repeats, launcher.backend()) >= commands.len()*repeats,
             "set FUSOR_PROFILE_SUBMIT_SIZE=2147483647 to avoid host gaps");
         launcher.set_tuning(true);
-        let query = launcher.timestamp_query_set(1).unwrap();
+        let Some(query) = launcher.timestamp_query_set(1) else {
+            // Hosted GPUs can validate the graph without exposing timestamps.
+            launcher.set_tuning(false);
+            return;
+        };
         let repeated: Vec<_> = (0..repeats).flat_map(|_| commands.iter().cloned()).collect();
         launcher.encode_command_records(&repeated, Some(&query), fusor_gpu::launch::TimingMode::Whole).unwrap();
         launcher.poll_wait().unwrap();
@@ -82,9 +86,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         assert_eq!(actual, expected);
         println!(
-            "AFFINE_VERIFIED batch={batch} values={} gpu_us={:.3}",
+            "AFFINE_VERIFIED batch={batch} values={} gpu_us={}",
             actual.len(),
-            sample.lock().unwrap().take().unwrap()
+            sample
+                .lock()
+                .unwrap()
+                .take()
+                .map_or_else(|| "unavailable".into(), |us| format!("{us:.3}"))
         );
     }
     Ok(())
