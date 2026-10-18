@@ -1088,3 +1088,47 @@ fn shared_weight_views_execute_and_concatenate(session: Session) {
 
 on_each_backend!(shared_weight_views_execute_and_concatenate:
     shared_weight_views_cpu, shared_weight_views_gpu);
+
+#[test]
+#[cfg(all(feature = "cpu", not(target_arch = "wasm32")))]
+fn whole_value_broadcast_replays_changed_inputs() {
+    let session = Session::new(test_backend()).unwrap();
+    for symbolic in [false, true] {
+        let graph = Graph::new(&session);
+        let columns = if symbolic {
+            graph.sym("columns")
+        } else {
+            Dim::Const(3)
+        };
+        let input = graph
+            .leaf("input", &[Dim::ONE, columns], Dtype::F32)
+            .unwrap();
+        let output = input
+            .mul_scalar(3.)
+            .unwrap()
+            .broadcast_as(&[Dim::Const(2), columns])
+            .unwrap();
+        for step in 1..=3 {
+            let count = if symbolic { step + 2 } else { 3 };
+            if symbolic {
+                graph.bind("columns", count as u64);
+            }
+            let values: Vec<f32> = (0..count).map(|i| (i + step * 7) as f32).collect();
+            input
+                .set_bytes(bytemuck::cast_slice(&values).to_vec())
+                .unwrap();
+            output.clear_device_buf();
+            session.resolve(std::slice::from_ref(&output)).unwrap();
+            let expected: Vec<f32> = values
+                .iter()
+                .cycle()
+                .take(count * 2)
+                .map(|x| x * 3.)
+                .collect();
+            assert_eq!(
+                output.narrow(1, 0, count).unwrap().to_vec_f32().unwrap(),
+                expected
+            );
+        }
+    }
+}

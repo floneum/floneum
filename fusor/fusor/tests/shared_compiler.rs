@@ -314,6 +314,20 @@ fn full_size_views_replay_their_producer() {
         let expected: Vec<_> = [0, 3, 1, 4, 2, 5].map(|i| values[i] * 3.).to_vec();
         assert_eq!(output.to_vec_f32(), expected);
     }
+    let broadcast_input = Tensor::from_slice(&device, [1, 3], &[0.; 3]);
+    let broadcast = broadcast_input
+        .as_dyn()
+        .mul_scalar(3.)
+        .unwrap()
+        .broadcast_as(&[fusor::Dim::Const(2), fusor::Dim::Const(3)])
+        .unwrap();
+    for step in 1..=3 {
+        let values: Vec<f32> = (0..3).map(|i| (i + step * 7) as f32).collect();
+        broadcast_input.set_elements(&values);
+        broadcast.clear_device_buf();
+        let expected: Vec<f32> = values.iter().cycle().take(6).map(|x| x * 3.).collect();
+        assert_eq!(broadcast.to_vec_f32().unwrap(), expected);
+    }
     let graph = device.graph();
     let rows = graph.sym("view_rows");
     let input = graph

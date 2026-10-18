@@ -240,8 +240,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         fusor_gpu::launch::CommandRecord::Dispatch { name, grid, .. } => {
                             eprintln!("LAB_COMMAND dispatch={name} grid={grid:?}")
                         }
-                        fusor_gpu::launch::CommandRecord::CopyBuffer { bytes, .. } => {
-                            eprintln!("LAB_COMMAND copy_bytes={bytes}")
+                        fusor_gpu::launch::CommandRecord::CopyBuffer { .. }
+                        | fusor_gpu::launch::CommandRecord::Transfers { .. } => {
+                            eprintln!("LAB_COMMAND copy_bytes={}", command.copy_bytes().unwrap_or_default())
                         }
                     }
                 }

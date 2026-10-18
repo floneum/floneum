@@ -20,7 +20,7 @@ Compiler changes
 - Lower contiguous range updates into ordinary WebGPU copy/clear commands.
 - Keep symbolic single-index scatter geometry in uniforms; growth changes the
   dispatch grid without compiling another shader.
-- Keep full-size views in the producer's replay plan. Only partial views
+- Keep full-size and expanding views in the producer's replay plan. Only partial views
   materialize their base separately, avoiding stale reshaped intermediates.
 
 Runtime changes
@@ -69,12 +69,20 @@ cases and completes inside the same cap. When another workload reduced free
 disk below the reserve, builds were refused. They resumed after space recovered;
 only obsolete task-owned executables and check metadata were removed.
 
-Remaining verification
-Workspace clippy and model/example compatibility checks are in progress. CI's
-newer Clippy found fixed-size chunk-iterator lints in diagnostic examples; those
-have been converted to array chunks. The WebGPU CI build passed. Native CI builds identified two test helpers
-using the removed donation argument; those calls are updated. Native reruns
-are required for the follow-up commit.
+Follow-up verification
+The complete Fusor workspace/all-target Clippy check passed locally, including
+CPU/GPU backends and kernel-observer examples. CI Clippy, formatting, macOS
+build, and WebGPU build also passed after the stale test helpers and new lint
+warnings were corrected. The matrix diagnostic now recognizes transfer records.
+
+A further expanding-broadcast regression caught a stale second replay: expanding
+views must stay with their producer, just like full-size views. The size proof
+now preserves that behavior for constant and matching symbolic factors. This
+case is included in both the explicit GPU fixture and the ordinary session unit
+tests (CI selects WebGPU). Its final local rerun and model/example compatibility
+check were refused after system headroom fell below 12 GiB and free disk then
+fell below the 1 GiB reserve. They remain pending; the earlier five-test GPU
+pass predates this additional broadcast case. CI is being rerun on the fix.
 
 Reproduction (from repository root; run GPU checks serially):
   CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test --manifest-path fusor/Cargo.toml -p fusor --no-default-features \

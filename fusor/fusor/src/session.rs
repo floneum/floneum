@@ -975,8 +975,9 @@ impl Session {
                         if matches!(g.node(id).op, Op::Logical(Logical::Restride { .. })) =>
                     {
                         // Constant products and the multiset of symbolic
-                        // factors also prove full-size symbolic permutations
-                        // and reshapes without consulting this step's bindings.
+                        // factors prove full-size permutations, reshapes and
+                        // expanding broadcasts without consulting this step's
+                        // bindings. Only a smaller view needs a materialized base.
                         let factors = |shape: &[Dim]| {
                             let mut constant = 1u64;
                             let mut symbols = Vec::new();
@@ -994,7 +995,7 @@ impl Session {
                         };
                         partial |= factors(&g.facts(id).shape)
                             .zip(factors(&g.facts(kids[0]).shape))
-                            .is_none_or(|(view, base)| view != base);
+                            .is_none_or(|(view, base)| view.1 != base.1 || view.0 < base.0);
                         id = kids[0];
                     }
                     _ => break,
