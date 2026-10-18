@@ -1,3 +1,39 @@
+Accumulator scheduling and current dispatch attribution (2026-10-18)
+======================================================================
+The 60 token/sec request corresponds to 16.667 ms/token. The existing text-stream
+fixture measures chunks rather than token IDs; its last completed clean mean
+remains 21.6738 ms/chunk, which fails even that conservative throughput target.
+
+A new 8-chunk dispatch trace of runtime 62d5 completes in 25.37 seconds under
+all canonical guards plus the 12 GiB process and 10 GiB headroom limits. Peak
+RSS is 10.806 GiB, minimum headroom 10.159 GiB, added swapouts 26.5 MiB.
+Per-dispatch timestamps add overhead and are attribution, not throughput:
+- Wide feed-forward contractions: median sum 6.707 ms per decode plan.
+- Long-reduction contractions: 4.430 ms.
+- Square projections: 1.962 ms; output head: 1.229 ms.
+- Single-update scatter: 1.063 ms; residual normalization: 0.871 ms.
+The entire current plan has 553 launches. No model-specific execution policy
+was enabled. Log: compiler-62d5-dispatch-audit under target/stall-validation.
+
+The emitter previously evaluated every loop accumulator update before storing
+any result. A shared expression-dependency analysis now permits an early store
+only if no later update reads that local. Read-before-write dependencies and
+cycles retain deferred stores; cooperative accumulators keep their existing
+protocol. No arithmetic, load bounds, schedules or precision contracts change.
+The emitted-loop lifetime regression fails before the fix and passes after it;
+GPU tests also verify zero/one/multiple iterations with cyclic dependencies.
+
+A captured-shader scheduling probe gives 1.051x in both alternating orders,
+but the actual compiler comparison is smaller: Q4 fixture 200.909 / 198.180 /
+199.031 / 201.525 us in ABBA order, directional ratios 1.01377 and 1.01253.
+Every compared output is bit-identical (86,016 values per comparison), and
+resident weights are 264 MB. These measurements do not establish model speed.
+The Q6 follow-up is refused before launching a child because another workload
+leaves only 1.92 GiB headroom against the unchanged 12 GiB requirement. It is
+not automatically retried. Full-model and broader performance validation of
+this emitter change remain pending; 60 tokens/sec has not been achieved.
+Logs: shared-accumulator-*, shared-early-accumulator-*.
+
 Replay-cache release validation (2026-10-18; model run interrupted)
 ======================================================================
 CI run 39107933434 passes Linux host validation and macOS validation/build at
