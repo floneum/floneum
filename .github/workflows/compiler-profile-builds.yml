@@ -19,7 +19,7 @@ jobs:
       CARGO_BUILD_JOBS: 1
       CARGO_INCREMENTAL: 0
       CARGO_TARGET_DIR: ${{ github.workspace }}/profile-target
-      CANDIDATE_REVISION: f927525bd
+      CANDIDATE_REVISION: f927525bdde3ede996bb29647b377d2ebf10a385
       BASELINE_REVISION: 7a9ead2493b31ef670a35ed0507de1188006329e
     steps:
       - uses: actions/checkout@v6
