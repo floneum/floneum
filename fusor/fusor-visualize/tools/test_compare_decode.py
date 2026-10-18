@@ -31,6 +31,9 @@ class DecodeComparison(unittest.TestCase):
         self.assertEqual(result['p95_speedup'], 1.25)
         self.assertEqual(result['candidate']['max_ms'], 80)
         self.assertEqual(result['candidate']['chunks'], 3)
+        self.assertEqual(result['candidate']['slowest_chunks'][0],
+                         dict(round=1, chunk=2, ms=80))
+        self.assertEqual(len(result['candidate']['slowest_chunks']), 3)
 
     def test_refuses_different_outputs_and_boundaries(self):
         self.write(self.base, [20, 20, 100])

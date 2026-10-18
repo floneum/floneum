@@ -46,12 +46,22 @@ def read_log(path):
     return config, records
 
 
-def summarize(records):
+def summarize(records, first_round=0):
+    """Keep every gap in the statistics; locate the worst five in the source.
+
+    Round and chunk positions are zero-based in the original log, including
+    any excluded warmup rounds in the round numbering.
+    """
     gaps = [gap for row in records for gap in row['gaps_ms']]
     ordered = sorted(gaps)
+    slowest = sorted((dict(round=round_index, chunk=chunk, ms=gap)
+                      for round_index, row in enumerate(records, first_round)
+                      for chunk, gap in enumerate(row['gaps_ms'])),
+                     key=lambda point: -point['ms'])[:5]
     return dict(rounds=len(records), chunks=len(gaps), total_ms=sum(gaps),
                 mean_ms=sum(gaps) / len(gaps), p50_ms=ordered[(len(gaps)-1)//2],
-                p95_ms=ordered[math.ceil(len(gaps)*.95)-1], max_ms=ordered[-1])
+                p95_ms=ordered[math.ceil(len(gaps)*.95)-1], max_ms=ordered[-1],
+                slowest_chunks=slowest)
 
 
 def compare(baseline, candidate, warmup_rounds=1):
@@ -64,7 +74,7 @@ def compare(baseline, candidate, warmup_rounds=1):
     for i, (left, right) in enumerate(zip(a, b)):
         if any(left[key] != right[key] for key in ['output', 'chunks', 'warmup_bytes']):
             raise ValueError(f'generated output or measurement boundary differs in round {i}')
-    a, b = summarize(a[warmup_rounds:]), summarize(b[warmup_rounds:])
+    a, b = (summarize(rows[warmup_rounds:], warmup_rounds) for rows in [a, b])
     return dict(metric='matched-output stream-chunk latency',
                 excluded_warmup_rounds=warmup_rounds, baseline=a, candidate=b,
                 elapsed_speedup=a['total_ms']/b['total_ms'],

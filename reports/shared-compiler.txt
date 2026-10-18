@@ -1,3 +1,64 @@
+Replay-cache release validation (2026-10-18; model run interrupted)
+======================================================================
+CI run 39107933434 passes Linux host validation and macOS validation/build at
+runtime 62d5cff1c. macOS passes 26 facade, 15 cost, 9 IR, 16 tile, four index,
+15 candidate-construction, and eight ordinary WebGPU tests, plus workspace
+Clippy with warnings denied. The 20 Python tests pass before and after the
+Rust checks. Default-release binary SHA256:
+23ec2075082e77ac75a462e8366c66b7ba26e9f9d895d9c9579a6e579d97caf4.
+Its profile source SHA256 matches the preceding releases.
+
+Local preflight waited for an unrelated large model to exit. The guarded run
+then began with 27.61 GiB available memory and 0.23 GiB compressed. At 19.74
+seconds, another process crossed the 1 GiB overlap threshold; the wrapper
+terminated and reaped only its own model. No completed timing rounds were
+produced, no automatic retry was made, and this is not performance evidence.
+The 12 GiB owned-process limit, 10 GiB runtime headroom floor, 120-second
+limit, and every canonical resource guard stayed enabled.
+
+The small replay diagnostic proves the cache is exercised and outputs remain
+correct; full-model speed for 62d5cff1c is unverified. Latest completed model
+mean remains 21.6738 ms at 117c60fbc. The 2x target is not met. Logs:
+target/stall-validation/compiler-62d5-candidate and /tmp/shared-release-62d5.log.
+
+Release verification of exact replacement pricing (2026-10-18)
+======================================================================
+CI run 39106863582 passes all validation and builds runtime 117c60fbc with
+ordinary release settings. Binary SHA256:
+376eef772c6ad1b37541b624e54d386f4d154d697c2fb20ce3db9d6a8bb36ab2.
+The profiling source digest matches the preceding release.
+
+All seeded output matches e3634f503. Short-run mean is 21.6738 ms, p95
+22.0379 ms, maximum 22.4963 ms over the 128 gaps after the first round.
+The ratio against the preceding separate run is 0.9990x: no steady-decode gain.
+Peak RSS 10.5688 GiB, minimum headroom 12.0564 GiB, compressor growth 40.2 MiB,
+and 832 KiB added swapouts; all model guards pass.
+
+The complete two-round 512-chunk run still peaks at chunk 448, but falls to
+52.3709 / 49.7748 ms from e363's 58.7764 / 54.1336 ms. Its round means are
+23.5479 / 24.1441 ms. The second-round average is 0.9886x versus the earlier
+run, so the smaller peak does not establish an overall speedup. Peak RSS
+10.5845 GiB, minimum headroom 11.7194 GiB, no new swapouts.
+
+A separate 16-chunk whole-plan trace completes: warmed GPU spans are roughly
+18.6 ms, versus 1.2-1.3 ms CPU preparation/encoding before synchronization.
+The 553-launch plan has zero cold shaders. Timestamp readback adds overhead;
+use the clean run above for throughput. A later per-dispatch diagnostic is
+refused at preflight when other processes exceed 1 GiB; it starts no model,
+is not retried, and contributes no timing evidence.
+
+Two bounded schedule experiments remain diagnostics only: on a square
+4096-by-4096 contraction, one subgroup instead of two measures 1.0044/1.0048x.
+Two independent accumulation chains on the wide fixture regress to
+0.9783/0.9909x in ABBA order. Every compared output passes; neither change is
+adopted. These checks do not relax tolerances or use model execution presets.
+Logs: compiler-117c-{candidate,long-decode,gpu-attribution*},
+shared-small-square-q4-one-subgroup, shared-independent-accumulators-q4 under
+target/stall-validation. The 2x full-model goal remains unmet.
+The comparison tool now reports the five slowest chunks with original zero-based
+round/chunk positions. All samples remain in statistics. Its boundary regression
+fails before the change; all 20 Python tool tests pass afterward.
+
 Bounded metadata reuse for large replay plans (2026-10-18)
 ======================================================================
 The full-model trace has 553 decode launches, 584 buffers, and 1,877 bindings.
