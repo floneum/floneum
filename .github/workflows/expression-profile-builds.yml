@@ -1,0 +1,61 @@
+name: Shared expression scheduling checks
+on:
+  push:
+    branches: [codex/expression-profile-builds]
+permissions:
+  contents: read
+concurrency:
+  group: expression-profile-builds
+  cancel-in-progress: true
+jobs:
+  compiler:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      CARGO_BUILD_JOBS: 1
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_OPT_LEVEL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+      FUSOR_CONFORMANCE_REQUIRE_GPU: '1'
+      FUSOR_COMPILE_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 36793379797f5ac94a162bcbf5a9b4d9e4447972
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Reproduce old operand lifetime and build baseline fixture
+        run: |
+          mkdir artifacts
+          git restore --source=HEAD^ -- fusor/fusor-gpu/src/emit.rs fusor/fusor-gpu/src/emit/expr.rs
+          if cargo test --locked --manifest-path fusor/Cargo.toml -p fusor-gpu --lib independent_expression_operands_release_long_trees_first -- --test-threads=1 > artifacts/red.log 2>&1; then
+            cat artifacts/red.log
+            echo 'old emitter unexpectedly passed the regression'
+            exit 1
+          fi
+          cat artifacts/red.log
+          grep -q 'short operands stay live across the larger tree' artifacts/red.log
+          cargo build --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer --example qmatmul_lab
+          cp fusor/target/debug/examples/qmatmul_lab artifacts/qmatmul-lab-order-baseline
+          git rev-parse HEAD^ > artifacts/baseline-revision.txt
+          git restore -- fusor/fusor-gpu/src/emit.rs fusor/fusor-gpu/src/emit/expr.rs
+      - name: Validate shared emitter and compiler
+        run: |
+          cargo fmt --manifest-path fusor/Cargo.toml --all -- --check
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor-gpu --lib -- --test-threads=1
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer,compiler-tests --test candidate_construction -- --test-threads=1
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer,compiler-tests --test shared_compiler -- --ignored --test-threads=1
+          cargo clippy --locked --manifest-path fusor/Cargo.toml --workspace --all-targets --features fusor/kernel-observer,fusor/compiler-tests -- -D warnings
+      - name: Build small candidate fixture
+        run: |
+          cargo build --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer --example qmatmul_lab
+          cp fusor/target/debug/examples/qmatmul_lab artifacts/qmatmul-lab-order-candidate
+          git rev-parse HEAD > artifacts/revision.txt
+          shasum -a 256 artifacts/qmatmul-lab-order-* > artifacts/sha256.txt
+          tar -czf expression-fixture.tar.gz -C artifacts .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: expression-fixture-macos
+          path: expression-fixture.tar.gz
+          retention-days: 3
