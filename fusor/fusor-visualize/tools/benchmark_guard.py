@@ -108,18 +108,26 @@ def cleanup_on_signals():
 def stop_child(child):
     # start_new_session gives this command its own group; never signal any
     # process discovered by name, or any unrelated application.
-    try:
-        os.killpg(child.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
+    def signal_group(signum):
+        try:
+            os.killpg(child.pid, signum)
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            # Sandboxed macOS may report EPERM instead of ESRCH after the
+            # group exits. Only accept that result when a successful inventory
+            # confirms the group is absent; a live group or failed ps is fatal.
+            groups = subprocess.check_output(
+                ["/bin/ps", "-A", "-o", "pgid="], text=True, timeout=2).split()
+            if str(child.pid) in groups:
+                raise
+
+    signal_group(signal.SIGTERM)
     try:
         child.wait(timeout=1)
     except subprocess.TimeoutExpired:
         pass
-    try:
-        os.killpg(child.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
+    signal_group(signal.SIGKILL)
     child.wait(timeout=2)
 
 

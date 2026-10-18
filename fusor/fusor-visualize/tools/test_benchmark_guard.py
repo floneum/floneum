@@ -8,7 +8,7 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import benchmark_guard as guard
 
@@ -152,6 +152,20 @@ guard.run_guarded([sys.executable, '-c', sys.argv[3], sys.argv[1]],
                     os.kill(child_pid, signal.SIGKILL)
                 except ProcessLookupError:
                     pass
+
+    def test_cleanup_accepts_permission_error_only_for_absent_group(self):
+        child = Mock(pid=123)
+        with patch.object(guard.os, "killpg", side_effect=PermissionError), \
+                patch.object(guard.subprocess, "check_output", return_value="456\n789\n"):
+            guard.stop_child(child)
+        self.assertTrue(child.wait.called)
+
+    def test_cleanup_does_not_hide_permission_error_for_live_group(self):
+        child = Mock(pid=123)
+        with patch.object(guard.os, "killpg", side_effect=PermissionError), \
+                patch.object(guard.subprocess, "check_output", return_value="123\n456\n"), \
+                self.assertRaises(PermissionError):
+            guard.stop_child(child)
 
     def test_unknown_monitor_data_fails_closed(self):
         with patch.object(guard.subprocess, "check_output", return_value="unexpected output"), \

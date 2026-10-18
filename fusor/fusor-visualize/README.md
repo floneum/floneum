@@ -434,3 +434,24 @@ an identical checked WGSL output-to-input dependency guard after each GEMV;
 its timings include the guard and still do not represent model throughput.
 These are kernel measurements, not full-model throughput claims. All probes use
 `benchmark_guard.py`; a resource abort is not retried automatically.
+
+### Compare default decode latency
+
+`profile_forward` reports every measured stream-chunk gap, p50/p95/worst
+latency, and generated text. Text chunks are not guaranteed to be individual
+token IDs. Sampling is seeded (`KALOSM_PROFILE_LLAMA_SEED`, default 0); model,
+prompt, sampler, warmup, and round settings are recorded in the log. Incomplete
+samples fail instead of producing a successful throughput result.
+
+Use the same example source, local model file, and settings in the base and
+candidate checkouts. Set `KALOSM_PROFILE_LLAMA_REPEATS=3` (or more), run each
+process separately under the resource guard, and capture stdout. Compare with:
+
+```sh
+python3 fusor/fusor-visualize/tools/compare_decode.py baseline.log candidate.log
+```
+
+The comparison excludes the first round from both logs, retains every slow
+sample, and refuses mismatched settings, generated text, warmup boundaries,
+or incomplete logs. It reports elapsed-time, p95, and worst-gap ratios for
+matched output. This is a wall-time comparison, not a GPU-kernel estimate.

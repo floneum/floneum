@@ -32,7 +32,18 @@ was stopped when other workloads reduced memory headroom. After headroom
 recovered, the pending quantized test peaked at 0.584 GiB process-group RSS,
 retained at least 22.607 GiB headroom, and added no swapouts. No full model or
 model benchmark has been run for this revision; no 2x claim applies yet.
-Cross-platform CI and the earlier Windows device-loss failure remain pending.
+CI Clippy, formatting, WebGPU compilation, and the Windows build pass at
+b34b5fb2a. Windows repeats its device loss at backward::leaky_relu, so the
+failing shard now collects a focused dispatch trace and WGSL artifacts.
+The original shard's failure remains visible. Other CI results are pending.
+
+The wall-time benchmark now logs seeded output, every stream-chunk gap, and
+p50/p95/worst latency. Its comparison tool refuses differing outputs or
+settings, missing rounds, invalid timings, and mismatched warmup boundaries.
+It discards only the configured initial warmup round, never slow samples.
+All 16 Python tool tests pass. Release compilation was stopped twice by the
+memory guard (peak process RSS 0.982/0.856 GiB, no added swapouts); the current
+model example's compilation and full-model timings remain unverified.
 
 Previous revision 4934d7cda (does not validate the rewrite above)
 ==============================================================

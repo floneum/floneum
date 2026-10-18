@@ -227,3 +227,23 @@ jobs:
           for suite in ${{ matrix.shard.suites }}; do
             bin/fusor-conformance.exe "$suite" ${{ matrix.shard.args }}
           done
+      # Preserve the failing shard result; a fresh process with synchronous
+      # dispatch tracing identifies the kernel behind an asynchronous loss.
+      - name: Diagnose backward device loss
+        if: failure() && matrix.shard.name == 'backward-1'
+        shell: bash
+        env:
+          FUSOR_CONFORMANCE_REQUIRE_GPU: "1"
+          WGPU_DX12_COMPILER: Dxc
+          FUSOR_TRACE_DISPATCH: "1"
+          FUSOR_WGSL_DUMP: kernel-failure-shaders
+        run: bin/fusor-conformance.exe backward::leaky_relu 2>&1 | tee backward-device-loss.log
+      - name: Save backward device-loss diagnostics
+        if: failure() && matrix.shard.name == 'backward-1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: backward-device-loss-windows
+          path: |
+            backward-device-loss.log
+            kernel-failure-shaders/
+          retention-days: 3
