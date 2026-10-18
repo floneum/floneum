@@ -24,8 +24,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: 9d935fe33131dfc9738a94d699bcf92a65da94b7
-          fetch-depth: 2
+          ref: 811ca3218bd901b0da20b7b76ddde23ad4ecbb4f
+          fetch-depth: 3
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - name: Demonstrate the capability regression and build baseline fixture
@@ -34,7 +34,7 @@ jobs:
           set -euo pipefail
           mkdir artifacts
           cp fusor/fusor-ir/src/rules/attention.rs /tmp/attention-candidate.rs
-          git show HEAD^:fusor/fusor-ir/src/rules/attention.rs > fusor/fusor-ir/src/rules/attention.rs
+          git show 68ea5d29109d6df4939dd3d2c2700c2af23eecb0:fusor/fusor-ir/src/rules/attention.rs > fusor/fusor-ir/src/rules/attention.rs
           set +e
           cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --test candidate_construction --features kernel-observer,compiler-tests attention_parallelism_respects_invocation_dimension_and_scratch_limits -- --exact > artifacts/red.log 2>&1
           red=$?
@@ -45,7 +45,7 @@ jobs:
           grep -q 'right: Some(512)' artifacts/red.log
           cargo build --locked --manifest-path fusor/Cargo.toml -p fusor --features kernel-observer --example attention_lab
           cp target/debug/examples/attention_lab artifacts/attention-lab-baseline
-          git rev-parse HEAD^ > artifacts/baseline-revision.txt
+          git rev-parse 68ea5d29109d6df4939dd3d2c2700c2af23eecb0 > artifacts/baseline-revision.txt
           cp /tmp/attention-candidate.rs fusor/fusor-ir/src/rules/attention.rs
       - name: Validate shared construction and execution then build candidate
         shell: bash
