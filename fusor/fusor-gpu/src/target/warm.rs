@@ -19,6 +19,59 @@ pub(super) struct WarmArtifacts {
 }
 
 impl WarmArtifacts {
+    /// At most two snapshots are retained. Charge metadata by bytes rather
+    /// than dispatch count; an owned immutable plan needs no structural copy.
+    pub(super) fn within_budget(plan: &Plan, binds: &BindingEnv) -> bool {
+        use fusor_ir::extract::{BindingPlan, BufferPlan, Dispatch};
+        use fusor_ir::ir::launch::SchedPoint;
+        use fusor_ir::shape::Dim;
+        let mut remaining = 512usize * 1024;
+        let mut charge = |count: usize, bytes: usize| {
+            count.checked_mul(bytes).and_then(|bytes| {
+                remaining = remaining.checked_sub(bytes)?;
+                Some(())
+            })
+        };
+        let fits = (|| {
+            charge(1, size_of::<Self>())?;
+            charge(
+                plan.launches.len(),
+                size_of::<ArtifactKey>() + size_of::<Option<(Artifact, [u32; 3], u128)>>(),
+            )?;
+            charge(binds.dims.len(), size_of::<(SymId, u64)>())?;
+            // Symbol vectors and the two shared uniform-pack lookup tables.
+            // This includes conservative capacity slack for their allocations.
+            charge(
+                plan.symbols.len().checked_add(plan.scalar_symbols.len())?,
+                128,
+            )?;
+            if !Self::owns(plan, binds) {
+                charge(
+                    plan.launches.len(),
+                    size_of::<Dispatch>() + size_of::<Option<SchedPoint>>(),
+                )?;
+                charge(plan.buffers.len(), size_of::<BufferPlan>())?;
+                for launch in &plan.launches {
+                    charge(launch.bindings.len(), size_of::<BindingPlan>())?;
+                    charge(launch.members.len(), 2 * size_of::<Id>())?;
+                }
+                for buffer in &plan.buffers {
+                    charge(buffer.layout.shape().len(), 4 * size_of::<Dim>())?;
+                }
+            }
+            Some(())
+        })();
+        fits.is_some()
+    }
+
+    fn owns(plan: &Plan, binds: &BindingEnv) -> bool {
+        binds.plan_owner.as_ref().is_some_and(|owner| {
+            owner
+                .upgrade()
+                .is_some_and(|p| std::ptr::eq(p.as_ref(), plan))
+        })
+    }
+
     pub(super) fn owned(&self, plan: &Plan, arena: u64, binds: &BindingEnv) -> Option<Arc<Built>> {
         let owner = self.owner.as_ref()?;
         let supplied = binds.plan_owner.as_ref()?;
@@ -34,22 +87,26 @@ impl WarmArtifacts {
         .then(|| self.built())
     }
 
-    /// Reuse the digests only after comparing every input to
-    /// `plan_artifact_keys` exactly. Plan hashes and pointer identity alone
-    /// cannot prove this (e.g. a diagnostic schedule substitution).
+    /// Reuse digests after matching the immutable owner or every structural
+    /// input to `plan_artifact_keys`. The weak owner prevents address reuse
+    /// and detaches on Arc mutation; a bare pointer or plan hash would not.
     pub(super) fn keys(&self, plan: &Plan, arena: u64) -> Option<Vec<ArtifactKey>> {
         (self.keys.first().is_some_and(|k| k.arena == arena)
             && self.symbols == plan.symbols
             && self.scalar_symbols == plan.scalar_symbols
-            && self.launches == plan.launches
-            && self.buffers == plan.buffers
-            && self
-                .schedules
-                .iter()
-                .zip(&plan.launches)
-                .all(|(schedule, launch)| {
-                    *schedule == plan.extraction.theta.get(&launch.root).copied()
-                }))
+            && if let Some(owner) = &self.owner {
+                std::ptr::eq(owner.as_ptr(), plan)
+            } else {
+                self.launches == plan.launches
+                    && self.buffers == plan.buffers
+                    && self
+                        .schedules
+                        .iter()
+                        .zip(&plan.launches)
+                        .all(|(schedule, launch)| {
+                            *schedule == plan.extraction.theta.get(&launch.root).copied()
+                        })
+            })
         .then(|| self.keys.clone())
     }
 
@@ -91,14 +148,7 @@ impl WarmArtifacts {
     ) -> Option<Self> {
         if keys.len() != built.len()
             || keys.len() != plan.launches.len()
-            || keys.len() > 512
-            || plan.buffers.len() > 1024
-            || plan
-                .launches
-                .iter()
-                .map(|l| l.bindings.len())
-                .sum::<usize>()
-                > 4096
+            || !Self::within_budget(plan, binds)
         {
             return None;
         }
@@ -127,24 +177,28 @@ impl WarmArtifacts {
         }
         let mut dimensions: Vec<_> = dimensions.into_iter().collect();
         dimensions.sort_unstable_by_key(|(sym, _)| *sym);
+        let owned = Self::owns(plan, binds);
         Some(Self {
-            owner: binds
-                .plan_owner
-                .as_ref()
-                .filter(|owner| {
-                    owner
-                        .upgrade()
-                        .is_some_and(|p| std::ptr::eq(p.as_ref(), plan))
-                })
-                .cloned(),
+            owner: owned.then(|| binds.plan_owner.clone()).flatten(),
             keys: keys.to_vec(),
-            launches: plan.launches.clone(),
-            buffers: plan.buffers.clone(),
-            schedules: plan
-                .launches
-                .iter()
-                .map(|l| plan.extraction.theta.get(&l.root).copied())
-                .collect(),
+            launches: if owned {
+                Vec::new()
+            } else {
+                plan.launches.clone()
+            },
+            buffers: if owned {
+                Vec::new()
+            } else {
+                plan.buffers.clone()
+            },
+            schedules: if owned {
+                Vec::new()
+            } else {
+                plan.launches
+                    .iter()
+                    .map(|l| plan.extraction.theta.get(&l.root).copied())
+                    .collect()
+            },
             dimensions,
             built: Arc::new(built.clone()),
             symbols: layout.0.to_vec(),
@@ -270,6 +324,11 @@ mod tests {
             WarmArtifacts::capture(&owned, &[key], &owner_binds, &built, &entries, layout())
                 .unwrap();
         assert!(owned_snapshot.owned(&owned, 1, &owner_binds).is_some());
+        assert!(owned_snapshot.keys(&owned, 1).is_some());
+        assert!(owned_snapshot.keys(&plan, 1).is_none());
+        assert!(owned_snapshot.launches.is_empty());
+        assert!(owned_snapshot.buffers.is_empty());
+        assert!(owned_snapshot.schedules.is_empty());
         assert!(owned_snapshot.owned(&plan, 1, &owner_binds).is_none());
         assert!(owned_snapshot.owned(&owned, 2, &owner_binds).is_none());
         assert!(
@@ -286,11 +345,48 @@ mod tests {
         Arc::make_mut(&mut owned).launches[0].block = 64;
         owner_binds.plan_owner = Some(Arc::downgrade(&owned));
         assert!(owned_snapshot.owned(&owned, 1, &owner_binds).is_none());
+        assert!(owned_snapshot.keys(&owned, 1).is_none());
         // A caller's hint can name a different plan. Capture must not
         // associate that identity with the borrowed plan's artifacts.
         let mislabelled =
             WarmArtifacts::capture(&plan, &[key], &owner_binds, &built, &entries, layout())
                 .unwrap();
         assert!(mislabelled.owned(&owned, 1, &owner_binds).is_none());
+
+        // A sparse plan beyond the former dispatch-count cutoff still fits
+        // the byte bound. Its weak owner avoids retaining the full structure.
+        let mut large = plan.clone();
+        large.launches.resize(1024, plan.launches[0].clone());
+        let mut large = Arc::new(large);
+        let mut large_binds = binds.clone();
+        large_binds.plan_owner = Some(Arc::downgrade(&large));
+        let large_keys = vec![key; large.launches.len()];
+        let large_built = vec![built[0].clone(); large.launches.len()];
+        let snapshot = WarmArtifacts::capture(
+            &large,
+            &large_keys,
+            &large_binds,
+            &large_built,
+            &entries,
+            layout(),
+        )
+        .unwrap();
+        assert!(snapshot.owned(&large, 1, &large_binds).is_some());
+        assert!(snapshot.launches.is_empty());
+        assert_eq!(Arc::strong_count(&large), 1);
+        Arc::make_mut(&mut large).symbols.resize(8192, body);
+        large_binds.plan_owner = Some(Arc::downgrade(&large));
+        assert!(!WarmArtifacts::within_budget(&large, &large_binds));
+        assert!(
+            WarmArtifacts::capture(
+                &large,
+                &large_keys,
+                &large_binds,
+                &large_built,
+                &entries,
+                layout(),
+            )
+            .is_none()
+        );
     }
 }

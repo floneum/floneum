@@ -1,3 +1,33 @@
+Bounded metadata reuse for large replay plans (2026-10-18)
+======================================================================
+The full-model trace has 553 decode launches, 584 buffers, and 1,877 bindings.
+Both prepared leaves and GPU snapshots previously declined above 512 launches.
+Admission now follows bounded work/metadata rather than this dispatch cutoff:
+- Prepared leaves permit at most 4,096 launch-plus-binding visits and stop
+  scanning once exhausted. They retain only external IDs and a weak owner.
+- At most two GPU snapshots each have a conservative 512 KiB metadata budget.
+  A verified immutable plan owner avoids cloning dispatches, layouts, and
+  schedules. Unowned plans retain exact structural checks. Mutating a plan
+  detaches its weak owner; runtime dimensions and graph identity still match.
+No tensor buffers, uniform contents, or command records are retained here.
+
+The new replay_plan_lab diagnostic uses 600 ordinary scatter launches, changes
+its index between replays, and checks all 153,600 output values plus preservation
+of the shared input. Prior/candidate/prior median submission times are
+27.897 / 25.519 / 27.276 ms: conservative 1.069x. Total medians are
+31.262 / 27.521 / 29.204 ms (1.061x). The final opt-in GAPSTEP trace confirms
+warm=1. These are unoptimized host measurements, not model-throughput proof.
+Peak process-group RSS <=0.213 GiB and no added swapouts in all three arms.
+Twenty unit tests and all eight ordinary WebGPU regressions pass; tests cover
+ownership mutation, missing dimensions, runtime scalars, structural fallback,
+and rejection of metadata beyond the budget. Workspace/all-target Clippy with
+warnings denied, formatting, and diff whitespace checks pass. Full-model
+validation is pending.
+Logs: target/stall-validation/shared-replay-budget-*.
+Reproduce the small diagnostic serially:
+  cargo run --manifest-path fusor/Cargo.toml -p fusor --no-default-features \
+    --features gpu,kernel-observer --example replay_plan_lab -- 600 256 11
+
 Exact independent replacement costs (2026-10-18; release pending)
 ======================================================================
 The remaining growth trace spends 7.569 ms extracting a 65-launch migration

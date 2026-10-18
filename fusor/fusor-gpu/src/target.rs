@@ -479,7 +479,8 @@ impl GpuTarget {
             let outside = prev.map(|p| start.duration_since(p).as_secs_f64() * 1e3);
             eprint!("GAPSTEP outside={:.2} ", outside.unwrap_or(0.0));
         }
-        let bundle_enabled = plan.launches.len() <= 512 && !flags.verify_artifact_cache;
+        let bundle_enabled =
+            !flags.verify_artifact_cache && WarmArtifacts::within_budget(plan, binds);
         // Layouts depend on symbol order, not their current values. Always
         // refill binding 0; the snapshot contains no tensor or uniform bytes.
         let pack = bundle_enabled
@@ -941,7 +942,7 @@ impl GpuTarget {
         if gap {
             let end = start.elapsed();
             eprintln!(
-                "p1={:.2} probe={:.2} cold={} build={:.2} lowus={} compus={} bind={:.2} enc={:.2} tail={:.2} tot={:.2} n={} compiles={} pollwait={} chunkwait={:.2} pollus={:.2}",
+                "p1={:.2} probe={:.2} cold={} build={:.2} lowus={} compus={} bind={:.2} enc={:.2} tail={:.2} tot={:.2} n={} compiles={} pollwait={} chunkwait={:.2} pollus={:.2} warm={}",
                 __t_p1.as_secs_f64() * 1e3,
                 (__t_probe - __t_p1).as_secs_f64() * 1e3,
                 __cold,
@@ -959,6 +960,7 @@ impl GpuTarget {
                     / 1e3,
                 crate::launch::POLL_WAIT_US.swap(0, std::sync::atomic::Ordering::Relaxed) as f64
                     / 1e3,
+                u8::from(warm_hit),
             );
             *LAST_EXIT.lock() = Some(Instant::now());
         }

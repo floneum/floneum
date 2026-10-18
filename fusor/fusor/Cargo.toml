@@ -54,6 +54,10 @@ name = "cache_growth_lab"
 required-features = ["gpu", "kernel-observer"]
 
 [[example]]
+name = "replay_plan_lab"
+required-features = ["gpu", "kernel-observer"]
+
+[[example]]
 name = "vector_lab"
 required-features = ["gpu", "kernel-observer"]
 

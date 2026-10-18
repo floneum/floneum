@@ -18,17 +18,11 @@ impl PreparedRun {
     }
 
     pub(crate) fn capture(plan: &Arc<Plan>, external: impl Fn(Id) -> bool) -> Option<Self> {
-        if plan.launches.len() > 512
-            || plan.buffers.len() > 1024
-            || plan
-                .launches
-                .iter()
-                .map(|l| l.bindings.len())
-                .sum::<usize>()
-                > 4096
-        {
-            return None;
-        }
+        // Bound the work and temporary set by binding visits, including empty
+        // dispatches. Many small launches need no larger retained leaf index.
+        plan.launches.iter().try_fold(plan.launches.len(), |n, l| {
+            n.checked_add(l.bindings.len()).filter(|n| *n <= 4096)
+        })?;
         let mut seen = FxHashSet::default();
         let mut leaves = Vec::new();
         for launch in &plan.launches {
@@ -90,5 +84,40 @@ mod tests {
         assert!(updated.matches(&plan));
         drop(plan);
         assert!(updated.owner.upgrade().is_none());
+    }
+
+    #[test]
+    fn sparse_plans_use_the_same_bounded_leaf_index() {
+        use fusor_ir::extract::{BindKind, BindingPlan, Dispatch};
+        let mut plan = Arc::new(Plan {
+            extraction: Default::default(),
+            launches: vec![
+                Dispatch {
+                    root: Id(3),
+                    members: smallvec::smallvec![Id(3)],
+                    bindings: vec![BindingPlan {
+                        binding: 1,
+                        value: Id(1),
+                        kind: BindKind::Read,
+                        arena: false,
+                    }],
+                    grid: [1, 1, 1],
+                    block: 32,
+                };
+                1024
+            ],
+            buffers: Vec::new(),
+            arena_bytes: 0,
+            symbols: Vec::new(),
+            scalar_symbols: Vec::new(),
+            hash: Default::default(),
+            cost: fusor_ir::cost::Picoseconds(0),
+        });
+        let cached = PreparedRun::capture(&plan, |_| true).unwrap();
+        assert_eq!(cached.external, [Id(1)]);
+        assert_eq!(Arc::strong_count(&plan), 1);
+        let launch = plan.launches[0].clone();
+        Arc::make_mut(&mut plan).launches.resize(4097, launch);
+        assert!(PreparedRun::capture(&plan, |_| true).is_none());
     }
 }
