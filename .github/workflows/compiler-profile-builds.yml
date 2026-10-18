@@ -33,6 +33,8 @@ jobs:
           path: baseline
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
       - name: Build matching default-release profile binaries serially
         shell: bash
         run: |
@@ -47,14 +49,14 @@ jobs:
             git -C candidate rev-parse HEAD
             git -C baseline rev-parse HEAD
             shasum -a 256 candidate/models/kalosm-llama/examples/profile_forward.rs
-            echo 'cargo build --locked -j 1 -p kalosm-llama --example profile_forward --release'
+            echo 'cargo build --locked -j 1 -p kalosm-llama --example profile_forward --release --target aarch64-apple-darwin'
           } > artifacts/build.txt
           for revision in candidate baseline; do
             (
               cd "$revision"
-              cargo build --locked -j 1 -p kalosm-llama --example profile_forward --release
+              cargo build --locked -j 1 -p kalosm-llama --example profile_forward --release --target aarch64-apple-darwin
             )
-            cp "$CARGO_TARGET_DIR/release/examples/profile_forward" "artifacts/profile-forward-$revision"
+            cp "$CARGO_TARGET_DIR/aarch64-apple-darwin/release/examples/profile_forward" "artifacts/profile-forward-$revision"
             shasum -a 256 "artifacts/profile-forward-$revision" >> artifacts/build.txt
           done
       - name: Package binaries with executable permissions
