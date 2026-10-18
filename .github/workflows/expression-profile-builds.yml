@@ -21,14 +21,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: 36793379797f5ac94a162bcbf5a9b4d9e4447972
-          fetch-depth: 2
+          ref: 01de89bb3a09d45f223ec7f21481ee5c7d0a6343
+          fetch-depth: 3
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - name: Reproduce old operand lifetime and build baseline fixture
         run: |
           mkdir artifacts
-          git restore --source=HEAD^ -- fusor/fusor-gpu/src/emit.rs fusor/fusor-gpu/src/emit/expr.rs
+          git restore --source=HEAD~2 -- fusor/fusor-gpu/src/emit.rs fusor/fusor-gpu/src/emit/expr.rs
           if cargo test --locked --manifest-path fusor/Cargo.toml -p fusor-gpu --lib independent_expression_operands_release_long_trees_first -- --test-threads=1 > artifacts/red.log 2>&1; then
             cat artifacts/red.log
             echo 'old emitter unexpectedly passed the regression'
@@ -38,7 +38,7 @@ jobs:
           grep -q 'short operands stay live across the larger tree' artifacts/red.log
           cargo build --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer --example qmatmul_lab
           cp fusor/target/debug/examples/qmatmul_lab artifacts/qmatmul-lab-order-baseline
-          git rev-parse HEAD^ > artifacts/baseline-revision.txt
+          git rev-parse HEAD~2 > artifacts/baseline-revision.txt
           git restore -- fusor/fusor-gpu/src/emit.rs fusor/fusor-gpu/src/emit/expr.rs
       - name: Validate shared emitter and compiler
         run: |
@@ -46,7 +46,6 @@ jobs:
           cargo test --locked --manifest-path fusor/Cargo.toml -p fusor-gpu --lib -- --test-threads=1
           cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer,compiler-tests --test candidate_construction -- --test-threads=1
           cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer,compiler-tests --test shared_compiler -- --ignored --test-threads=1
-          cargo clippy --locked --manifest-path fusor/Cargo.toml --workspace --all-targets --features fusor/kernel-observer,fusor/compiler-tests -- -D warnings
       - name: Build small candidate fixture
         run: |
           cargo build --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer --example qmatmul_lab
@@ -59,3 +58,6 @@ jobs:
           name: expression-fixture-macos
           path: expression-fixture.tar.gz
           retention-days: 3
+      - name: Check all targets with Clippy
+        run: |
+          cargo clippy --locked --manifest-path fusor/Cargo.toml --workspace --all-targets --features fusor/kernel-observer,fusor/compiler-tests -- -D warnings
