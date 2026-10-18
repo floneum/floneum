@@ -1,3 +1,33 @@
+Compiler follow-up d4cc3c58b (2026-10-17; measurement pending)
+================================================================
+The ordinary saturation driver offered every rule to an early node before
+visiting later nodes. Expanding contraction alternatives exhausted the node
+budget in round two; later blocks missed even simple map substitution.
+A 32-block, ordinary dense-contract/map regression reproduced fusion in only
+blocks 0..17. Rule-ordered frontier rounds now offer substitution to all 32,
+under the same node/application/round budgets. The test also checks the node
+ceiling. All 15 candidate-construction tests pass.
+
+The range verifier also needs a rejected-arm lower bound to prove tail-origin
+subtraction cannot wrap. Its focused regression failed with an unknown bound
+for a column actually bounded by 5; it now passes along with the accepted-arm,
+eager-load, mutable-expression and escaping-scope negatives (15 tile tests).
+The complete training test exceeded the unchanged local 1 GiB process limit
+after 124 seconds and was stopped, without new swapouts. It is not a pass.
+Full training and cross-platform validation remain pending in CI.
+
+The previous runtime's attribution measured roughly 18.6-19.5 ms GPU time and
+634 launches. Doubling saturation's budget yielded 585 launches but little
+wall-time improvement (22.196 vs 22.347 ms in short diagnostic rounds); the
+production budget was not increased. A workgroup-local reduction partition
+experiment was removed: a smaller window regressed to 0.587x and keeping the
+original window gained only about 1.017x on the tested large reduction.
+
+A polling diagnostic stopped during model loading at the unchanged compressor
+limit and produced no timing. It was not retried. No claim about polling or
+full-model speed of d4cc3c58b follows from these experiments. An isolated
+release build runs in CI 39100620525; no heavy local release build is used.
+
 Latest default-path measurement (2026-10-17; goal not achieved)
 ================================================================
 Runtime 10377cfa2 now has a completed full-model measurement from isolated
