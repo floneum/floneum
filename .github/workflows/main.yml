@@ -281,7 +281,8 @@ jobs:
           cache-workspace-crates: "true"
       - run: |
           cargo clippy --workspace --examples --tests --features $FEATURES -- -D warnings
-          cargo clippy --manifest-path fusor/Cargo.toml --workspace --all-targets -- -D warnings
+          cargo clippy --manifest-path fusor/Cargo.toml --workspace --all-targets --features fusor/kernel-observer -- -D warnings
+          cargo clippy -p kalosm-llama --example profile_kernel_share --example visualize_kernels --features kernel-visualize -- -D warnings
 
   fmt:
     if: github.event.pull_request.draft == false

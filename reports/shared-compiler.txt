@@ -82,7 +82,9 @@ case is included in both the explicit GPU fixture and the ordinary session unit
 tests (CI selects WebGPU). Its final local rerun and model/example compatibility
 check were refused after system headroom fell below 12 GiB and free disk then
 fell below the 1 GiB reserve. They remain pending; the earlier five-test GPU
-pass predates this additional broadcast case. CI is being rerun on the fix.
+pass predates this additional broadcast case. CI is being rerun on the fix. Its Clippy job now explicitly enables the
+kernel-observer examples and checks both model visualization/profiling examples,
+so optional tooling is covered on future changes as well.
 
 Reproduction (from repository root; run GPU checks serially):
   CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test --manifest-path fusor/Cargo.toml -p fusor --no-default-features \
