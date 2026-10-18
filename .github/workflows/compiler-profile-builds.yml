@@ -73,7 +73,7 @@ jobs:
           grep -E 'direct range lowering was not selected|consecutive indices still scanned' ../fixture-artifacts/baseline-regression.txt
           cargo build --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer --example affine_copy_lab --config profile.dev.opt-level=0 --config profile.dev.debug=0
           cp "$CARGO_TARGET_DIR/debug/examples/affine_copy_lab" ../fixture-artifacts/affine-copy-baseline
-          ../fixture-artifacts/affine-copy-baseline > ../fixture-artifacts/baseline.out 2> ../fixture-artifacts/baseline.err
+          ../fixture-artifacts/affine-copy-baseline > ../fixture-artifacts/baseline.out 2> ../fixture-artifacts/baseline.err || { cat ../fixture-artifacts/baseline.out ../fixture-artifacts/baseline.err; exit 1; }
           cp ../range-scatter-candidate.rs "$lower"
           trap - EXIT
           cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer --lib consecutive_scatter_uses_direct_indices_and_preserves_sources --config profile.dev.opt-level=0 --config profile.dev.debug=0 -- --ignored --test-threads=1
@@ -81,12 +81,14 @@ jobs:
           cp "$CARGO_TARGET_DIR/debug/examples/affine_copy_lab" ../fixture-artifacts/affine-copy-candidate
           cp "$CARGO_TARGET_DIR/debug/examples/qmatmul_lab" ../fixture-artifacts/qmatmul-lab-candidate
           cp "$CARGO_TARGET_DIR/debug/examples/vector_lab" ../fixture-artifacts/vector-lab-candidate
-          LAB_EXPECT_DIRECT_RANGE=1 ../fixture-artifacts/affine-copy-candidate > ../fixture-artifacts/candidate.out 2> ../fixture-artifacts/candidate.err
+          LAB_EXPECT_DIRECT_RANGE=1 ../fixture-artifacts/affine-copy-candidate > ../fixture-artifacts/candidate.out 2> ../fixture-artifacts/candidate.err || { cat ../fixture-artifacts/candidate.out ../fixture-artifacts/candidate.err; exit 1; }
           git diff --exit-code
           shasum -a 256 ../fixture-artifacts/* > ../fixture-artifacts/sha256.txt
       - name: Package small compiler fixtures
+        if: always()
         run: tar -czf compiler-small-fixtures.tar.gz -C fixture-artifacts .
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: compiler-small-fixtures-macos
           path: compiler-small-fixtures.tar.gz
