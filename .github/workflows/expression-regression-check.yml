@@ -1,0 +1,24 @@
+name: Noncommutative operand scheduling regression
+on:
+  push:
+    branches: [codex/expression-regression-check]
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    env:
+      CARGO_BUILD_JOBS: 1
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_OPT_LEVEL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 393675956576d4fb6f28f20bb26515230cccf422
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo fmt --manifest-path fusor/Cargo.toml --all -- --check
+      - run: cargo test --locked --manifest-path fusor/Cargo.toml -p fusor-gpu --lib -- --test-threads=1
+      - run: cargo clippy --locked --manifest-path fusor/Cargo.toml -p fusor-gpu --lib --tests -- -D warnings
