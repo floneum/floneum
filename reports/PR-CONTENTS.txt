@@ -1,15 +1,5 @@
-Start with shared-compiler.txt for the scope and validation of the current PR.
+shared-compiler.txt records the current shared implementation and validation.
 
-The llama-* subdirectories retain historical investigation evidence. Those
-measurements used earlier experimental checkpoints and presets that have
-since been removed. They do not establish current default-path throughput.
-
-The complete 3.4 GiB local experiment archive is not part of the PR. Historical
-findings refer to local artifacts that may not be published here. Model files,
-executables, raw .f32 reference/candidate vectors, generated shader dumps, and
-rejected native-backend prototypes are excluded. Source and compact validation
-results are retained; the excluded experiments are not build dependencies.
-
-The correctness tool now compares saved vector directories with explicit
-reference/candidate phase logs. It loads no model. Historical capture recipes
-refer to removed experimental hooks and are not current reproduction commands.
+Model-specific presets, experiment drivers, generated traces, binaries, and
+historical performance results are local investigation artifacts, not part of
+this PR. No earlier throughput result establishes the speed of this rewrite.

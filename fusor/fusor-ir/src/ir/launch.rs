@@ -446,6 +446,18 @@ impl IndexSpace {
         self.dims.len()
     }
 
+    /// Whether flat indexing of this space can address an operand's shape.
+    /// Scalars broadcast at any rank; other layouts must match a suffix, with
+    /// singleton axes allowed. Equal element counts alone are insufficient.
+    pub fn addresses_shape(&self, shape: &[Dim]) -> bool {
+        shape.iter().all(|d| d.known_eq(Dim::Const(1)))
+            || (shape.len() <= self.rank()
+                && shape
+                    .iter()
+                    .zip(&self.dims[self.rank() - shape.len()..])
+                    .all(|(a, b)| a.known_eq(*b) || a.known_eq(Dim::Const(1))))
+    }
+
     /// The legality side of `map_into_fold`: a producer may be inlined only
     /// into a consumer whose space covers it.
     pub fn covers(&self, other: &IndexSpace) -> bool {

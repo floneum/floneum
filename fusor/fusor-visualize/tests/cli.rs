@@ -1,7 +1,11 @@
 use std::process::{Command, Output, Stdio};
 
 fn run(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_fusor-visualize"))
+    // Nextest remaps archived binaries to the test runner's target directory.
+    let executable = std::env::var_os("NEXTEST_BIN_EXE_fusor_visualize")
+        .or_else(|| std::env::var_os("CARGO_BIN_EXE_fusor-visualize"))
+        .unwrap_or_else(|| env!("CARGO_BIN_EXE_fusor-visualize").into());
+    Command::new(executable)
         .args(args)
         .stdin(Stdio::null())
         .output()
@@ -68,9 +72,12 @@ fn invalid_options_and_non_terminal_tui_fail_cleanly() {
 
 #[test]
 fn portable_trace_fixture_can_be_replayed_with_another_subgroup_size() {
+    let manifest =
+        std::env::var_os("CARGO_MANIFEST_DIR").unwrap_or_else(|| env!("CARGO_MANIFEST_DIR").into());
+    let fixture = std::path::PathBuf::from(manifest).join("examples/trace.json");
     let output = run(&[
         "--trace",
-        concat!(env!("CARGO_MANIFEST_DIR"), "/examples/trace.json"),
+        fixture.to_str().unwrap(),
         "--subgroup-size",
         "2",
         "--format",

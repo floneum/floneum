@@ -8,7 +8,7 @@ use fusor_ir::device::Caps;
 use fusor_ir::error::Error;
 use fusor_ir::ir::kernel::{
     Accumulator, Addr, ArenaPlanner, CoopMatrixRole, ElementType, KernelIr, Local, LowerError,
-    ScalarElement, Source, Stmt, TileExpr, TileExprKind, TileLiteral,
+    ScalarElement, Source, Stmt, TileBinaryOp, TileExpr, TileExprKind, TileLiteral, TileUnaryOp,
     cooperative_store_layout_supported,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -135,7 +135,46 @@ pub(crate) fn infer_kind(kind: &TileExprKind) -> Result<ElementType> {
             Source::Quantized(_) => ElementType::Scalar(ScalarElement::F32),
         },
         K::LoadTile { tile, .. } => tile.element,
+        K::Unary {
+            op: TileUnaryOp::Unpack2x16Float,
+            value,
+            ..
+        } => {
+            if value.element() != ScalarElement::U32.element() {
+                return Err(invalid("unpack2x16float requires a u32 word"));
+            }
+            ElementType::Vector {
+                scalar: ScalarElement::F32,
+                lanes: 2,
+            }
+        }
         K::Unary { value, .. } => value.element(),
+        K::Binary {
+            op: TileBinaryOp::Shl | TileBinaryOp::Shr,
+            left,
+            right,
+            ..
+        } => {
+            let count_type = match left.element() {
+                ElementType::Scalar(ScalarElement::I32 | ScalarElement::U32) => {
+                    ScalarElement::U32.element()
+                }
+                ElementType::Vector {
+                    scalar: ScalarElement::I32 | ScalarElement::U32,
+                    lanes,
+                } => ElementType::Vector {
+                    scalar: ScalarElement::U32,
+                    lanes,
+                },
+                _ => return Err(invalid("shift requires an integer value")),
+            };
+            if right.element() != count_type {
+                return Err(invalid(
+                    "shift count must be unsigned and match the value width",
+                ));
+            }
+            left.element()
+        }
         K::Binary { left, right, .. } => {
             if left.element() != right.element() {
                 return Err(invalid(format!(
@@ -1009,4 +1048,31 @@ pub(crate) fn visit_unique(
         visit_unique(child, seen, f);
     }
     f(expr);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fusor_ir::dtype::NumericContract;
+
+    #[test]
+    fn packed_word_operations_infer_their_result_types() {
+        let b = crate::build::Kernel::new();
+        let numeric = NumericContract::RELAXED;
+        let unpack = b.unary(TileUnaryOp::Unpack2x16Float, b.u32(0x3c003c00), numeric);
+        assert_eq!(infer_kind(unpack.kind()).unwrap(), unpack.element());
+        for op in [TileBinaryOp::Shl, TileBinaryOp::Shr] {
+            for signed in [false, true] {
+                let value = if signed { b.i32(-128) } else { b.u32(128) };
+                let shifted = b.binary(op, value, b.u32(2), numeric);
+                assert_eq!(infer_kind(shifted.kind()).unwrap(), shifted.element());
+            }
+            let invalid = b.binary(op, b.i32(-128), b.i32(2), numeric);
+            assert!(infer_kind(invalid.kind()).is_err());
+        }
+        let invalid = b.unary(TileUnaryOp::Unpack2x16Float, b.f32(1.), numeric);
+        assert!(infer_kind(invalid.kind()).is_err());
+        let invalid = b.binary(TileBinaryOp::Add, b.i32(1), b.u32(2), numeric);
+        assert!(infer_kind(invalid.kind()).is_err());
+    }
 }

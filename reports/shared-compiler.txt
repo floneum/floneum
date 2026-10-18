@@ -20,8 +20,9 @@ Compiler changes
 - Lower contiguous range updates into ordinary WebGPU copy/clear commands.
 - Keep symbolic single-index scatter geometry in uniforms; growth changes the
   dispatch grid without compiling another shader.
-- Keep full-size and expanding views in the producer's replay plan. Only partial views
-  materialize their base separately, avoiding stale reshaped intermediates.
+- Keep full-size and expanding views in the producer's replay plan. Only
+  partial views materialize their base separately. View forwarding preserves
+  the reduction's index space; equal element counts alone are not sufficient.
 
 Runtime changes
 - Generic QMatrix and dense-layer GGUF loaders share immutable host bytes,
@@ -32,27 +33,32 @@ Runtime changes
 - Submission overlaps preparation within the existing in-flight resource bound.
 - Production replay keeps its incumbent by default. Explicit online tuning is
   still available, but no longer substitutes an alternative every 16 resolves.
+  Previously measured winners remain reusable with online exploration disabled.
 - Cache-only donation and its alias-specific lowering have been removed.
   Ordinary scatter preserves its input and retained views. Prepared GPU
   artifacts share the normal plan's weak ownership; no alternate plan is needed.
 
 Validation
-- Core compiler/runtime cargo check passed (fusor, fusor-gpu, fusor-ir,
-  fusor-cost, libraries/tests, kernel-observer feature).
-- Two compiler construction tests passed: ordinary normalization across four
-  shapes with absent/16/32/64-wide subgroups, and ordinary attention across
-  five channel widths, grouped heads, concrete and symbolic key extents.
-  Unsupported CPU/no-subgroup attention and incorrect normalization decline.
-- Five ordinary-device WebGPU tests passed in 17.90 seconds: RMS/attention
-  vs host results, zero-shader copy lowering, concrete and symbolic full-size
-  view replay, scatter input/retained-view preservation, and Q4/Q6 results
-  against dequantized references at N=1024/1027, K=4096, one/three input rows.
-  The aligned cases observe both coalesced lowerings without a preset; odd
-  dimensions may select another legal schedule and still match every value.
+- All six ordinary-device WebGPU tests pass with compiler-tests and
+  kernel-observer enabled (7.09 seconds). Cases cover RMS/attention vs host
+  references, copy lowering, concrete/symbolic/expanding view replay, scatter
+  input and retained-view preservation, and view reductions plus gradients.
+- Q4/Q6 outputs match dequantized references at N=1024/1027, K=4096, and
+  one/three input rows. Aligned cases select both coalesced lowerings without
+  a preset; odd dimensions may select another legal schedule.
 - Symbolic grouped attention crosses 256 keys, grows storage to 512 slots,
   and remains correct through 260 keys with zero extra shader compilations.
-- All 29 visualizer Rust tests and 14 Python tool tests pass.
-- Formatting and diff whitespace checks pass. CI formatting also passed.
+- All 14 candidate-construction tests pass. Normalization tests cover four
+  shapes and absent/16/32/64-wide subgroups. Attention tests cover five channel
+  widths, grouped heads, and concrete/symbolic keys. Unsupported cases decline.
+- Both prepared-plan and GPU-artifact ownership tests pass.
+- The model library and both visualization/profiling examples pass cargo check.
+- The portable Python tool suite passes all 11 tests. Tests and stubs for
+  removed historical controllers were removed with those controllers.
+- All 29 visualizer Rust tests pass after the relocated-archive CLI fix.
+- The packed-word verifier and persisted-schedule/pipeline-reuse tests pass.
+- The complete Fusor workspace/all-target Clippy check passes with warnings
+  denied and kernel-observer enabled; formatting and diff whitespace pass.
 
 Resource validation
 Checks used one compiler job and one GPU process, at least 12 GiB starting
@@ -60,8 +66,8 @@ memory headroom, a 1 GiB process-group RSS cap, no additional swapouts, a 32 MiB
 compressor-growth ceiling, and a 1 GiB runtime disk reserve. Small incremental
 tests may start with that disk reserve plus a 64 MiB linking allowance; larger
 checks require 1.5 GiB at startup. No model was loaded for these checks.
-The final GPU suite peaked at 0.500 GiB process-group RSS, with at least
-16.174 GiB memory headroom and no added swapouts.
+The final GPU suite peaked at 0.471 GiB process-group RSS, with at least
+14.485 GiB memory headroom and no added swapouts.
 
 An expanded fixture initially exceeded its process-group cap while retaining
 multiple matrix graphs. It now releases the graph, device and GPU pool between
@@ -69,32 +75,29 @@ cases and completes inside the same cap. When another workload reduced free
 disk below the reserve, builds were refused. They resumed after space recovered;
 only obsolete task-owned executables and check metadata were removed.
 
-Follow-up verification
-The complete Fusor workspace/all-target Clippy check passed locally, including
-CPU/GPU backends and kernel-observer examples. CI Clippy, formatting, macOS
-build, and WebGPU build also passed after the stale test helpers and new lint
-warnings were corrected. The matrix diagnostic now recognizes transfer records.
+CI follow-up
+Cross-platform compilation, Clippy, and WebGPU compilation passed at 6c096f409.
+The subsequent native conformance results caught a reduction/view addressing
+bug and two gaps in the kernel type verifier (half-word unpack and signed
+shifts). A small verified WebGPU test reproduced the addressing panic before
+its fix; all six verified GPU regressions now pass.
 
-A further expanding-broadcast regression caught a stale second replay: expanding
-views must stay with their producer, just like full-size views. The size proof
-now preserves that behavior for constant and matching symbolic factors. This
-case is included in both the explicit GPU fixture and the ordinary session unit
-tests (CI selects WebGPU). Its final local rerun and model/example compatibility
-check were refused after system headroom fell below 12 GiB and free disk then
-fell below the 1 GiB reserve. They remain pending; the earlier five-test GPU
-pass predates this additional broadcast case. CI is being rerun on the fix. Its Clippy job now explicitly enables the
-kernel-observer examples and checks both model visualization/profiling examples,
-so optional tooling is covered on future changes as well.
+The visualizer CLI tests now use runtime paths when Nextest relocates an
+archive. The cooperative scratch assertion follows the shared fragment
+geometry, and persisted measured schedules remain usable when online tuning
+is disabled. CI is being rerun for these corrections. An unrelated macOS
+root test failed when archive.org returned HTTP 500; a Windows GPU shard lost
+its WARP device. Neither is counted as a pass.
 
 Reproduction (from repository root; run GPU checks serially):
   CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test --manifest-path fusor/Cargo.toml -p fusor --no-default-features \
-    --features kernel-observer --config profile.dev.opt-level=0 --config profile.dev.debug=0 --test candidate_construction ordinary_
+    --features kernel-observer,compiler-tests --config profile.dev.opt-level=0 --config profile.dev.debug=0 --test candidate_construction
   CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test --manifest-path fusor/Cargo.toml -p fusor --no-default-features \
-    --features kernel-observer --config profile.dev.opt-level=0 --config profile.dev.debug=0 --test shared_compiler -- --ignored --test-threads=1
+    --features kernel-observer,compiler-tests --config profile.dev.opt-level=0 --config profile.dev.debug=0 --test shared_compiler -- --ignored --test-threads=1
 
 
-Historical measurements
-All reports under llama-decode-2x and llama-8x describe earlier experimental
-checkpoints. In particular, the October 12 2.020x result used a preset which is
-now removed. It is not a throughput claim for this compiler rewrite.
-The previously built release chat executable also predates this rewrite.
+Performance scope
+Historical model presets, measurements, and experiment drivers are no longer
+part of the PR. Their earlier 2x result does not establish throughput for this
+rewrite. A fresh full-model comparison remains unverified. The previously
+built release chat executable also predates this rewrite.

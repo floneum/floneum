@@ -357,14 +357,20 @@ fn cooperative_domains_contain_only_supported_scratch_combinations() {
                 };
                 let tiles = coop_tiles(point.geom, element, point.staging);
                 // Independent extent calculation: two stacked operand tiles
-                // plus enough room for a scalar accumulator copy.
+                // plus one accumulator fragment per subgroup. The
+                // epilogue reuses that fragment for successive output tiles.
                 let g = point.geom;
                 let depth = u64::from(point.staging);
                 let expected =
                     depth * u64::from(g.bm * g.bk + g.bk * (g.bn / g.n_passes)) * dtype.byte_size()
-                        + u64::from(g.bm * (g.bn / g.n_passes)) * 4;
+                        + u64::from(g.subgroups)
+                            * u64::from(fusor_ir::ir::launch::CoopGeom::COOP_DIM).pow(2)
+                            * 4;
                 let actual = planner.workgroup_bytes(&tiles, &caps).unwrap();
-                assert!(u64::from(actual) >= expected);
+                assert!(
+                    u64::from(actual) >= expected,
+                    "{dtype:?} {point:?}: {actual} < {expected}"
+                );
                 assert!(actual <= limit, "{point:?}: {actual} > {limit}");
             }
         }

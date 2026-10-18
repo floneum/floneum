@@ -343,9 +343,9 @@ are isolated kernel spans, not model decode speedups.
 ```sh
 cd fusor
 cargo build -p fusor-gpu --example q4_layout_lab --offline --config profile.dev.opt-level=3
-# Tail/indexing check, then the Llama gate/up shape.
+# Tail/indexing check, then a larger aligned matrix.
 target/debug/examples/q4_layout_lab 257 1024 2 8
-LAB_LAYOUT_UNROLL=1 LAB_LAYOUT_STATIC=1 target/debug/examples/q4_layout_lab 28672 4096 8 8
+LAB_LAYOUT_UNROLL=1 LAB_LAYOUT_STATIC=1 target/debug/examples/q4_layout_lab 2048 4096 8 8
 ```
 
 `LAB_LAYOUT_LANES=1,2,4,8,16,32` selects lane counts. `LAB_LAYOUT_UNROLL` emits
@@ -356,24 +356,19 @@ uses positioned nibbles; `LAB_LAYOUT_PAIRED` shares inputs across two columns.
 columns per subgroup while transposing words within each four-block packet.
 With that mode, `LAB_LAYOUT_INPUT=uniform` or `shared` instead compares two
 ways to read the same activations and leaves the weight layout unchanged.
-`LAB_LAYOUT_SUBGROUPS=2` or `8` selects 64 or 256 threads. The 512-thread probe
-failed its output check on this adapter and is not an accepted configuration.
+`LAB_LAYOUT_SUBGROUPS=2` or `8` selects 64 or 256 threads. Every configuration
+must fit the adapter limits and pass the output checks.
 Each paired timing is retained in stderr as `Q4_LAYOUT_SAMPLE`.
 
 `LAB_LAYOUT_SHADER_BASELINE` and `LAB_LAYOUT_SHADER_CANDIDATE` can supply
 captured WGSL for a block/input-mode comparison. They must match the requested
 shape, three bindings (weights, input, output), and dispatch geometry. The same
 CPU checks and canaries apply; shader compilation still uses ordinary WebGPU
-runtime checks. This exposed a 32% checked-shader gain from vector activation
-loads, but the corresponding compiler experiment was flat with the runtime's
-existing compilation policy. That diagnostic gain is **not** a production or
-model speedup. Evidence is in
-`webgpu-q4-production-uniform` (local experiment archive)
-and `webgpu-vector-input` (local experiment archive).
+runtime checks. These comparisons measure the supplied shader and geometry;
+validate any proposed compiler change separately on the ordinary tensor path.
 
 `LAB_LAYOUT_CORRUPT_COLUMN=129` intentionally corrupts a scale for a negative
-control; the check must fail. The initial looped variants are slower than the
-production packed kernel, so interleaving alone is not an accepted optimization.
+control; the check must fail. Output checks run before timings are accepted.
 
 `fusor-gpu/examples/q6_layout_lab.rs` compares the current 212-byte Q6 blocks
 with separated bit/scale planes or 256-byte aligned blocks. Both representations
@@ -384,24 +379,15 @@ match between arms bit for bit. Each timing is recorded as `Q6_LAYOUT_SAMPLE`.
 ```sh
 cargo build -p fusor-gpu --example q6_layout_lab --offline --config profile.dev.opt-level=3
 LAB_Q6_LAYOUT=planes target/debug/examples/q6_layout_lab 257 1024 2 8
-LAB_Q6_LAYOUT=aligned LAB_Q6_SPLITS=2 target/debug/examples/q6_layout_lab 4096 14336 16 16
+LAB_Q6_LAYOUT=aligned LAB_Q6_SPLITS=2 target/debug/examples/q6_layout_lab 2048 4096 16 16
 ```
 
 `LAB_Q6_SPLITS=1` or `2` selects direct or split reduction;
-`LAB_Q6_CORRUPT_COLUMN=129` is the failing negative control. The checked-shader
-layout gains were small. The actual compiler trial of aligned blocks regressed
-and was removed. See `webgpu-q6-layout` (local experiment archive)
-and `webgpu-q6-alignment-format` (local experiment archive).
+`LAB_Q6_CORRUPT_COLUMN=129` is the failing negative control. The
+layout probes do not change the compiler's selected representation.
 
-The two-resident-process controller `tools/pair_qmatmul.py` is disabled.
-The related full-model `interleaved_wall.py` experiment exhausted memory on
-the 32 GiB development machine, before producing a valid comparison. Serialized
-GPU execution does not bound the memory occupied by two loaded models. Both
-controllers are archived as source text in
-`excluded-resource-experiments` (local experiment archive).
-Existing microbenchmark results remain historical evidence. The replacement
 `tools/sequential_qmatmul.py` runs A, B, B, A in four sequential processes,
-through the same pressure guard as the model harness. It limits resident weight
+through the shared pressure guard. It limits resident weight
 copies to 512 MiB, caps the GPU pool at 3 GiB, records executable/configuration
 provenance and verifies every value of three changing-input output vectors.
 `--weight-file` uses native blocks extracted from the actual model.
@@ -425,9 +411,6 @@ on failure, and never retries a resource abort automatically. Direct binary
 launches are not guarded. Do not run a build or another GPU experiment alongside
 a model measurement.
 
-Earlier full-model configurations and measurements remain historical evidence.
-They used experimental model hooks and execution presets that this PR removes;
-they are not commands for reproducing the current compiler's behavior.
 `tools/check_model_logits.py` can still compare saved output vectors offline.
 
 Read-only preflight and lightweight regression checks (neither loads a model):

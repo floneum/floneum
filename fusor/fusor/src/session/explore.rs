@@ -359,7 +359,9 @@ impl Session {
         key: ReplayKey,
         incumbent: Arc<Plan>,
     ) -> Arc<Plan> {
-        if super::flags().explore_eps == 0 || verify_members() || self.inner.tune.is_empty() {
+        // A measured prior is reusable even when online exploration is off.
+        // This selects an existing winner; it does not run speculative work.
+        if verify_members() || self.inner.tune.is_empty() {
             return incumbent;
         }
         let mut set = ArmSet::metadata(graph, &incumbent);

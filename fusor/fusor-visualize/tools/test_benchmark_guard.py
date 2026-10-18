@@ -2,7 +2,6 @@
 import dataclasses
 import os
 from pathlib import Path
-import runpy
 import signal
 import subprocess
 import sys
@@ -159,34 +158,6 @@ guard.run_guarded([sys.executable, '-c', sys.argv[3], sys.argv[1]],
                 self.assertRaises(guard.ResourceLimitError):
             guard.read_snapshot(self.root)
 
-    def test_disabled_controllers_never_spawn(self):
-        root = Path(__file__).resolve().parents[3]
-        for script in [root / "fusor/fusor-visualize/tools/pair_qmatmul.py",
-                       root / "reports/llama-decode-2x/interleaved_wall.py"]:
-            result = subprocess.run([sys.executable, str(script)], capture_output=True,
-                                    text=True, timeout=2)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("Disabled after memory exhaustion", result.stderr)
-
-    def test_wall_harness_rejects_before_model_launch(self):
-        root = Path(__file__).resolve().parents[3]
-        script = root / "reports/llama-decode-2x/wall_ab.py"
-        model = self.root / "model.gguf"
-        binary = self.root / "unused-binary"
-        config = self.root / "config.json"
-        model.write_bytes(b"fixture")
-        binary.write_bytes(b"must never execute")
-        config.write_text("{}")
-        argv = [str(script), str(model), "--output", str(self.root / "report"),
-                "--binary", str(binary), "--baseline-config", str(config), "--config", str(config)]
-        real_lock = guard.single_benchmark
-        with patch.object(sys, "argv", argv), patch.object(guard, "read_snapshot",
-                return_value=dataclasses.replace(HEALTHY, available_bytes=GIB)), \
-                patch.object(guard, "single_benchmark", side_effect=lambda _: real_lock(self.lock)), \
-                patch.object(guard.subprocess, "Popen") as spawn:
-            with self.assertRaisesRegex(guard.ResourceLimitError, "memory"):
-                runpy.run_path(str(script), run_name="__main__")
-            spawn.assert_not_called()
 
 
 if __name__ == "__main__":

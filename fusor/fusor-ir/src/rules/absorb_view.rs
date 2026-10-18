@@ -49,7 +49,7 @@ fn absorb(b: &mut Builder<'_>, id: Id, node: &Node, broadcast_only: bool) -> Opt
     };
     let seen: Vec<Option<Operand>> = op
         .operands()
-        .map(|o| through_copy(b, o, broadcast_only))
+        .map(|o| through_copy(b, o, broadcast_only).filter(|seen| keeps_operand_space(op, seen)))
         .collect();
     if seen.iter().all(Option::is_none) {
         return None;
@@ -66,6 +66,17 @@ fn absorb(b: &mut Builder<'_>, id: Id, node: &Node, broadcast_only: bool) -> Opt
         return None;
     }
     b.union(id, minted).ok()
+}
+
+/// A composed view can split an axis into several axes. Fold's flat index
+/// map cannot address that layout unless it still broadcasts into its space.
+fn keeps_operand_space(op: &Launch, operand: &Operand) -> bool {
+    match op {
+        Launch::Fold { space, .. } if operand.access == AccessPlan::Alias => {
+            space.addresses_shape(operand.layout.shape())
+        }
+        _ => true,
+    }
 }
 
 /// `o` read through the copy that produces it: over a dense (reshape) copy
@@ -251,6 +262,7 @@ pub fn forward_views(
                 }
                 if copy(b, o.src)
                     && let Some(seen) = through_copy(b, o, false)
+                    && keeps_operand_space(&op, &seen)
                 {
                     *o = seen;
                     changed = true;

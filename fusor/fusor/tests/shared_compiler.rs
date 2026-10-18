@@ -388,3 +388,57 @@ fn scatter_preserves_inputs_and_retained_views() {
         assert_eq!(y.to_vec_f32().unwrap(), expected);
     }
 }
+
+#[test]
+#[ignore = "requires a live WebGPU device"]
+fn reductions_keep_view_index_spaces() {
+    for case in 0..4 {
+        let device = pollster::block_on(Device::gpu()).unwrap();
+        let values: Vec<f32> = (0..24).map(|i| i as f32 - 9.).collect();
+        let input = Tensor::from_slice(&device, [2, 3, 4], &values);
+        let x = input.as_dyn();
+        let view = match case {
+            0 => x.transpose(0, 2).unwrap(),
+            1 => x.permute(&[2, 0, 1]).unwrap(),
+            2 => x
+                .unsqueeze(1)
+                .unwrap()
+                .broadcast_as(&[
+                    fusor::Dim::Const(2),
+                    fusor::Dim::Const(3),
+                    fusor::Dim::Const(3),
+                    fusor::Dim::Const(4),
+                ])
+                .unwrap(),
+            _ => x.transpose(0, 2).unwrap().narrow(1, 1, 1).unwrap(),
+        };
+        let expected: f32 = values
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| case != 3 || (i / 4) % 3 == 1)
+            .map(|(_, v)| v * if case == 2 { 3. } else { 1. })
+            .sum();
+        let loss = view.sum_all().unwrap();
+        close(&loss.to_vec_f32().unwrap(), &[expected], 1e-6);
+        let grads = device
+            .graph()
+            .backward_with(&loss, std::slice::from_ref(x))
+            .unwrap();
+        let expected_grad: Vec<f32> = (0..24)
+            .map(|i| {
+                if case == 3 && (i / 4) % 3 != 1 {
+                    0.
+                } else if case == 2 {
+                    3.
+                } else {
+                    1.
+                }
+            })
+            .collect();
+        close(
+            &grads.get(x).unwrap().to_vec_f32().unwrap(),
+            &expected_grad,
+            1e-6,
+        );
+    }
+}
