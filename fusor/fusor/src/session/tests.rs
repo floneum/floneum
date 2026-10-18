@@ -430,7 +430,7 @@ fn symbolic_contractions_reuse_pipelines_across_tile_boundaries() {
     let caps = session.caps();
     eprintln!("symbolic contraction regression on {}", caps.name);
     let mut executions = 0;
-    for (family, varying_k, columns, kv_cache) in [
+    for (family, varying_k, columns, kv_cache, k_splits) in [
         (Family::Sgemm, false, false, false),
         (Family::Sgemm, true, false, false),
         (Family::Sgemv, false, false, false),
@@ -443,7 +443,19 @@ fn symbolic_contractions_reuse_pipelines_across_tile_boundaries() {
         (Family::Sgemv, true, false, true),
         (Family::Sgemv, true, true, true),
         (Family::Coop, true, false, true),
-    ] {
+    ]
+    .into_iter()
+    .flat_map(|(family, varying_k, columns, kv_cache)| {
+        let splits: &[u32] = if family == Family::Sgemv && columns {
+            &[1, 2, 4]
+        } else {
+            &[1]
+        };
+        splits
+            .iter()
+            .copied()
+            .map(move |split| (family, varying_k, columns, kv_cache, split))
+    }) {
         if (family == Family::Coop && caps.coop_for(Dtype::F32, Dtype::F32).is_none())
             || (columns && !caps.subgroups.is_some_and(|s| s.is_fixed()))
         {
@@ -537,9 +549,11 @@ fn symbolic_contractions_reuse_pipelines_across_tile_boundaries() {
             let point = sched
                 .iter()
                 .find(|point| match point {
+                    SchedPoint::Sgemv(p) if p.k_splits != k_splits => false,
                     SchedPoint::Sgemv(p) if kv_cache => {
                         *p == if columns {
                             fusor_ir::ir::launch::SgemvParams {
+                                k_splits,
                                 vector: 32,
                                 subgroups: 2,
                                 cols: 4,
@@ -548,6 +562,7 @@ fn symbolic_contractions_reuse_pipelines_across_tile_boundaries() {
                             }
                         } else {
                             fusor_ir::ir::launch::SgemvParams {
+                                k_splits,
                                 vector: 16,
                                 subgroups: 4,
                                 cols: 1,

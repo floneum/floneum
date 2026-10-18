@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 pub(crate) struct Flags {
     /// `FUSOR_PIN_COOP="bm,bn,bk[,..]"`: restrict the coop domain to one geometry.
     pub pin_coop: Option<Vec<u32>>,
-    /// `FUSOR_PIN_SGEMV="vector,subgroups,cols[,parts,gap]"`: restrict the
+    /// `FUSOR_PIN_SGEMV="vector,subgroups,cols[,parts,gap[,k_splits]]"`: restrict the
     /// sgemv domain to one cell.
     pub pin_sgemv: Option<Vec<u32>>,
 }

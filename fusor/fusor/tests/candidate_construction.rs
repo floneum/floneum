@@ -843,6 +843,7 @@ fn matvec_serial_cost_tracks_the_parallel_reduction() {
         )
         .unwrap();
         let point = SchedPoint::Sgemv(SgemvParams {
+            k_splits: 1,
             vector: 32,
             subgroups: 2,
             cols,
@@ -1094,4 +1095,116 @@ fn ordinary_attention_is_recognized_for_multiple_widths_and_subgroups() {
     c.subgroups = None;
     assert_declines(&mut g, &c, root, rule);
     assert_declines(&mut g, &caps(), root, rule);
+}
+
+#[test]
+fn split_subgroup_schedules_obey_device_limits_and_reduce_serial_work() {
+    use fusor_ir::ir::launch::{Launch, SchedPoint, ScheduleDomain, SgemvParams};
+    use fusor_tile::domains::{DomainCtx, sgemv::cols_structure_legal, sgemv_domain};
+    let planner = fusor_tile::Planner::new();
+    let base = SgemvParams {
+        vector: 32,
+        subgroups: 2,
+        cols: 4,
+        parts: 4,
+        gap: 32,
+        k_splits: 1,
+    };
+    for width in [8, 16, 32, 64] {
+        for lanes in [64, 128, 256] {
+            let mut caps = gpu_caps();
+            caps.subgroups = Some(SubgroupWidths {
+                min: width,
+                max: width,
+            });
+            caps.limits.max_compute_invocations_per_workgroup = lanes;
+            caps.limits.max_compute_workgroup_size[0] = lanes;
+            let domain = sgemv_domain(&DomainCtx::new(&caps, &planner));
+            for p in &domain.params {
+                assert!(p.subgroups * p.k_splits * width <= lanes);
+                if p.k_splits > 1 {
+                    assert!(cols_structure_legal(p, &caps));
+                    assert!(
+                        p.cols * p.k_splits * 4 <= caps.limits.max_compute_workgroup_storage_size
+                    );
+                }
+            }
+            for k_splits in [1, 2, 4] {
+                let p = SgemvParams { k_splits, ..base };
+                assert_eq!(domain.params.contains(&p), 2 * k_splits * width <= lanes);
+            }
+        }
+    }
+    let mut caps = gpu_caps();
+    for subgroup in [None, Some(SubgroupWidths { min: 16, max: 32 })] {
+        caps.subgroups = subgroup;
+        assert!(
+            sgemv_domain(&DomainCtx::new(&caps, &planner))
+                .params
+                .iter()
+                .all(|p| p.k_splits == 1)
+        );
+    }
+    caps = gpu_caps();
+    caps.limits.max_compute_workgroup_storage_size = 15;
+    assert!(!cols_structure_legal(
+        &SgemvParams {
+            k_splits: 2,
+            ..base
+        },
+        &caps
+    ));
+    caps = gpu_caps();
+    let mut g = graph();
+    let a = leaf(&mut g, 0, &consts([1, 2049]));
+    let b = leaf(&mut g, 1, &consts([2049, 7]));
+    let id = contract(&mut g, a, b, MATMUL);
+    let launch = apply(&mut g, &caps, id, fusor_tile::rules::contract::lower_sgemv).unwrap();
+    for (k_splits, steps) in [(1, 65), (2, 33), (4, 17)] {
+        let point = SchedPoint::Sgemv(SgemvParams { k_splits, ..base });
+        assert_eq!(
+            fusor_cost::realize::node_serial_steps(&g.node(launch).op, Some(point), &caps),
+            (0, steps)
+        );
+        let Op::Launch(op @ Launch::Contract { .. }) = &g.node(launch).op else {
+            panic!()
+        };
+        let domain = ScheduleDomain::Sgemv(
+            fusor_ir::ir::launch::SgemvDomain {
+                params: [SgemvParams { k_splits, ..base }].into_iter().collect(),
+            }
+            .into(),
+        );
+        fusor_ir::verify_launch::check_schedule_domain(op, &domain, &caps, &planner).unwrap();
+    }
+    for bad in [
+        SgemvParams {
+            k_splits: 0,
+            ..base
+        },
+        SgemvParams {
+            k_splits: 8,
+            ..base
+        },
+        SgemvParams {
+            k_splits: 2,
+            cols: 1,
+            parts: 1,
+            gap: 0,
+            ..base
+        },
+    ] {
+        let Op::Launch(op) = &g.node(launch).op else {
+            panic!()
+        };
+        let domain = ScheduleDomain::Sgemv(
+            fusor_ir::ir::launch::SgemvDomain {
+                params: [bad].into_iter().collect(),
+            }
+            .into(),
+        );
+        assert!(
+            fusor_ir::verify_launch::check_schedule_domain(op, &domain, &caps, &planner).is_err()
+        );
+    }
 }

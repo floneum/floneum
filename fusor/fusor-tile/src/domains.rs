@@ -76,8 +76,8 @@ pub(crate) fn sgemm_order(p: &SgemmParams) -> (u32, u32, u32, u32, u32, bool) {
 }
 
 /// Ascending-tuple tiebreak for the sgemv cap.
-pub(crate) fn sgemv_order(p: &SgemvParams) -> (u32, u32, u32, u32, u32) {
-    (p.vector, p.subgroups, p.cols, p.parts, p.gap)
+pub(crate) fn sgemv_order(p: &SgemvParams) -> (u32, u32, u32, u32, u32, u32) {
+    (p.vector, p.subgroups, p.cols, p.parts, p.gap, p.k_splits)
 }
 
 /// Ascending-tuple tiebreak for the fold cap.

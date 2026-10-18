@@ -18,10 +18,13 @@ pub fn install(device: &Device, repeats: usize, sink: ReplaySample) {
         .split(',')
         .map(|v| v.parse().expect("integer schedule field"))
         .collect();
-    let [vector, subgroups, cols, parts, gap] = parts[..] else {
+    let k_splits = parts.get(5).copied().unwrap_or(1);
+    assert!((5..=6).contains(&parts.len()));
+    let [vector, subgroups, cols, parts, gap] = parts[..5] else {
         panic!("LAB_COMPARE_CELL requires vector,subgroups,cols,parts,gap");
     };
     let candidate = SgemvParams {
+        k_splits,
         vector,
         subgroups,
         cols,
@@ -32,7 +35,7 @@ pub fn install(device: &Device, repeats: usize, sink: ReplaySample) {
     assert!(cols.is_multiple_of(subgroups) && (1..=8).contains(&(cols / subgroups)));
     let target = device.backend().gpu_target().unwrap();
     assert!(
-        subgroups * target.caps().subgroup_width()
+        subgroups * k_splits * target.caps().subgroup_width()
             <= target
                 .device()
                 .limits_used()
@@ -168,7 +171,7 @@ pub fn install(device: &Device, repeats: usize, sink: ReplaySample) {
             println!("GEOMETRY_PAIR {}", serde_json::json!({
                 "iteration":iteration, "baseline_us":a, "candidate_us":b, "speedup":a/b,
                 "order":order, "baseline_samples_us":times[0], "candidate_samples_us":times[1],
-                "candidate_cell":[vector,subgroups,cols,parts,gap], "checked_values":checked,
+                "candidate_cell":[vector,subgroups,cols,parts,gap,k_splits], "checked_values":checked,
                 "dependent_input_guard":dependent,
                 "max_abs_error":max_error, "dispatches_per_arm":candidate_commands.len(),
             }));

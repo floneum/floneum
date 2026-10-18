@@ -67,6 +67,7 @@ const fn v(vector: u32, subgroups: u32, cols: u32) -> SgemvParams {
 
 const fn w(vector: u32, subgroups: u32, cols: u32, parts: u32, gap: u32) -> SgemvParams {
     SgemvParams {
+        k_splits: 1,
         vector,
         subgroups,
         cols,
@@ -82,8 +83,14 @@ pub fn cols_structure_legal(p: &SgemvParams, caps: &Caps) -> bool {
     let width = caps.subgroup_width();
     let run = p.run();
     caps.subgroups.is_some_and(|s| s.is_fixed())
+        && p.vector > 0
+        && p.cols > 1
         && p.subgroups > 0
-        && p.subgroups.saturating_mul(width) <= max_lanes(caps)
+        && p.k_splits > 0
+        && p.subgroups.saturating_mul(p.k_splits).saturating_mul(width) <= max_lanes(caps)
+        && (p.k_splits == 1
+            || p.cols.saturating_mul(p.k_splits).saturating_mul(4)
+                <= caps.limits.max_compute_workgroup_storage_size)
         && p.cols.is_multiple_of(p.subgroups)
         && (p.parts <= 1
             || (p.vector.is_multiple_of(p.parts)
@@ -99,18 +106,22 @@ fn max_lanes(caps: &Caps) -> u32 {
         .min(caps.limits.max_compute_workgroup_size[0])
 }
 
-/// Every legal `(vector, subgroups, cols, parts, gap)` on this device,
+/// Every legal `(vector, subgroups, cols, parts, gap, k_splits)` on this device,
 /// ordered by `(seed_rank, sgemv_order)`.
 pub fn sgemv_domain(cx: &DomainCtx<'_>) -> SgemvDomain {
     let width = cx.caps.subgroup_width();
 
-    // `FUSOR_PIN_SGEMV="vector,subgroups,cols[,parts,gap]"` pins one cell.
+    // `FUSOR_PIN_SGEMV="vector,subgroups,cols[,parts,gap[,k_splits]]"` pins one cell.
     let pin = crate::flags::flags()
         .pin_sgemv
         .as_ref()
         .and_then(|p| match p.len() {
             3 => Some(v(p[0], p[1], p[2])),
             5 => Some(w(p[0], p[1], p[2], p[3], p[4])),
+            6 => Some(SgemvParams {
+                k_splits: p[5],
+                ..w(p[0], p[1], p[2], p[3], p[4])
+            }),
             _ => None,
         });
 
@@ -135,9 +146,7 @@ pub fn sgemv_domain(cx: &DomainCtx<'_>) -> SgemvDomain {
                 {
                     continue;
                 }
-                if pin.is_none_or(|p| p == cell) {
-                    all.push(cell);
-                }
+                push_splits(&mut all, cell, pin, cx.caps);
                 // Split windows: multi-column only, and only where runs, gap and width
                 // tile the subgroup's pass exactly.
                 if cols <= 1 {
@@ -151,8 +160,8 @@ pub fn sgemv_domain(cx: &DomainCtx<'_>) -> SgemvDomain {
                         .chain(pin.map(|p| p.gap).filter(|g| !GAP_CHOICES.contains(g)))
                     {
                         let cell = w(vector, subgroups, cols, parts, gap);
-                        if cols_structure_legal(&cell, cx.caps) && pin.is_none_or(|p| p == cell) {
-                            all.push(cell);
+                        if cols_structure_legal(&cell, cx.caps) {
+                            push_splits(&mut all, cell, pin, cx.caps);
                         }
                     }
                 }
@@ -171,5 +180,23 @@ pub fn sgemv_domain(cx: &DomainCtx<'_>) -> SgemvDomain {
 
     SgemvDomain {
         params: SmallVec::from_vec(all),
+    }
+}
+
+/// Split each subgroup's K work without changing its column ownership or
+/// per-lane unroll. No extra global allocation or dispatch is introduced.
+fn push_splits(
+    all: &mut Vec<SgemvParams>,
+    cell: SgemvParams,
+    pin: Option<SgemvParams>,
+    caps: &Caps,
+) {
+    for k_splits in [1, 2, 4, 8] {
+        let candidate = SgemvParams { k_splits, ..cell };
+        if (k_splits == 1 || (cell.cols > 1 && cols_structure_legal(&candidate, caps)))
+            && pin.is_none_or(|p| p == candidate)
+        {
+            all.push(candidate);
+        }
     }
 }

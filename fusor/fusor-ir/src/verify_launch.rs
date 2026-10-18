@@ -69,6 +69,18 @@ pub fn verify_launch(cx: &VerifyCtx<'_>, planner: &dyn ArenaPlanner) -> Result<(
     }
 
     // 1 + 2.
+    if let Launch::Contract {
+        sched: ScheduleDomain::Sgemv(domain),
+        ..
+    } = op
+        && !cx.result.numeric.reassoc
+        && domain.params.iter().any(|p| p.k_splits > 1)
+    {
+        return Err(relabel(
+            cx,
+            "split subgroup reductions require reassociation".into(),
+        ));
+    }
     if let Launch::RmsNorm { sched, block, .. } = op
         && (cx.caps.kind != crate::device::DeviceKind::Gpu
             || !cx.result.numeric.reassoc
@@ -250,7 +262,7 @@ pub fn check_schedule_domain(
         }
         ScheduleDomain::Sgemv(domain) => {
             for p in &domain.params {
-                if p.vector == 0 || p.subgroups == 0 || p.cols == 0 {
+                if p.vector == 0 || p.subgroups == 0 || p.cols == 0 || p.k_splits == 0 {
                     return Err(Error::Legality(format!(
                         "sgemv params {p:?} have a zero term"
                     )));
@@ -262,10 +274,25 @@ pub fn check_schedule_domain(
                         p.cols, p.subgroups
                     )));
                 }
-                if p.subgroups.saturating_mul(subgroup_width) > max_lanes {
+                if p.k_splits > 1
+                    && (p.cols <= 1
+                        || !caps.subgroups.is_some_and(|s| s.is_fixed())
+                        || p.cols.saturating_mul(p.k_splits).saturating_mul(4) > max_storage)
+                {
+                    return Err(Error::Legality(format!(
+                        "sgemv params {p:?} cannot merge split reductions"
+                    )));
+                }
+                if p.subgroups
+                    .saturating_mul(p.k_splits)
+                    .saturating_mul(subgroup_width)
+                    > max_lanes
+                {
                     return Err(Error::Legality(format!(
                         "sgemv params {p:?} want {} lanes, over the {max_lanes} limit",
-                        p.subgroups.saturating_mul(subgroup_width)
+                        p.subgroups
+                            .saturating_mul(p.k_splits)
+                            .saturating_mul(subgroup_width)
                     )));
                 }
                 // A split window must biject onto the pass's `width * vector`

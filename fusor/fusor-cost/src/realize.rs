@@ -871,7 +871,11 @@ fn tiles_for(theta: Option<SchedPoint>, elem: ScalarElement, fold_scratch: Optio
                 decls.push(tile("sgemm_b", elem, &[p.bk.max(1), p.bn.max(1)]));
             }
         }
-        // `cols > 1` closes each column in one subgroup and stages nothing.
+        // Split columns stage one scalar per physical subgroup and owned column.
+        Some(SchedPoint::Sgemv(p)) if p.cols > 1 && p.k_splits > 1 => {
+            decls.push(tile("sgemv_split_partials", elem, &[p.cols * p.k_splits]));
+        }
+        // `cols > 1, k_splits == 1` stages nothing.
         Some(SchedPoint::Sgemv(p)) if p.cols <= 1 => {
             decls.push(tile("sgemv_partials", elem, &[p.subgroups.max(1)]));
         }
@@ -1146,7 +1150,7 @@ pub(crate) fn geometry(theta: Option<SchedPoint>, space: &IndexSpace, caps: &Cap
         },
         // One workgroup per output, or per `cols`-wide column group.
         Some(SchedPoint::Sgemv(p)) => Geometry {
-            block: (p.subgroups.max(1) * width).max(1),
+            block: (p.subgroups.max(1) * p.k_splits.max(1) * width).max(1),
             workgroups: m
                 .saturating_mul(batch)
                 .saturating_mul(n.div_ceil(u64::from(p.cols.max(1))))
@@ -1442,6 +1446,20 @@ fn build_component<'a>(
         let theta_m = extraction.theta.get(m).copied();
         quantized_work(graph, *m, operands(*m), theta_m, caps, &mut w)?;
         let padded_writes = coop_work(graph, *m, theta_m, caps, &mut w);
+        if let Some(SchedPoint::Sgemv(p)) = theta_m
+            && p.k_splits > 1
+        {
+            // Every subgroup publishes one partial per owned column, then the
+            // owning lane reads each once. The merge needs no global traffic.
+            let groups = member_geometry(graph, extraction, *m, caps).workgroups;
+            w.wg_bytes = w.wg_bytes.saturating_add(
+                groups
+                    .saturating_mul(u64::from(p.cols))
+                    .saturating_mul(u64::from(p.k_splits))
+                    .saturating_mul(out.dtype.byte_size())
+                    .saturating_mul(2),
+            );
+        }
         let materialized = extraction.is_materialized(*m) || roots.contains(m);
         if materialized {
             writes = writes.saturating_add(padded_writes.unwrap_or_else(|| bytes_of(out)));
@@ -2690,6 +2708,7 @@ pub(crate) mod tests {
                 let a = buffer(&mut graph, 0, &a_shape);
                 let b = buffer(&mut graph, 1, &b_shape);
                 let p = SgemvParams {
+                    k_splits: 1,
                     vector: 4,
                     subgroups: 2,
                     cols,
@@ -2763,6 +2782,7 @@ pub(crate) mod tests {
                         let a = buffer(&mut graph, 0, &[c8, c4, k]);
                         let b = buffer(&mut graph, 1, &[c8, k, n]);
                         let p = SgemvParams {
+                            k_splits: 1,
                             vector: 4,
                             subgroups: 4,
                             cols: 4,

@@ -70,7 +70,7 @@ impl CostModel for Roofline {
                 (MacUnit::Coop, *staging, (geom.rg * geom.cg).max(1))
             }
             Some(SchedPoint::Sgemm(p)) => (MacUnit::Fma, if p.double_buffer { 2 } else { 1 }, 1),
-            Some(SchedPoint::Sgemv(p)) => (MacUnit::Fma, 2, p.subgroups.max(1)),
+            Some(SchedPoint::Sgemv(p)) => (MacUnit::Fma, 2, p.subgroups.max(1) * p.k_splits.max(1)),
             _ => (MacUnit::Fma, 2, 1),
         };
         let elem_bytes = dtype.byte_size().max(1);

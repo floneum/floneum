@@ -105,7 +105,11 @@ fn decode_window_uncached(key: DecodeKey) -> Result<(u64, u64)> {
             binary(
                 Add,
                 binary(Mul, column_group, u32_lit(p.cols)),
-                binary(Mul, variable(Builtin::SubgroupId), u32_lit(columns)),
+                binary(
+                    Mul,
+                    binary(Div, variable(Builtin::SubgroupId), u32_lit(p.k_splits)),
+                    u32_lit(columns),
+                ),
             ),
         )
     } else {
@@ -123,6 +127,19 @@ fn decode_window_uncached(key: DecodeKey) -> Result<(u64, u64)> {
         layout: storage,
     };
     let pass_work = |step, vector, contiguous, masked: bool| -> Result<(u64, u64)> {
+        let step = if p.cols > 1 && p.k_splits > 1 {
+            binary(
+                Add,
+                step,
+                binary(
+                    Mul,
+                    binary(Rem, variable(Builtin::SubgroupId), u32_lit(p.k_splits)),
+                    u32_lit(key.width / p.k_splits * vector),
+                ),
+            )
+        } else {
+            step
+        };
         let local = if contiguous || p.cols <= 1 || p.parts <= 1 {
             binary(Mul, lane.clone(), u32_lit(vector))
         } else {
@@ -249,6 +266,7 @@ mod tests {
     fn aligned_q6_scales_trade_payload_bytes_for_less_decode_work() -> Result<()> {
         let (fmt, n, k) = (QFmt::Q6K, 4, 14336);
         let params = SgemvParams {
+            k_splits: 1,
             vector: 32,
             subgroups: 2,
             cols: 4,

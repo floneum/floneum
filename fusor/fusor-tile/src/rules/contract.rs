@@ -272,7 +272,10 @@ fn lower_family(
             ScheduleDomain::Sgemm(dom.into())
         }
         Family::Sgemv => {
-            let dom = sgemv_domain(&cx);
+            let mut dom = sgemv_domain(&cx);
+            if !f.own().numeric.reassoc {
+                dom.params.retain(|p| p.k_splits == 1);
+            }
             if dom.params.is_empty() {
                 return None;
             }

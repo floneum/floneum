@@ -434,6 +434,7 @@ impl GpuTarget {
                         (Some(old), new) if old == new => false,
                         (Some(SchedPoint::Sgemv(_)), SchedPoint::Sgemv(p)) => {
                             !fusor_tile::domains::sgemv::cols_structure_legal(p, self.caps())
+                                || (p.k_splits > 1 && !graph.facts(*id).numeric.reassoc)
                         }
                         _ => true,
                     }

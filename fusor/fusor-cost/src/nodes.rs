@@ -139,7 +139,7 @@ impl Tiling {
 
 /// Lanes of a one-column sgemv workgroup, capped by the device.
 pub(crate) fn sgemv_block(p: SgemvParams, caps: &Caps) -> u32 {
-    (p.subgroups.max(1) * caps.subgroup_width())
+    (p.subgroups.max(1) * p.k_splits.max(1) * caps.subgroup_width())
         .min(caps.limits.max_compute_invocations_per_workgroup)
         .max(1)
 }
@@ -147,7 +147,7 @@ pub(crate) fn sgemv_block(p: SgemvParams, caps: &Caps) -> u32 {
 /// Lanes one sgemv output reduces k across: a subgroup, else the block.
 pub(crate) fn sgemv_lanes(p: SgemvParams, caps: &Caps) -> u32 {
     if p.cols > 1 {
-        caps.subgroup_width()
+        caps.subgroup_width() * p.k_splits.max(1)
     } else {
         sgemv_block(p, caps)
     }

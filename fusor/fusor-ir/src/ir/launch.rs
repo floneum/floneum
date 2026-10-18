@@ -947,11 +947,15 @@ pub struct SgemmDomain {
 /// SGEMV vectorization and workgroup structure.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SgemvParams {
+    /// Subgroups cooperating on each column group. Each owns a disjoint K
+    /// window; their partials are merged once in workgroup memory.
+    pub k_splits: u32,
     pub vector: u32,
     pub subgroups: u32,
     /// Output columns per workgroup. `1` reduces across the workgroup;
     /// `cols > 1` (a multiple of `subgroups`, fixed subgroup width) gives each
-    /// subgroup `cols / subgroups` columns reduced within it.
+    /// logical subgroup `cols / subgroups` columns. The physical subgroup
+    /// count is `subgroups * k_splits`.
     pub cols: u32,
     /// Runs the lane's k window is split into (`1` with `gap == 0` is
     /// canonical): run `r` sits at `r * gap`, so one lane revisits a packed

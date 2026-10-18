@@ -1360,7 +1360,7 @@ fn lower_sgemv_subgroup_cols(ctx: Ctx<'_>, c: &Contract<'_>, p: SgemvParams) -> 
             "sgemv {p:?} does not tile whole fixed-width subgroups at width {width}"
         )));
     }
-    let block = p.subgroups * width;
+    let block = p.subgroups * p.k_splits * width;
     let cps = p.cols / p.subgroups;
     let parts = p.parts.max(1);
     let run = p.run().max(1);
@@ -1377,9 +1377,11 @@ fn lower_sgemv_subgroup_cols(ctx: Ctx<'_>, c: &Contract<'_>, p: SgemvParams) -> 
     let (row, col_group) = row_col(&ctx, wg, ceil_extent(&ctx, shape.n, p.cols)?, rows);
     let (batch, b_row_base) = c.batch_of(&ctx, &row)?;
     let sg_lane = b.builtin(Builtin::SubgroupLane);
+    let subgroup = b.builtin(Builtin::SubgroupId);
+    let (column_subgroup, split_id) = b.divrem(subgroup.clone(), b.u32(p.k_splits));
     let col_base = b.add(
         b.mul(col_group, b.u32(p.cols)),
-        b.mul(b.builtin(Builtin::SubgroupId), b.u32(cps)),
+        b.mul(column_subgroup.clone(), b.u32(cps)),
     );
     let col_exact = shape
         .n
@@ -1411,6 +1413,7 @@ fn lower_sgemv_subgroup_cols(ctx: Ctx<'_>, c: &Contract<'_>, p: SgemvParams) -> 
                    vector: u32,
                    contiguous: bool|
      -> Result<Vec<TileExpr>> {
+        let step = b.add(step, b.mul(split_id.clone(), b.u32(width * vector)));
         // Each lane owns `vector` elements of the pass: consecutive at `parts == 1`,
         // else `parts` runs of `run` spaced `gap` apart, still covering exactly
         // `width * vector` consecutive k so packed-word loads hash-cons.
@@ -1495,12 +1498,28 @@ fn lower_sgemv_subgroup_cols(ctx: Ctx<'_>, c: &Contract<'_>, p: SgemvParams) -> 
 
     let mut body: Vec<Stmt> = Vec::new();
     let vector = p.vector.max(1);
-    let locals = gemv_partials(&ctx, &mut body, shape.k, width, vector, locals, pass_at)?;
+    let locals = gemv_partials(
+        &ctx,
+        &mut body,
+        shape.k,
+        width * p.k_splits,
+        vector,
+        locals,
+        pass_at,
+    )?;
 
-    // Each column's partials never leave its subgroup, so the close is a
-    // subgroup sum and the store is that subgroup's lane 0.
+    // Each subgroup first reduces its disjoint K window. Only lane zero
+    // publishes, but all lanes evaluate collectives and reach the barrier.
     let lane0 = b.eq(sg_lane, b.u32(0));
-    for (locals, (col, col_ok)) in locals.chunks_exact(chains).zip(cols_of_subgroup) {
+    let scratch = (p.k_splits > 1).then(|| {
+        b.tile(
+            "sgemv_split_partials",
+            c.acc.element(),
+            &[p.cols * p.k_splits],
+        )
+    });
+    let mut totals = Vec::with_capacity(cps as usize);
+    for (column, locals) in locals.chunks_exact(chains).enumerate() {
         let partial = locals
             .iter()
             .cloned()
@@ -1508,9 +1527,54 @@ fn lower_sgemv_subgroup_cols(ctx: Ctx<'_>, c: &Contract<'_>, p: SgemvParams) -> 
             .reduce(|a, v| b.add(a, v))
             .expect("at least one accumulation chain");
         let total = b.reduce(TileReduceOp::Sum, ReduceKind::Subgroup, partial);
+        if let Some(scratch) = &scratch {
+            let reduced = b.local(c.acc.element());
+            body.push(Stmt::StoreLocal {
+                dst: reduced.clone(),
+                value: total,
+            });
+            body.push(Stmt::If {
+                condition: lane0.clone(),
+                accept: vec![Stmt::StoreTile {
+                    dst: scratch.clone(),
+                    index: b.add(b.mul(subgroup.clone(), b.u32(cps)), b.u32(column as u32)),
+                    value: b.load_local(reduced),
+                }],
+                reject: Vec::new(),
+            });
+        } else {
+            totals.push(total);
+        }
+    }
+    if let Some(scratch) = &scratch {
+        body.push(Stmt::Barrier);
+        for column in 0..cps {
+            let base = b.add(
+                b.mul(column_subgroup.clone(), b.u32(p.k_splits * cps)),
+                b.u32(column),
+            );
+            let total = (0..p.k_splits)
+                .map(|split| b.load_tile(scratch.clone(), b.add(base.clone(), b.u32(split * cps))))
+                .reduce(|a, v| b.add(a, v))
+                .expect("at least one reduction subgroup");
+            totals.push(total);
+        }
+    }
+    let owner = b.and(lane0, b.eq(split_id, b.u32(0)));
+    for (total, (col, col_ok)) in totals.into_iter().zip(cols_of_subgroup) {
         let addr = Addr::Linear(b.add(b.mul(row.clone(), n_e.clone()), col.clone()));
-        let mask = b.and(lane0.clone(), col_ok);
-        body.push(c.store_post(&ctx, &out, total, row.clone(), col, addr, mask)?);
+        if p.k_splits > 1 {
+            // Only the owning lane reads the published partials and evaluates
+            // the scalar epilogue. There are no collectives after this branch.
+            body.push(Stmt::If {
+                condition: owner.clone(),
+                accept: vec![c.store_post(&ctx, &out, total, row.clone(), col, addr, col_ok)?],
+                reject: Vec::new(),
+            });
+        } else {
+            let mask = b.and(owner.clone(), col_ok);
+            body.push(c.store_post(&ctx, &out, total, row.clone(), col, addr, mask)?);
+        }
     }
     Ok(ctx.finish("sgemv_cols", grid, block, body))
 }
