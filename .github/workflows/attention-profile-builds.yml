@@ -1,0 +1,68 @@
+name: Shared attention capacity validation
+
+on:
+  push:
+    branches: [codex/attention-profile-builds]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: attention-profile-builds
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      CARGO_BUILD_JOBS: 1
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_OPT_LEVEL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 9d935fe33131dfc9738a94d699bcf92a65da94b7
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Demonstrate the capability regression and build baseline fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir artifacts
+          cp fusor/fusor-ir/src/rules/attention.rs /tmp/attention-candidate.rs
+          git show HEAD^:fusor/fusor-ir/src/rules/attention.rs > fusor/fusor-ir/src/rules/attention.rs
+          set +e
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --test candidate_construction --features kernel-observer,compiler-tests attention_parallelism_respects_invocation_dimension_and_scratch_limits -- --exact > artifacts/red.log 2>&1
+          red=$?
+          set -e
+          cat artifacts/red.log
+          test "$red" -ne 0
+          grep -q 'left: Some(256)' artifacts/red.log
+          grep -q 'right: Some(512)' artifacts/red.log
+          cargo build --locked --manifest-path fusor/Cargo.toml -p fusor --features kernel-observer --example attention_lab
+          cp target/debug/examples/attention_lab artifacts/attention-lab-baseline
+          git rev-parse HEAD^ > artifacts/baseline-revision.txt
+          cp /tmp/attention-candidate.rs fusor/fusor-ir/src/rules/attention.rs
+      - name: Validate shared construction and execution then build candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path fusor/Cargo.toml --all -- --check
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --test candidate_construction --features kernel-observer,compiler-tests -- --test-threads=1
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --test shared_compiler --features kernel-observer,compiler-tests -- --ignored --test-threads=1
+          cargo clippy --locked --manifest-path fusor/Cargo.toml -p fusor-ir -p fusor --tests --example attention_lab --features fusor/kernel-observer,fusor/compiler-tests -- -D warnings
+          cargo build --locked --manifest-path fusor/Cargo.toml -p fusor --features kernel-observer --example attention_lab
+          cp target/debug/examples/attention_lab artifacts/attention-lab-candidate
+          git rev-parse HEAD > artifacts/candidate-revision.txt
+          shasum -a 256 artifacts/attention-lab-* > artifacts/sha256.txt
+          rustc -Vv > artifacts/toolchain.txt
+      - name: Package fixtures
+        run: tar -czf attention-fixtures.tar.gz -C artifacts .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: attention-fixtures-macos
+          path: attention-fixtures.tar.gz
+          retention-days: 3
