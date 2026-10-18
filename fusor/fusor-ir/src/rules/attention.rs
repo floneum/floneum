@@ -246,7 +246,9 @@ fn recognize(b: &mut Builder<'_>, id: Id, _node: &Node, _f: &Facts<'_>) -> Optio
     let max_block = limits
         .max_compute_invocations_per_workgroup
         .min(limits.max_compute_workgroup_size[0])
-        .min(256)
+        // Independent subgroups partition the key loop. Use larger granted
+        // workgroups when their complete numerator/statistics tile fits.
+        .min(512)
         .min(limits.max_compute_workgroup_storage_size / ((width as u32 + 2) * 4) * subgroup);
     let block = 1 << max_block.checked_ilog2()?;
     if block < subgroup {
