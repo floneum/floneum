@@ -19,7 +19,7 @@ jobs:
       CARGO_BUILD_JOBS: 1
       CARGO_INCREMENTAL: 0
       CARGO_TARGET_DIR: ${{ github.workspace }}/candidate-target
-      CANDIDATE_REVISION: 73cc14893881c2680382bdd1958f9205b031fff8
+      CANDIDATE_REVISION: 572e16227fca0e93c708535738e086b7d1064320
     steps:
       - uses: actions/checkout@v6
         with:
@@ -29,6 +29,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin
+      - name: Validate shared host backing and compiler regressions
+        working-directory: candidate
+        run: |
+          cargo fmt --manifest-path fusor/Cargo.toml --all -- --check
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor-ir -p fusor-tile -p fusor-cost -p fusor --lib --features fusor/kernel-observer,fusor/compiler-tests -- --test-threads=1
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --test candidate_construction --features kernel-observer,compiler-tests -- --test-threads=1
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --test shared_compiler --features kernel-observer,compiler-tests -- --ignored --test-threads=1
+          cargo clippy --locked --manifest-path fusor/Cargo.toml --workspace --all-targets --features fusor/kernel-observer,fusor/compiler-tests -- -D warnings
+          python3 -m unittest discover -s fusor/fusor-visualize/tools -p 'test_*.py' -q
       - name: Build default-release candidate in its own target directory
         shell: bash
         run: |
