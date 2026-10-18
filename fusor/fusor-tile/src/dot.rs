@@ -130,6 +130,23 @@ fn expand(e: &TileExpr, budget: usize) -> Option<Vec<Term>> {
 }
 
 fn factor(b: &Kernel, terms: Vec<Term>, numeric: NumericContract, depth: usize) -> TileExpr {
+    // A shared negative coefficient negates one sum, not every element.
+    // Keeping the sign outside is essential to the operation-count benefit.
+    if !terms.is_empty() && terms.iter().all(|term| term.negative) {
+        let positive = terms
+            .into_iter()
+            .map(|mut term| {
+                term.negative = false;
+                term
+            })
+            .collect();
+        return b.binary(
+            Op::Sub,
+            b.f32(0.),
+            factor(b, positive, numeric, depth + 1),
+            numeric,
+        );
+    }
     // Count a factor once per term, preserving encounter order on ties.
     let mut counts = Vec::<(TileExpr, usize)>::new();
     if depth < 16 {

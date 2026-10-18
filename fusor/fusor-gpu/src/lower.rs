@@ -18,7 +18,7 @@ use fusor_ir::egraph::Id;
 use fusor_ir::error::Error;
 use fusor_ir::ir::kernel::{
     Addr, Buffer, BufferAccess, BufferDecl, Builtin, ElementType, KernelIr, MemoryLevel,
-    ScalarElement, Source, Stmt, StorageView, TileCompareOp, TileExpr, TileLayout,
+    ScalarElement, Source, Stmt, TileCompareOp, TileExpr, TileLayout,
 };
 use fusor_ir::ir::launch::{ContractSide, IndexSpace, Launch, Operand, SchedPoint};
 use fusor_ir::ir::{Node, Op};

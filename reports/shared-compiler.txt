@@ -14,10 +14,14 @@ F32Scales layouts, plus dense tails and replay. Linux, macOS and Windows CI
 explicitly run these tests serially, with compiler verification enabled.
 
 Validation so far for this revision: formatting and 11 Python tool tests pass.
-The local compiler unit-test attempt was aborted by the memory guard before
-completion (peak process-group RSS 0.286 GiB; system compression rose).
+Both shared dot-algebra tests pass, including a red/green regression for
+factoring a common negative offset without adding per-element negations.
+The verified WebGPU suite compiles; six tests pass, including dense contraction
+tails/replay. The memory guard stopped the run during the all-format quantized
+case as system headroom fell. Peak process-group RSS was 0.509 GiB, with no
+added swapouts. The all-format quantized and final gradient cases remain pending.
 No full model or model benchmark was started. No 2x performance claim applies
-to this revision. Rust compilation and GPU correctness still require results.
+to this revision. Cross-platform CI and CPU uniform replay are still pending.
 
 Previous revision 4934d7cda (does not validate the rewrite above)
 ==============================================================

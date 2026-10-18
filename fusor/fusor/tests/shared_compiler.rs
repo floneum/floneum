@@ -504,7 +504,7 @@ fn ordinary_dense_contractions_cover_tails_and_replay() {
         let w = data(n * k, 5);
         let x = Tensor::from_slice(&device, [rows, k], &a);
         let weights = Tensor::from_slice(&device, [n, k], &w);
-        let y = x.mat_mul(&weights.t());
+        let y = x.matmul(&weights.t());
         let reference: Vec<f32> = (0..rows)
             .flat_map(|r| (0..n).map(move |c| (r, c)))
             .map(|(r, c)| {
