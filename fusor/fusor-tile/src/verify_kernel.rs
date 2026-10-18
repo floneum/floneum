@@ -503,7 +503,13 @@ struct BoundEnv {
     subgroups: Option<(u32, u32)>,
     locals: FxHashMap<usize, u64>,
     /// Pure unsigned expressions bounded by enclosing branch conditions.
-    expressions: FxHashMap<TileExpr, u64>,
+    expressions: FxHashMap<TileExpr, IndexBound>,
+}
+
+#[derive(Clone, Copy, Default)]
+struct IndexBound {
+    lower: u64,
+    upper: Option<u64>,
 }
 
 /// Every `Load` is masked or provably in range, using `ProgramId < grid`,
@@ -576,7 +582,9 @@ fn check_loads_in(body: &[Stmt], env: &mut BoundEnv, seen: &mut FxHashSet<u64>) 
                 // A load proved under one branch's bound must be checked again
                 // in the other branch and after the conditional.
                 check_loads_in(accept, &mut inside, &mut seen.clone())?;
-                check_loads_in(reject, env, &mut seen.clone())?;
+                let mut outside = env.clone();
+                assume_false(condition, &mut outside);
+                check_loads_in(reject, &mut outside, &mut seen.clone())?;
             }
             other => {
                 let mut result = Ok(());
@@ -619,12 +627,46 @@ fn assume_true(condition: &TileExpr, env: &mut BoundEnv) {
             if let Some(bound) = literal_u64(right).and_then(|limit| limit.checked_sub(1)) {
                 env.expressions
                     .entry(left.clone())
-                    .and_modify(|previous| *previous = (*previous).min(bound))
-                    .or_insert(bound);
+                    .and_modify(|previous| {
+                        previous.upper = Some(previous.upper.map_or(bound, |old| old.min(bound)));
+                    })
+                    .or_insert(IndexBound {
+                        lower: 0,
+                        upper: Some(bound),
+                    });
             }
         }
         _ => {}
     }
+}
+
+/// The rejected arm of `x < limit` proves `x >= limit`. Keeping this
+/// lower bound allows a selected tail index to subtract its origin without
+/// treating the subtraction as wrapping. The same immutability rule applies.
+fn assume_false(condition: &TileExpr, env: &mut BoundEnv) {
+    use fusor_ir::ir::kernel::TileCompareOp;
+    if let TileExprKind::Compare {
+        op: TileCompareOp::Lt,
+        left,
+        right,
+    } = condition.kind()
+        && left.element() == ScalarElement::U32.element()
+        && left.mem_reads().is_empty()
+        && !left.scope_dependent()
+        && let Some(lower) = literal_u64(right)
+    {
+        env.expressions
+            .entry(left.clone())
+            .and_modify(|previous| previous.lower = previous.lower.max(lower))
+            .or_insert(IndexBound { lower, upper: None });
+    }
+}
+
+fn min_value(expr: &TileExpr, env: &BoundEnv) -> Option<u64> {
+    literal_u64(expr).or_else(|| {
+        (expr.element() == ScalarElement::U32.element())
+            .then(|| env.expressions.get(expr).map_or(0, |bound| bound.lower))
+    })
 }
 
 fn check_expr_loads(expr: &TileExpr, env: &BoundEnv, seen: &mut FxHashSet<u64>) -> Result<()> {
@@ -691,8 +733,8 @@ fn literal_u64(expr: &TileExpr) -> Option<u64> {
 fn max_value(expr: &TileExpr, env: &BoundEnv) -> Option<u64> {
     use fusor_ir::ir::kernel::{Builtin, WorkgroupAxis};
     use fusor_ir::scalar::BinOp;
-    if let Some(bound) = env.expressions.get(expr) {
-        return Some(*bound);
+    if let Some(bound) = env.expressions.get(expr).and_then(|bound| bound.upper) {
+        return Some(bound);
     }
     match expr.kind() {
         TileExprKind::Literal(TileLiteral::U32(v)) => Some(u64::from(*v)),
@@ -708,7 +750,9 @@ fn max_value(expr: &TileExpr, env: &BoundEnv) -> Option<u64> {
             // and check_expr_loads still visits them with the original env.
             let mut inside = env.clone();
             assume_true(condition, &mut inside);
-            Some(max_value(accept, &inside)?.max(max_value(reject, env)?))
+            let mut outside = env.clone();
+            assume_false(condition, &mut outside);
+            Some(max_value(accept, &inside)?.max(max_value(reject, &outside)?))
         }
         // `LocalInvocationIndex`, bounded by the block.
         TileExprKind::Builtin(Builtin::Lane) => Some(u64::from(env.block.max(1)) - 1),
@@ -749,14 +793,11 @@ fn max_value(expr: &TileExpr, env: &BoundEnv) -> Option<u64> {
         } => match op {
             BinOp::Add => max_value(left, env)?.checked_add(max_value(right, env)?),
             BinOp::Mul => max_value(left, env)?.checked_mul(max_value(right, env)?),
-            // Unsigned subtraction can wrap. Only use the left-hand bound
-            // when the right is zero or a literal left proves no underflow;
-            // guarded differences are bounded by `expressions` above.
+            // Unsigned subtraction can wrap. A lower bound on the left
+            // must prove that every possible right value can be subtracted.
             BinOp::Sub => {
-                if literal_u64(right) == Some(0) {
-                    max_value(left, env)
-                } else if literal_u64(left)? >= max_value(right, env)? {
-                    literal_u64(left)
+                if min_value(left, env)? >= max_value(right, env)? {
+                    max_value(left, env)?.checked_sub(min_value(right, env)?)
                 } else {
                     None
                 }
@@ -1200,7 +1241,9 @@ mod tests {
             b.builtin(Builtin::Lane),
         );
         for value in [local, collective] {
-            assume_true(&b.lt(value, b.u32(8)), &mut env);
+            let condition = b.lt(value, b.u32(8));
+            assume_true(&condition, &mut env);
+            assume_false(&condition, &mut env);
             assert!(env.expressions.is_empty());
         }
     }
@@ -1228,6 +1271,16 @@ mod tests {
             b.div(b.builtin(Builtin::Lane), b.u32(8)),
         );
         assert_eq!(max_value(&row, &env), Some(1023));
+        let group = b.builtin(Builtin::ProgramId(WorkgroupAxis::X));
+        let tail = b.sub(group.clone(), b.u32(360));
+        let column = b.select(
+            b.lt(group.clone(), b.u32(360)),
+            b.div(b.rem(group, b.u32(36)), b.u32(6)),
+            b.div(tail.clone(), b.u32(4)),
+        );
+        assert_eq!(max_value(&column, &env), Some(5));
+        // Outside the rejected arm, the same subtraction can wrap.
+        assert_eq!(max_value(&tail, &env), None);
         // The accepted arm's bound cannot escape to another expression.
         assert_eq!(max_value(&tiled, &env), Some(65));
         assert!(env.expressions.is_empty());

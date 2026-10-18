@@ -194,6 +194,71 @@ fn shared_matmul_ancestors_are_charged_once_with_every_branch() {
     assert_eq!(all_cost.0, first_cost.0 * 32);
 }
 
+/// Every repeated block must see cheap map substitution before an early
+/// block consumes the graph-wide frontier with contraction alternatives.
+#[test]
+fn bounded_saturation_offers_map_fusion_to_every_block() {
+    use fusor_ir::egraph::{Saturate, SaturationBudget};
+    use fusor_ir::ir::launch::Launch;
+    use fusor_ir::scalar::{ScalarExpr, UnOp};
+
+    let caps = gpu_caps();
+    let (_, mut graph) = planner_graph();
+    let mut x = leaf(&mut graph, 0, &consts([1, 1024]));
+    let mut outputs = Vec::new();
+    for layer in 0..32 {
+        let weight = leaf(&mut graph, layer + 1, &consts([1024, 1024]));
+        let input = contract(&mut graph, x, weight, MATMUL);
+        x = input;
+        for op in [UnOp::Neg, UnOp::Exp, UnOp::Tanh] {
+            x = graph
+                .add(Op::Logical(Logical::Map {
+                    expr: ScalarExpr::un(op, ScalarExpr::arg(0, Dtype::F32)),
+                    ins: [x].into_iter().collect(),
+                    outs: 1,
+                }))
+                .unwrap();
+        }
+        outputs.push((input, x));
+    }
+    graph.add_root(x);
+    let rules: Vec<_> = fusor_ir::CORE_RULES
+        .iter()
+        .chain(fusor_tile::SCHED_RULES)
+        .copied()
+        .collect();
+    let report = fusor_ir::Driver::new()
+        .saturate(
+            &mut graph,
+            &caps,
+            &rules,
+            SaturationBudget {
+                node_slack: 0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    // One rule invocation can cross the ceiling before the driver checks it;
+    // this graph's largest invocation adds at most sixteen nodes.
+    assert!(
+        report.final_nodes <= report.initial_nodes * 8 + 16,
+        "{report:?}"
+    );
+    let fused: Vec<_> = outputs
+        .iter()
+        .map(|&(input, output)| {
+            graph.members(graph.class_of(output)).iter().any(|&id| {
+                matches!(&graph.node(id).op, Op::Launch(Launch::Map {ops, ..})
+                if ops.len() == 1 && graph.class_of(ops[0].src) == graph.class_of(input))
+            })
+        })
+        .collect();
+    assert!(
+        fused.iter().all(|v| *v),
+        "fusion offered by block: {fused:?}; {report:?}"
+    );
+}
+
 #[test]
 fn repeated_matmul_costs_do_not_degrade_to_free_arithmetic() {
     use fusor_ir::cost::CostModel;
