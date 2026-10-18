@@ -1,0 +1,83 @@
+name: Token-accurate compiler comparison binaries
+
+on:
+  push:
+    branches: [codex/token-profile-builds]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: token-profile-builds
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: 1
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_OPT_LEVEL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_TARGET_DIR: ${{ github.workspace }}/shared-target
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 6db93671f9b1c35869e87f9fc87541887cd65ec7
+          path: candidate
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          ref: 117c60fbc03f79ef43f8630fbcf061900b11c7ed
+          path: baseline
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          ref: 393675956576d4fb6f28f20bb26515230cccf422
+          path: expression
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - name: Test exact-token measurement and unchanged shared compiler
+        working-directory: candidate
+        run: |
+          python3 -m unittest discover -s fusor/fusor-visualize/tools -p 'test_*.py' -q
+          rustfmt --edition 2021 --check models/kalosm-llama/examples/profile_forward.rs models/kalosm-llama/src/model/inference.rs
+          cargo test --locked -p kalosm-llama --example profile_forward -- --test-threads=1
+          cargo clippy --locked -p kalosm-llama --example profile_forward -- -D warnings
+      - name: Build matched default-release binaries sequentially
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir artifacts
+          for arm in candidate baseline expression; do
+            if [[ "$arm" != candidate ]]; then
+              # All three revisions have identical original inference source.
+              # Apply only the same trace event and profiler to each runtime.
+              cp candidate/models/kalosm-llama/examples/profile_forward.rs "$arm/models/kalosm-llama/examples/profile_forward.rs"
+              cp candidate/models/kalosm-llama/src/model/inference.rs "$arm/models/kalosm-llama/src/model/inference.rs"
+            fi
+            {
+              rustc -Vv
+              uname -m
+              xcrun --show-sdk-version
+              git -C "$arm" rev-parse HEAD
+              shasum -a 256 "$arm/models/kalosm-llama/examples/profile_forward.rs" "$arm/models/kalosm-llama/src/model/inference.rs"
+              echo 'cargo build --locked -j 1 -p kalosm-llama --example profile_forward --release --target aarch64-apple-darwin'
+            } > "artifacts/$arm-build.txt"
+            (
+              cd "$arm"
+              cargo build --locked -j 1 -p kalosm-llama --example profile_forward --release --target aarch64-apple-darwin
+            )
+            cp "$CARGO_TARGET_DIR/aarch64-apple-darwin/release/examples/profile_forward" "artifacts/profile-forward-$arm"
+            shasum -a 256 "artifacts/profile-forward-$arm" >> "artifacts/$arm-build.txt"
+          done
+      - name: Package binaries with executable permissions
+        run: tar -czf token-profile-binaries.tar.gz -C artifacts .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: token-profile-binaries-macos
+          path: token-profile-binaries.tar.gz
+          retention-days: 3
