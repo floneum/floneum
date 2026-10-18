@@ -1,3 +1,42 @@
+Validated shared default and blocked expression measurement (2026-10-18)
+======================================================================
+PR #465 is updated to runtime 287d0592b72ee23dd69ed5a0b4280149cd0b4f47.
+CI 39151068235 passes Linux host checks, 26 facade tests (one ignored),
+15 cost tests, 9 IR tests, 18 tile tests, 4 index regressions, 15 candidate
+construction tests, eight live shared WebGPU regressions, all-target Clippy,
+formatting, 20 Python tests, and the ordinary release build. Wide and residual
+normalization outputs match CPU references. The initial expanded construction
+test incorrectly inspected a Union node; it now inspects the resulting class.
+The candidate release executable is verified against build provenance:
+fed8c10454e71e1350290274e85f4a70464807c8f422ec2e4fc40818a5339fec.
+
+A fresh baseline of runtime 117c60fbc completes all three 8-warmup/64-chunk
+rounds in 44.56 seconds. Excluding only the first round and keeping all 128
+remaining gaps: mean 21.995889 ms, p95 22.890458 ms, maximum 23.610584 ms.
+Every generated output and measurement boundary matches the previous clean
+baseline; the earlier/current elapsed ratio is 0.985356. Peak owned RSS is
+10.569672 GiB and minimum headroom is 10.444580 GiB. This is a new baseline,
+not a measurement of runtime 287d0592b. Evidence: compiler-287-baseline-before
+and compiler-287-baseline-drift.json under target/stall-validation.
+
+An isolated emitter experiment schedules independent operands by temporary
+register demand, preserving arithmetic and argument positions. Collectives
+and cooperative operations remain ordering boundaries. Its regression fails
+on the old emitter and passes on the changed emitter. CI 39151612546 passes
+13 GPU units, 15 construction tests, eight shared WebGPU tests and all-target
+Clippy. Runtime 01de89bb3 is outside the PR. A further test-only revision
+393675956 also exercises subtraction and division; CI 39152356463 is pending.
+
+The first local expression-order ABBA fixture stops after 2.126 seconds when
+system compression exceeds the unchanged 2 GiB limit. No timing row completes.
+The fixture also enforced 1 GiB owned RSS, 12 GiB runtime headroom, and stopped
+on activity from an already-idle large resident or a new large process.
+Its owned process is reaped, and it is not retried. Evidence: shared-order-q4-abba.
+The candidate full-model comparison has not started: a new foreign chat
+process reduces available memory to about 1.7 GiB with compression above the
+limit. Foreign processes are untouched. No local compiler or GPU job remains.
+The 60 token/sec / 2x full-model goal is not achieved or established.
+
 Range writes, normalization, and rejected splitting (2026-10-18)
 =============================================================
 The last completed clean model comparison remains 21.6738 ms/stream chunk.
