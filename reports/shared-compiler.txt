@@ -1,3 +1,75 @@
+Exact independent replacement costs (2026-10-18; release pending)
+======================================================================
+The remaining growth trace spends 7.569 ms extracting a 65-launch migration
+plan. Same-input replacement screening avoids reconstructing the DAG, but
+still reprices every unchanged launch for every trial. The shared cost-model
+interface now permits an exact replacement total. The additive roofline model
+uses it; nonlinear/custom models default to complete-sequence pricing, and a
+saturated total declines because subtraction cannot recover discarded cost.
+Per-launch costs are captured at each accepted schedule, before trial edits.
+Candidate order, budgets, and full verification of accepted plans are unchanged.
+
+The 32-independent-branch regression goes from 64 full cost-total evaluations
+to zero with identical selected plan hash and cost. All 15 cost tests pass,
+including nonlinear fallback and saturation/underflow checks. All eight shared
+WebGPU regressions pass (46.02 seconds), as do all 15 candidate-construction
+tests and workspace/all-target Clippy with warnings denied.
+
+Small cache-growth probe, prior/candidate/prior, unoptimized host build:
+- Total: 74.122 / 55.777 / 72.412 ms; conservative ratio 1.298x.
+- Migration extraction: 42.847 / 24.182 / 43.046 ms.
+- Candidate seed selection 8.924 ms and descent 4.654 ms, versus roughly
+  23.6 and 9.3 ms in the first prior run.
+All 33,554,432 values pass in every arm. Each arm uses the same 512 WebGPU
+copies and zero new pipelines; GPU wait stays about 5.04 ms. Peak process-group
+RSS <=0.666 GiB, no added swapouts. This demonstrates a shared host-planning
+improvement, not full-model throughput or elimination of the cache hitch.
+Logs: target/stall-validation/shared-additive-{growth-*,screen-*,gpu*}.
+
+Default-release and long-run validation at e3634f503 (2026-10-18)
+======================================================================
+CI release run 39104438703 succeeds. Its arm64 executable and profiling-source
+SHA256 match build.txt; default release flags are unchanged. All 20 Python
+guard/tool tests pass on Linux and macOS Python 3.15. macOS CI independently
+passes all 188 Fusor tests, full training/causal-attention validation, eight
+shared WebGPU tests, and all-target Clippy. Linux/Windows test suites and all
+three platforms' conformance shards also pass at this revision. The root
+macOS suite remains 96/97 due
+to the external Odyssey download returning HTTP 500; overall CI is not green.
+
+Clean short run, identical settings/seed/output versus runtime 73cc14893:
+3 rounds of 8 warmup + 64 measured chunks, excluding only the first round.
+Mean 21.6519 ms, p95 21.8745 ms, maximum 21.9959 ms over 128 gaps. The ratio
+against the earlier 21.9697 ms run is 1.0147x; this is not bracketed. Peak
+process RSS is 10.5692 GiB versus 11.3615 GiB earlier. Minimum headroom is
+12.0289 GiB, no compressor growth, and 1 MiB of added swapouts. The requested
+2x model-throughput goal remains unmet.
+
+The complete two-round 512-chunk run reproduces the cache-growth hitch at
+zero-based chunk 448: 58.7764 and 54.1336 ms. Earlier d4cc measured 69.4183 and
+79.7183 ms there. All seeded output matches; the hitch is reduced, not fixed.
+Round means are 23.3926 and 23.8682 ms. Peak process RSS 10.5719 GiB, minimum
+headroom 11.8146 GiB, compressor growth 40.64 MiB, added swapouts 512 KiB.
+This run also enforced a 12 GiB process-group cap, 10 GiB headroom floor,
+120-second timeout and overlap stop, in addition to all canonical guards.
+
+A separate CPU-attribution diagnostic captured one growth event: saturation
+3.268 ms, extraction 7.569 ms, then 64 artifact refreshes with zero new shader
+compiles. It stopped during the second round when an unrelated compiler
+exceeded 1 GiB RSS. That process was left untouched; the diagnostic was not
+retried and is excluded from throughput comparisons. Its partial timing trace
+motivates further planning work, not a clean latency claim.
+
+A smaller split reduction window regressed to 0.602x. A general bounded
+variable-shift packing prototype improved that slower window from roughly
+249 to 168 us, still behind the default 150 us, and default-path ABBA ratios
+0.999/0.996 showed no gain. Seventeen tile tests pass, but the prototype was
+archived and removed from production. No schedule preset was introduced.
+
+Logs: target/stall-validation/compiler-e363-{candidate,long-decode},
+compiler-e363-versus-73cc.json, compiler-e363-long-versus-d4cc.json,
+compiler-e363-growth-attribution*, and deferred-dynamic-fields.
+
 Masked-address and benchmark-cleanup follow-up (2026-10-17)
 ======================================================================
 A masked address retained aligned loop/row terms that cannot affect any bit

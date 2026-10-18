@@ -109,8 +109,7 @@ impl LocalSearch {
         let mut trail = Trail::default();
         match search.price(&mut at.ex, &mut cache, &mut trail) {
             Some((realized, cost)) => {
-                at.realized = realized;
-                at.cost = cost;
+                at.update(realized, cost, search.cost);
             }
             None => trail.rollback(&mut at.ex, 0),
         }
@@ -207,6 +206,20 @@ struct Incumbent {
     ex: Extraction,
     realized: Realized,
     cost: Picoseconds,
+    // Costs at the accepted schedules, before a trial mutates `ex.theta`.
+    launch_costs: Vec<Picoseconds>,
+}
+
+impl Incumbent {
+    fn update(&mut self, realized: Realized, cost: Picoseconds, model: &dyn CostModel) {
+        self.launch_costs = realized
+            .components
+            .iter()
+            .map(|component| model.launch_cost(&component.launch(&self.ex)))
+            .collect();
+        self.realized = realized;
+        self.cost = cost;
+    }
 }
 
 /// The fixed inputs of one descent.
@@ -294,7 +307,17 @@ impl Search<'_> {
             match attempt {
                 Ok(realized) => {
                     let cost = realize::exact_cost(&realized, &ex, self.cost);
-                    let at = Incumbent { ex, realized, cost };
+                    let launch_costs = realized
+                        .components
+                        .iter()
+                        .map(|component| self.cost.launch_cost(&component.launch(&ex)))
+                        .collect();
+                    let at = Incumbent {
+                        ex,
+                        realized,
+                        cost,
+                        launch_costs,
+                    };
                     return Ok(self.choose_seed(at, lb, cache, &reused));
                 }
                 Err(error) => {
@@ -470,8 +493,9 @@ impl Search<'_> {
     }
 
     /// Price a one-launch replacement without rebuilding its unchanged DAG.
-    /// The cost model still sees every launch, so shared traffic and nonlinear
-    /// totals are preserved. Composites and changed inputs require full pricing.
+    /// A cost model may provide an exact independent replacement total; other
+    /// models still see the complete sequence, preserving shared/nonlinear
+    /// totals. Composites and changed inputs require full pricing.
     /// `Some(true)` rejects the trial; the caller owns rollback in either case.
     fn screen_replacement(
         &self,
@@ -502,8 +526,16 @@ impl Search<'_> {
         let score =
             realize::ordinary_component(graph, &at.ex, candidate, self.cost, self.arena, cache)
                 .map(|replacement| {
-                    at.realized
-                        .cost_replacing(index, &replacement, &at.ex, self.cost)
+                    self.cost
+                        .total_replacing(
+                            at.cost,
+                            at.launch_costs[index],
+                            &replacement.launch(&at.ex),
+                        )
+                        .unwrap_or_else(|| {
+                            at.realized
+                                .cost_replacing(index, &replacement, &at.ex, self.cost)
+                        })
                 });
         Some(!score.is_ok_and(|score| score < at.cost))
     }
@@ -590,8 +622,7 @@ impl Search<'_> {
     fn improve(&self, at: &mut Incumbent, cache: &mut NodeCache, trail: &mut Trail) -> bool {
         match self.price(&mut at.ex, cache, trail) {
             Some((realized, cost)) if cost < at.cost => {
-                at.realized = realized;
-                at.cost = cost;
+                at.update(realized, cost, self.cost);
                 true
             }
             _ => {
@@ -1377,6 +1408,45 @@ mod tests {
     use fusor_ir::scalar::{ScalarExpr, UnOp};
     use fusor_ir::shape::Layout;
 
+    struct CountedCost {
+        inner: crate::Roofline,
+        totals: std::sync::atomic::AtomicUsize,
+    }
+
+    impl CostModel for CountedCost {
+        fn facts(&self) -> &fusor_ir::cost::DeviceFacts {
+            self.inner.facts()
+        }
+        fn launch_cost(&self, launch: &fusor_ir::cost::LaunchPlan<'_>) -> Picoseconds {
+            self.inner.launch_cost(launch)
+        }
+        fn node_math(
+            &self,
+            node: &fusor_ir::ir::Node,
+            ins: &[fusor_ir::facts::ValueFacts],
+            out: &fusor_ir::facts::ValueFacts,
+            theta: Option<SchedPoint>,
+        ) -> Picoseconds {
+            self.inner.node_math(node, ins, out, theta)
+        }
+        fn traffic(&self, bytes: u64, rereads: u32) -> Picoseconds {
+            self.inner.traffic(bytes, rereads)
+        }
+        fn total(&self, launches: &[fusor_ir::cost::LaunchPlan<'_>]) -> Picoseconds {
+            self.totals
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.inner.total(launches)
+        }
+        fn total_replacing(
+            &self,
+            total: Picoseconds,
+            old: Picoseconds,
+            new: &fusor_ir::cost::LaunchPlan<'_>,
+        ) -> Option<Picoseconds> {
+            self.inner.total_replacing(total, old, new)
+        }
+    }
+
     #[test]
     fn independent_schedule_rejections_do_not_rebuild_the_whole_dag() {
         let caps = caps();
@@ -1408,7 +1478,10 @@ mod tests {
                 .unwrap();
             roots.push(root);
         }
-        let cost = crate::Roofline::new(crate::facts::seed_facts(&caps));
+        let cost = CountedCost {
+            inner: crate::Roofline::new(crate::facts::seed_facts(&caps)),
+            totals: Default::default(),
+        };
         let extractor = LocalSearch::new(arena, caps.clone());
         let search = extractor.search(&graph, &roots, &cost);
         let (classes, mask) = realize::reachable(&graph, &roots);
@@ -1425,7 +1498,13 @@ mod tests {
             cap: 1000,
         };
         let mut trace = SearchTrace::default();
+        cost.totals.store(0, std::sync::atomic::Ordering::Relaxed);
         search.descend(&climb, &mut at, &mut cache, &mut trace);
+        assert_eq!(
+            cost.totals.load(std::sync::atomic::Ordering::Relaxed),
+            0,
+            "independent additive replacements must not reprice unchanged launches"
+        );
         let after = derive_plan(&graph, &at.ex, &at.realized, cost.facts(), at.cost).unwrap();
         assert_eq!(after.hash, before.hash);
         assert_eq!(after.cost, before.cost);
