@@ -8,6 +8,7 @@ mod arena;
 mod barrier;
 pub mod build;
 pub mod domains;
+pub mod dot;
 mod flags;
 mod liveness;
 pub mod planner;

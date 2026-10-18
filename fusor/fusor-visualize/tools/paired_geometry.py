@@ -29,10 +29,8 @@ def main():
     p.add_argument('--copies', type=int, default=4)
     p.add_argument('--iterations', type=int, default=31)
     p.add_argument('--repeats', type=int, default=16)
-    p.add_argument('--splits', type=int, choices=[1, 2, 4, 8], default=1)
     p.add_argument('--target', type=float, default=1.01)
     p.add_argument('--dependent', action='store_true', help='include a dependent activation guard after every GEMV')
-    p.add_argument('--q4-variant', type=int, choices=[1,2,3], help='compare F32 lowering variants at unchanged geometry')
     a = p.parse_args()
     if not (1 <= a.n <= 131072 and 1024 <= a.k <= 32768 and a.k % 1024 == 0
             and 1 <= a.copies <= 32 and 3 <= a.iterations <= 101 and 2 <= a.repeats <= 32
@@ -41,26 +39,20 @@ def main():
     weight_bytes = a.n * a.k // 256 * (144 if a.format == 'q4k' else 212) * a.copies
     if weight_bytes > 512*1024**2:
         p.error('resident weights exceed 512 MiB')
-    if a.q4_variant is not None and (a.format != 'q4k' or a.baseline_cell != a.candidate_cell):
-        p.error('Q4 variant requires q4k and identical schedule cells')
     a.output.mkdir(parents=True, exist_ok=False)
     binary = ROOT / 'fusor/target/debug/examples/qmatmul_lab'
     env = {k:v for k,v in os.environ.items() if not k.startswith(('FUSOR_', 'PROFILE_', 'LAB_'))}
     switches = dict(
         FUSOR_PIN_CONTRACT_FAMILY='sgemv', FUSOR_PIN_SGEMV=a.baseline_cell,
-        FUSOR_PROFILE_Q4_HALF_UNPACK='1',
         FUSOR_PROFILE_DISABLE_RULES='SPLIT_K', FUSOR_COMPILE_THREADS='1',
         FUSOR_PROFILE_NO_DEBUG_GROUPS='1',
         FUSOR_PROFILE_MEMORY_BUDGET_BYTES=str(3*1024**3), FUSOR_PROFILE_SUBMIT_SIZE=str(2**31-1),
         FUSOR_AUTOTUNE_MIN_MACS=str(2**64-1), FUSOR_EXPLORE_EPS='0',
-        FUSOR_PROFILE_PACKED_Q4_SPLITS=str(a.splits), FUSOR_PROFILE_Q6_SPLITS=str(a.splits),
         LAB_WEIGHT_COPIES=str(a.copies), LAB_BATCH_REPEAT=str(a.repeats),
         LAB_QLAYOUT='native' if a.format == 'q4k' else 'f32scales', LAB_FRACTIONAL_INPUT='1',
         LAB_COMPARE_CELL=a.candidate_cell)
     if a.dependent:
         switches['LAB_COMPARE_DEPENDENT'] = '1'
-    if a.q4_variant is not None:
-        switches['LAB_COMPARE_Q4_VARIANT'] = str(a.q4_variant)
     env.update(switches)
     command = [str(binary), '1', str(a.n), str(a.k), a.format, str(a.iterations)]
     with binary.open('rb') as source:
@@ -76,7 +68,6 @@ def main():
     assert [r['iteration'] for r in rows] == list(range(len(rows)))
     assert all(r['checked_values'] >= a.n*a.copies*3 for r in rows[:3])
     assert all(r['dispatches_per_arm'] == a.copies for r in rows)
-    assert all(r['q4_variant'] == (None if a.q4_variant is None else [0,a.q4_variant]) for r in rows)
     for r in rows:
         assert all(math.isfinite(r[k]) and r[k] > 0 for k in ['baseline_us', 'candidate_us', 'speedup'])
     directional = [statistics.median(r['speedup'] for r in rows[3:] if r['iteration'] % 2 == parity)

@@ -69,7 +69,6 @@ pub const ARTIFACT_CAPACITY: usize = 65_536;
 /// discriminates variants on [`DimBinding::body_consulted`].
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 struct ArtifactKey {
-    q4_variant: u8,
     /// Which graph arena the ids below index.
     arena: u64,
     launch: u64,
@@ -77,12 +76,7 @@ struct ArtifactKey {
 }
 
 /// Every launch's [`ArtifactKey`] for one plan, computed in one pass.
-fn plan_artifact_keys(
-    plan: &Plan,
-    pack: &UniformPack,
-    arena: u64,
-    q4_variant: u8,
-) -> Vec<ArtifactKey> {
+fn plan_artifact_keys(plan: &Plan, pack: &UniformPack, arena: u64) -> Vec<ArtifactKey> {
     let mut digests: FxHashMap<fusor_ir::egraph::Id, u64> =
         FxHashMap::with_capacity_and_hasher(plan.buffers.len(), Default::default());
     for buffer in &plan.buffers {
@@ -110,7 +104,6 @@ fn plan_artifact_keys(
             }
             ch.write_u64(digests.get(&launch.root).copied().unwrap_or(0));
             ArtifactKey {
-                q4_variant,
                 arena,
                 launch: lh.finish(),
                 context: ch.finish(),
@@ -225,8 +218,6 @@ pub struct GpuTarget {
     schedule_override: parking_lot::RwLock<Option<Arc<ScheduleOverride>>>,
     #[cfg(feature = "kernel-observer")]
     stream_submit_rest_override: std::sync::atomic::AtomicUsize,
-    #[cfg(feature = "kernel-observer")]
-    q4_variant_override: std::sync::atomic::AtomicUsize,
 }
 
 // Explicit `Send + Sync`: the auto-trait solver otherwise recurses through
@@ -303,8 +294,6 @@ impl GpuTarget {
             schedule_override: parking_lot::RwLock::new(None),
             #[cfg(feature = "kernel-observer")]
             stream_submit_rest_override: std::sync::atomic::AtomicUsize::new(usize::MAX),
-            #[cfg(feature = "kernel-observer")]
-            q4_variant_override: std::sync::atomic::AtomicUsize::new(usize::MAX),
         })
     }
 
@@ -476,33 +465,6 @@ impl GpuTarget {
         Ok(())
     }
 
-    /// Compare bounded F32 Q4 lowering variants in a serial diagnostic run.
-    /// Call only between resolves; each variant owns distinct artifact keys.
-    #[cfg(feature = "kernel-observer")]
-    pub fn set_q4_variant(&self, variant: Option<u8>) -> Result<()> {
-        if variant.is_some_and(|n| n > 3) {
-            return Err(Error::Plan("Q4 variant must be 0..=3".into()));
-        }
-        self.q4_variant_override.store(
-            variant.map_or(usize::MAX, usize::from),
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        Ok(())
-    }
-
-    fn q4_variant(&self) -> u8 {
-        let selected = crate::flags::flags().q4_variant;
-        #[cfg(feature = "kernel-observer")]
-        let selected = match self
-            .q4_variant_override
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
-            usize::MAX => selected,
-            n => n as u8,
-        };
-        selected
-    }
-
     fn resolve_scheduled(&self, plan: &Plan, graph: &EGraph, binds: &BindingEnv) -> Result<()> {
         self.cache_stats();
         let start = Instant::now();
@@ -597,9 +559,7 @@ impl GpuTarget {
                     .lock()
                     .iter()
                     .rev()
-                    .find_map(|snapshot| {
-                        snapshot.owned(plan, graph.arena_id(), self.q4_variant(), binds)
-                    })
+                    .find_map(|snapshot| snapshot.owned(plan, graph.arena_id(), binds))
             })
             .flatten();
         let keys = if owned_warm.is_some() {
@@ -611,14 +571,10 @@ impl GpuTarget {
                         .lock()
                         .iter()
                         .rev()
-                        .find_map(|snapshot| {
-                            snapshot.keys(plan, graph.arena_id(), self.q4_variant())
-                        })
+                        .find_map(|snapshot| snapshot.keys(plan, graph.arena_id()))
                 })
                 .flatten()
-                .unwrap_or_else(|| {
-                    plan_artifact_keys(plan, &pack, graph.arena_id(), self.q4_variant())
-                })
+                .unwrap_or_else(|| plan_artifact_keys(plan, &pack, graph.arena_id()))
         };
         // Warm launches finish here with a hash lookup; the rest is the cold
         // set for the build cohort.
@@ -1146,15 +1102,7 @@ impl GpuTarget {
             crate::lower::DimBinding::from_pairs(binds.dims.iter().map(|(k, v)| (*k, *v)));
         let ir = {
             let _t = Stopwatch::start(&LOWER_US);
-            crate::lower::lower_node_with_q4_variant(
-                self.caps(),
-                node,
-                theta,
-                &cx,
-                binding.clone(),
-                pack.clone(),
-                self.q4_variant(),
-            )?
+            crate::lower::lower_node(self.caps(), node, theta, &cx, binding.clone(), pack.clone())?
         };
         let ph = pipeline_hash(&ir);
         #[cfg(any(test, feature = "compiler-tests"))]
@@ -1439,14 +1387,14 @@ impl GpuTarget {
     pub fn release_candidates(&self, arena: u64, candidates: &[Arc<Plan>], keep: &Plan) {
         self.warm_artifacts.lock().clear();
         let keep_keys: FxHashSet<ArtifactKey> =
-            plan_artifact_keys(keep, &UniformPack::new(keep), arena, self.q4_variant())
+            plan_artifact_keys(keep, &UniformPack::new(keep), arena)
                 .into_iter()
                 .collect();
         {
             let mut artifacts = self.artifacts.lock();
             for candidate in candidates {
                 let pack = UniformPack::new(candidate);
-                for key in plan_artifact_keys(candidate, &pack, arena, self.q4_variant()) {
+                for key in plan_artifact_keys(candidate, &pack, arena) {
                     if !keep_keys.contains(&key) {
                         artifacts.pop(&key);
                     }

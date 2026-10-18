@@ -177,66 +177,7 @@ fn expand_quantized(expr: &TileExpr) -> Result<TileExpr> {
     else {
         return Err(Error("expected a quantized load".into()));
     };
-    let lit = |n| {
-        TileExpr::new(
-            TileExprKind::Literal(TileLiteral::U32(n)),
-            ScalarElement::U32.element(),
-        )
-    };
-    let bin = |op, left, right| {
-        TileExpr::new(
-            TileExprKind::Binary {
-                op,
-                left,
-                right,
-                numeric: fusor_ir::dtype::NumericContract::RELAXED,
-            },
-            ScalarElement::U32.element(),
-        )
-    };
-    let flat = match &**addr {
-        Addr::Linear(i) => i.clone(),
-        Addr::Rc2 { row, col } => {
-            require(
-                q.data.layout.indexing.groups.len() == 2,
-                "quantized rank-2 address needs two axes",
-            )?;
-            let mut flat = lit(0);
-            for (coord, group) in [row, col].into_iter().zip(&q.data.layout.indexing.groups) {
-                require(!group.sub_axes.is_empty(), "empty quantized address axis")?;
-                let mut coord = coord.clone();
-                for (i, sub) in group.sub_axes.iter().enumerate().rev() {
-                    require(sub.extent > 0, "zero quantized address extent")?;
-                    let part = if i == 0 {
-                        coord.clone()
-                    } else {
-                        let p = bin(BinOp::Rem, coord.clone(), lit(sub.extent));
-                        coord = bin(BinOp::Div, coord, lit(sub.extent));
-                        p
-                    };
-                    if sub.stride != 0 {
-                        let term = if sub.stride == 1 {
-                            part
-                        } else {
-                            bin(BinOp::Mul, part, lit(sub.stride))
-                        };
-                        flat = bin(BinOp::Add, flat, term);
-                    }
-                }
-            }
-            flat
-        }
-    };
-    let args = fusor_gguf::blocks::BlockDecodeArgs {
-        src: &q.data,
-        layout: q.layout,
-        k_base: flat,
-        col: lit(0),
-        mask: mask.clone(),
-        fill: fill.clone(),
-    };
-    (fusor_gguf::block_spec(q.fmt, q.layout).decode.emit)(&args)
-        .map(|e| fusor_ir::ir::kernel::simplify_index(&e))
+    fusor_gguf::blocks::decode_load(q, addr, mask.clone(), fill.clone())
         .map_err(|e| Error(format!("quantized decoder: {e}")))
 }
 

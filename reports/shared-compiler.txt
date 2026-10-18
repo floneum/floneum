@@ -1,3 +1,24 @@
+Current revision: generic contraction rewrite (validation pending)
+================================================================
+The format-specific Q4K/Q6K contraction bodies and their runtime tuning state
+have been removed. Quantized loads expand through the existing format table
+into ordinary typed expressions. A bounded shared dot-product transform
+extracts common factors when reassociation is permitted and the expression
+DAG becomes smaller. Both single-column and subgroup-column SGEMV use it.
+The visualizer and GPU emitter use the same load-expansion interface.
+
+The ordinary WebGPU regression suite now includes every QFmt in Native and
+F32Scales layouts, plus dense tails and replay. Linux, macOS and Windows CI
+explicitly run these tests serially, with compiler verification enabled.
+
+Validation so far for this revision: formatting and 11 Python tool tests pass.
+The local compiler unit-test attempt was aborted by the memory guard before
+completion (peak process-group RSS 0.286 GiB; system compression rose).
+No full model or model benchmark was started. No 2x performance claim applies
+to this revision. Rust compilation and GPU correctness still require results.
+
+Previous revision 4934d7cda (does not validate the rewrite above)
+==============================================================
 Shared compiler rewrite (2026-10-17)
 
 Scope

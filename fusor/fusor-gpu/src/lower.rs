@@ -383,49 +383,9 @@ pub(crate) struct Ctx<'a> {
     /// The fewest lanes a member may lower at: a group runs every member at
     /// its widest member's block.
     pub block_floor: u32,
-    pub q4_variant: u8,
 }
 
 impl<'a> Ctx<'a> {
-    /// Give a complete, sole-binding quantized word buffer explicit block rows.
-    /// This changes checked address structure, never its bytes or binding size.
-    pub(crate) fn block_storage_view(
-        &mut self,
-        view: &StorageView,
-        width: u32,
-    ) -> Option<StorageView> {
-        let elements = view.buffer.layout.element_count();
-        if width == 0
-            || elements == 0
-            || !elements.is_multiple_of(u64::from(width))
-            || view.offset != 0
-            || view.buffer.element != ScalarElement::U32.element()
-            || self
-                .buffers
-                .iter()
-                .filter(|v| v.binding == view.buffer.binding)
-                .count()
-                != 1
-        {
-            return None;
-        }
-        let rows = u32::try_from(elements / u64::from(width)).ok()?;
-        let layout = TileLayout::contiguous(MemoryLevel::Storage, &[rows, width]);
-        let mut decl = (*view.buffer).clone();
-        decl.layout = layout.clone();
-        let buffer = Arc::new(decl);
-        let slot = self
-            .buffers
-            .iter_mut()
-            .find(|v| v.binding == buffer.binding)?;
-        *slot = buffer.clone();
-        Some(StorageView {
-            buffer,
-            offset: 0,
-            layout,
-        })
-    }
-
     /// Build the buffer table for one launch over the plan's binding-0 pack.
     pub(crate) fn with_pack(
         caps: &'a Caps,
@@ -539,7 +499,6 @@ impl<'a> Ctx<'a> {
             pack,
             workgroup: None,
             block_floor: 0,
-            q4_variant: crate::flags::flags().q4_variant,
         })
     }
 
@@ -1217,21 +1176,6 @@ pub(crate) fn lower_node(
     lower_launch(Ctx::with_pack(caps, cx, binding, pack)?, node, theta, false)
 }
 
-/// The diagnostic selector is part of the target's artifact cache key.
-pub(crate) fn lower_node_with_q4_variant(
-    caps: &Caps,
-    node: &Node,
-    theta: SchedPoint,
-    cx: &LowerCtx<'_>,
-    binding: DimBinding,
-    pack: std::sync::Arc<UniformPack>,
-    q4_variant: u8,
-) -> Result<KernelIr> {
-    let mut ctx = Ctx::with_pack(caps, cx, binding, pack)?;
-    ctx.q4_variant = q4_variant;
-    lower_launch(ctx, node, theta, false)
-}
-
 /// [`lower_node`] for a group member: continued decl numbering, workgroup
 /// index `workgroup`, at least `block_floor` lanes, the group's buffer table.
 #[allow(clippy::too_many_arguments)]
@@ -1245,13 +1189,11 @@ pub(crate) fn lower_member(
     workgroup: TileExpr,
     block_floor: u32,
     buffers: &[Buffer],
-    q4_variant: u8,
 ) -> Result<KernelIr> {
     let mut ctx = Ctx::with_pack_in(caps, cx, binding, pack)?;
     ctx.buffers = buffers.to_vec();
     ctx.workgroup = Some(workgroup);
     ctx.block_floor = block_floor;
-    ctx.q4_variant = q4_variant;
     lower_launch(ctx, node, theta, true)
 }
 

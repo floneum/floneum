@@ -10,8 +10,6 @@ pub(crate) struct Flags {
     pub poll_spin_ms: Option<u64>,
     /// Optional bounded sleep between native nonblocking completion polls.
     pub poll_interval_us: u64,
-    /// Bounded F32 arithmetic probe for Q4 contractions: 0/1/2/3.
-    pub q4_variant: u8,
     /// `FUSOR_COLDLIST`: under `gapstep`, one line per launch the probe missed.
     pub coldlist: bool,
     /// `FUSOR_VERIFY_ARTIFACT_CACHE`: relower every cache hit and compare
@@ -48,15 +46,6 @@ pub(crate) struct Flags {
     pub dump_contract: bool,
     /// Diagnostic SGEMV accumulation chains per column; default preserves order.
     pub gemv_chains: usize,
-    /// Exact integer weight decoding through normal half-bit encodings; F32 math.
-    pub q4_half_unpack: bool,
-    /// Exact signed Q6 integers through F32 mantissa encodings.
-    pub q6_float_unpack: bool,
-    pub packed_q4_splits: u32,
-    pub packed_q4_split_max_n: Option<usize>,
-    pub packed_q4_split_max_k: Option<usize>,
-    pub q6_splits: u32,
-    pub q6_split_max_n: Option<usize>,
     pub gemv_contiguous_n: bool,
     pub scatter_single_linear: Option<u32>,
     pub time_passes: bool,
@@ -83,14 +72,6 @@ pub(crate) fn flags() -> &'static Flags {
         let number = |name| std::env::var(name).ok().and_then(|v| v.parse().ok());
         Flags {
             gapstep: on("FUSOR_GAPSTEP"),
-            q4_variant: std::env::var("FUSOR_PROFILE_Q4_VARIANT")
-                .ok()
-                .map(|v| {
-                    let n = v.parse().expect("Q4 variant must be an integer");
-                    assert!(n <= 3, "Q4 variant must be 0..=3");
-                    n
-                })
-                .unwrap_or(0),
             poll_spin_ms: std::env::var("FUSOR_PROFILE_POLL_SPIN_MS").ok().map(|v| {
                 let n = v
                     .parse()
@@ -153,35 +134,6 @@ pub(crate) fn flags() -> &'static Flags {
                     n
                 })
                 .unwrap_or(1),
-            q4_half_unpack: on("FUSOR_PROFILE_Q4_HALF_UNPACK"),
-            q6_float_unpack: on("FUSOR_PROFILE_Q6_FLOAT_UNPACK"),
-            packed_q4_splits: std::env::var("FUSOR_PROFILE_PACKED_Q4_SPLITS")
-                .ok()
-                .map(|s| {
-                    let n: u32 = s
-                        .parse()
-                        .expect("FUSOR_PROFILE_PACKED_Q4_SPLITS must be an integer");
-                    assert!(
-                        matches!(n, 1 | 2 | 4 | 8),
-                        "packed Q4 splits must be 1, 2, 4 or 8"
-                    );
-                    n
-                })
-                .unwrap_or(1),
-            packed_q4_split_max_n: number("FUSOR_PROFILE_PACKED_Q4_SPLIT_MAX_N"),
-            packed_q4_split_max_k: number("FUSOR_PROFILE_PACKED_Q4_SPLIT_MAX_K"),
-            q6_splits: std::env::var("FUSOR_PROFILE_Q6_SPLITS")
-                .ok()
-                .map(|s| {
-                    let n = s.parse().expect("Q6 splits must be an integer");
-                    assert!(
-                        matches!(n, 1 | 2 | 4 | 8),
-                        "Q6 splits must be 1, 2, 4, or 8"
-                    );
-                    n
-                })
-                .unwrap_or(1),
-            q6_split_max_n: number("FUSOR_PROFILE_Q6_SPLIT_MAX_N"),
             gemv_contiguous_n: on("FUSOR_PROFILE_GEMV_CONTIGUOUS_N"),
             scatter_single_linear: std::env::var("FUSOR_PROFILE_SCATTER_SINGLE_LINEAR")
                 .ok()

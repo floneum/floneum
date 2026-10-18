@@ -19,23 +19,14 @@ pub(super) struct WarmArtifacts {
 }
 
 impl WarmArtifacts {
-    pub(super) fn owned(
-        &self,
-        plan: &Plan,
-        arena: u64,
-        variant: u8,
-        binds: &BindingEnv,
-    ) -> Option<Arc<Built>> {
+    pub(super) fn owned(&self, plan: &Plan, arena: u64, binds: &BindingEnv) -> Option<Arc<Built>> {
         let owner = self.owner.as_ref()?;
         let supplied = binds.plan_owner.as_ref()?;
         (owner.ptr_eq(supplied)
             && supplied
                 .upgrade()
                 .is_some_and(|p| std::ptr::eq(p.as_ref(), plan))
-            && self
-                .keys
-                .first()
-                .is_some_and(|k| k.arena == arena && k.q4_variant == variant)
+            && self.keys.first().is_some_and(|k| k.arena == arena)
             && self
                 .dimensions
                 .iter()
@@ -46,11 +37,8 @@ impl WarmArtifacts {
     /// Reuse the digests only after comparing every input to
     /// `plan_artifact_keys` exactly. Plan hashes and pointer identity alone
     /// cannot prove this (e.g. a diagnostic schedule substitution).
-    pub(super) fn keys(&self, plan: &Plan, arena: u64, variant: u8) -> Option<Vec<ArtifactKey>> {
-        (self
-            .keys
-            .first()
-            .is_some_and(|k| k.arena == arena && k.q4_variant == variant)
+    pub(super) fn keys(&self, plan: &Plan, arena: u64) -> Option<Vec<ArtifactKey>> {
+        (self.keys.first().is_some_and(|k| k.arena == arena)
             && self.symbols == plan.symbols
             && self.scalar_symbols == plan.scalar_symbols
             && self.launches == plan.launches
@@ -180,7 +168,6 @@ mod tests {
             arena: 1,
             launch: 2,
             context: 3,
-            q4_variant: 3,
         };
         let binds = BindingEnv::default()
             .with_dim(body, 128)
@@ -243,36 +230,28 @@ mod tests {
         let layout = || (&symbols[..], &scalars[..], Arc::new(UniformPack::default()));
         let snapshot =
             WarmArtifacts::capture(&plan, &[key], &binds, &built, &entries, layout()).unwrap();
-        assert!(snapshot.keys(&plan, 1, 3).is_some());
-        assert!(snapshot.keys(&plan, 2, 3).is_none());
-        assert!(snapshot.keys(&plan, 1, 0).is_none());
+        assert!(snapshot.keys(&plan, 1).is_some());
+        assert!(snapshot.keys(&plan, 2).is_none());
         let mut changed = plan.clone();
         changed.launches[0].bindings[0].binding = 2;
-        assert!(snapshot.keys(&changed, 1, 3).is_none());
+        assert!(snapshot.keys(&changed, 1).is_none());
         let mut changed = plan.clone();
         changed.buffers[0].layout = fusor_ir::shape::Layout::contiguous(&[Dim::Const(64)]);
-        assert!(snapshot.keys(&changed, 1, 3).is_none());
+        assert!(snapshot.keys(&changed, 1).is_none());
         let mut changed = plan.clone();
         changed
             .extraction
             .theta
             .insert(Id(1), fusor_ir::ir::launch::SchedPoint::Point);
-        assert!(snapshot.keys(&changed, 1, 3).is_none());
+        assert!(snapshot.keys(&changed, 1).is_none());
         let mut changed = plan.clone();
         changed.symbols.swap(0, 1);
-        assert!(snapshot.keys(&changed, 1, 3).is_none());
+        assert!(snapshot.keys(&changed, 1).is_none());
         assert!(snapshot.matches(&[key], &binds));
         assert!(snapshot.matches(&[key], &binds.clone().with_scalar(scalar, 9.0)));
         assert!(!snapshot.matches(&[key], &binds.clone().with_dim(body, 256)));
         assert!(!snapshot.matches(&[key], &binds.clone().with_dim(grid, 33)));
         assert!(!snapshot.matches(&[ArtifactKey { context: 4, ..key }], &binds));
-        assert!(!snapshot.matches(
-            &[ArtifactKey {
-                q4_variant: 0,
-                ..key
-            }],
-            &binds
-        ));
         let mut missing = binds.clone();
         missing.dims.remove(&grid);
         assert!(!snapshot.matches(&[key], &missing));
@@ -290,29 +269,28 @@ mod tests {
         let owned_snapshot =
             WarmArtifacts::capture(&owned, &[key], &owner_binds, &built, &entries, layout())
                 .unwrap();
-        assert!(owned_snapshot.owned(&owned, 1, 3, &owner_binds).is_some());
-        assert!(owned_snapshot.owned(&plan, 1, 3, &owner_binds).is_none());
-        assert!(owned_snapshot.owned(&owned, 2, 3, &owner_binds).is_none());
-        assert!(owned_snapshot.owned(&owned, 1, 0, &owner_binds).is_none());
+        assert!(owned_snapshot.owned(&owned, 1, &owner_binds).is_some());
+        assert!(owned_snapshot.owned(&plan, 1, &owner_binds).is_none());
+        assert!(owned_snapshot.owned(&owned, 2, &owner_binds).is_none());
         assert!(
             owned_snapshot
-                .owned(&owned, 1, 3, &owner_binds.clone().with_dim(grid, 33))
+                .owned(&owned, 1, &owner_binds.clone().with_dim(grid, 33))
                 .is_none()
         );
         assert!(
             owned_snapshot
-                .owned(&owned, 1, 3, &owner_binds.clone().with_scalar(scalar, 4.0))
+                .owned(&owned, 1, &owner_binds.clone().with_scalar(scalar, 4.0))
                 .is_some()
         );
         assert_eq!(Arc::strong_count(&owned), 1);
         Arc::make_mut(&mut owned).launches[0].block = 64;
         owner_binds.plan_owner = Some(Arc::downgrade(&owned));
-        assert!(owned_snapshot.owned(&owned, 1, 3, &owner_binds).is_none());
+        assert!(owned_snapshot.owned(&owned, 1, &owner_binds).is_none());
         // A caller's hint can name a different plan. Capture must not
         // associate that identity with the borrowed plan's artifacts.
         let mislabelled =
             WarmArtifacts::capture(&plan, &[key], &owner_binds, &built, &entries, layout())
                 .unwrap();
-        assert!(mislabelled.owned(&owned, 1, 3, &owner_binds).is_none());
+        assert!(mislabelled.owned(&owned, 1, &owner_binds).is_none());
     }
 }

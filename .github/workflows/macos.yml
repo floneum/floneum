@@ -78,7 +78,7 @@ jobs:
           cargo nextest archive --cargo-profile ci --workspace --lib --bins --tests \
             --features $FEATURES --archive-file root-tests.tar.zst
           cargo nextest archive --cargo-profile ci --manifest-path fusor/Cargo.toml --workspace \
-            --lib --bins --tests --examples --archive-file fusor-tests.tar.zst
+            --lib --bins --tests --examples --features fusor/kernel-observer,fusor/compiler-tests --archive-file fusor-tests.tar.zst
           cargo build --profile ci --manifest-path fusor/Cargo.toml -p fusor-conformance
       - uses: actions/upload-artifact@v4
         with:
@@ -105,6 +105,12 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: macos-tests
+      - name: Run shared compiler WebGPU regressions
+        env:
+          FUSOR_CONFORMANCE_REQUIRE_GPU: "1"
+        run: |
+          cargo nextest run --archive-file fusor-tests.tar.zst --workspace-remap fusor --extract-to fusor \
+            --run-ignored only --test-threads 1 -E 'binary(shared_compiler)'
       - name: Run tests
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -113,7 +119,7 @@ jobs:
           FUSOR_CONFORMANCE_REQUIRE_GPU: "1"
         run: |
           cargo nextest run --archive-file root-tests.tar.zst --workspace-remap . --extract-to .
-          cargo nextest run --archive-file fusor-tests.tar.zst --workspace-remap fusor --extract-to fusor
+          cargo nextest run --archive-file fusor-tests.tar.zst --workspace-remap fusor --extract-to fusor --extract-overwrite
 
   conformance:
     needs: build

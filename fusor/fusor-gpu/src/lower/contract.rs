@@ -19,9 +19,6 @@ use fusor_ir::shape::Dim;
 use crate::lower::{Ctx, StagedSource, distribute_workgroups, scalar_element};
 
 mod contiguous_n;
-mod packed_q4;
-mod packed_q6_coalesced;
-use packed_q4::{lower_packed_q4, packed_q4_source};
 
 /// Dispatch on the family this lowering was selected at.
 pub(crate) fn lower_contract(
@@ -895,7 +892,12 @@ fn load_staged(
                     col: col.clone(),
                 };
                 let fill = b.zero(source_element(source));
-                Ok(b.load(source.clone(), addr, mask.clone(), fill))
+                match source {
+                    Source::Quantized(q) => {
+                        fusor_gguf::blocks::decode_load(q, &addr, mask.clone(), fill)
+                    }
+                    _ => Ok(b.load(source.clone(), addr, mask.clone(), fill)),
+                }
             }
             StagedSource::Indexed {
                 operand,
@@ -1302,7 +1304,8 @@ fn lower_sgemv(ctx: Ctx<'_>, c: &Contract<'_>, p: SgemvParams) -> Result<KernelI
                    _: bool|
      -> Result<Vec<TileExpr>> {
         let lane_base = b.add(step, b.mul(lane.clone(), b.u32(vector)));
-        let mut partial = b.load_local(from[0].clone());
+        let initial = b.load_local(from[0].clone());
+        let mut products = Vec::with_capacity(vector as usize);
         for v in 0..vector {
             let k = b.add(lane_base.clone(), b.u32(v));
             let mask = match masked {
@@ -1312,13 +1315,15 @@ fn lower_sgemv(ctx: Ctx<'_>, c: &Contract<'_>, p: SgemvParams) -> Result<KernelI
             let av = c.a.value(&ctx, &row, &k, &mask, &batch, c.acc)?;
             let b_row = b.add(b_row_base.clone(), k);
             let bv = c.b.value(&ctx, &b_row, &col, &mask, &batch, c.acc)?;
-            partial = b.fma(
+            products.push((
                 zero_unless(&ctx, masked, &mask, av, c.acc),
                 zero_unless(&ctx, masked, &mask, bv, c.acc),
-                partial,
-            );
+            ));
         }
-        Ok(vec![partial])
+        let numeric = ctx.cx.graph.facts(ctx.cx.launch.root).numeric;
+        Ok(vec![fusor_tile::dot::accumulate(
+            b, initial, &products, numeric,
+        )])
     };
     let mut body: Vec<Stmt> = Vec::new();
     let vector = p.vector.max(1);
@@ -1354,14 +1359,6 @@ fn lower_sgemv_subgroup_cols(ctx: Ctx<'_>, c: &Contract<'_>, p: SgemvParams) -> 
         return Err(Error::Plan(format!(
             "sgemv {p:?} does not tile whole fixed-width subgroups at width {width}"
         )));
-    }
-    // Packed integer formats expose adjacent payload words. These lowerings
-    // are selected by layout and subgroup legality for every contraction.
-    if let Some(q) = packed_q6_coalesced::source(c, width, p) {
-        return packed_q6_coalesced::lower(ctx, c, p, &q);
-    }
-    if let Some(q) = packed_q4_source(c, width, p) {
-        return lower_packed_q4(ctx, c, p, &q);
     }
     let block = p.subgroups * width;
     let cps = p.cols / p.subgroups;
@@ -1452,6 +1449,7 @@ fn lower_sgemv_subgroup_cols(ctx: Ctx<'_>, c: &Contract<'_>, p: SgemvParams) -> 
         let mut partials = Vec::with_capacity(cps as usize * chains);
         for (locals, (col, col_ok)) in from.chunks_exact(chains).zip(&cols_of_subgroup) {
             let mut partial: Vec<_> = locals.iter().cloned().map(|l| b.load_local(l)).collect();
+            let mut products = vec![Vec::new(); chains];
             for (v, (k, mask, av)) in a_vals.iter().enumerate() {
                 let load_mask = match col_exact {
                     true => mask.clone(),
@@ -1460,7 +1458,11 @@ fn lower_sgemv_subgroup_cols(ctx: Ctx<'_>, c: &Contract<'_>, p: SgemvParams) -> 
                 let b_row = b.add(b_row_base.clone(), k.clone());
                 let bv = c.b.value(&ctx, &b_row, col, &load_mask, &batch, c.acc)?;
                 let bv = zero_unless(&ctx, masked, mask, bv, c.acc);
-                partial[v % chains] = b.fma(av.clone(), bv, partial[v % chains].clone());
+                products[v % chains].push((av.clone(), bv));
+            }
+            let numeric = ctx.cx.graph.facts(ctx.cx.launch.root).numeric;
+            for (partial, products) in partial.iter_mut().zip(products) {
+                *partial = fusor_tile::dot::accumulate(b, partial.clone(), &products, numeric);
             }
             partials.extend(partial);
         }

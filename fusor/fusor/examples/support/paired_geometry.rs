@@ -7,6 +7,7 @@ use fusor_ir::ir::{
     Op,
     launch::{Launch, SchedPoint, SgemvParams},
 };
+use fusor_ir::target::Target;
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 type ReplaySample = Arc<Mutex<Option<(f64, usize)>>>;
@@ -27,24 +28,17 @@ pub fn install(device: &Device, repeats: usize, sink: ReplaySample) {
         parts,
         gap,
     };
-    assert_eq!(vector, 32);
     assert!([1, 2, 4, 8, 16, 32].contains(&subgroups));
     assert!(cols.is_multiple_of(subgroups) && (1..=8).contains(&(cols / subgroups)));
-    assert_eq!((parts, gap), (4, 32));
     let target = device.backend().gpu_target().unwrap();
     assert!(
-        subgroups * 32
+        subgroups * target.caps().subgroup_width()
             <= target
                 .device()
                 .limits_used()
                 .max_compute_invocations_per_workgroup
     );
     let dependent = std::env::var_os("LAB_COMPARE_DEPENDENT").is_some();
-    let arithmetic = std::env::var("LAB_COMPARE_Q4_VARIANT")
-        .ok()
-        .map(|v| v.parse::<u8>().expect("Q4 variant integer"));
-    assert!(arithmetic.is_none_or(|n| (1..=3).contains(&n)));
-    assert!(std::env::var_os("FUSOR_PROFILE_Q4_VARIANT").is_none());
     let owner = Arc::new(OnceLock::<Weak<PlanObserver>>::new());
     let restore = owner.clone();
     let probe = device.clone();
@@ -97,11 +91,10 @@ pub fn install(device: &Device, repeats: usize, sink: ReplaySample) {
             }
             let baseline_commands = baseline_commands.to_vec();
             let base_identities = base_identities.to_vec();
-            let changed = arithmetic.is_some()
-                || plan
-                    .launches
-                    .iter()
-                    .any(|l| plan.extraction.theta[&l.root] != SchedPoint::Sgemv(candidate));
+            let changed = plan
+                .launches
+                .iter()
+                .any(|l| plan.extraction.theta[&l.root] != SchedPoint::Sgemv(candidate));
             let nested_probe = probe.clone();
             let nested_sink = sink.clone();
             let guards =
@@ -117,7 +110,7 @@ pub fn install(device: &Device, repeats: usize, sink: ReplaySample) {
             let lists = [&baseline_commands[..], candidate_commands];
             for commands in lists {
                 assert!(commands.iter().all(|c| matches!(c, CommandRecord::Dispatch { name, .. }
-                    if name.starts_with("sgemv_packed_q4") || name.starts_with("sgemv_q6_coalesced"))),
+                    if name.starts_with("sgemv"))),
                     "both schedules must use the requested packed GEMV path");
             }
             let order = if iteration.is_multiple_of(2) { [0, 1, 1, 0] } else { [1, 0, 0, 1] };
@@ -168,20 +161,13 @@ pub fn install(device: &Device, repeats: usize, sink: ReplaySample) {
                 "order":order, "baseline_samples_us":times[0], "candidate_samples_us":times[1],
                 "candidate_cell":[vector,subgroups,cols,parts,gap], "checked_values":checked,
                 "dependent_input_guard":dependent,
-                "q4_variant":arithmetic.map(|n| [0,n]),
                 "max_abs_error":max_error, "dispatches_per_arm":candidate_commands.len(),
             }));
             *nested_sink.lock().unwrap() = Some((a * baseline_commands.len() as f64, baseline_commands.len()));
         })));
             // The nested callback holds both live command lists and compares them
             // before the nested resolve can recycle its temporary storage.
-            target
-                .set_q4_variant(arithmetic)
-                .expect("bounded arithmetic selector");
             let result = target.resolve(&variant, graph, binds);
-            target
-                .set_q4_variant(None)
-                .expect("restore arithmetic selector");
             target.set_plan_observer(restore.get().expect("observer owner").upgrade());
             result.expect("candidate lowering/resolve");
             *round.lock().unwrap() += 1;

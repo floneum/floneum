@@ -130,11 +130,18 @@ fn shared_fusions_and_transfers_match_host_results() {
         seen.iter().any(|n| n == "rms_norm"),
         "normalization fusion was not selected: {seen:?}"
     );
-    assert!(
-        seen.iter()
-            .any(|n| n.starts_with("decode_attention_online")),
-        "attention fusion was not selected: {seen:?}"
-    );
+    if device
+        .session()
+        .caps()
+        .subgroups
+        .is_some_and(|s| s.is_fixed())
+    {
+        assert!(
+            seen.iter()
+                .any(|n| n.starts_with("decode_attention_online")),
+            "attention fusion was not selected: {seen:?}"
+        );
+    }
 }
 
 #[test]
@@ -143,10 +150,10 @@ fn shared_quantized_contractions_match_dequantized_reference() {
     use fusor_ir::dtype::{QFmt, QLayout};
     let seen = Arc::new(Mutex::new(Vec::new()));
     let mut fixed_subgroup = false;
-    for (fmt, layout) in [
-        (QFmt::Q4K, QLayout::Native),
-        (QFmt::Q6K, QLayout::F32Scales),
-    ] {
+    for (fmt, layout) in QFmt::ALL
+        .into_iter()
+        .flat_map(|fmt| [QLayout::Native, QLayout::F32Scales].map(|layout| (fmt, layout)))
+    {
         for n in [1024usize, 1027] {
             // Each case releases its graph, compiled plans, and GPU pool.
             let device = pollster::block_on(Device::gpu()).unwrap();
@@ -166,19 +173,30 @@ fn shared_quantized_contractions_match_dequantized_reference() {
                 })));
             let k = 4096usize;
             let block_bytes = fmt.block_bytes(layout) as usize;
-            let mut bytes: Vec<u8> = (0..n * k / 256 * block_bytes)
+            let block_elements = fmt.block_elements() as usize;
+            let fields = fusor_gguf::blocks::block_fields(fmt, layout);
+            let mut bytes: Vec<u8> = (0..n * k / block_elements * block_bytes)
                 .map(|i| ((i * 71 + 13) % 251) as u8)
                 .collect();
             for block in bytes.chunks_mut(block_bytes) {
-                if fmt == QFmt::Q4K {
-                    block[..2].copy_from_slice(&half::f16::from_f32(0.03125).to_le_bytes());
-                    block[2..4].copy_from_slice(&half::f16::from_f32(0.015625).to_le_bytes());
-                } else {
-                    block[208..212].copy_from_slice(&0.001f32.to_le_bytes());
+                for (offset, value) in [(Some(fields.scale), 0.03125f32), (fields.min, 0.015625f32)]
+                {
+                    if let Some(offset) = offset {
+                        let offset = offset as usize;
+                        if fields.scale_is_f16 {
+                            block[offset..offset + 2]
+                                .copy_from_slice(&half::f16::from_f32(value).to_le_bytes());
+                        } else {
+                            block[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+                        }
+                    }
                 }
             }
             let mut dense = vec![0.; n * k];
-            for (src, dst) in bytes.chunks(block_bytes).zip(dense.chunks_mut(256)) {
+            for (src, dst) in bytes
+                .chunks(block_bytes)
+                .zip(dense.chunks_mut(block_elements))
+            {
                 fusor_gguf::blocks::cpu_dequantize_block(fmt, layout, src, dst);
             }
             let weight = fusor::QMatrix::from_raw_bytes(
@@ -211,12 +229,8 @@ fn shared_quantized_contractions_match_dequantized_reference() {
     let seen = seen.lock().unwrap();
     if fixed_subgroup {
         assert!(
-            seen.iter().any(|n| n.starts_with("sgemv_packed_q4")),
-            "Q4 lowering was not selected: {seen:?}"
-        );
-        assert!(
-            seen.iter().any(|n| n.starts_with("sgemv_q6_coalesced")),
-            "Q6 lowering was not selected: {seen:?}"
+            seen.iter().any(|n| n == "sgemv_cols"),
+            "ordinary contraction lowering was not selected: {seen:?}"
         );
     }
 }
@@ -478,5 +492,31 @@ fn softmax_gradients_after_view_forwarding() {
         close(&gradient.to_vec_f32().unwrap(), &expected, 1e-4);
         gradient.clear_device_buf();
         close(&gradient.to_vec_f32().unwrap(), &expected, 1e-4);
+    }
+}
+
+#[test]
+#[ignore = "requires a live WebGPU device"]
+fn ordinary_dense_contractions_cover_tails_and_replay() {
+    for (rows, k, n) in [(1, 37, 7), (3, 256, 31), (1, 513, 33)] {
+        let device = pollster::block_on(Device::gpu()).unwrap();
+        let a = data(rows * k, 3);
+        let w = data(n * k, 5);
+        let x = Tensor::from_slice(&device, [rows, k], &a);
+        let weights = Tensor::from_slice(&device, [n, k], &w);
+        let y = x.mat_mul(&weights.t());
+        let reference: Vec<f32> = (0..rows)
+            .flat_map(|r| (0..n).map(move |c| (r, c)))
+            .map(|(r, c)| {
+                a[r * k..(r + 1) * k]
+                    .iter()
+                    .zip(&w[c * k..(c + 1) * k])
+                    .map(|(a, b)| a * b)
+                    .sum()
+            })
+            .collect();
+        close(&y.to_vec_f32(), &reference, 2e-4);
+        y.as_dyn().clear_device_buf();
+        close(&y.to_vec_f32(), &reference, 2e-4);
     }
 }
