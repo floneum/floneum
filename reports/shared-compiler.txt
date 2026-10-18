@@ -65,7 +65,18 @@ Follow-up experiments (still kernel measurements, not a full-model result):
   from these diagnostic probes is adopted into production defaults.
 - Thirteen compiler unit tests pass, including red/green vector-dot and composed
   field cases, strict arithmetic, lane coverage, and rejecting extra loads.
-  Full GPU validation of the final composed-field combination is in progress.
+  The final composed-field combination passes all eight GPU regressions,
+  including the 96 quantized cases and exact dyadic outputs (125.84 s).
+- Candidate runtime is committed at 10377cfa2b3f7e69f55e6592af940844bfafd2c9.
+  Final checks pass: seven IR units, two differential index regressions,
+  thirteen tile units, and workspace/all-target Clippy with warnings denied
+  (48.19 s). The Python comparison/guard suite has 19 passing tests.
+  Cross-platform validation of this candidate and its full-model performance
+  remain pending. Release build 39097786222 uses a fresh candidate-only target
+  directory and the default release settings. This prevents revision switching
+  from reusing incompatible compiler dependencies, which broke the earlier
+  auxiliary-probe build. Original base and prior-candidate binaries remain from
+  verified CI run 39092226768; no local heavy release build is started.
 
 Before the lane-window experiment, all eight ordinary-device WebGPU tests pass
 locally (186.35 s with unoptimized host code), including all 96 quantized cases,
