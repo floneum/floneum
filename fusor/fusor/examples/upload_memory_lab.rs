@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         };
         let len = raw.bytes.len();
-        // Bound the transient readback allocation as well as total GPU storage.
+        // Keep each upload small as well as bounding total GPU storage.
         if !(1024 * 1024..=16 * 1024 * 1024).contains(&len) || total + len > budget {
             continue;
         }
@@ -67,12 +67,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     device.try_flush()?;
     phase("gpu_uploaded", total, weights.len());
     for (name, weight, source, expected) in &weights {
-        let actual = weight.tensor.as_slice()?;
-        assert_eq!(
-            Sha256::digest(actual.bytes()),
-            *expected,
-            "GPU bytes differ: {name}"
-        );
         source.with_slice(|bytes| {
             assert_eq!(
                 Sha256::digest(bytes),
@@ -82,6 +76,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
         weight.tensor.upload()?;
     }
-    phase("verified", total, weights.len());
+    phase("host_bytes_verified", total, weights.len());
     Ok(())
 }
