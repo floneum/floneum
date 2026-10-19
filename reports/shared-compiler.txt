@@ -1,3 +1,46 @@
+Declared compute workgroups and final translator validation (2026-10-18)
+========================================================================
+PR head b67f55e43 pins Naga/wgpu 9c9187d26886eccc4b3fbfeb67989ce77fbd1217.
+A minimized symbolic softmax/matmul regression requests 1,024 threads, but
+Metal previously compiled the shader for a maximum of 448 under register
+pressure. The unvalidated dispatch leaves its output unwritten. Enabling
+Metal validation reproduces the explicit thread-limit failure in run
+39194119799; the same WebGPU regression passes after the translator fix in
+39194684553, with every output compared against a host calculation.
+
+Naga now emits max_total_threads_per_threadgroup from the checked product
+of each compute entry point's declared workgroup dimensions. This conveys
+the requirement before backend resource allocation, without changing the
+WebGPU execution path or dispatching by model, adapter, or storage format.
+The attribute requires MSL 2.1, so older language targets retain compatible
+emission. A regression covers MSL 1.0, 2.0, 2.1, and 2.4, two 3D workgroup
+sizes, and exclusion of fragment entry points. Generated snapshots are kept
+consistent. The dependency change is https://github.com/ealmloff/wgpu/pull/1.
+
+Validation run 39194900805 passes 27 Fusor unit tests, 10 shared compiler
+tests, 16 candidate-construction tests, all 72 attention results, all 96
+backward results, and workspace/all-target Clippy. This includes the two
+previously failing padded-cache attention cases. Its final optional SPIR-V
+snapshot step fails because spirv-as is absent on that macOS runner; this
+is not an overall green run. Linux run 39197542862 provisions the assembler
+and passes all 125 Naga unit tests, three snapshot suites, snapshot consistency,
+and all-target/all-feature Clippy. Metal shader compilation passes dependency
+run 39197470747/job/117883236398 after the language-version gate. Fork-wide
+wgpu-test jobs have the same VALIDATION_CANARY build failure as the unchanged
+fork base (34862516836/job/104038102813).
+
+The ordinary current-PR release profiler builds remotely in run 39197546114.
+Its source, profiler/inference hashes, arm64 architecture, and binary SHA256
+41e987b69dc2da4d7487db1a6a1c4f1da432853f823c42e31234efe3faa47a4d
+are verified. The planned measurement uses 512 actual tokens per round,
+eight warmup tokens, and three rounds so it crosses the earlier 512-slot
+cache-growth boundary. All measured gaps remain in statistics. Admission
+has not launched the model: the first window encounters foreign compiler/
+model processes; the current window lacks the required memory headroom.
+Canonical resource guards remain unchanged; resource-aborted workloads are
+not automatically retried. The 60 tokens/sec and 2x full-model goals remain
+unverified, and the earlier cache-growth pause is not claimed resolved.
+
 General gather epilogues and completed experiment checks (2026-10-18)
 ===================================================================
 Candidate compiler 01164b16b fuses an ordinary map consuming a gather into
