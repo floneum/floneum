@@ -37,7 +37,7 @@ pub struct TensorBytes {
 #[derive(Clone)]
 enum TensorBytesOwner {
     File(Arc<Gguf>),
-    Owned(Arc<Box<[u8]>>),
+    Owned(Arc<Vec<u8>>),
 }
 
 impl TensorBytesOwner {
@@ -76,7 +76,7 @@ impl From<Box<[u8]>> for TensorBytes {
     fn from(bytes: Box<[u8]>) -> Self {
         let range = 0..bytes.len();
         Self {
-            owner: TensorBytesOwner::Owned(Arc::new(bytes)),
+            owner: TensorBytesOwner::Owned(Arc::new(bytes.into_vec())),
             range,
         }
     }
