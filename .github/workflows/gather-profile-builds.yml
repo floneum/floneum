@@ -1,0 +1,54 @@
+name: Shared gather epilogue regression
+
+on:
+  push:
+    branches: [codex/gather-profile-builds]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gather-profile-builds
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      CARGO_BUILD_JOBS: 1
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_OPT_LEVEL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 678e0974b931574f75f3ed92bca7298c1acc8955
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Demonstrate the materialized gather epilogue
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir artifacts
+          set +e
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --test shared_compiler --features kernel-observer,compiler-tests indexed_elementwise_pipeline_fuses_and_replays -- --exact --ignored > artifacts/red.log 2>&1
+          red=$?
+          set -e
+          cat artifacts/red.log
+          test "$red" -ne 0
+          grep -q 'gather epilogue materialized an intermediate' artifacts/red.log
+      - name: Build bounded baseline fixture
+        run: |
+          cargo build --locked --manifest-path fusor/Cargo.toml -p fusor --features kernel-observer --example indexed_map_lab
+          cp target/debug/examples/indexed_map_lab artifacts/indexed-map-lab-baseline
+          git rev-parse HEAD > artifacts/baseline-revision.txt
+          shasum -a 256 artifacts/indexed-map-lab-baseline > artifacts/sha256.txt
+          rustc -Vv > artifacts/toolchain.txt
+          tar -czf gather-baseline-fixture.tar.gz -C artifacts .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gather-baseline-fixture-macos
+          path: gather-baseline-fixture.tar.gz
+          retention-days: 3
