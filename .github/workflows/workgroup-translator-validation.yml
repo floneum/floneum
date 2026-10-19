@@ -1,0 +1,44 @@
+name: Workgroup translator regression
+on:
+  push:
+    branches: [codex/workgroup-translator-validation]
+permissions:
+  contents: read
+jobs:
+  naga:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CARGO_BUILD_JOBS: 1
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_OPT_LEVEL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: ealmloff/wgpu
+          ref: dc256a91cca0619603a4fe5899516cc3772e7d2a
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: workgroup-translator-${{ runner.os }}-${{ github.sha }}
+          restore-keys: workgroup-translator-${{ runner.os }}-
+      - name: Install SPIR-V fixture assembler
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y spirv-tools
+      - name: Validate the translator and regenerate all snapshots
+        run: |
+          cargo test --locked -p naga --all-features --lib -- --test-threads=1
+          cargo test --locked -p naga --all-features --test naga snapshots:: -- --test-threads=1
+          git diff -- naga/tests/out/msl > naga-workgroup-snapshots.patch
+      - uses: actions/upload-artifact@v4
+        with:
+          name: naga-workgroup-snapshots-linux
+          path: naga-workgroup-snapshots.patch
+          retention-days: 3
