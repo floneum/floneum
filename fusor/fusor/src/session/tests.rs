@@ -109,10 +109,10 @@ fn symbolic_softmax_gemv_materializations_agree() {
     for (label, plan) in std::iter::once(("base".to_string(), base)).chain(variants) {
         let actual = run_f32(&session, h, &plan, &out);
         for (i, (a, e)) in actual.iter().zip(&expected).enumerate() {
-            assert!(
-                a.is_finite() && (a - e).abs() < 1e-5,
-                "{label} [{i}]: {a} != {e}"
-            );
+            if !a.is_finite() || (a - e).abs() >= 1e-5 {
+                eprintln!("[gemv-min] plan={plan:#?}");
+                panic!("{label} [{i}]: {a} != {e}");
+            }
         }
     }
 }
