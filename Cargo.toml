@@ -388,5 +388,5 @@ debug = "line-tables-only"
 # from the build root. This revision also supplies browser matrix WGSL.
 # All build roots use the same source.
 [patch.crates-io]
-wgpu = { git = "https://github.com/ealmloff/wgpu", rev = "24a7d3577213fc147637fe7fb20e0e845a74df8a" }
-naga = { git = "https://github.com/ealmloff/wgpu", rev = "24a7d3577213fc147637fe7fb20e0e845a74df8a" }
+wgpu = { git = "https://github.com/ealmloff/wgpu", rev = "dc256a91cca0619603a4fe5899516cc3772e7d2a" }
+naga = { git = "https://github.com/ealmloff/wgpu", rev = "dc256a91cca0619603a4fe5899516cc3772e7d2a" }

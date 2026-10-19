@@ -67,8 +67,8 @@ naga = "29"
 # referenced once cannot sink past the barrier that ordered it. This revision
 # also supplies browser matrix serialization.
 [patch.crates-io]
-wgpu = { git = "https://github.com/ealmloff/wgpu", rev = "24a7d3577213fc147637fe7fb20e0e845a74df8a" }
-naga = { git = "https://github.com/ealmloff/wgpu", rev = "24a7d3577213fc147637fe7fb20e0e845a74df8a" }
+wgpu = { git = "https://github.com/ealmloff/wgpu", rev = "dc256a91cca0619603a4fe5899516cc3772e7d2a" }
+naga = { git = "https://github.com/ealmloff/wgpu", rev = "dc256a91cca0619603a4fe5899516cc3772e7d2a" }
 
 # CI builds: the conformance sweep runs the planner and every raced kernel
 # body on the host, and unoptimized planner code is most of its wall time.
