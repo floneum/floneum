@@ -29,8 +29,17 @@ jobs:
             target
           key: symbolic-gemv-${{ runner.os }}-${{ hashFiles('fusor/Cargo.lock') }}-${{ github.sha }}
           restore-keys: symbolic-gemv-${{ runner.os }}-${{ hashFiles('fusor/Cargo.lock') }}-
-      - name: Isolate symbolic tail arithmetic
+      - name: Isolate synchronization in the reduced reproducer
+        env:
+          FUSOR_TRACE_DISPATCH: '1'
+          FUSOR_WGSL_DUMP: diagnostics
         run: cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --features compiler-tests --lib symbolic_softmax_gemv_materializations_agree -- --nocapture --test-threads=1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: symbolic-gemv-synthetic-shaders
+          path: diagnostics
+          retention-days: 3
       - uses: actions/cache/save@v4
         if: always()
         with:
