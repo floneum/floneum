@@ -100,7 +100,7 @@ fn symbolic_gemv_tail_schedules_agree() {
             };
             side.ops[0].src = b.id;
             side.ops[0].layout = fusor_ir::shape::Layout::from_parts(
-                Dim::ZERO,
+                Dim::Const(0),
                 &[Dim::Const(2), k, Dim::Const(16)],
                 &[capacity * Dim::Const(16), Dim::Const(16), Dim::ONE],
             )
