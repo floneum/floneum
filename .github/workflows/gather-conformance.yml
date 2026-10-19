@@ -27,7 +27,8 @@ jobs:
       - name: Build shared indexing conformance
         run: cargo build --locked --manifest-path fusor/Cargo.toml -p fusor-conformance
       - name: Verify indexing and gradients
-        run: target/debug/fusor-conformance indexing_scatter::
+        run: |
+          target/debug/fusor-conformance indexing_scatter::
       - name: Verify quantized gathers and output casts
         run: target/debug/fusor-conformance quantized::index_select_rows
       - name: Verify rotary compositions and views
