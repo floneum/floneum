@@ -17,6 +17,62 @@ fn data(n: usize, seed: usize) -> Vec<f32> {
         .map(|i| ((i * 17 + seed * 13) % 101) as f32 / 37.0 - 1.1)
         .collect()
 }
+
+#[test]
+#[ignore = "requires a live WebGPU device"]
+fn indexed_elementwise_pipeline_fuses_and_replays() {
+    let device = pollster::block_on(Device::gpu()).unwrap();
+    let target = device.backend().gpu_target().unwrap();
+    let launches = Arc::new(Mutex::new(Vec::new()));
+    let seen = launches.clone();
+    target.set_plan_observer(Some(Arc::new(move |_, _, _, _, commands| {
+        *seen.lock().unwrap() = commands
+            .iter()
+            .filter_map(|command| match command {
+                fusor_gpu::launch::CommandRecord::Dispatch { name, .. } => Some(name.clone()),
+                _ => None,
+            })
+            .collect();
+    })));
+    for width in [17, 128] {
+        let values = data(3 * width, 23);
+        let input = Tensor::from_slice(&device, [3, width], &values);
+        let indices = Tensor::from_slice(&device, [width], &vec![0u32; width]);
+        let gathered = input.as_dyn().index_select(1, indices.as_dyn()).unwrap();
+        let output = gathered
+            .mul_scalar(0.5)
+            .unwrap()
+            .sub(&input.as_dyn().mul_scalar(0.25).unwrap())
+            .unwrap();
+        for step in 0..3 {
+            let picks: Vec<_> = (0..width)
+                .map(|i| ((i * 7 + step) % width) as u32)
+                .collect();
+            indices.set_elements(&picks);
+            output.clear_device_buf();
+            device
+                .session()
+                .resolve(std::slice::from_ref(&output))
+                .unwrap();
+            device.session().wait().unwrap();
+            let actual = output.to_vec_f32().unwrap();
+            let expected: Vec<_> = (0..3 * width)
+                .map(|i| {
+                    values[i / width * width + picks[i % width] as usize] * 0.5 - values[i] * 0.25
+                })
+                .collect();
+            close(&actual, &expected, 1e-6);
+            let names = launches.lock().unwrap();
+            assert_eq!(
+                names.len(),
+                1,
+                "gather epilogue materialized an intermediate: {names:?}"
+            );
+            assert_eq!(names[0], "kgather");
+        }
+        assert_eq!(input.to_vec_f32(), values);
+    }
+}
 fn attention_reference(
     q: &[f32],
     k: &[f32],
