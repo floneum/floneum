@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: 6929093b57d590cf6adbd94f61199e2e7aab06a5
+          ref: a41e4efe3c519cd7c684146b44b41d8a992d6c3d
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/cache@v4
@@ -26,7 +26,9 @@ jobs:
             ~/.cargo/git
             fusor/target
           key: upload-memory-probe-${{ runner.os }}-${{ hashFiles('fusor/Cargo.lock') }}
-          restore-keys: upload-reclaim-green-${{ runner.os }}-
+          restore-keys: |
+            upload-memory-probe-${{ runner.os }}-
+            upload-reclaim-green-${{ runner.os }}-
       - name: Build and check bounded diagnostic
         shell: bash
         run: |
@@ -42,7 +44,16 @@ jobs:
             shasum -a 256 fusor/fusor/examples/upload_memory_lab.rs
             shasum -a 256 artifacts/upload-memory-lab
           } > artifacts/provenance.txt
+      - uses: actions/checkout@v6
+        with:
+          ref: codex/upload-memory-probe-build
+          path: diagnostic-workflow
+          persist-credentials: false
+      - name: Measure bounded immutable upload residency
+        timeout-minutes: 2
+        run: python3 diagnostic-workflow/.github/scripts/upload_memory_probe.py
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: bounded-upload-memory-probe
           path: artifacts
