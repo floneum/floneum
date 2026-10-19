@@ -56,6 +56,11 @@ fn symbolic_gemv_tail_schedules_agree() {
     let session = Session::new(Backend::gpu_blocking().expect("WebGPU regression device")).unwrap();
     let caps = session.caps();
     let mut failures = Vec::new();
+    let mut executions = 0;
+    eprintln!(
+        "[gemv-tail] adapter={} subgroup={:?} limit={}",
+        caps.name, caps.subgroups, caps.limits.max_compute_invocations_per_workgroup
+    );
     for subgroups in [1, 2, 8, 32] {
         let point = SgemvParams {
             vector: 64,
@@ -151,9 +156,12 @@ fn symbolic_gemv_tail_schedules_agree() {
             let av: Vec<f32> = (0..4 * len)
                 .map(|i| ((i * 7 % 17) as f32 - 8.) / 8.)
                 .collect();
-            let bv: Vec<f32> = (0..2 * 64 * 16)
+            let mut bv: Vec<f32> = (0..2 * 64 * 16)
                 .map(|i| ((i * 11 % 19) as f32 - 9.) / 8.)
                 .collect();
+            for batch in 0..2 {
+                bv[(batch * 64 + len as usize) * 16..(batch + 1) * 64 * 16].fill(f32::NAN);
+            }
             a.set_bytes(bytemuck::cast_slice(&av).to_vec()).unwrap();
             b.set_bytes(bytemuck::cast_slice(&bv).to_vec()).unwrap();
             let norms = [1.5f32, 2., 2.5, 3.];
@@ -161,6 +169,8 @@ fn symbolic_gemv_tail_schedules_agree() {
                 .set_bytes(bytemuck::cast_slice(&norms).to_vec())
                 .unwrap();
             let actual = run_f32(&session, h, &plan, &out);
+            executions += 1;
+            eprintln!("[gemv-tail] schedule={point:?} k={len}");
             for row in 0..4usize {
                 for col in 0..16usize {
                     let expected: f32 = (0..len as usize)
@@ -180,6 +190,7 @@ fn symbolic_gemv_tail_schedules_agree() {
             }
         }
     }
+    assert!(executions > 0, "no supported subgroup schedule executed");
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
