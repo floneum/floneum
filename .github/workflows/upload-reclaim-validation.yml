@@ -1,0 +1,50 @@
+name: Shared upload reclamation regression
+on:
+  push:
+    branches: [codex/upload-reclaim-validation]
+permissions:
+  contents: read
+jobs:
+  red:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    env:
+      CARGO_BUILD_JOBS: 1
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_OPT_LEVEL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+      FUSOR_CONFORMANCE_REQUIRE_GPU: '1'
+      FUSOR_COMPILE_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 17da67d54d31ea6b8e3db429e0eec236decaf062
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            fusor/target
+          key: upload-reclaim-red-${{ runner.os }}-${{ hashFiles('fusor/Cargo.lock') }}
+          restore-keys: workgroup-kernel-${{ runner.os }}-
+      - name: Prove an ordinary upload leaves its host pages active
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir artifacts
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor-ir --lib target::host_bytes -- --test-threads=1
+          if cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer --lib uploaded_leaves_release_host_pages_gpu -- --test-threads=1 > artifacts/red.log 2>&1; then
+            cat artifacts/red.log
+            echo 'old upload unexpectedly passed reclamation regression'
+            exit 1
+          fi
+          cat artifacts/red.log
+          grep -q 'upload did not release its host pages' artifacts/red.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upload-reclaim-red
+          path: artifacts
+          retention-days: 3
