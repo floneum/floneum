@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: 6e7d162fe7221512cdb02c1daaf2a29daa3222e3
+          ref: 01164b16bd6330a7ccd1638372d93e07eb8b8dcf
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - name: Validate general gather construction and host execution
