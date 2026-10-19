@@ -88,16 +88,42 @@ fn symbolic_gemv_tail_schedules_agree() {
                 fusor_ir::shape::StrideSpec::dim(2, Dim::Const(16)),
             ])
             .unwrap();
-        let out = a.matmul(&viewed).unwrap();
+        let normalizer = graph
+            .leaf(
+                "normalizer",
+                &[Dim::Const(2), Dim::Const(2), Dim::ONE],
+                Dtype::F32,
+            )
+            .unwrap();
+        let out = a.div_(&normalizer).unwrap().matmul(&viewed).unwrap();
         let plan = {
             let mut g = h.state().egraph.lock();
             let node = g.node(out.id).clone();
             let facts = g.facts_view(out.id, &caps);
             let variant = lower_sgemv(&mut g.builder(&caps), out.id, &node, &facts).unwrap();
             let mut op = g.node(variant).op.clone();
-            let Op::Launch(Launch::Contract { b: side, .. }) = &mut op else {
+            let Op::Launch(Launch::Contract {
+                a: left, b: side, ..
+            }) = &mut op
+            else {
                 unreachable!()
             };
+            left.ops[0].src = a.id;
+            left.ops.push(fusor_ir::ir::launch::Operand {
+                src: normalizer.id,
+                layout: fusor_ir::shape::Layout::from_parts(
+                    Dim::Const(0),
+                    &[Dim::Const(2), Dim::Const(2), k],
+                    &[Dim::Const(2), Dim::ONE, Dim::Const(0)],
+                )
+                .unwrap(),
+                access: fusor_ir::ir::launch::AccessPlan::Alias,
+            });
+            left.pre = fusor_ir::scalar::ScalarExpr::bin(
+                fusor_ir::scalar::BinOp::Div,
+                fusor_ir::scalar::ScalarExpr::arg(0, Dtype::F32),
+                fusor_ir::scalar::ScalarExpr::arg(1, Dtype::F32),
+            );
             side.ops[0].src = b.id;
             side.ops[0].layout = fusor_ir::shape::Layout::from_parts(
                 Dim::Const(0),
@@ -115,7 +141,7 @@ fn symbolic_gemv_tail_schedules_agree() {
                 &session,
                 &g,
                 &[out.id],
-                &[a.id, b.id, variant],
+                &[a.id, b.id, normalizer.id, variant],
                 variant,
                 Some(SchedPoint::Sgemv(point)),
             )
@@ -130,11 +156,18 @@ fn symbolic_gemv_tail_schedules_agree() {
                 .collect();
             a.set_bytes(bytemuck::cast_slice(&av).to_vec()).unwrap();
             b.set_bytes(bytemuck::cast_slice(&bv).to_vec()).unwrap();
+            let norms = [1.5f32, 2., 2.5, 3.];
+            normalizer
+                .set_bytes(bytemuck::cast_slice(&norms).to_vec())
+                .unwrap();
             let actual = run_f32(&session, h, &plan, &out);
             for row in 0..4usize {
                 for col in 0..16usize {
                     let expected: f32 = (0..len as usize)
-                        .map(|i| av[row * len as usize + i] * bv[(row / 2 * 64 + i) * 16 + col])
+                        .map(|i| {
+                            av[row * len as usize + i] / norms[row]
+                                * bv[(row / 2 * 64 + i) * 16 + col]
+                        })
                         .sum();
                     let got = actual[row * 16 + col];
                     if !got.is_finite() || (got - expected).abs() > 1e-5 {
