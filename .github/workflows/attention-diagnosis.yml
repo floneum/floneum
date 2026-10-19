@@ -1,0 +1,33 @@
+name: Shared attention compiler diagnosis
+on:
+  push:
+    branches: [codex/attention-diagnosis]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  diagnose:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: fusor-conformance-macos
+          path: bin
+          run-id: 39188713698
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Replay failing subgroup geometry with shader evidence
+        env:
+          FUSOR_CONFORMANCE_REQUIRE_GPU: '1'
+          FUSOR_PIN_SGEMV: '64,32,32,4,32'
+          FUSOR_DUMP_CONTRACT: '1'
+          FUSOR_WGSL_DUMP: shaders
+        run: |
+          chmod +x bin/fusor-conformance
+          bin/fusor-conformance attention_rope::padded_cache_decode_prefix
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: attention-diagnosis-shaders
+          path: shaders
+          retention-days: 3
