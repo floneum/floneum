@@ -1,0 +1,57 @@
+name: Declared-workgroup kernel comparison builds
+on:
+  push:
+    branches: [codex/workgroup-kernel-builds]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    strategy:
+      max-parallel: 1
+      matrix:
+        include:
+          - arm: baseline
+            source: 4f77124e6f8fde56b2c5b747aedb125bbca35c86
+          - arm: candidate
+            source: b67f55e43dde676fbb2ac5c506112b0c747c0831
+    env:
+      CARGO_BUILD_JOBS: 1
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_OPT_LEVEL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ matrix.source }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            fusor/target
+          key: workgroup-kernel-${{ runner.os }}-${{ matrix.arm }}-${{ hashFiles('fusor/Cargo.lock') }}
+          restore-keys: workgroup-kernel-${{ runner.os }}-
+      - name: Build ordinary shared-compiler fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir artifacts
+          {
+            rustc -Vv
+            git rev-parse HEAD
+            shasum -a 256 fusor/fusor/examples/qmatmul_lab.rs fusor/fusor/examples/support/paired_geometry.rs
+            echo 'cargo build --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer --example qmatmul_lab'
+            echo 'CARGO_PROFILE_DEV_OPT_LEVEL=0 CARGO_PROFILE_DEV_DEBUG=0'
+          } > artifacts/provenance.txt
+          cargo build --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu,kernel-observer --example qmatmul_lab
+          cp fusor/target/debug/examples/qmatmul_lab artifacts/qmatmul-workgroup-${{ matrix.arm }}
+          shasum -a 256 artifacts/qmatmul-workgroup-${{ matrix.arm }} >> artifacts/provenance.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workgroup-kernel-${{ matrix.arm }}
+          path: artifacts
+          retention-days: 3
