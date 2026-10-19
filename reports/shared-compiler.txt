@@ -1,3 +1,55 @@
+General gather epilogues and completed experiment checks (2026-10-18)
+===================================================================
+Candidate compiler 01164b16b fuses an ordinary map consuming a gather into
+that gather's output expression. It substitutes scalar values without
+reordering arithmetic; source/index operands retain their own spaces and
+extra operands read the output coordinate. Candidate construction requires
+an exact dense producer read, compatible scalar types and coordinates, and
+an available storage-binding budget. CPU and WebGPU share the same IR.
+No model, adapter-name, or quantization-format dispatch is added.
+
+The reproducer first fails on 678e0974b with two launches [kgather, kmap].
+The candidate produces one kgather and preserves all values across changed
+input and index replay. CI 39187423714 passes 16 construction tests, the CPU
+regression, nine live shared WebGPU tests, 15 cost/9 IR/18 tile units,
+workspace/all-target Clippy, formatting, and the ordinary release build.
+CI 39188190722 additionally passes CPU+GPU conformance: 38 indexing/gradient
+results, two quantized-gather results (including output casts), and 24 rotary
+composition/view results, with zero skips or failures.
+
+Bounded local GPU timings in ABBA order, in microseconds:
+  3x17:   9.839 / 5.021 / 5.010 / 9.726 (1.95957x / 1.94132x)
+  40x128: 10.691 / 5.365 / 5.353 / 6.837 (1.99273x / 1.27723x)
+Every checked value matches exactly; each arm checks 14 changing index/input
+sets. The 40x128 reverse baseline has wider timing spread, retained above.
+The 128x1024 baseline completes at 25.234 us, but its first candidate arm
+is stopped when a foreign Qwen process starts; that case is incomplete and
+is not retried. Peak owned RSS is 0.147 GiB and minimum sampled headroom is
+25.977 GiB. These are kernel measurements, not model throughput proof.
+Evidence: target/stall-validation/shared-gather-epilogue-abba/assessment.json.
+
+The attention-capacity experiment is rejected. Five completed ABBA cases
+(capacity 128 with prefixes 1,17,64,128; capacity 512 with prefix 257) show
+512 lanes taking 546--621 us versus 27--111 us for 256 lanes. CPU-reference
+checks pass, with maximum absolute error 0.0000019. The final 512/511 case
+is refused before launch when another resident process becomes active; it
+is not retried. The default remains 256 lanes. Evidence:
+target/stall-validation/shared-attention-capacity-abba/assessment.json.
+
+A separate 2 ms versus 32 ms completion-spin probe saves 0.45--0.79 ms of
+wall time around a roughly 19 ms GPU replay, with unchanged GPU duration
+and bit-identical outputs. It does not establish full-model benefit; the
+2 ms default remains unchanged. Evidence: shared-completion-window-abba.
+
+CI 39154087720 has completed all matched actual-token release builds. Their
+binary hashes and source/toolchain manifests are verified. The new current-PR
+measurement is refused before startup on a foreign GPU fixture; the actual-
+token baseline is stopped after 1.719 seconds on a foreign compiler, before
+any timing row. Both owned process groups are reaped; no automatic retries.
+The new gather candidate release also matches its manifest (SHA256
+ dede131f0930e647ef0ceba2e5eda5b87dcd8b26d05a180e80d19e1db2c2908b).
+The 60 token/sec and 2x full-model goals remain unverified.
+
 Actual-token measurement and isolated attention experiment (2026-10-18)
 ======================================================================
 The profiler now observes actual sampled token IDs and timestamps on the
