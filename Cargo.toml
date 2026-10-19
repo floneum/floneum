@@ -390,5 +390,5 @@ debug = "line-tables-only"
 # Naga also carries declared compute workgroup sizes into Metal compilation,
 # preventing register allocation from selecting a smaller dispatch limit.
 [patch.crates-io]
-wgpu = { git = "https://github.com/ealmloff/wgpu", rev = "dc256a91cca0619603a4fe5899516cc3772e7d2a" }
-naga = { git = "https://github.com/ealmloff/wgpu", rev = "dc256a91cca0619603a4fe5899516cc3772e7d2a" }
+wgpu = { git = "https://github.com/ealmloff/wgpu", rev = "e6a9554d1e47e0bef4715814034176616564da40" }
+naga = { git = "https://github.com/ealmloff/wgpu", rev = "e6a9554d1e47e0bef4715814034176616564da40" }
