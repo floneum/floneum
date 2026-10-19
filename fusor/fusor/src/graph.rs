@@ -534,14 +534,14 @@ impl GraphRef {
         self.state.leaves.lock().bytes.get(&id).cloned()
     }
 
-    /// Run `f` over an external leaf's host bytes without copying them.
+    /// Upload an external leaf's host bytes, then hint that their pages are idle.
     ///
     /// `f` runs with the `leaves` mutex held, so it must not re-enter this
     /// graph. The only caller uploads through the target's pool, which locks
     /// nothing of the graph's.
     pub(crate) fn with_leaf_bytes<T>(&self, id: Id, f: impl FnOnce(&[u8]) -> T) -> Option<T> {
         let store = self.state.leaves.lock();
-        store.bytes.get(&id).map(|b| b.with_slice(f))
+        store.bytes.get(&id).map(|b| b.with_upload_slice(f))
     }
 
     /// The device buffer backing `id`, once a resolve has produced one.

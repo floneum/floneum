@@ -30,13 +30,28 @@ pub struct RawTensorBytes {
 /// A contiguous, immutable range retaining its source file or owned bytes.
 #[derive(Clone)]
 pub struct TensorBytes {
-    owner: Arc<dyn AsRef<[u8]> + Send + Sync>,
+    owner: TensorBytesOwner,
     range: std::ops::Range<usize>,
+}
+
+#[derive(Clone)]
+enum TensorBytesOwner {
+    File(Arc<Gguf>),
+    Owned(Arc<Box<[u8]>>),
+}
+
+impl TensorBytesOwner {
+    fn bytes(&self) -> &[u8] {
+        match self {
+            Self::File(file) => file.bytes(),
+            Self::Owned(bytes) => bytes,
+        }
+    }
 }
 impl std::ops::Deref for TensorBytes {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
-        &self.owner.as_ref().as_ref()[self.range.clone()]
+        &self.owner.bytes()[self.range.clone()]
     }
 }
 impl AsRef<[u8]> for TensorBytes {
@@ -61,7 +76,7 @@ impl From<Box<[u8]>> for TensorBytes {
     fn from(bytes: Box<[u8]>) -> Self {
         let range = 0..bytes.len();
         Self {
-            owner: Arc::new(bytes),
+            owner: TensorBytesOwner::Owned(Arc::new(bytes)),
             range,
         }
     }
@@ -69,10 +84,17 @@ impl From<Box<[u8]>> for TensorBytes {
 impl TensorBytes {
     /// Keep this range alive in a device leaf without copying tensor data.
     pub fn shared_host_bytes(&self) -> Arc<fusor_ir::target::HostBytes> {
-        Arc::new(
-            fusor_ir::target::HostBytes::shared(Arc::new(self.clone()), 0..self.len())
-                .expect("range spans this immutable tensor"),
-        )
+        let bytes = fusor_ir::target::HostBytes::shared(Arc::new(self.clone()), 0..self.len())
+            .expect("range spans this immutable tensor");
+        let bytes = match &self.owner {
+            TensorBytesOwner::File(file) => {
+                let file = file.clone();
+                let range = self.range.clone();
+                bytes.with_reclaim_hint(move || file.hint_pages_unused(range.clone()))
+            }
+            TensorBytesOwner::Owned(_) => bytes,
+        };
+        Arc::new(bytes)
     }
 }
 
@@ -176,7 +198,7 @@ impl VarBuilder {
                 // from that exact borrowed slice, avoiding duplicate arithmetic.
                 let start = bytes.as_ptr() as usize - self.file.bytes().as_ptr() as usize;
                 TensorBytes {
-                    owner: self.file.clone(),
+                    owner: TensorBytesOwner::File(self.file.clone()),
                     range: start..start + bytes.len(),
                 }
             },
@@ -237,6 +259,49 @@ mod tests {
         });
         drop(upload);
         assert!(weak_first.upgrade().is_none());
+    }
+
+    #[test]
+    fn mapped_upload_backing_remains_readable_after_reclamation() {
+        use std::io::Write;
+        struct TemporaryFile(std::path::PathBuf);
+        impl Drop for TemporaryFile {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = TemporaryFile(
+            std::env::temp_dir().join(format!("fusor-upload-{}-{nonce}.gguf", std::process::id())),
+        );
+        let expected = model();
+        {
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path.0)
+                .unwrap();
+            file.write_all(expected.bytes()).unwrap();
+        }
+        let file = Arc::new(Gguf::open(&path.0).unwrap());
+        let raw = VarBuilder::new(file.clone())
+            .get_raw("blk.0.attn_q.weight")
+            .unwrap();
+        let retained_view = raw.bytes.clone();
+        let upload = raw.bytes.shared_host_bytes();
+        drop(raw);
+        for _ in 0..3 {
+            let copied = upload.with_upload_slice(|bytes| bytes.to_vec());
+            assert_eq!(copied, (0..18u8).collect::<Vec<_>>());
+            assert_eq!(&*retained_view, copied);
+            assert_eq!(file.bytes(), expected.bytes());
+        }
+        drop(retained_view);
+        drop(file);
+        upload.with_upload_slice(|bytes| assert_eq!(bytes, (0..18u8).collect::<Vec<_>>()));
     }
 
     #[test]

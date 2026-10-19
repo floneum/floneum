@@ -381,7 +381,7 @@ impl GpuTarget {
             let buffers = uploads
                 .iter()
                 .map(|bytes| {
-                    bytes.with_slice(|bytes| {
+                    bytes.with_upload_slice(|bytes| {
                         target
                             .pool
                             .create_buffer_init(bytes, crate::pool::TENSOR_USAGE)

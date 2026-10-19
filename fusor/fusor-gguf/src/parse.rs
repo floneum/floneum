@@ -676,6 +676,31 @@ impl Gguf {
         self.backing.bytes()
     }
 
+    /// Uploaded file pages can be reclaimed while the immutable mapping stays
+    /// readable for later uploads and layout conversions. This is only a hint;
+    /// its availability or failure never affects tensor contents or execution.
+    pub(crate) fn hint_pages_unused(&self, range: std::ops::Range<usize>) {
+        #[cfg(unix)]
+        if let Backing::Mapped(map) = &self.backing
+            && !range.is_empty()
+            && range.end <= map.len()
+        {
+            // SAFETY: this is a read-only file mapping, never writable/private
+            // anonymous storage. Re-faulting reads the same immutable file,
+            // whose contents must stay unchanged while the mapping is alive.
+            // The validated range remains mapped and no references are freed.
+            let _ = unsafe {
+                map.unchecked_advise_range(
+                    memmap2::UncheckedAdvice::DontNeed,
+                    range.start,
+                    range.len(),
+                )
+            };
+        }
+        #[cfg(not(unix))]
+        let _ = range;
+    }
+
     pub fn tensor_names(&self) -> impl Iterator<Item = &str> {
         self.metadata.tensors.iter().map(|t| t.name.as_str())
     }
