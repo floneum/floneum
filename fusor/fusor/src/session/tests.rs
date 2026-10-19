@@ -72,18 +72,41 @@ fn symbolic_gemv_tail_schedules_agree() {
         let sym = h.fresh_sym();
         h.bind_dim(sym, 3);
         let k = Dim::Sym(sym);
+        let capacity_sym = h.fresh_sym();
+        h.bind_dim(capacity_sym, 64);
+        let capacity = Dim::Sym(capacity_sym);
         let a = graph
             .leaf("a", &[Dim::Const(2), Dim::Const(2), k], Dtype::F32)
             .unwrap();
         let b = graph
-            .leaf("b", &[Dim::Const(2), k, Dim::Const(16)], Dtype::F32)
+            .leaf("b", &[Dim::Const(2), capacity, Dim::Const(16)], Dtype::F32)
             .unwrap();
-        let out = a.matmul(&b).unwrap();
+        let viewed = b
+            .restride(&[
+                fusor_ir::shape::StrideSpec::dim(0, Dim::Const(2)),
+                fusor_ir::shape::StrideSpec::dim(1, k),
+                fusor_ir::shape::StrideSpec::dim(2, Dim::Const(16)),
+            ])
+            .unwrap();
+        let out = a.matmul(&viewed).unwrap();
         let plan = {
             let mut g = h.state().egraph.lock();
             let node = g.node(out.id).clone();
             let facts = g.facts_view(out.id, &caps);
             let variant = lower_sgemv(&mut g.builder(&caps), out.id, &node, &facts).unwrap();
+            let mut op = g.node(variant).op.clone();
+            let Op::Launch(Launch::Contract { b: side, .. }) = &mut op else {
+                unreachable!()
+            };
+            side.ops[0].src = b.id;
+            side.ops[0].layout = fusor_ir::shape::Layout::from_parts(
+                Dim::ZERO,
+                &[Dim::Const(2), k, Dim::Const(16)],
+                &[capacity * Dim::Const(16), Dim::Const(16), Dim::ONE],
+            )
+            .unwrap();
+            let variant = g.add(op).unwrap();
+            g.union(out.id, variant).unwrap();
             let Op::Launch(Launch::Contract { sched, .. }) = &g.node(variant).op else {
                 unreachable!()
             };
@@ -102,7 +125,7 @@ fn symbolic_gemv_tail_schedules_agree() {
             let av: Vec<f32> = (0..4 * len)
                 .map(|i| ((i * 7 % 17) as f32 - 8.) / 8.)
                 .collect();
-            let bv: Vec<f32> = (0..2 * len * 16)
+            let bv: Vec<f32> = (0..2 * 64 * 16)
                 .map(|i| ((i * 11 % 19) as f32 - 9.) / 8.)
                 .collect();
             a.set_bytes(bytemuck::cast_slice(&av).to_vec()).unwrap();
@@ -111,9 +134,7 @@ fn symbolic_gemv_tail_schedules_agree() {
             for row in 0..4usize {
                 for col in 0..16usize {
                     let expected: f32 = (0..len as usize)
-                        .map(|i| {
-                            av[row * len as usize + i] * bv[(row / 2 * len as usize + i) * 16 + col]
-                        })
+                        .map(|i| av[row * len as usize + i] * bv[(row / 2 * 64 + i) * 16 + col])
                         .sum();
                     let got = actual[row * 16 + col];
                     if !got.is_finite() || (got - expected).abs() > 1e-5 {
