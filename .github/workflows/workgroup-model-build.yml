@@ -1,0 +1,49 @@
+name: Default model release with declared workgroups
+on:
+  push:
+    branches: [codex/workgroup-model-build]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: 1
+      CARGO_INCREMENTAL: 0
+      CARGO_TARGET_DIR: ${{ github.workspace }}/model-release-target
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 47bf132317225478b342bc8af3e7a8ae331eb198
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            model-release-target
+          key: workgroup-model-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: workgroup-model-${{ runner.os }}-
+      - name: Build the default release profiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir artifacts
+          {
+            rustc -Vv
+            uname -m
+            xcrun --show-sdk-version
+            git rev-parse HEAD
+            shasum -a 256 models/kalosm-llama/examples/profile_forward.rs models/kalosm-llama/src/model/inference.rs
+            echo 'cargo build --locked -j 1 -p kalosm-llama --example profile_forward --release --target aarch64-apple-darwin'
+          } > artifacts/build-provenance.txt
+          cargo build --locked -j 1 -p kalosm-llama --example profile_forward --release --target aarch64-apple-darwin
+          cp "$CARGO_TARGET_DIR/aarch64-apple-darwin/release/examples/profile_forward" artifacts/profile-forward-workgroup
+          shasum -a 256 artifacts/profile-forward-workgroup >> artifacts/build-provenance.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workgroup-default-model-release
+          path: artifacts
+          retention-days: 3
