@@ -1202,8 +1202,15 @@ macro_rules! on_each_backend {
         #[test]
         #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
         fn $gpu() {
-            let Ok(backend) = Backend::gpu_blocking() else {
-                return;
+            let backend = match Backend::gpu_blocking() {
+                Ok(backend) => backend,
+                Err(error) => {
+                    assert!(
+                        std::env::var_os("FUSOR_CONFORMANCE_REQUIRE_GPU").is_none(),
+                        "GPU required: {error}"
+                    );
+                    return;
+                }
             };
             $body(Session::new(backend).unwrap());
         }
