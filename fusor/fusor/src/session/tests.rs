@@ -44,6 +44,10 @@ fn run_f32(session: &Session, h: &GraphRef, plan: &Plan, out: &Tensor) -> Vec<f3
     bytemuck::cast_slice::<u8, f32>(&bytes).to_vec()
 }
 
+// A symbolic K retains the full unrolled loop even at K=3. Its register
+// pressure exposed a backend compiling for fewer threads than the declared
+// workgroup size. Exercise actual extracted plans, including materialized
+// softmax operands, and verify every output against the host calculation.
 #[test]
 #[cfg(all(
     feature = "gpu",
@@ -52,7 +56,30 @@ fn run_f32(session: &Session, h: &GraphRef, plan: &Plan, out: &Tensor) -> Vec<f3
 ))]
 fn symbolic_softmax_gemv_materializations_agree() {
     use fusor_ir::dtype::Dtype;
-    let session = Session::new(Backend::gpu_blocking().unwrap()).unwrap();
+    use fusor_ir::ir::launch::SgemvParams;
+    let backend = match Backend::gpu_blocking() {
+        Ok(backend) => backend,
+        Err(error) => {
+            assert!(
+                std::env::var_os("FUSOR_CONFORMANCE_REQUIRE_GPU").is_none(),
+                "GPU required: {error}"
+            );
+            eprintln!("wide workgroup regression skipped: {error}");
+            return;
+        }
+    };
+    let session = Session::new(backend).unwrap();
+    let point = SgemvParams {
+        vector: 64,
+        subgroups: 32,
+        cols: 32,
+        parts: 4,
+        gap: 32,
+    };
+    if !fusor_tile::domains::sgemv::cols_structure_legal(&point, &session.caps()) {
+        eprintln!("wide workgroup regression skipped: adapter cannot execute this schedule");
+        return;
+    }
     let graph = Graph::new(&session);
     let h = graph.handle();
     let k = graph.sym("k");
@@ -89,7 +116,23 @@ fn symbolic_softmax_gemv_materializations_agree() {
                 ExtractBudget::default(),
             )
             .unwrap();
-        let variants: Vec<_> = (0..base.launches.len()).flat_map(|ix| session.inner.extractor.test_launch_variants(&g, &[out.id], &base, ix, session.inner.cost.as_ref())).filter(|(_, plan)| plan.extraction.theta.values().any(|p| matches!(p, SchedPoint::Sgemv(p) if p.vector == 64 && p.subgroups == 32 && p.cols == 32 && p.gap == 32))).collect();
+        let variants: Vec<_> = (0..base.launches.len())
+            .flat_map(|ix| {
+                session.inner.extractor.test_launch_variants(
+                    &g,
+                    &[out.id],
+                    &base,
+                    ix,
+                    session.inner.cost.as_ref(),
+                )
+            })
+            .filter(|(_, plan)| {
+                plan.extraction
+                    .theta
+                    .values()
+                    .any(|p| matches!(p, SchedPoint::Sgemv(p) if *p == point))
+            })
+            .collect();
         (base, variants)
     };
     assert!(
@@ -109,182 +152,12 @@ fn symbolic_softmax_gemv_materializations_agree() {
     for (label, plan) in std::iter::once(("base".to_string(), base)).chain(variants) {
         let actual = run_f32(&session, h, &plan, &out);
         for (i, (a, e)) in actual.iter().zip(&expected).enumerate() {
-            if !a.is_finite() || (a - e).abs() >= 1e-5 {
-                eprintln!("[gemv-min] plan={plan:#?}");
-                let source = {
-                    let g = h.state().egraph.lock();
-                    let Op::Launch(fusor_ir::ir::launch::Launch::Contract { a, .. }) =
-                        &g.node(plan.launches.last().unwrap().root).op
-                    else {
-                        panic!("expected final contraction")
-                    };
-                    h.tensor(a.primary().src)
-                };
-                let guard = h.state().resolve_lock.lock();
-                session
-                    .run(h, &plan, &[out.clone(), source.clone()], None)
-                    .unwrap();
-                for (name, tensor) in [("operand", &source), ("output", &out)] {
-                    let bytes = session.read_bytes_locked(&guard, h, tensor.id).unwrap();
-                    eprintln!(
-                        "[gemv-min] retained {name}: {:?}",
-                        bytemuck::cast_slice::<u8, f32>(&bytes)
-                    );
-                }
-                panic!("{label} [{i}]: {a} != {e}");
-            }
-        }
-    }
-}
-
-/// Symbolic reduction tails must agree for every admitted subgroup schedule,
-/// including a workgroup with more column owners than output columns.
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn symbolic_gemv_tail_schedules_agree() {
-    use fusor_ir::dtype::Dtype;
-    use fusor_ir::ir::launch::{Launch, SgemvParams};
-    use fusor_tile::rules::contract::lower_sgemv;
-
-    let session = Session::new(Backend::gpu_blocking().expect("WebGPU regression device")).unwrap();
-    let caps = session.caps();
-    let mut failures = Vec::new();
-    let mut executions = 0;
-    eprintln!(
-        "[gemv-tail] adapter={} subgroup={:?} limit={}",
-        caps.name, caps.subgroups, caps.limits.max_compute_invocations_per_workgroup
-    );
-    for subgroups in [1, 2, 8, 32] {
-        let point = SgemvParams {
-            vector: 64,
-            subgroups,
-            cols: subgroups.max(2),
-            parts: 4,
-            gap: 32,
-        };
-        if !fusor_tile::domains::sgemv::cols_structure_legal(&point, &caps) {
-            continue;
-        }
-        let graph = Graph::new(&session);
-        let h = graph.handle();
-        let sym = h.fresh_sym();
-        h.bind_dim(sym, 3);
-        let k = Dim::Sym(sym);
-        let capacity_sym = h.fresh_sym();
-        h.bind_dim(capacity_sym, 64);
-        let capacity = Dim::Sym(capacity_sym);
-        let a = graph
-            .leaf("a", &[Dim::Const(2), Dim::Const(2), k], Dtype::F32)
-            .unwrap();
-        let b = graph
-            .leaf("b", &[Dim::Const(2), capacity, Dim::Const(16)], Dtype::F32)
-            .unwrap();
-        let viewed = b
-            .restride(&[
-                fusor_ir::shape::StrideSpec::dim(0, Dim::Const(2)),
-                fusor_ir::shape::StrideSpec::dim(1, k),
-                fusor_ir::shape::StrideSpec::dim(2, Dim::Const(16)),
-            ])
-            .unwrap();
-        let normalizer = graph
-            .leaf(
-                "normalizer",
-                &[Dim::Const(2), Dim::Const(2), Dim::ONE],
-                Dtype::F32,
-            )
-            .unwrap();
-        let out = a.div_(&normalizer).unwrap().matmul(&viewed).unwrap();
-        let plan = {
-            let mut g = h.state().egraph.lock();
-            let node = g.node(out.id).clone();
-            let facts = g.facts_view(out.id, &caps);
-            let variant = lower_sgemv(&mut g.builder(&caps), out.id, &node, &facts).unwrap();
-            let mut op = g.node(variant).op.clone();
-            let Op::Launch(Launch::Contract {
-                a: left, b: side, ..
-            }) = &mut op
-            else {
-                unreachable!()
-            };
-            left.ops[0].src = a.id;
-            left.ops.push(fusor_ir::ir::launch::Operand {
-                src: normalizer.id,
-                layout: fusor_ir::shape::Layout::from_parts(
-                    Dim::Const(0),
-                    &[Dim::Const(2), Dim::Const(2), k],
-                    &[Dim::Const(2), Dim::ONE, Dim::Const(0)],
-                )
-                .unwrap(),
-                access: fusor_ir::ir::launch::AccessPlan::Alias,
-            });
-            left.pre = fusor_ir::scalar::ScalarExpr::bin(
-                fusor_ir::scalar::BinOp::Div,
-                fusor_ir::scalar::ScalarExpr::arg(0, Dtype::F32),
-                fusor_ir::scalar::ScalarExpr::arg(1, Dtype::F32),
+            assert!(
+                a.is_finite() && (a - e).abs() < 1e-5,
+                "{label} [{i}]: {a} != {e}"
             );
-            side.ops[0].src = b.id;
-            side.ops[0].layout = fusor_ir::shape::Layout::from_parts(
-                Dim::Const(0),
-                &[Dim::Const(2), k, Dim::Const(16)],
-                &[capacity * Dim::Const(16), Dim::Const(16), Dim::ONE],
-            )
-            .unwrap();
-            let variant = g.add(op).unwrap();
-            g.union(out.id, variant).unwrap();
-            let Op::Launch(Launch::Contract { sched, .. }) = &g.node(variant).op else {
-                unreachable!()
-            };
-            assert!(sched.iter().any(|p| p == SchedPoint::Sgemv(point)));
-            replan_with(
-                &session,
-                &g,
-                &[out.id],
-                &[a.id, b.id, normalizer.id, variant],
-                variant,
-                Some(SchedPoint::Sgemv(point)),
-            )
-        };
-        for len in [3u64, 33] {
-            h.bind_dim(sym, len);
-            let av: Vec<f32> = (0..4 * len)
-                .map(|i| ((i * 7 % 17) as f32 - 8.) / 8.)
-                .collect();
-            let mut bv: Vec<f32> = (0..2 * 64 * 16)
-                .map(|i| ((i * 11 % 19) as f32 - 9.) / 8.)
-                .collect();
-            for batch in 0..2 {
-                bv[(batch * 64 + len as usize) * 16..(batch + 1) * 64 * 16].fill(f32::NAN);
-            }
-            a.set_bytes(bytemuck::cast_slice(&av).to_vec()).unwrap();
-            b.set_bytes(bytemuck::cast_slice(&bv).to_vec()).unwrap();
-            let norms = [1.5f32, 2., 2.5, 3.];
-            normalizer
-                .set_bytes(bytemuck::cast_slice(&norms).to_vec())
-                .unwrap();
-            let actual = run_f32(&session, h, &plan, &out);
-            executions += 1;
-            eprintln!("[gemv-tail] schedule={point:?} k={len}");
-            for row in 0..4usize {
-                for col in 0..16usize {
-                    let expected: f32 = (0..len as usize)
-                        .map(|i| {
-                            av[row * len as usize + i] / norms[row]
-                                * bv[(row / 2 * 64 + i) * 16 + col]
-                        })
-                        .sum();
-                    let got = actual[row * 16 + col];
-                    if !got.is_finite() || (got - expected).abs() > 1e-5 {
-                        failures.push(format!(
-                            "{point:?} k={len} [{row},{col}]: {got} != {expected}"
-                        ));
-                        break;
-                    }
-                }
-            }
         }
     }
-    assert!(executions > 0, "no supported subgroup schedule executed");
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 #[test]

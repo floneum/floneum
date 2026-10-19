@@ -387,6 +387,8 @@ debug = "line-tables-only"
 # `CooperativeLoad` correctness fix in `bake_ref_count`. Patch tables only apply
 # from the build root. This revision also supplies browser matrix WGSL.
 # All build roots use the same source.
+# Naga also carries declared compute workgroup sizes into Metal compilation,
+# preventing register allocation from selecting a smaller dispatch limit.
 [patch.crates-io]
 wgpu = { git = "https://github.com/ealmloff/wgpu", rev = "dc256a91cca0619603a4fe5899516cc3772e7d2a" }
 naga = { git = "https://github.com/ealmloff/wgpu", rev = "dc256a91cca0619603a4fe5899516cc3772e7d2a" }

@@ -66,6 +66,8 @@ naga = "29"
 # `CooperativeLoad` correctness fix in `bake_ref_count`, so a simdgroup load
 # referenced once cannot sink past the barrier that ordered it. This revision
 # also supplies browser matrix serialization.
+# Naga also carries declared compute workgroup sizes into Metal compilation,
+# preventing register allocation from selecting a smaller dispatch limit.
 [patch.crates-io]
 wgpu = { git = "https://github.com/ealmloff/wgpu", rev = "dc256a91cca0619603a4fe5899516cc3772e7d2a" }
 naga = { git = "https://github.com/ealmloff/wgpu", rev = "dc256a91cca0619603a4fe5899516cc3772e7d2a" }
