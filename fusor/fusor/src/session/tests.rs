@@ -49,6 +49,7 @@ fn run_f32(session: &Session, h: &GraphRef, plan: &Plan, out: &Tensor) -> Vec<f3
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn symbolic_gemv_tail_schedules_agree() {
+    use fusor_ir::dtype::Dtype;
     use fusor_ir::ir::launch::{Launch, SgemvParams};
     use fusor_tile::rules::contract::lower_sgemv;
 
