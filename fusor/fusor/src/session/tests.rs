@@ -111,6 +111,26 @@ fn symbolic_softmax_gemv_materializations_agree() {
         for (i, (a, e)) in actual.iter().zip(&expected).enumerate() {
             if !a.is_finite() || (a - e).abs() >= 1e-5 {
                 eprintln!("[gemv-min] plan={plan:#?}");
+                let source = {
+                    let g = h.state().egraph.lock();
+                    let Op::Launch(fusor_ir::ir::launch::Launch::Contract { a, .. }) =
+                        &g.node(plan.launches.last().unwrap().root).op
+                    else {
+                        panic!("expected final contraction")
+                    };
+                    h.tensor(a.primary().src)
+                };
+                let guard = h.state().resolve_lock.lock();
+                session
+                    .run(h, &plan, &[out.clone(), source.clone()], None)
+                    .unwrap();
+                for (name, tensor) in [("operand", &source), ("output", &out)] {
+                    let bytes = session.read_bytes_locked(&guard, h, tensor.id).unwrap();
+                    eprintln!(
+                        "[gemv-min] retained {name}: {:?}",
+                        bytemuck::cast_slice::<u8, f32>(&bytes)
+                    );
+                }
                 panic!("{label} [{i}]: {a} != {e}");
             }
         }
