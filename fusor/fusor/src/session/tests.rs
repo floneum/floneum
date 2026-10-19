@@ -1271,6 +1271,52 @@ fn shared_weight_views_execute_and_concatenate(session: Session) {
 on_each_backend!(shared_weight_views_execute_and_concatenate:
     shared_weight_views_cpu, shared_weight_views_gpu);
 
+fn uploaded_leaves_release_host_pages_after_copy(session: Session) {
+    use fusor_ir::dtype::Dtype;
+    use fusor_ir::target::HostBytes;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let graph = Graph::new(&session);
+    let h = graph.handle();
+    let leaf = graph.leaf("input", &[Dim::Const(4)], Dtype::F32).unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let values = [1.0f32, -2.0, 3.5, 9.0];
+    let observed = calls.clone();
+    let bytes = Arc::new(
+        HostBytes::from(bytemuck::cast_slice(&values).to_vec()).with_reclaim_hint(move || {
+            observed.fetch_add(1, Ordering::Relaxed);
+        }),
+    );
+    h.set_leaf_bytes_shared(leaf.id, bytes.clone());
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
+    leaf.upload().unwrap();
+    assert_eq!(
+        calls.load(Ordering::Relaxed),
+        1,
+        "upload did not release its host pages"
+    );
+    leaf.upload().unwrap();
+    assert_eq!(
+        calls.load(Ordering::Relaxed),
+        1,
+        "cached upload borrowed host bytes again"
+    );
+    bytes.with_slice(|bytes| assert_eq!(bytemuck::cast_slice::<u8, f32>(bytes), values));
+    assert_eq!(
+        bytemuck::cast_slice::<u8, f32>(&h.read_back(leaf.id).unwrap()),
+        values
+    );
+    h.set_leaf_bytes_shared(leaf.id, bytes);
+    leaf.upload().unwrap();
+    assert_eq!(calls.load(Ordering::Relaxed), 2);
+    assert_eq!(
+        bytemuck::cast_slice::<u8, f32>(&h.read_back(leaf.id).unwrap()),
+        values
+    );
+}
+
+on_each_backend!(uploaded_leaves_release_host_pages_after_copy:
+    uploaded_leaves_release_host_pages_cpu, uploaded_leaves_release_host_pages_gpu);
+
 #[test]
 #[cfg(all(feature = "cpu", not(target_arch = "wasm32")))]
 fn whole_value_broadcast_replays_changed_inputs() {

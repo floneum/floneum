@@ -20,6 +20,7 @@ enum Backing {
 pub struct HostBytes {
     backing: Backing,
     range: Range<usize>,
+    reclaim_hint: Option<Box<dyn Fn() + Send + Sync>>,
 }
 
 impl HostBytes {
@@ -39,6 +40,7 @@ impl HostBytes {
                 transform: Box::new(transform),
             },
             range: 0..len,
+            reclaim_hint: None,
         }
     }
 
@@ -53,6 +55,7 @@ impl HostBytes {
         Ok(Self {
             backing: Backing::Shared(owner),
             range,
+            reclaim_hint: None,
         })
     }
 
@@ -65,7 +68,40 @@ impl HostBytes {
         Ok(Self {
             backing: Backing::Segments(parts),
             range: 0..len,
+            reclaim_hint: None,
         })
+    }
+
+    /// Attach a best-effort hint that the host pages need not stay resident
+    /// after an upload. It must preserve every byte and permit later borrows;
+    /// it cannot invalidate the backing or make correctness depend on success.
+    pub fn with_reclaim_hint(mut self, hint: impl Fn() + Send + Sync + 'static) -> Self {
+        self.reclaim_hint = Some(Box::new(hint));
+        self
+    }
+
+    /// Copy bytes to a target, then hint that the original host pages are idle.
+    /// Ordinary borrows keep their residency; temporary layout materializations
+    /// and concatenations forward the hint to their original backing.
+    pub fn with_upload_slice<T>(&self, upload: impl FnOnce(&[u8]) -> T) -> T {
+        let result = self.with_slice(upload);
+        self.hint_pages_unused();
+        result
+    }
+
+    fn hint_pages_unused(&self) {
+        match &self.backing {
+            Backing::Segments(parts) => {
+                for part in parts {
+                    part.hint_pages_unused();
+                }
+            }
+            Backing::Transformed { source, .. } => source.hint_pages_unused(),
+            Backing::Owned(_) | Backing::Shared(_) => {}
+        }
+        if let Some(hint) = &self.reclaim_hint {
+            hint();
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -123,6 +159,7 @@ impl From<Vec<u8>> for HostBytes {
         Self {
             backing: Backing::Owned(bytes),
             range: 0..len,
+            reclaim_hint: None,
         }
     }
 }
@@ -138,6 +175,31 @@ impl fmt::Debug for HostBytes {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn upload_hints_follow_materialized_backing_after_the_borrow() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let hints = Arc::new(AtomicUsize::new(0));
+        let observed = hints.clone();
+        let source = Arc::new(HostBytes::from(vec![3, 4]).with_reclaim_hint(move || {
+            observed.fetch_add(1, Ordering::Relaxed);
+        }));
+        let converted = Arc::new(HostBytes::transformed(source, 2, |bytes| {
+            vec![bytes[1], bytes[0]]
+        }));
+        let joined = HostBytes::concat(vec![converted.clone(), converted]).unwrap();
+        joined.with_slice(|bytes| assert_eq!(bytes, [4, 3, 4, 3]));
+        assert_eq!(hints.load(Ordering::Relaxed), 0);
+        for upload in 0..2 {
+            let result = joined.with_upload_slice(|bytes| {
+                assert_eq!(hints.load(Ordering::Relaxed), upload * 2);
+                bytes.to_vec()
+            });
+            assert_eq!(result, [4, 3, 4, 3]);
+            assert_eq!(hints.load(Ordering::Relaxed), (upload + 1) * 2);
+            joined.with_slice(|bytes| assert_eq!(bytes, result));
+        }
+    }
 
     #[test]
     fn transformed_segments_materialize_only_for_the_borrow() {
