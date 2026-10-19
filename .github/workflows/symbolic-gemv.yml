@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: d9b0795395b4624f3d24f3b37be97874ea039e48
+          ref: de80f0e0be5853e7fcdc7d33c5c470dc81846534
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/cache@v4
@@ -29,6 +29,13 @@ jobs:
             target
           key: symbolic-gemv-${{ runner.os }}-${{ hashFiles('fusor/Cargo.lock') }}-${{ github.sha }}
           restore-keys: symbolic-gemv-${{ runner.os }}-${{ hashFiles('fusor/Cargo.lock') }}-
-          save-always: true
       - name: Isolate symbolic tail arithmetic
         run: cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --features compiler-tests --lib symbolic_gemv_tail_schedules_agree -- --nocapture --test-threads=1
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: symbolic-gemv-${{ runner.os }}-${{ hashFiles('fusor/Cargo.lock') }}-${{ github.sha }}
