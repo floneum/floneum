@@ -1,0 +1,34 @@
+name: Shared gather indexing conformance
+on:
+  push:
+    branches: [codex/gather-conformance]
+permissions:
+  contents: read
+concurrency:
+  group: gather-conformance
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      CARGO_BUILD_JOBS: 1
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_OPT_LEVEL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      FUSOR_CONFORMANCE_REQUIRE_GPU: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 01164b16bd6330a7ccd1638372d93e07eb8b8dcf
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build shared indexing conformance
+        run: cargo build --locked --manifest-path fusor/Cargo.toml -p fusor-conformance
+      - name: Verify indexing and gradients
+        run: target/debug/fusor-conformance indexing_scatter::
+      - name: Verify quantized gathers and output casts
+        run: target/debug/fusor-conformance quantized::index_select_rows
+      - name: Verify rotary compositions and views
+        run: target/debug/fusor-conformance attention_rope::rope
