@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: da6487400902cc405c215fa0ad6c1c7b9372da67
+          ref: 90fe019d51abff401f036f79044c13c5d22b9cf9
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/cache@v4
@@ -29,7 +29,7 @@ jobs:
             target
           key: symbolic-gemv-${{ runner.os }}-${{ hashFiles('fusor/Cargo.lock') }}-${{ github.sha }}
           restore-keys: symbolic-gemv-${{ runner.os }}-${{ hashFiles('fusor/Cargo.lock') }}-
-      - name: Diagnose the reduced dispatch with GPU validation
+      - name: Validate the compiler fix with GPU validation
         env:
           FUSOR_TRACE_DISPATCH: '1'
           MTL_DEBUG_LAYER: '1'
