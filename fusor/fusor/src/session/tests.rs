@@ -44,6 +44,90 @@ fn run_f32(session: &Session, h: &GraphRef, plan: &Plan, out: &Tensor) -> Vec<f3
     bytemuck::cast_slice::<u8, f32>(&bytes).to_vec()
 }
 
+/// Symbolic reduction tails must agree for every admitted subgroup schedule,
+/// including a workgroup with more column owners than output columns.
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn symbolic_gemv_tail_schedules_agree() {
+    use fusor_ir::ir::launch::{Launch, SgemvParams};
+    use fusor_tile::rules::contract::lower_sgemv;
+
+    let session = Session::new(Backend::gpu_blocking().expect("WebGPU regression device")).unwrap();
+    let caps = session.caps();
+    let mut failures = Vec::new();
+    for subgroups in [1, 2, 8, 32] {
+        let point = SgemvParams {
+            vector: 64,
+            subgroups,
+            cols: subgroups.max(2),
+            parts: 4,
+            gap: 32,
+        };
+        if !fusor_tile::domains::sgemv::cols_structure_legal(&point, &caps) {
+            continue;
+        }
+        let graph = Graph::new(&session);
+        let h = graph.handle();
+        let sym = h.fresh_sym();
+        h.bind_dim(sym, 3);
+        let k = Dim::Sym(sym);
+        let a = graph
+            .leaf("a", &[Dim::Const(2), Dim::Const(2), k], Dtype::F32)
+            .unwrap();
+        let b = graph
+            .leaf("b", &[Dim::Const(2), k, Dim::Const(16)], Dtype::F32)
+            .unwrap();
+        let out = a.matmul(&b).unwrap();
+        let plan = {
+            let mut g = h.state().egraph.lock();
+            let node = g.node(out.id).clone();
+            let facts = g.facts_view(out.id, &caps);
+            let variant = lower_sgemv(&mut g.builder(&caps), out.id, &node, &facts).unwrap();
+            let Op::Launch(Launch::Contract { sched, .. }) = &g.node(variant).op else {
+                unreachable!()
+            };
+            assert!(sched.iter().any(|p| p == SchedPoint::Sgemv(point)));
+            replan_with(
+                &session,
+                &g,
+                &[out.id],
+                &[a.id, b.id, variant],
+                variant,
+                Some(SchedPoint::Sgemv(point)),
+            )
+        };
+        for len in [3u64, 33] {
+            h.bind_dim(sym, len);
+            let av: Vec<f32> = (0..4 * len)
+                .map(|i| ((i * 7 % 17) as f32 - 8.) / 8.)
+                .collect();
+            let bv: Vec<f32> = (0..2 * len * 16)
+                .map(|i| ((i * 11 % 19) as f32 - 9.) / 8.)
+                .collect();
+            a.set_bytes(bytemuck::cast_slice(&av).to_vec()).unwrap();
+            b.set_bytes(bytemuck::cast_slice(&bv).to_vec()).unwrap();
+            let actual = run_f32(&session, h, &plan, &out);
+            for row in 0..4usize {
+                for col in 0..16usize {
+                    let expected: f32 = (0..len as usize)
+                        .map(|i| {
+                            av[row * len as usize + i] * bv[(row / 2 * len as usize + i) * 16 + col]
+                        })
+                        .sum();
+                    let got = actual[row * 16 + col];
+                    if !got.is_finite() || (got - expected).abs() > 1e-5 {
+                        failures.push(format!(
+                            "{point:?} k={len} [{row},{col}]: {got} != {expected}"
+                        ));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 #[test]
 #[cfg(all(feature = "cpu", not(target_arch = "wasm32")))]
 fn layout_alternatives_materialize_only_when_borrowed() {
