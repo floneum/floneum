@@ -44,6 +44,122 @@ fn run_f32(session: &Session, h: &GraphRef, plan: &Plan, out: &Tensor) -> Vec<f3
     bytemuck::cast_slice::<u8, f32>(&bytes).to_vec()
 }
 
+// A symbolic K retains the full unrolled loop even at K=3. Its register
+// pressure exposed a backend compiling for fewer threads than the declared
+// workgroup size. Exercise actual extracted plans, including materialized
+// softmax operands, and verify every output against the host calculation.
+#[test]
+#[cfg(all(
+    feature = "gpu",
+    feature = "compiler-tests",
+    not(target_arch = "wasm32")
+))]
+fn symbolic_softmax_gemv_materializations_agree() {
+    use fusor_ir::dtype::Dtype;
+    use fusor_ir::ir::launch::SgemvParams;
+    let backend = match Backend::gpu_blocking() {
+        Ok(backend) => backend,
+        Err(error) => {
+            assert!(
+                std::env::var_os("FUSOR_CONFORMANCE_REQUIRE_GPU").is_none(),
+                "GPU required: {error}"
+            );
+            eprintln!("wide workgroup regression skipped: {error}");
+            return;
+        }
+    };
+    let session = Session::new(backend).unwrap();
+    let point = SgemvParams {
+        vector: 64,
+        subgroups: 32,
+        cols: 32,
+        parts: 4,
+        gap: 32,
+    };
+    if !fusor_tile::domains::sgemv::cols_structure_legal(&point, &session.caps()) {
+        eprintln!("wide workgroup regression skipped: adapter cannot execute this schedule");
+        return;
+    }
+    let graph = Graph::new(&session);
+    let h = graph.handle();
+    let k = graph.sym("k");
+    graph.bind("k", 3);
+    let a = graph
+        .leaf("a", &[Dim::Const(2), Dim::Const(2), k], Dtype::F32)
+        .unwrap();
+    let b = graph
+        .leaf("b", &[Dim::Const(2), k, Dim::Const(16)], Dtype::F32)
+        .unwrap();
+    let out = a.softmax(2).unwrap().matmul(&b).unwrap();
+    let av: Vec<f32> = (0..12).map(|i| ((i * 7 % 17) as f32 - 8.) / 8.).collect();
+    let bv: Vec<f32> = (0..96).map(|i| ((i * 11 % 19) as f32 - 9.) / 8.).collect();
+    a.set_bytes(bytemuck::cast_slice(&av).to_vec()).unwrap();
+    b.set_bytes(bytemuck::cast_slice(&bv).to_vec()).unwrap();
+    let (base, variants) = {
+        let mut g = h.state().egraph.lock();
+        g.add_root(out.id);
+        Driver::new()
+            .saturate(
+                &mut g,
+                &session.caps(),
+                &session.inner.rules,
+                Default::default(),
+            )
+            .unwrap();
+        let base = session
+            .inner
+            .extractor
+            .extract(
+                &g,
+                &[out.id],
+                session.inner.cost.as_ref(),
+                ExtractBudget::default(),
+            )
+            .unwrap();
+        let variants: Vec<_> = (0..base.launches.len())
+            .flat_map(|ix| {
+                session.inner.extractor.test_launch_variants(
+                    &g,
+                    &[out.id],
+                    &base,
+                    ix,
+                    session.inner.cost.as_ref(),
+                )
+            })
+            .filter(|(_, plan)| {
+                plan.extraction
+                    .theta
+                    .values()
+                    .any(|p| matches!(p, SchedPoint::Sgemv(p) if *p == point))
+            })
+            .collect();
+        (base, variants)
+    };
+    assert!(
+        !variants.is_empty(),
+        "large subgroup schedule was not exercised"
+    );
+    let expected: Vec<f32> = (0..64)
+        .map(|i| {
+            let row = i / 16;
+            let weights: Vec<f32> = av[row * 3..(row + 1) * 3].iter().map(|v| v.exp()).collect();
+            let denom: f32 = weights.iter().sum();
+            (0..3)
+                .map(|k| weights[k] / denom * bv[(row / 2 * 3 + k) * 16 + i % 16])
+                .sum()
+        })
+        .collect();
+    for (label, plan) in std::iter::once(("base".to_string(), base)).chain(variants) {
+        let actual = run_f32(&session, h, &plan, &out);
+        for (i, (a, e)) in actual.iter().zip(&expected).enumerate() {
+            assert!(
+                a.is_finite() && (a - e).abs() < 1e-5,
+                "{label} [{i}]: {a} != {e}"
+            );
+        }
+    }
+}
+
 #[test]
 #[cfg(all(feature = "cpu", not(target_arch = "wasm32")))]
 fn layout_alternatives_materialize_only_when_borrowed() {
