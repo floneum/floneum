@@ -84,3 +84,7 @@ required-features = ["gpu", "kernel-observer"]
 [[example]]
 name = "indexed_map_lab"
 required-features = ["gpu", "kernel-observer"]
+
+[[example]]
+name = "upload_memory_lab"
+required-features = ["gpu"]
