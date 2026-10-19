@@ -115,6 +115,111 @@ fn assert_declines(graph: &mut EGraph, caps: &Caps, id: Id, rule: RuleFn) {
 }
 
 #[test]
+fn gather_epilogue_requires_dense_coordinates_and_available_bindings() {
+    use fusor_ir::ir::launch::{
+        AccessPlan, GatherMode, IndexSpace, Launch, Operand, ScheduleDomain,
+    };
+    use fusor_ir::scalar::{BinOp, ScalarExpr};
+    use fusor_ir::shape::Layout;
+    let rule = fusor_ir::rules::fusion::GATHER_POST_EPILOGUE.apply;
+    for transposed in [false, true] {
+        for budget in [4, 5] {
+            let mut g = graph();
+            let source = leaf(&mut g, 0, &consts([2, 5]));
+            let index = g
+                .add(Op::Logical(Logical::Leaf(LeafKind::Buffer {
+                    name: BufferId(1),
+                    dtype: Dtype::U32,
+                    shape: consts([3]).into(),
+                })))
+                .unwrap();
+            let extra = leaf(&mut g, 2, &consts([2, 3]));
+            let operand = |src, shape: &[Dim]| Operand {
+                src,
+                layout: Layout::contiguous(shape),
+                access: AccessPlan::Alias,
+            };
+            let gather = g
+                .add(Op::Launch(Launch::Gather {
+                    space: IndexSpace::new(consts([2, 3])),
+                    axis: 1,
+                    mode: GatherMode::RowPerGroup,
+                    post: ScalarExpr::arg(0, Dtype::F32),
+                    ops: vec![
+                        operand(source, &consts([2, 5])),
+                        operand(index, &consts([3])),
+                    ],
+                    sched: ScheduleDomain::Point,
+                }))
+                .unwrap();
+            let mut read = operand(gather, &consts([2, 3]));
+            if transposed {
+                read.layout =
+                    Layout::from_parts(Dim::Const(0), &consts([2, 3]), &consts([1, 2])).unwrap();
+            }
+            let body = ScalarExpr::bin(
+                BinOp::Sub,
+                ScalarExpr::arg(0, Dtype::F32),
+                ScalarExpr::arg(1, Dtype::F32),
+            );
+            let root = g
+                .add(Op::Launch(Launch::Map {
+                    space: IndexSpace::new(consts([2, 3])),
+                    body,
+                    ops: vec![read, operand(extra, &consts([2, 3]))],
+                    sched: ScheduleDomain::Point,
+                }))
+                .unwrap();
+            let mut c = gpu_caps();
+            c.limits.max_storage_buffers_per_shader_stage = budget;
+            if transposed || budget < 5 {
+                assert_declines(&mut g, &c, root, rule);
+            } else {
+                assert!(apply(&mut g, &c, root, rule).is_some());
+                let fused = g
+                    .class_ids(g.class_of(root))
+                    .into_iter()
+                    .find_map(|id| match &g.node(id).op {
+                        Op::Launch(op @ Launch::Gather { .. }) => Some(op.clone()),
+                        _ => None,
+                    })
+                    .unwrap();
+                fusor_ir::verify_launch::check_operand_access(&fused).unwrap();
+                let Launch::Gather { post, ops, .. } = fused else {
+                    unreachable!()
+                };
+                assert_eq!(ops.len(), 3);
+                assert_eq!(
+                    post,
+                    ScalarExpr::bin(
+                        BinOp::Sub,
+                        ScalarExpr::arg(0, Dtype::F32),
+                        ScalarExpr::arg(1, Dtype::F32)
+                    )
+                );
+                for invalid in [
+                    ScalarExpr::arg(2, Dtype::F32),
+                    ScalarExpr::arg(0, Dtype::F16),
+                    ScalarExpr::index_of(2),
+                ] {
+                    assert!(
+                        g.add(Op::Launch(Launch::Gather {
+                            space: IndexSpace::new(consts([2, 3])),
+                            axis: 1,
+                            mode: GatherMode::RowPerGroup,
+                            post: invalid,
+                            ops: ops.clone(),
+                            sched: ScheduleDomain::Point,
+                        }))
+                        .is_err()
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn shared_matmul_ancestors_are_charged_once_with_every_branch() {
     use fusor_ir::dtype::{QFmt, QLayout};
     use fusor_ir::egraph::{Saturate, SaturationBudget};

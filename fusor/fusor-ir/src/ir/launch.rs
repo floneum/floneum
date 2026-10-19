@@ -110,6 +110,9 @@ pub enum Launch {
         space: IndexSpace,
         axis: u32,
         mode: GatherMode,
+        /// Arg(0) is the gathered scalar; Arg(1..) read ops[2..] at the
+        /// output coordinate. The first two operands remain source/indices.
+        post: ScalarExpr,
         ops: Vec<Operand>,
         sched: ScheduleDomain,
     },

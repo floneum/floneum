@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let names: Vec<_> = commands
             .iter()
             .filter_map(|command| match command {
-                fusor_gpu::launch::CommandRecord::Dispatch { name, .. } => Some(name.clone()),
+                fusor_gpu::launch::CommandRecord::Dispatch { name, .. } => Some(name.to_string()),
                 _ => None,
             })
             .collect();

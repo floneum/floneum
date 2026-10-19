@@ -29,7 +29,7 @@ fn indexed_elementwise_pipeline_fuses_and_replays() {
         *seen.lock().unwrap() = commands
             .iter()
             .filter_map(|command| match command {
-                fusor_gpu::launch::CommandRecord::Dispatch { name, .. } => Some(name.clone()),
+                fusor_gpu::launch::CommandRecord::Dispatch { name, .. } => Some(name.to_string()),
                 _ => None,
             })
             .collect();
@@ -72,6 +72,38 @@ fn indexed_elementwise_pipeline_fuses_and_replays() {
         }
         assert_eq!(input.to_vec_f32(), values);
     }
+}
+
+#[cfg(feature = "cpu")]
+#[test]
+fn indexed_elementwise_pipeline_preserves_cpu_values() {
+    let device = Device::cpu();
+    let values: Vec<_> = (0..35).map(|i| i as f32 - 10.).collect();
+    let input = Tensor::from_slice(&device, [5, 7], &values);
+    let index = Tensor::from_slice(&device, [3], &[0u32, 2, 4]);
+    let bias = Tensor::from_slice(&device, [3, 7], &[0.5f32; 21]);
+    let result = input
+        .as_dyn()
+        .index_select(0, index.as_dyn())
+        .unwrap()
+        .mul_scalar(0.25)
+        .unwrap()
+        .sub(bias.as_dyn())
+        .unwrap();
+    for picks in [[0u32, 2, 4], [4, 1, 1]] {
+        index.set_elements(&picks);
+        result.clear_device_buf();
+        let expected: Vec<_> = picks
+            .into_iter()
+            .flat_map(|row| {
+                values[row as usize * 7..(row as usize + 1) * 7]
+                    .iter()
+                    .map(|x| x * 0.25 - 0.5)
+            })
+            .collect();
+        assert_eq!(result.to_vec_f32().unwrap(), expected);
+    }
+    assert_eq!(input.to_vec_f32(), values);
 }
 fn attention_reference(
     q: &[f32],

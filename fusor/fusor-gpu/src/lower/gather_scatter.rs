@@ -109,7 +109,11 @@ impl LaneTile {
 /// gathered rows.
 pub(crate) fn lower_kgather(ctx: Ctx<'_>, op: &Launch, theta: SchedPoint) -> Result<KernelIr> {
     let Launch::Gather {
-        space, axis, ops, ..
+        space,
+        axis,
+        post,
+        ops,
+        ..
     } = op
     else {
         return Err(Error::Plan("lower_kgather on a non-Gather node".into()));
@@ -178,7 +182,12 @@ pub(crate) fn lower_kgather(ctx: Ctx<'_>, op: &Launch, theta: SchedPoint) -> Res
             ),
             within,
         );
-        let value = b.cast(load_logical(&ctx, src, src_addr)?, out.buffer.element);
+        let mut args = vec![load_logical(&ctx, src, src_addr)?];
+        for operand in &ops[2..] {
+            args.push(ctx.load_mapped(operand, flat.clone(), n)?);
+        }
+        let coords = ctx.coords_from_linear(flat.clone(), space)?;
+        let value = ctx.eval_scalar(post, &args, &coords)?;
         body.push(Stmt::Store {
             dst: out.clone(),
             addr: Addr::Linear(flat.clone()),

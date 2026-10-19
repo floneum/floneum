@@ -51,6 +51,7 @@ pub static CORE_RULES: &[Rule] = &[
     fusion::ABSORB,
     fusion::MAP_INTO_CONTRACT,
     fusion::MAP_INTO_MAP,
+    fusion::GATHER_POST_EPILOGUE,
     fusion::FOLD_POST_EPILOGUE,
     slab::FORM_SLAB,
     stream::STREAM_FOLD,
