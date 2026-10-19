@@ -100,6 +100,34 @@ impl Session {
                     eprintln!(
                         "[compiler-test] MISCOMPILE: candidate `{label}` of launch {ix}: {detail:?}"
                     );
+                    if wrong == 1
+                        && let Some(dir) = std::env::var_os("FUSOR_MISMATCH_DUMP")
+                    {
+                        use std::fmt::Write;
+                        let mut dump = format!(
+                            "candidate={label} launch={ix} dims={:?}\nbase={base:#?}\nvariant={plan:#?}\n",
+                            graph.dim_bindings()
+                        );
+                        let g = graph.state().egraph.lock();
+                        for (name, plan) in [("base", &base), ("variant", &plan)] {
+                            for dispatch in &plan.launches {
+                                for id in &dispatch.members {
+                                    let _ =
+                                        writeln!(dump, "{name} member={id:?}: {:#?}", g.node(*id));
+                                }
+                            }
+                        }
+                        let dir = std::path::PathBuf::from(dir);
+                        std::fs::create_dir_all(&dir).map_err(|e| Error::Plan(e.to_string()))?;
+                        std::fs::write(
+                            dir.join(format!(
+                                "candidate-{}.txt",
+                                WRONG_MEMBERS.load(Ordering::Relaxed)
+                            )),
+                            dump,
+                        )
+                        .map_err(|e| Error::Plan(e.to_string()))?;
+                    }
                 }
             }
         }
