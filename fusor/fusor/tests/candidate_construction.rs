@@ -130,7 +130,7 @@ fn gather_epilogue_requires_dense_coordinates_and_available_bindings() {
                 .add(Op::Logical(Logical::Leaf(LeafKind::Buffer {
                     name: BufferId(1),
                     dtype: Dtype::U32,
-                    shape: consts([3]).into(),
+                    shape: consts([3]).into_iter().collect(),
                 })))
                 .unwrap();
             let extra = leaf(&mut g, 2, &consts([2, 3]));
