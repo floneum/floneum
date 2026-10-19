@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: 8e85ce58c73bd2c31009be754b70f94fc4f06ebf
+          ref: 913702864baa9ccc8677e05ce0a498891d4c8612
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/cache@v4
@@ -31,6 +31,19 @@ jobs:
           restore-keys: symbolic-gemv-${{ runner.os }}-${{ hashFiles('fusor/Cargo.lock') }}-
       - name: Isolate symbolic tail arithmetic
         run: cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --features compiler-tests --lib symbolic_gemv_tail_schedules_agree -- --nocapture --test-threads=1
+      - name: Capture synthetic attention conformance diagnostics
+        env:
+          FUSOR_MISMATCH_DUMP: diagnostics
+          FUSOR_VERIFY_ARTIFACT_CACHE: '1'
+        run: |
+          cargo build --locked --manifest-path fusor/Cargo.toml -p fusor-conformance
+          target/debug/fusor-conformance attention_rope::padded_cache_decode_prefix
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: symbolic-gemv-diagnostics
+          path: diagnostics
+          retention-days: 3
       - uses: actions/cache/save@v4
         if: always()
         with:
