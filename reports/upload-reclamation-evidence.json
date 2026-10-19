@@ -1,0 +1,134 @@
+{
+  "objective": "get to 60tps",
+  "status": "in progress; throughput unverified",
+  "candidate_source": "c901c00d35871c11e16873a299cf5d99dd8cc803",
+  "candidate_worktree": "/tmp/fusor-upload-reclaim",
+  "main_pr_source": "21689089c83cde77625c344112d179168387ff6f",
+  "promoted_to_pr": false,
+  "red_run": 39200415514,
+  "red_job": 117892036483,
+  "red_assertion": "upload did not release its host pages: 0 != 1",
+  "green_run": 39200809313,
+  "synthetic_page_probe": {
+    "bytes": 268435456,
+    "available_before_advice": 21183676416,
+    "available_after_advice": 21451112448,
+    "payload_preserved": true,
+    "model_loaded": false
+  },
+  "old_clean_model_maximum_available_drop_gib": [
+    15.365066528320312,
+    16.057540893554688,
+    15.976425170898438
+  ],
+  "model_measurement": "not started; no full-model resource limit relaxed",
+  "rejected_probes": [
+    "subgroup-common-paired",
+    "balanced-sum-paired"
+  ],
+  "green_status": "success: Linux and Windows host tests, macOS GPU unit/shared compiler tests and Clippy, default release build",
+  "ci_memory_run": 39201718492,
+  "ci_memory_source": "a41e4efe3c519cd7c684146b44b41d8a992d6c3d",
+  "ci_memory_payload_bytes": 132120576,
+  "ci_memory_host_bytes_preserved": true,
+  "ci_memory_conclusion": "Both retain/reclaim arms passed. Available-memory changes are small and compressed-memory changes confound interpretation; no established reclamation amount or speedup.",
+  "release_binary_sha256": "9018cd0981bad98b3cb94591578c91e124ad142678ccf1d97c489ee1b03bf41e",
+  "admission": "One unchanged 23 GiB/90-second quiet admission window; initially blocked by foreign chat PID63379. No model launched as of this update.",
+  "ci_memory_samples": [
+    {
+      "mode": "retain",
+      "phases": [
+        {
+          "bytes": 0,
+          "phase": "before_touch",
+          "tensors": 0,
+          "memory": {
+            "available": 3161571328,
+            "compressed": 353566720,
+            "swapouts": 0
+          }
+        },
+        {
+          "bytes": 132120576,
+          "phase": "host_touched",
+          "tensors": 14,
+          "memory": {
+            "available": 3145154560,
+            "compressed": 365264896,
+            "swapouts": 0
+          }
+        },
+        {
+          "bytes": 132120576,
+          "phase": "gpu_uploaded",
+          "tensors": 14,
+          "memory": {
+            "available": 3131162624,
+            "compressed": 363855872,
+            "swapouts": 0
+          }
+        },
+        {
+          "bytes": 132120576,
+          "phase": "host_bytes_verified",
+          "tensors": 14,
+          "memory": {
+            "available": 3134619648,
+            "compressed": 363003904,
+            "swapouts": 0
+          }
+        }
+      ]
+    },
+    {
+      "mode": "reclaim",
+      "phases": [
+        {
+          "bytes": 0,
+          "phase": "before_touch",
+          "tensors": 0,
+          "memory": {
+            "available": 3157409792,
+            "compressed": 369426432,
+            "swapouts": 0
+          }
+        },
+        {
+          "bytes": 132120576,
+          "phase": "host_touched",
+          "tensors": 14,
+          "memory": {
+            "available": 3130359808,
+            "compressed": 367869952,
+            "swapouts": 0
+          }
+        },
+        {
+          "bytes": 132120576,
+          "phase": "gpu_uploaded",
+          "tensors": 14,
+          "memory": {
+            "available": 3129245696,
+            "compressed": 392085504,
+            "swapouts": 0
+          }
+        },
+        {
+          "bytes": 132120576,
+          "phase": "host_bytes_verified",
+          "tensors": 14,
+          "memory": {
+            "available": 3094528000,
+            "compressed": 419348480,
+            "swapouts": 0
+          }
+        }
+      ]
+    }
+  ],
+  "red_url": "https://github.com/floneum/kalosm/actions/runs/39200415514",
+  "green_url": "https://github.com/floneum/kalosm/actions/runs/39200809313",
+  "memory_url": "https://github.com/floneum/kalosm/actions/runs/39201718492",
+  "production_runtime_source": "c901c00d35871c11e16873a299cf5d99dd8cc803",
+  "diagnostic_source": "a41e4efe3c519cd7c684146b44b41d8a992d6c3d"
+}
