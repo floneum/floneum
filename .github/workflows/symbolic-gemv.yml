@@ -1,0 +1,25 @@
+name: Symbolic GEMV regression
+on:
+  push:
+    branches: [codex/symbolic-gemv-validation]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    env:
+      CARGO_BUILD_JOBS: 1
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_OPT_LEVEL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      FUSOR_CONFORMANCE_REQUIRE_GPU: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 92bb6d7e77475fd203bb0e7cd65856ab1de900e7
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Isolate symbolic tail arithmetic
+        run: cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --lib symbolic_gemv_tail_schedules_agree -- --nocapture --test-threads=1
