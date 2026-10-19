@@ -14,7 +14,7 @@ concurrency:
 jobs:
   validate:
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       CARGO_BUILD_JOBS: 1
       CARGO_INCREMENTAL: 0
@@ -24,31 +24,53 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: 678e0974b931574f75f3ed92bca7298c1acc8955
+          ref: 6e7d162fe7221512cdb02c1daaf2a29daa3222e3
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      - name: Demonstrate the materialized gather epilogue
+      - name: Validate general gather construction and host execution
+        run: |
+          mkdir artifacts
+          cargo fmt --manifest-path fusor/Cargo.toml --all -- --check
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --test candidate_construction --features kernel-observer,compiler-tests -- --test-threads=1
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --test shared_compiler --features kernel-observer,compiler-tests -- --test-threads=1
+      - name: Validate shared WebGPU execution
+        run: |
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --test shared_compiler --features kernel-observer,compiler-tests -- --ignored --test-threads=1
+          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor-ir -p fusor-tile -p fusor-cost --lib -- --test-threads=1
+          cargo clippy --locked --manifest-path fusor/Cargo.toml --workspace --all-targets --features fusor/kernel-observer,fusor/compiler-tests -- -D warnings
+      - name: Build bounded candidate fixture
+        run: |
+          cargo build --locked --manifest-path fusor/Cargo.toml -p fusor --features kernel-observer --example indexed_map_lab
+          cp target/debug/examples/indexed_map_lab artifacts/indexed-map-lab-candidate
+          git rev-parse HEAD > artifacts/candidate-revision.txt
+          shasum -a 256 artifacts/indexed-map-lab-candidate > artifacts/sha256.txt
+          rustc -Vv > artifacts/toolchain.txt
+          tar -czf gather-candidate-fixture.tar.gz -C artifacts .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gather-candidate-fixture-macos
+          path: gather-candidate-fixture.tar.gz
+          retention-days: 3
+      - name: Build token-accurate default release
         shell: bash
         run: |
           set -euo pipefail
-          mkdir artifacts
-          set +e
-          cargo test --locked --manifest-path fusor/Cargo.toml -p fusor --test shared_compiler --features kernel-observer,compiler-tests indexed_elementwise_pipeline_fuses_and_replays -- --exact --ignored > artifacts/red.log 2>&1
-          red=$?
-          set -e
-          cat artifacts/red.log
-          test "$red" -ne 0
-          grep -q 'gather epilogue materialized an intermediate' artifacts/red.log
-      - name: Build bounded baseline fixture
-        run: |
-          cargo build --locked --manifest-path fusor/Cargo.toml -p fusor --features kernel-observer --example indexed_map_lab
-          cp target/debug/examples/indexed_map_lab artifacts/indexed-map-lab-baseline
-          git rev-parse HEAD > artifacts/baseline-revision.txt
-          shasum -a 256 artifacts/indexed-map-lab-baseline > artifacts/sha256.txt
-          rustc -Vv > artifacts/toolchain.txt
-          tar -czf gather-baseline-fixture.tar.gz -C artifacts .
+          export CARGO_TARGET_DIR="$GITHUB_WORKSPACE/model-release-target"
+          mkdir model-artifacts
+          {
+            rustc -Vv
+            uname -m
+            xcrun --show-sdk-version
+            git rev-parse HEAD
+            shasum -a 256 models/kalosm-llama/examples/profile_forward.rs models/kalosm-llama/src/model/inference.rs
+            echo 'cargo build --locked -j 1 -p kalosm-llama --example profile_forward --release --target aarch64-apple-darwin'
+          } > model-artifacts/gather-model-build.txt
+          cargo build --locked -j 1 -p kalosm-llama --example profile_forward --release --target aarch64-apple-darwin
+          cp "$CARGO_TARGET_DIR/aarch64-apple-darwin/release/examples/profile_forward" model-artifacts/profile-forward-gather
+          shasum -a 256 model-artifacts/profile-forward-gather >> model-artifacts/gather-model-build.txt
+          tar -czf gather-model-release.tar.gz -C model-artifacts .
       - uses: actions/upload-artifact@v4
         with:
-          name: gather-baseline-fixture-macos
-          path: gather-baseline-fixture.tar.gz
+          name: gather-model-release-macos
+          path: gather-model-release.tar.gz
           retention-days: 3
