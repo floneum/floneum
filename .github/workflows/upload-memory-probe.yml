@@ -1,0 +1,49 @@
+name: Bounded shared upload memory diagnostic
+on:
+  push:
+    branches: [codex/upload-memory-probe-build]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    env:
+      CARGO_BUILD_JOBS: 1
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_OPT_LEVEL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 6929093b57d590cf6adbd94f61199e2e7aab06a5
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            fusor/target
+          key: upload-memory-probe-${{ runner.os }}-${{ hashFiles('fusor/Cargo.lock') }}
+          restore-keys: upload-reclaim-green-${{ runner.os }}-
+      - name: Build and check bounded diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path fusor/Cargo.toml --all -- --check
+          cargo clippy --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu --example upload_memory_lab -- -D warnings
+          cargo build --locked --manifest-path fusor/Cargo.toml -p fusor --no-default-features --features gpu --example upload_memory_lab
+          mkdir artifacts
+          cp fusor/target/debug/examples/upload_memory_lab artifacts/upload-memory-lab
+          {
+            rustc -Vv
+            git rev-parse HEAD
+            shasum -a 256 fusor/fusor/examples/upload_memory_lab.rs
+            shasum -a 256 artifacts/upload-memory-lab
+          } > artifacts/provenance.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bounded-upload-memory-probe
+          path: artifacts
+          retention-days: 3
